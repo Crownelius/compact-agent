@@ -1,11 +1,19 @@
 {
   "name": "crowcoder-cli",
-  "version": "1.0.0",
-  "description": "Universal AI coding CLI — works with OpenRouter, GLM, Ollama, or any OpenAI-compatible API",
+  "version": "1.1.0",
+  "description": "Universal AI coding CLI — works with OpenRouter, GLM, Ollama, or any OpenAI-compatible API. Bundled with the everything-claude-code skill, agent, command, and rule library.",
   "type": "module",
   "bin": {
-    "crowcoder": "./bin/crowcoder.js"
+    "crowcoder": "./bin/crowcoder.js",
+    "anycode": "./bin/crowcoder.js"
   },
+  "files": [
+    "bin/",
+    "dist/",
+    "resources/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",

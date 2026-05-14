@@ -4,6 +4,7 @@ import type { CrowcoderConfig } from './types.js';
 import { getModePromptAddition, type Mode } from './modes.js';
 import { buildRulesPrompt } from './rules.js';
 import { getRelevantInstincts } from './learning.js';
+import { findEccSkillForQuery } from './ecc.js';
 
 export function buildSystemPrompt(
   config: CrowcoderConfig,
@@ -46,6 +47,19 @@ export function buildSystemPrompt(
     }
   }
 
+  // Auto-inject the highest-scoring ECC skill for this query, if any
+  let eccSkillAddition = '';
+  if (userQuery) {
+    try {
+      const skill = findEccSkillForQuery(userQuery);
+      if (skill) {
+        // Truncate large skills so we don't blow the context budget
+        const body = skill.prompt.length > 4000 ? skill.prompt.slice(0, 4000) + '\n...[truncated]' : skill.prompt;
+        eccSkillAddition = `\n# ECC Skill: ${skill.name}\n${body}\n`;
+      }
+    } catch { /* skill matching is best-effort */ }
+  }
+
   return `You are Crowcoder, a powerful AI coding assistant running in the user's terminal.
 You help with software engineering tasks: writing code, fixing bugs, refactoring, explaining code, running commands, and more.
 
@@ -74,6 +88,6 @@ You have tools for: running shell commands (bash), reading files (read_file), wr
 - Use markdown formatting in your responses.
 - For git operations: prefer new commits over amending, never force-push without asking.
 - Respond in the same language the user writes in.
-${modeAddition}${rulesAddition}${instinctAddition}
+${modeAddition}${rulesAddition}${instinctAddition}${eccSkillAddition}
 `;
 }

@@ -1,0 +1,674 @@
+/**
+ * ECC (everything-claude-code) integration.
+ *
+ * Imports skills, agents, slash commands, rules, and hook behaviors from the
+ * bundled `resources/ecc/` directory into Crowcoder's runtime stores:
+ *   ~/.crowcoder/skills/        — JSON skills generated from SKILL.md
+ *   ~/.crowcoder/rules/         — language rule files
+ *   ~/.crowcoder/ecc-commands/  — markdown prompt templates for /ecc-<cmd>
+ *   ~/.crowcoder/ecc-agents/    — agent prompt templates
+ *   ~/.crowcoder/hooks.json     — augmented with ECC hook entries
+ *
+ * Each ECC skill becomes a Crowcoder Skill (skills.ts schema) with id
+ * `ecc-<slug>`, triggers derived from name + description keywords, and the
+ * SKILL.md body as the prompt template.
+ *
+ * The import is idempotent — re-running overwrites prior ECC entries but
+ * leaves user-created skills/rules/hooks alone (ECC entries are scoped by
+ * id prefix `ecc-` or `ecc:` category).
+ */
+import {
+  readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync,
+  copyFileSync, unlinkSync,
+} from 'node:fs';
+import { join, dirname, basename, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import chalk from 'chalk';
+import { getConfigDir } from './config.js';
+import { saveSkill, listSkills, deleteSkill, type Skill } from './skills.js';
+import { addHook, listHooks, saveHooksConfig, type HookDef } from './hooks.js';
+
+// ── Resource resolution ─────────────────────────────────
+// resources/ live one level above the compiled dist/ (and one above src/).
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const RESOURCES_ROOT = resolve(__dirname, '..', 'resources', 'ecc');
+
+const ECC_SKILLS_SRC   = join(RESOURCES_ROOT, 'skills');
+const ECC_AGENTS_SRC   = join(RESOURCES_ROOT, 'agents');
+const ECC_COMMANDS_SRC = join(RESOURCES_ROOT, 'commands');
+const ECC_PROMPTS_SRC  = join(RESOURCES_ROOT, 'prompts');
+const ECC_RULES_SRC    = join(RESOURCES_ROOT, 'rules');
+
+const RULES_DIR        = join(getConfigDir(), 'rules');
+const ECC_COMMANDS_DST = join(getConfigDir(), 'ecc-commands');
+const ECC_AGENTS_DST   = join(getConfigDir(), 'ecc-agents');
+const ECC_STATE_FILE   = join(getConfigDir(), 'ecc-state.json');
+
+const ECC_SKILL_ID_PREFIX = 'ecc-';
+const ECC_HOOK_TAG = '__ecc__';
+
+// ── State ───────────────────────────────────────────────
+export interface EccState {
+  installedAt: string;
+  version: string;
+  counts: {
+    skills: number;
+    agents: number;
+    commands: number;
+    rules: number;
+    prompts: number;
+  };
+}
+
+export function loadEccState(): EccState | null {
+  if (!existsSync(ECC_STATE_FILE)) return null;
+  try { return JSON.parse(readFileSync(ECC_STATE_FILE, 'utf-8')); } catch { return null; }
+}
+
+function saveEccState(s: EccState): void {
+  mkdirSync(getConfigDir(), { recursive: true });
+  writeFileSync(ECC_STATE_FILE, JSON.stringify(s, null, 2), 'utf-8');
+}
+
+export function eccResourcesAvailable(): boolean {
+  return existsSync(RESOURCES_ROOT) && existsSync(ECC_SKILLS_SRC);
+}
+
+// ── Frontmatter parser ──────────────────────────────────
+interface ParsedDoc {
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+/**
+ * Minimal YAML frontmatter parser — handles the subset used by ECC:
+ *   key: value
+ *   key: "value with: colons"
+ *   key:
+ *     - item1
+ *     - item2
+ *   key: ["a", "b"]
+ * Anything more exotic is preserved as raw string.
+ */
+function parseFrontmatter(raw: string): ParsedDoc {
+  if (!raw.startsWith('---')) return { frontmatter: {}, body: raw };
+  const end = raw.indexOf('\n---', 3);
+  if (end < 0) return { frontmatter: {}, body: raw };
+  const yamlBlock = raw.slice(3, end).replace(/^\r?\n/, '');
+  const body = raw.slice(end + 4).replace(/^\r?\n/, '');
+
+  const fm: Record<string, unknown> = {};
+  const lines = yamlBlock.split(/\r?\n/);
+  let currentKey: string | null = null;
+  let listAcc: string[] | null = null;
+
+  const stripQuotes = (s: string): string => {
+    const t = s.trim();
+    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+      return t.slice(1, -1);
+    }
+    return t;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, '');
+    if (!line.trim()) continue;
+    const listMatch = line.match(/^\s+-\s+(.*)$/);
+    if (listMatch && currentKey && listAcc) {
+      listAcc.push(stripQuotes(listMatch[1]));
+      continue;
+    }
+    // commit previous list
+    if (currentKey && listAcc) {
+      fm[currentKey] = listAcc;
+      listAcc = null;
+      currentKey = null;
+    }
+    const kv = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
+    if (!kv) continue;
+    const key = kv[1];
+    const valRaw = kv[2];
+    if (valRaw === '' || valRaw === undefined) {
+      // start of multi-line value (list)
+      currentKey = key;
+      listAcc = [];
+      continue;
+    }
+    // inline array
+    if (valRaw.startsWith('[') && valRaw.endsWith(']')) {
+      const inner = valRaw.slice(1, -1).trim();
+      const items = inner.length
+        ? inner.split(',').map(s => stripQuotes(s))
+        : [];
+      fm[key] = items;
+      continue;
+    }
+    fm[key] = stripQuotes(valRaw);
+  }
+  // flush trailing list
+  if (currentKey && listAcc) fm[currentKey] = listAcc;
+
+  return { frontmatter: fm, body };
+}
+
+// ── Trigger derivation ──────────────────────────────────
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'this', 'that', 'when', 'use', 'used',
+  'using', 'from', 'into', 'onto', 'a', 'an', 'of', 'to', 'in', 'on',
+  'as', 'by', 'is', 'are', 'be', 'been', 'or', 'but', 'not', 'all',
+  'any', 'some', 'must', 'should', 'must', 'will', 'can', 'skill',
+  'workflow', 'pattern', 'patterns', 'rules', 'rule', 'using',
+]);
+
+function deriveTriggers(name: string, description: string, extras: string[] = []): string[] {
+  const triggers = new Set<string>();
+  // slug parts of name
+  for (const part of name.toLowerCase().split(/[-_\s]+/)) {
+    if (part.length >= 3) triggers.add(part);
+  }
+  triggers.add(name.toLowerCase());
+  // first 60 chars of description, keywords
+  const descSample = description.toLowerCase().slice(0, 200);
+  for (const word of descSample.split(/[^a-z0-9]+/)) {
+    if (word.length >= 5 && !STOPWORDS.has(word)) triggers.add(word);
+  }
+  for (const e of extras) {
+    const norm = e.toLowerCase().trim();
+    if (norm.length >= 3) triggers.add(norm);
+  }
+  return Array.from(triggers).slice(0, 12);
+}
+
+// ── Skill import ────────────────────────────────────────
+function listSkillDirs(): string[] {
+  if (!existsSync(ECC_SKILLS_SRC)) return [];
+  return readdirSync(ECC_SKILLS_SRC)
+    .map(n => join(ECC_SKILLS_SRC, n))
+    .filter(p => {
+      try { return statSync(p).isDirectory(); } catch { return false; }
+    });
+}
+
+function readSkillMd(dir: string): { raw: string; references: string[] } | null {
+  const skillPath = join(dir, 'SKILL.md');
+  if (!existsSync(skillPath)) return null;
+  const raw = readFileSync(skillPath, 'utf-8');
+  // Pull in sibling reference docs if present (e.g. STYLE_PRESETS.md)
+  const references: string[] = [];
+  for (const f of readdirSync(dir)) {
+    if (f === 'SKILL.md') continue;
+    if (!f.endsWith('.md')) continue;
+    references.push(readFileSync(join(dir, f), 'utf-8'));
+  }
+  // Also pull in references/ subdir
+  const refDir = join(dir, 'references');
+  if (existsSync(refDir)) {
+    try {
+      for (const f of readdirSync(refDir)) {
+        if (f.endsWith('.md')) {
+          references.push(readFileSync(join(refDir, f), 'utf-8'));
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  return { raw, references };
+}
+
+function eccSkillId(slug: string): string {
+  return `${ECC_SKILL_ID_PREFIX}${slug}`;
+}
+
+export interface ImportReport {
+  skills: number;
+  agents: number;
+  commands: number;
+  rules: number;
+  prompts: number;
+  errors: string[];
+}
+
+function importSkills(): { count: number; errors: string[] } {
+  const errors: string[] = [];
+  // Clean prior ECC skills first so renames don't leave stragglers
+  for (const s of listSkills()) {
+    if (s.id.startsWith(ECC_SKILL_ID_PREFIX)) {
+      deleteSkill(s.id);
+    }
+  }
+  let count = 0;
+  for (const dir of listSkillDirs()) {
+    const slug = basename(dir);
+    try {
+      const doc = readSkillMd(dir);
+      if (!doc) continue;
+      const { frontmatter, body } = parseFrontmatter(doc.raw);
+      const name = String(frontmatter.name || slug);
+      const description = String(frontmatter.description || `ECC skill: ${slug}`);
+      const triggers = deriveTriggers(name, description, [slug]);
+      const fullBody = doc.references.length
+        ? body + '\n\n---\n\n' + doc.references.join('\n\n---\n\n')
+        : body;
+      const skill: Skill = {
+        id: eccSkillId(slug),
+        name,
+        description,
+        prompt: fullBody.trim(),
+        triggers,
+        category: 'ecc',
+        createdAt: new Date().toISOString(),
+        useCount: 0,
+      };
+      saveSkill(skill);
+      count++;
+    } catch (err) {
+      errors.push(`skill ${slug}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { count, errors };
+}
+
+// ── Agent import ────────────────────────────────────────
+/**
+ * Kiro agents are JSON + MD pairs:
+ *   <name>.json  — { name, description, prompt, allowedTools, ... }
+ *   <name>.md    — frontmatter (name, description, allowedTools) + body prompt
+ *
+ * We materialize each as a markdown file in ~/.crowcoder/ecc-agents/<name>.md
+ * (canonical prompt for /ecc-agent <name>) and ALSO register a Crowcoder Skill
+ * with id `ecc-agent-<name>` so it surfaces in /skills and trigger search.
+ */
+function importAgents(): { count: number; errors: string[] } {
+  const errors: string[] = [];
+  if (!existsSync(ECC_AGENTS_SRC)) return { count: 0, errors };
+
+  mkdirSync(ECC_AGENTS_DST, { recursive: true });
+
+  // Clean prior agent skills
+  for (const s of listSkills()) {
+    if (s.id.startsWith(`${ECC_SKILL_ID_PREFIX}agent-`)) {
+      deleteSkill(s.id);
+    }
+  }
+
+  let count = 0;
+  const files = readdirSync(ECC_AGENTS_SRC).filter(f => f.endsWith('.json'));
+  for (const file of files) {
+    const slug = file.replace(/\.json$/, '');
+    try {
+      const jsonPath = join(ECC_AGENTS_SRC, file);
+      const mdPath = join(ECC_AGENTS_SRC, `${slug}.md`);
+      const jsonRaw = readFileSync(jsonPath, 'utf-8');
+      const json = JSON.parse(jsonRaw) as Record<string, unknown>;
+      let prompt = String(json.prompt || '');
+      let description = String(json.description || `ECC agent: ${slug}`);
+      const allowed = (json.allowedTools as string[]) || [];
+      if (existsSync(mdPath)) {
+        const md = readFileSync(mdPath, 'utf-8');
+        const { frontmatter, body } = parseFrontmatter(md);
+        if (body.trim().length > prompt.length) prompt = body.trim();
+        if (frontmatter.description) description = String(frontmatter.description);
+      }
+
+      // Write canonical agent prompt to ecc-agents dir
+      const agentDoc = [
+        `# ${slug}`,
+        '',
+        `> ${description}`,
+        '',
+        `**Allowed tools**: ${allowed.length ? allowed.join(', ') : '(any)'}`,
+        '',
+        prompt,
+      ].join('\n');
+      writeFileSync(join(ECC_AGENTS_DST, `${slug}.md`), agentDoc, 'utf-8');
+
+      // Register a skill so it surfaces in /skills + trigger search
+      const triggers = deriveTriggers(slug, description, [slug, 'agent']);
+      saveSkill({
+        id: `${ECC_SKILL_ID_PREFIX}agent-${slug}`,
+        name: `agent: ${slug}`,
+        description,
+        prompt,
+        triggers,
+        category: 'ecc-agent',
+        createdAt: new Date().toISOString(),
+        useCount: 0,
+      });
+      count++;
+    } catch (err) {
+      errors.push(`agent ${slug}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { count, errors };
+}
+
+// ── Command + prompt import ─────────────────────────────
+/**
+ * .claude/commands/<name>.md and .github/prompts/<name>.prompt.md are both
+ * frontmatter+body prompt templates. We copy them verbatim into
+ * ~/.crowcoder/ecc-commands/ so /ecc-<name> can read them at runtime.
+ */
+function importCommandsAndPrompts(): { commands: number; prompts: number; errors: string[] } {
+  const errors: string[] = [];
+  let commands = 0;
+  let prompts = 0;
+
+  mkdirSync(ECC_COMMANDS_DST, { recursive: true });
+
+  // Wipe prior ECC commands
+  for (const f of readdirSync(ECC_COMMANDS_DST)) {
+    try { unlinkSync(join(ECC_COMMANDS_DST, f)); } catch { /* ignore */ }
+  }
+
+  const copyMd = (srcDir: string, suffix = ''): number => {
+    if (!existsSync(srcDir)) return 0;
+    let n = 0;
+    for (const f of readdirSync(srcDir)) {
+      if (!f.endsWith('.md')) continue;
+      const src = join(srcDir, f);
+      try {
+        const stat = statSync(src);
+        if (!stat.isFile()) continue;
+      } catch { continue; }
+      const baseName = f.replace(/\.prompt\.md$/, '').replace(/\.md$/, '');
+      const dst = join(ECC_COMMANDS_DST, `${baseName}${suffix}.md`);
+      copyFileSync(src, dst);
+      n++;
+    }
+    return n;
+  };
+
+  try { commands = copyMd(ECC_COMMANDS_SRC); }
+  catch (err) { errors.push(`commands: ${err instanceof Error ? err.message : err}`); }
+
+  try { prompts = copyMd(ECC_PROMPTS_SRC); }
+  catch (err) { errors.push(`prompts: ${err instanceof Error ? err.message : err}`); }
+
+  return { commands, prompts, errors };
+}
+
+export function listEccCommands(): string[] {
+  if (!existsSync(ECC_COMMANDS_DST)) return [];
+  return readdirSync(ECC_COMMANDS_DST)
+    .filter(f => f.endsWith('.md'))
+    .map(f => f.replace(/\.md$/, ''))
+    .sort();
+}
+
+/**
+ * Resolve a `/ecc-<name>` command to its prompt body. Frontmatter is stripped;
+ * if `allowed_tools` is set, it's preserved as a note at the top.
+ */
+export function getEccCommandPrompt(name: string): string | null {
+  const path = join(ECC_COMMANDS_DST, `${name}.md`);
+  if (!existsSync(path)) return null;
+  const raw = readFileSync(path, 'utf-8');
+  const { frontmatter, body } = parseFrontmatter(raw);
+  const header: string[] = [];
+  if (frontmatter.description) header.push(`> ${frontmatter.description}`);
+  if (frontmatter.allowed_tools) {
+    const tools = Array.isArray(frontmatter.allowed_tools)
+      ? frontmatter.allowed_tools.join(', ')
+      : String(frontmatter.allowed_tools);
+    header.push(`> Allowed tools: ${tools}`);
+  }
+  return [...header, '', body].join('\n').trim();
+}
+
+// ── Rules import ────────────────────────────────────────
+/**
+ * ECC ships per-language rules split into 5 files
+ * (coding-style, security, patterns, testing, hooks). Crowcoder reads
+ * `~/.crowcoder/rules/<language>.md` as a single bundle per language, so we
+ * concatenate the 5 files per language. Existing user content in those files
+ * is preserved by appending under a clearly-marked ECC section.
+ */
+function importRules(): { count: number; errors: string[] } {
+  const errors: string[] = [];
+  if (!existsSync(ECC_RULES_SRC)) return { count: 0, errors };
+
+  mkdirSync(RULES_DIR, { recursive: true });
+
+  const byLang = new Map<string, string[]>();
+  for (const f of readdirSync(ECC_RULES_SRC)) {
+    if (!f.endsWith('.md')) continue;
+    const m = f.match(/^([a-z]+)-([a-z-]+)\.md$/);
+    if (!m) continue;
+    const lang = m[1];
+    const section = m[2];
+    const content = readFileSync(join(ECC_RULES_SRC, f), 'utf-8');
+    if (!byLang.has(lang)) byLang.set(lang, []);
+    byLang.get(lang)!.push(`## ${section}\n\n${content.trim()}`);
+  }
+
+  let count = 0;
+  for (const [lang, sections] of byLang.entries()) {
+    try {
+      const dst = join(RULES_DIR, `${lang}.md`);
+      const ECC_BEGIN = '<!-- ECC-RULES:BEGIN -->';
+      const ECC_END = '<!-- ECC-RULES:END -->';
+      const eccBlock = [
+        ECC_BEGIN,
+        `# ${lang} — everything-claude-code rules`,
+        '',
+        sections.join('\n\n---\n\n'),
+        ECC_END,
+      ].join('\n');
+
+      let final = eccBlock;
+      if (existsSync(dst)) {
+        const existing = readFileSync(dst, 'utf-8');
+        // Strip prior ECC block before appending
+        const stripped = existing.replace(
+          new RegExp(`${ECC_BEGIN}[\\s\\S]*?${ECC_END}`, 'g'),
+          '',
+        ).trim();
+        final = stripped ? `${stripped}\n\n${eccBlock}` : eccBlock;
+      }
+      writeFileSync(dst, final, 'utf-8');
+      count++;
+    } catch (err) {
+      errors.push(`rules ${lang}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { count, errors };
+}
+
+// ── Hook seeding ────────────────────────────────────────
+/**
+ * Seeds Crowcoder's hooks.json with ECC-compatible default hooks.
+ *
+ * The cursor hook scripts have a dense in-repo dependency tree (scripts/lib/,
+ * scripts/hooks/) and require their original directory layout — we don't try
+ * to run them from Crowcoder. Instead we install native equivalents for the
+ * highest-value ECC hook behaviors: block-no-verify, secret-in-prompt detection,
+ * console.log warnings post-edit, dev-server tmux reminder.
+ *
+ * Each hook entry is tagged with __ecc__ so /ecc-install can refresh them
+ * without touching user-defined hooks.
+ */
+function seedHooks(): number {
+  const installDir = resolve(__dirname, '..');
+  const hookScript = join(installDir, 'bin', 'ecc-hooks.cjs');
+  if (!existsSync(hookScript)) return 0;
+
+  const nodeBin = process.platform === 'win32' ? 'node' : 'node';
+
+  // Strip prior ECC-tagged hooks
+  const existing = listHooks().filter(h => !h.command.includes(ECC_HOOK_TAG));
+
+  const eccHooks: HookDef[] = [
+    {
+      event: 'PreToolUse',
+      match: 'bash',
+      command: `${nodeBin} "${hookScript}" block-no-verify ${ECC_HOOK_TAG}`,
+      blocking: true,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PreToolUse',
+      match: 'bash',
+      command: `${nodeBin} "${hookScript}" dev-server-tmux ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PreToolUse',
+      match: 'read_file',
+      command: `${nodeBin} "${hookScript}" sensitive-file ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PostToolUse',
+      match: 'edit_file',
+      command: `${nodeBin} "${hookScript}" console-log-warn ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PostToolUse',
+      match: 'write_file',
+      command: `${nodeBin} "${hookScript}" console-log-warn ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+  ];
+
+  saveHooksConfig({ hooks: [...existing, ...eccHooks] });
+  return eccHooks.length;
+}
+
+// ── Top-level install ───────────────────────────────────
+export function installEcc(opts: { verbose?: boolean } = {}): ImportReport {
+  if (!eccResourcesAvailable()) {
+    return {
+      skills: 0, agents: 0, commands: 0, rules: 0, prompts: 0,
+      errors: [`ECC resources not found at ${RESOURCES_ROOT}`],
+    };
+  }
+
+  mkdirSync(getConfigDir(), { recursive: true });
+
+  const s = importSkills();
+  const a = importAgents();
+  const cp = importCommandsAndPrompts();
+  const r = importRules();
+  const hookCount = seedHooks();
+
+  const report: ImportReport = {
+    skills: s.count,
+    agents: a.count,
+    commands: cp.commands,
+    rules: r.count,
+    prompts: cp.prompts,
+    errors: [...s.errors, ...a.errors, ...cp.errors, ...r.errors],
+  };
+
+  saveEccState({
+    installedAt: new Date().toISOString(),
+    version: '1.0.0',
+    counts: {
+      skills: report.skills,
+      agents: report.agents,
+      commands: report.commands,
+      rules: report.rules,
+      prompts: report.prompts,
+    },
+  });
+
+  if (opts.verbose) {
+    console.log(chalk.cyan(`\n  ECC install complete:`));
+    console.log(chalk.dim(`    skills:   ${report.skills}`));
+    console.log(chalk.dim(`    agents:   ${report.agents}`));
+    console.log(chalk.dim(`    commands: ${report.commands}`));
+    console.log(chalk.dim(`    prompts:  ${report.prompts}`));
+    console.log(chalk.dim(`    rules:    ${report.rules} languages`));
+    console.log(chalk.dim(`    hooks:    ${hookCount} native hooks seeded`));
+    if (report.errors.length) {
+      console.log(chalk.yellow(`\n  ${report.errors.length} errors:`));
+      for (const e of report.errors.slice(0, 5)) {
+        console.log(chalk.dim(`    ${e}`));
+      }
+    }
+  }
+
+  return report;
+}
+
+// ── Status output ───────────────────────────────────────
+export function printEccStatus(): void {
+  const state = loadEccState();
+  if (!state) {
+    console.log(chalk.yellow('\n  ECC not yet installed.'));
+    console.log(chalk.dim('  Run /ecc-install to import skills, agents, commands, rules, and hooks.\n'));
+    return;
+  }
+  console.log(chalk.cyan('\n  everything-claude-code integration'));
+  console.log(chalk.dim(`    installed: ${state.installedAt}`));
+  console.log(chalk.dim(`    version:   ${state.version}`));
+  console.log(chalk.dim(`    skills:    ${state.counts.skills}`));
+  console.log(chalk.dim(`    agents:    ${state.counts.agents}`));
+  console.log(chalk.dim(`    commands:  ${state.counts.commands}`));
+  console.log(chalk.dim(`    prompts:   ${state.counts.prompts}`));
+  console.log(chalk.dim(`    rules:     ${state.counts.rules} languages`));
+  console.log(chalk.dim(`\n  Commands available: /ecc, /ecc-install, /ecc-skills, /ecc-agents,`));
+  console.log(chalk.dim(`                      /ecc-commands, /ecc-<command-name>`));
+  console.log();
+}
+
+export function printEccSkills(): void {
+  const skills = listSkills().filter(s => s.id.startsWith(ECC_SKILL_ID_PREFIX) && !s.id.startsWith(`${ECC_SKILL_ID_PREFIX}agent-`));
+  console.log(chalk.cyan(`\n  ECC skills: ${skills.length}`));
+  for (const s of skills.sort((a, b) => a.name.localeCompare(b.name))) {
+    const desc = s.description.length > 70 ? s.description.slice(0, 67) + '...' : s.description;
+    console.log(chalk.dim(`    ${s.name.padEnd(28)} ${desc}`));
+  }
+  console.log();
+}
+
+export function printEccAgents(): void {
+  const agents = listSkills().filter(s => s.id.startsWith(`${ECC_SKILL_ID_PREFIX}agent-`));
+  console.log(chalk.cyan(`\n  ECC agents: ${agents.length}`));
+  for (const a of agents.sort((x, y) => x.name.localeCompare(y.name))) {
+    const desc = a.description.length > 70 ? a.description.slice(0, 67) + '...' : a.description;
+    console.log(chalk.dim(`    ${a.name.padEnd(28)} ${desc}`));
+  }
+  console.log();
+}
+
+export function printEccCommandList(): void {
+  const cmds = listEccCommands();
+  console.log(chalk.cyan(`\n  ECC commands: ${cmds.length}`));
+  for (const c of cmds) {
+    console.log(chalk.dim(`    /ecc-${c}`));
+  }
+  console.log();
+}
+
+/**
+ * Match the user's free-form text against ECC skill triggers and return the
+ * top-matching skill prompt body, or null if nothing fires. Used to auto-inject
+ * skill content into the system prompt — bumps relevance for that turn.
+ */
+export function findEccSkillForQuery(query: string): Skill | null {
+  if (!query) return null;
+  const q = query.toLowerCase();
+  const candidates = listSkills().filter(s => s.id.startsWith(ECC_SKILL_ID_PREFIX));
+  let best: { skill: Skill; score: number } | null = null;
+  for (const s of candidates) {
+    let score = 0;
+    for (const t of s.triggers) {
+      if (q.includes(t.toLowerCase())) score += t.length;
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { skill: s, score };
+    }
+  }
+  return best?.skill ?? null;
+}

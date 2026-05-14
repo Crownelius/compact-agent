@@ -22,7 +22,7 @@ import { buildCommitPrompt, buildPRPrompt, printDiff, printLog, isGitRepo } from
 import { buildReviewPrompt, buildTDDPrompt, buildSecurityReviewPrompt, runAudit, printAuditReport, buildPlanPrompt, buildE2EPrompt, buildBuildFixPrompt, buildEvalPrompt, buildUpdateDocsPrompt } from './evaluation.js';
 import { printRules } from './rules.js';
 import { buildOrchestrationPrompt, runParallel, mergeResults, printOrchestrationStatus, type SubAgent } from './orchestration.js';
-import { printBanner as printThemedBanner, printSplash, theme } from './theme.js';
+import { printBanner as printThemedBanner, printSplash, theme, sym } from './theme.js';
 import { saveExport, type ExportFormat } from './export.js';
 // New feature modules
 import { buildVerifyPrompt, saveCheckpoint, listCheckpoints, restoreCheckpoint } from './verification.js';
@@ -33,6 +33,40 @@ import { buildDocsUpdatePrompt, detectDocFiles } from './docs-sync.js';
 import { listSkills, findSkill, applySkill, printSkillList, evolveInstinctsToSkills } from './skills.js';
 import { onSessionStart, onSessionEnd, printMemoryStatus, searchMemory } from './memory.js';
 import { shouldSuggestCompaction } from './strategic-compaction.js';
+// Language-specific agents & review
+import {
+  buildTSReviewPrompt, buildPyReviewPrompt, buildGoReviewPrompt, buildRustReviewPrompt,
+  buildJavaReviewPrompt, buildCppReviewPrompt, buildKotlinReviewPrompt, buildPhpReviewPrompt,
+  buildDbReviewPrompt, buildAutoReviewPrompt,
+  buildTSBuildFixPrompt, buildGoBuildFixPrompt, buildRustBuildFixPrompt,
+  buildJavaBuildFixPrompt, buildCppBuildFixPrompt, buildPyTorchBuildFixPrompt,
+} from './agents.js';
+// Autonomous loops & DAG orchestration
+import {
+  buildPRLoopPrompt, buildDAGPrompt, buildMultiPlanPrompt, buildMultiExecutePrompt,
+  buildMultiBackendPrompt, buildMultiFrontendPrompt, buildLoopOperatorPrompt,
+} from './autonomous-loops.js';
+// Search-first research workflow
+import { buildSearchFirstPrompt, buildDocsLookupPrompt } from './search-first.js';
+// Codemaps
+import { generateCodeMap, saveCodeMap, printCodeMap, printCodemapStatus, buildCodemapContext } from './codemaps.js';
+// Skill creation from git patterns
+import { buildSkillCreatePrompt, analyzeGitPatterns, printGitPatterns, printGitWorkflowSummary } from './skill-create.js';
+// Content engine
+import {
+  buildArticlePrompt, buildSlidePrompt, buildContentRepurposePrompt,
+  buildMarketResearchPrompt, buildInvestorDeckPrompt, buildInvestorOutreachPrompt,
+  buildCodeQualityPrompt, buildSkillStocktakePrompt, buildChiefOfStaffPrompt,
+} from './content-engine.js';
+// Hook controls
+import { printHookControlStatus, getHookProfile } from './hook-controls.js';
+// PM2 manager
+import { buildPM2Prompt, isPM2Available, listPM2Services } from './pm2-manager.js';
+// ECC (everything-claude-code) integration
+import {
+  installEcc, printEccStatus, printEccSkills, printEccAgents, printEccCommandList,
+  getEccCommandPrompt, listEccCommands, loadEccState, eccResourcesAvailable,
+} from './ecc.js';
 
 // ── Setup Wizard ──────────────────────────────────────────
 async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
@@ -163,6 +197,7 @@ function handleSlashCommand(
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
       console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode'));
       console.log(d('  ') + c('/dry-run') + d('          — toggle dry-run mode'));
+      console.log(d('  ') + c('/thinking') + d('         — toggle thinking/reasoning display'));
       console.log(d('  ') + c('/cd <path>') + d('        — change directory'));
       console.log(d('  ') + c('/hooks') + d('            — list configured hooks'));
       console.log(h('\n  ── Planning & Docs ──'));
@@ -170,8 +205,50 @@ function handleSlashCommand(
       console.log(d('  ') + c('/update-docs') + d('      — sync documentation with code'));
       console.log(d('  ') + c('/checkpoint [label]') + d(' — save git state checkpoint'));
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
+      console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
+      console.log(d('  ') + c('/docs-lookup <query>') + d(' — search docs for answers'));
+      console.log(h('\n  ── Language Reviews ──'));
+      console.log(d('  ') + c('/auto-review') + d('      — auto-detect language & review'));
+      console.log(d('  ') + c('/ts-review') + d('        — TypeScript-specific review'));
+      console.log(d('  ') + c('/py-review') + d('        — Python-specific review'));
+      console.log(d('  ') + c('/go-review') + d('        — Go-specific review'));
+      console.log(d('  ') + c('/rust-review') + d('      — Rust-specific review'));
+      console.log(d('  ') + c('/java-review') + d('      — Java-specific review'));
+      console.log(d('  ') + c('/cpp-review') + d('       — C++ review'));
+      console.log(d('  ') + c('/kotlin-review') + d('    — Kotlin review'));
+      console.log(d('  ') + c('/php-review') + d('       — PHP review'));
+      console.log(d('  ') + c('/db-review') + d('        — Database/SQL review'));
+      console.log(h('\n  ── Language Build Fixes ──'));
+      console.log(d('  ') + c('/ts-build-fix') + d('     — fix TypeScript build errors'));
+      console.log(d('  ') + c('/go-build-fix') + d('     — fix Go build errors'));
+      console.log(d('  ') + c('/rust-build-fix') + d('   — fix Rust build errors'));
+      console.log(d('  ') + c('/java-build-fix') + d('   — fix Java build errors'));
+      console.log(d('  ') + c('/cpp-build-fix') + d('    — fix C++ build errors'));
+      console.log(d('  ') + c('/pytorch-fix') + d('      — fix PyTorch/CUDA errors'));
       console.log(h('\n  ── Orchestration ──'));
-      console.log(d('  ') + c('/orchestrate <task>') + d(' — decompose task into parallel sub-agents'));
+      console.log(d('  ') + c('/orchestrate <task>') + d(' — decompose into parallel sub-agents'));
+      console.log(d('  ') + c('/pr-loop') + d('          — autonomous PR review loop'));
+      console.log(d('  ') + c('/multi-plan <task>') + d(' — multi-agent planning'));
+      console.log(d('  ') + c('/multi-execute') + d('    — multi-agent execution'));
+      console.log(d('  ') + c('/multi-backend') + d('    — multi-service backend generation'));
+      console.log(d('  ') + c('/multi-frontend') + d('   — multi-component frontend generation'));
+      console.log(h('\n  ── Codemaps ──'));
+      console.log(d('  ') + c('/codemap') + d('          — show project structure map'));
+      console.log(d('  ') + c('/update-codemaps') + d('  — regenerate and save codemap'));
+      console.log(h('\n  ── Content Engine ──'));
+      console.log(d('  ') + c('/article <topic>') + d('  — generate article/blog post'));
+      console.log(d('  ') + c('/slides <topic>') + d('   — generate slide outline'));
+      console.log(d('  ') + c('/repurpose <text>') + d(' — repurpose content for channels'));
+      console.log(d('  ') + c('/market-research') + d('  — market research report'));
+      console.log(d('  ') + c('/investor-deck') + d('    — investor pitch deck'));
+      console.log(d('  ') + c('/investor-outreach') + d(' — investor outreach emails'));
+      console.log(d('  ') + c('/code-quality') + d('     — comprehensive code quality audit'));
+      console.log(d('  ') + c('/skill-stocktake') + d('  — inventory skills & capabilities'));
+      console.log(d('  ') + c('/chief-of-staff') + d('   — executive briefing & priorities'));
+      console.log(h('\n  ── Skills & Patterns ──'));
+      console.log(d('  ') + c('/skill-create') + d('     — create skill from git patterns'));
+      console.log(d('  ') + c('/git-patterns') + d('     — analyze git commit patterns'));
+      console.log(d('  ') + c('/git-workflow') + d('     — summarize git workflow'));
       console.log(h('\n  ── Learning & Cost ──'));
       console.log(d('  ') + c('/usage') + d('            — token/cost summary'));
       console.log(d('  ') + c('/budget <d> <m>') + d('   — set daily/monthly budget (USD)'));
@@ -184,6 +261,16 @@ function handleSlashCommand(
       console.log(d('  ') + c('/skills') + d('           — list learned skills'));
       console.log(d('  ') + c('/memory') + d('           — show memory status'));
       console.log(d('  ') + c('/detect') + d('           — detect package manager, test runner, build tool'));
+      console.log(d('  ') + c('/hook-profile') + d('     — show hook profile & controls'));
+      console.log(d('  ') + c('/pm2 [action]') + d('     — PM2 service management'));
+      console.log(d('  ') + c('/hermes') + d('           — switch to Hermes mode (self-improving learning loop)'));
+      console.log(h('\n  ── ECC (everything-claude-code) ──'));
+      console.log(d('  ') + c('/ecc') + d('              — show ECC integration status'));
+      console.log(d('  ') + c('/ecc-install') + d('      — install/refresh bundled ECC skills, agents, commands, rules, hooks'));
+      console.log(d('  ') + c('/ecc-skills') + d('       — list ECC skills'));
+      console.log(d('  ') + c('/ecc-agents') + d('       — list ECC agents'));
+      console.log(d('  ') + c('/ecc-commands') + d('     — list ECC commands (each as /ecc-<name>)'));
+      console.log(d('  ') + c('/ecc-<command>') + d('    — invoke a specific ECC command (e.g. /ecc-tdd, /ecc-code-review)'));
       console.log();
       return { handled: true };
     }
@@ -271,12 +358,33 @@ function handleSlashCommand(
       }
       return { handled: true };
 
+    // ── Hermes shorthand (inspired by nousresearch/hermes-agent) ──
+    case '/hermes': {
+      mode.current = 'hermes';
+      const m = MODES.hermes;
+      console.log(chalk.cyan(`  Mode: ${m.label}`));
+      console.log(chalk.dim(`  ${m.description}`));
+      console.log(chalk.dim(`  Recall → user-model → parallelize → distill → persist → schedule.`));
+      return { handled: true };
+    }
+
     case '/modes':
+      // If an arg is passed, treat it as a mode switch (same as /mode <name>)
+      if (args && MODES[args as Mode]) {
+        mode.current = args as Mode;
+        const m = MODES[mode.current];
+        console.log(chalk.green(`  Mode: ${m.label} — ${m.description}`));
+        return { handled: true };
+      }
+      if (args) {
+        console.log(chalk.yellow(`  Unknown mode: ${args}`));
+      }
       console.log(chalk.cyan('\n  Modes:'));
       for (const m of listModes()) {
         const marker = m.name === mode.current ? chalk.green(' ◀') : '';
         console.log(chalk.white(`  ${m.name.padEnd(12)}`) + chalk.dim(m.description) + marker);
       }
+      console.log(theme.dim('\n  Switch with: /mode <name>'));
       console.log();
       return { handled: true };
 
@@ -415,6 +523,18 @@ function handleSlashCommand(
         console.log(chalk.dim('  Tools will show what they would execute without actually running.'));
       }
       return { handled: true };
+
+    case '/thinking': {
+      config.showThinking = !config.showThinking;
+      saveConfig(config);
+      const thinkingStatus = config.showThinking ? chalk.yellow('ON') : chalk.green('OFF');
+      console.log(chalk.green(`  Show thinking: ${thinkingStatus}`));
+      if (config.showThinking) {
+        console.log(chalk.dim('  Model reasoning/chain-of-thought will be displayed when available.'));
+        console.log(chalk.dim('  Works with DeepSeek, OpenRouter reasoning models, and others.'));
+      }
+      return { handled: true };
+    }
 
     case '/cd':
       if (args) {
@@ -617,6 +737,231 @@ function handleSlashCommand(
       printMemoryStatus();
       return { handled: true };
 
+    // ── Language-Specific Reviews ───────────────────
+    case '/ts-review':
+      return { handled: false, injectPrompt: buildTSReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/py-review':
+      return { handled: false, injectPrompt: buildPyReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/go-review':
+      return { handled: false, injectPrompt: buildGoReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/rust-review':
+      return { handled: false, injectPrompt: buildRustReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/java-review':
+      return { handled: false, injectPrompt: buildJavaReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/cpp-review':
+      return { handled: false, injectPrompt: buildCppReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/kotlin-review':
+      return { handled: false, injectPrompt: buildKotlinReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/php-review':
+      return { handled: false, injectPrompt: buildPhpReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/db-review':
+      return { handled: false, injectPrompt: buildDbReviewPrompt(process.cwd(), args || undefined) };
+
+    case '/auto-review':
+      return { handled: false, injectPrompt: buildAutoReviewPrompt(process.cwd(), args || undefined) };
+
+    // ── Language-Specific Build Fixes ────────────────
+    case '/ts-build-fix':
+      return { handled: false, injectPrompt: buildTSBuildFixPrompt(process.cwd(), args || undefined) };
+
+    case '/go-build-fix':
+      return { handled: false, injectPrompt: buildGoBuildFixPrompt(process.cwd(), args || undefined) };
+
+    case '/rust-build-fix':
+      return { handled: false, injectPrompt: buildRustBuildFixPrompt(process.cwd(), args || undefined) };
+
+    case '/java-build-fix':
+      return { handled: false, injectPrompt: buildJavaBuildFixPrompt(process.cwd(), args || undefined) };
+
+    case '/cpp-build-fix':
+      return { handled: false, injectPrompt: buildCppBuildFixPrompt(process.cwd(), args || undefined) };
+
+    case '/pytorch-fix':
+      return { handled: false, injectPrompt: buildPyTorchBuildFixPrompt(process.cwd(), args || undefined) };
+
+    // ── Autonomous Loops & DAG ───────────────────────
+    case '/pr-loop':
+      return { handled: false, injectPrompt: buildPRLoopPrompt(process.cwd()) };
+
+    case '/multi-plan': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /multi-plan <task description>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildMultiPlanPrompt(args) };
+    }
+
+    case '/multi-execute': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /multi-execute <plan>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildMultiExecutePrompt(args) };
+    }
+
+    case '/multi-backend': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /multi-backend <service1,service2,...>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildMultiBackendPrompt(args.split(',').map(s => s.trim())) };
+    }
+
+    case '/multi-frontend': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /multi-frontend <component1,component2,...>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildMultiFrontendPrompt(args.split(',').map(s => s.trim())) };
+    }
+
+    // ── Search-First Research ────────────────────────
+    case '/search-first': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /search-first <task description>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildSearchFirstPrompt(args, process.cwd()) };
+    }
+
+    case '/docs-lookup': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /docs-lookup <query>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildDocsLookupPrompt(args, process.cwd()) };
+    }
+
+    // ── Codemaps ─────────────────────────────────────
+    case '/codemaps':
+    case '/codemap': {
+      printCodemapStatus(process.cwd());
+      return { handled: true };
+    }
+
+    case '/update-codemaps': {
+      const map = generateCodeMap(process.cwd());
+      saveCodeMap(process.cwd(), map);
+      printCodeMap(map);
+      console.log(chalk.green('  Codemap updated and saved.'));
+      return { handled: true };
+    }
+
+    // ── Skill Creation from Git ──────────────────────
+    case '/skill-create': {
+      return { handled: false, injectPrompt: buildSkillCreatePrompt(process.cwd(), args || undefined) };
+    }
+
+    case '/git-patterns': {
+      const patterns = analyzeGitPatterns(process.cwd());
+      if (patterns.length === 0) {
+        console.log(chalk.dim('  No git patterns found. Need a git repo with commit history.'));
+      } else {
+        printGitPatterns(patterns);
+      }
+      return { handled: true };
+    }
+
+    case '/git-workflow': {
+      printGitWorkflowSummary(process.cwd());
+      return { handled: true };
+    }
+
+    // ── Content Engine ───────────────────────────────
+    case '/article': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /article <topic> [--audience <who>] [--tone <tone>]'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildArticlePrompt(args) };
+    }
+
+    case '/slides': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /slides <topic> [count]'));
+        return { handled: true };
+      }
+      const slideParts = args.match(/^(.+?)\s+(\d+)$/);
+      const slideTopic = slideParts ? slideParts[1] : args;
+      const slideCount = slideParts ? parseInt(slideParts[2], 10) : 10;
+      return { handled: false, injectPrompt: buildSlidePrompt(slideTopic, slideCount) };
+    }
+
+    case '/repurpose': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /repurpose <content description>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildContentRepurposePrompt(args, ['twitter', 'linkedin', 'blog']) };
+    }
+
+    case '/market-research': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /market-research <market/topic>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildMarketResearchPrompt(args) };
+    }
+
+    case '/investor-deck': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /investor-deck <company description>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildInvestorDeckPrompt(args) };
+    }
+
+    case '/investor-outreach': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /investor-outreach <company description>'));
+        return { handled: true };
+      }
+      const outreachParts = args.split('--investor').map(s => s.trim());
+      const companyDesc = outreachParts[0] || args;
+      const investorName = outreachParts[1] || 'target investor';
+      return { handled: false, injectPrompt: buildInvestorOutreachPrompt(investorName, companyDesc) };
+    }
+
+    case '/code-quality':
+      return { handled: false, injectPrompt: buildCodeQualityPrompt(process.cwd()) };
+
+    case '/skill-stocktake':
+      return { handled: false, injectPrompt: buildSkillStocktakePrompt() };
+
+    case '/chief-of-staff': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /chief-of-staff <context/priorities>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildChiefOfStaffPrompt(args) };
+    }
+
+    // ── Hook Controls ────────────────────────────────
+    case '/hook-profile':
+      printHookControlStatus();
+      return { handled: true };
+
+    // ── PM2 Service Management ───────────────────────
+    case '/pm2': {
+      if (!isPM2Available()) {
+        console.log(chalk.yellow('  PM2 not installed. Run: npm install -g pm2'));
+        return { handled: true };
+      }
+      if (!args) {
+        console.log(listPM2Services(process.cwd()));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildPM2Prompt(args) };
+    }
+
     // ── Detection ────────────────────────────────────
     case '/detect': {
       const pm = detectPackageManager(process.cwd());
@@ -648,6 +993,35 @@ function handleSlashCommand(
       return { handled: true };
     }
 
+    // ── ECC (everything-claude-code) ──────────────────
+    case '/ecc':
+      printEccStatus();
+      return { handled: true };
+
+    case '/ecc-install': {
+      if (!eccResourcesAvailable()) {
+        console.log(chalk.yellow('  ECC resources not bundled with this Crowcoder install.'));
+        return { handled: true };
+      }
+      const report = installEcc({ verbose: true });
+      if (report.errors.length > 5) {
+        console.log(chalk.dim(`  +${report.errors.length - 5} more errors suppressed.`));
+      }
+      return { handled: true };
+    }
+
+    case '/ecc-skills':
+      printEccSkills();
+      return { handled: true };
+
+    case '/ecc-agents':
+      printEccAgents();
+      return { handled: true };
+
+    case '/ecc-commands':
+      printEccCommandList();
+      return { handled: true };
+
     // ── Config (trigger wizard) ───────────────────────
     case '/config':
       return { handled: true, shouldExit: false };
@@ -656,9 +1030,27 @@ function handleSlashCommand(
     case '/quit':
       return { handled: true, shouldExit: true };
 
-    default:
+    // ── Default: ECC dynamic dispatch + unknown command ──
+    default: {
+      if (cmd.startsWith('/ecc-')) {
+        const eccName = cmd.slice('/ecc-'.length);
+        const prompt = getEccCommandPrompt(eccName);
+        if (prompt) {
+          const merged = args.trim()
+            ? `${prompt}\n\n## User Input\n\n${args}`
+            : prompt;
+          return { handled: false, injectPrompt: merged };
+        }
+        const available = listEccCommands();
+        console.log(chalk.yellow(`  Unknown ECC command: ${cmd}`));
+        if (available.length) {
+          console.log(chalk.dim(`  Available: ${available.map(c => `/ecc-${c}`).join(', ')}`));
+        }
+        return { handled: true };
+      }
       console.log(chalk.dim(`  Unknown command: ${cmd}. Type /help`));
       return { handled: true };
+    }
   }
 }
 
@@ -668,6 +1060,17 @@ async function main(): Promise<void> {
 
   // Initialize subsystems
   initHooksDir();
+
+  // First-run ECC install — silent if already installed, silent if resources missing
+  if (eccResourcesAvailable() && !loadEccState()) {
+    try {
+      const report = installEcc({ verbose: false });
+      console.log(chalk.dim(`  ECC ready: ${report.skills} skills, ${report.agents} agents, ${report.commands + report.prompts} commands, ${report.rules} rule sets.`));
+    } catch (err) {
+      // Never block startup on ECC failures
+      console.log(chalk.dim(`  ECC install skipped: ${err instanceof Error ? err.message : err}`));
+    }
+  }
 
   // Load or create config
   let config: CrowcoderConfig;
@@ -725,7 +1128,7 @@ async function main(): Promise<void> {
     let input: string;
     try {
       const modeTag = mode.current !== 'dev' ? theme.dim(`[${mode.current}] `) : '';
-      input = await rl.question(modeTag + theme.prompt('you → '));
+      input = await rl.question(modeTag + theme.prompt(`${sym.prompt} `));
     } catch {
       break;
     }
