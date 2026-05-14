@@ -61,7 +61,7 @@ function validateConfig(config: CrowcoderConfig): void {
   }
 
   // Warn on unexpected fields
-  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'dryRun', 'theme']);
+  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'dryRun', 'theme', 'showThinking']);
   for (const key in config) {
     if (!expectedFields.has(key)) {
       console.warn(`Warning: Unexpected config field: ${key}`);

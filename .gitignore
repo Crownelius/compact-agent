@@ -7,10 +7,6 @@ dist/
 # Config (contains API keys)
 # ~/.crowcoder/ is the runtime config dir, not in repo
 
-# Push helpers
-push-to-github.bat
-crowcoder.bundle
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -24,3 +20,7 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Local backups / install helpers — not part of source
+*.bundle
+push-to-github.bat

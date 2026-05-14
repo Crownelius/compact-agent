@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import { getConfigDir } from './config.js';
+import { shouldRunHook } from './hook-controls.js';
 
 const HOOKS_DIR = join(getConfigDir(), 'hooks');
 const HOOKS_CONFIG = join(getConfigDir(), 'hooks.json');
@@ -99,6 +100,12 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
   );
 
   for (const hook of matching) {
+    // Apply profile-based filtering before executing
+    const hookId = `${ctx.event}:${hook.match}`;
+    if (!shouldRunHook(hookId, ctx.event)) {
+      continue;
+    }
+
     const env = {
       ...process.env,
       CROWCODER_EVENT: ctx.event,

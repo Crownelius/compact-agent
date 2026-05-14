@@ -13,10 +13,17 @@ function configHash(config: CrowcoderConfig): string {
 export function getClient(config: CrowcoderConfig): OpenAI {
   const hash = configHash(config);
   if (!client || hash !== lastConfigHash) {
+    const isAnthropic = config.baseURL.includes('anthropic.com');
+
     client = new OpenAI({
       apiKey: config.apiKey || 'not-needed',
       baseURL: config.baseURL,
-      // No tracking headers — all telemetry is local-only
+      ...(isAnthropic ? {
+        defaultHeaders: {
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+      } : {}),
     });
     lastConfigHash = hash;
   }
@@ -44,7 +51,7 @@ export async function* streamChat(
   messages: Message[],
   tools: Tool[],
 ): AsyncGenerator<{
-  type: 'text' | 'tool_call' | 'done';
+  type: 'text' | 'thinking' | 'tool_call' | 'done';
   content?: string;
   toolCalls?: OpenAI.Chat.ChatCompletionMessageToolCall[];
   usage?: { prompt: number; completion: number; total: number };
@@ -74,6 +81,14 @@ export async function* streamChat(
   for await (const chunk of stream) {
     const delta = chunk.choices?.[0]?.delta;
     if (!delta) continue;
+
+    // Reasoning/thinking content (DeepSeek, OpenRouter reasoning models, etc.)
+    // The field is `reasoning_content` on some providers, or nested in delta
+    const deltaAny = delta as Record<string, unknown>;
+    const reasoning = deltaAny.reasoning_content || deltaAny.thinking || deltaAny.reasoning;
+    if (reasoning && typeof reasoning === 'string') {
+      yield { type: 'thinking', content: reasoning };
+    }
 
     // Text content
     if (delta.content) {

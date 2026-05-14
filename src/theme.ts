@@ -1,150 +1,123 @@
 /**
- * TUI theme — crow branding, colors, and styled output.
- * Provides consistent visual identity across the CLI.
+ * TUI theme — Crowcoder terminal styling.
+ *
+ * Inspired by Gemini CLI and Claude Code design patterns:
+ *   - Semantic color tokens (not raw hex everywhere)
+ *   - Unicode symbols for status indicators
+ *   - Clean typography with proper contrast
+ *   - CMYK base palette
  */
 import chalk from 'chalk';
 
-// ── Color palette ────────────────────────────────────────
-const c = {
-  body:    chalk.hex('#C8C8C8'),     // Light gray — feather body (%@)
-  detail:  chalk.hex('#888888'),     // Mid gray — feather detail (#)
-  edge:    chalk.hex('#555555'),     // Dark gray — edges (*+=)
-  shadow:  chalk.hex('#333333'),     // Deep shadow (=+-)
-  eye:     chalk.hex('#F59E0B'),     // Amber — crow eye
-  accent:  chalk.hex('#8B5CF6'),     // Purple — brand accent
+// ── CMYK Base Palette ───────────────────────────────────
+const palette = {
+  // Primary CMYK
+  cyan:        '#00BCD4',
+  cyanLight:   '#4DD0E1',
+  cyanDim:     '#00838F',
+  magenta:     '#E91E63',
+  magentaDim:  '#AD1457',
+  yellow:      '#FFEB3B',
+  yellowDim:   '#F9A825',
+  key:         '#212121',
+
+  // Neutrals (high contrast for dark terminals)
+  white:       '#ECEFF1',
+  light:       '#CFD8DC',
+  mid:         '#B0BEC5',
+  gray:        '#90A4AE',
+  darkGray:    '#607D8B',
 };
 
-// ── Crow ASCII Art (colorized) ───────────────────────────
-// Full-size crow mascot from the Crowcoder reference image
-export function getCrowArt(): string {
-  const lines = [
-    '                                                                                                  *+',
-    '                                                                                             *+++***',
-    '                                                                                        %#**==*###  ',
-    '                                                                +                  ##*++=*%%%%##    ',
-    '                                                              #*+            %%##+=++#%@@@@%%#      ',
-    '                                                             %#++       %%###+++++%@@@@@@@%%        ',
-    '                                                            ###+*   #%##*##%%%%@@@%%@@@@%@    +++** ',
-    '                                                          ####*=#%**###%@@@@@@@@@@@%%##+=++====+*   ',
-    '                                                        #*****#++=#%@@@@@@@@@@%%##*=-+**#*+*###     ',
-    '                                                     #*+=++*+:+####%%%%@@%%+=+%%@@@@@@@#%%%*#       ',
-    '                                                 #**+-=**==**+==+++#%@@@@@@@@@@@@@@@@%%%##          ',
-    '                                             #*#**+=***=+++=:+*%@@@@@@%%%##%@@@@@@@@%%#             ',
-    '                                         ####**#*++++*+++#@@@@@@@%***=-+#%%@@@@@%##*++++***         ',
-    '                                  *## ###*+==#+++++*%@@@@@@%#**+++*####*+++*##%##%%%%%##*#          ',
-    '                                 +*#*##*===#++#%@@%#####%%%%@@@@@@@@@@@@@@@@@@@@@%%%%%##            ',
-    '                                *+#*==--+#+--::-+*###%%%%%%%@@%@@@@@@@@@@@@@@%%%%%%#%               ',
-    '                              *+*-:--=**%++*##%%##%%%%%%%%%%%%%%%%%@@%%@@@@@%%%#%                   ',
-    '               ##***#******++++=*####*####%%%@@%%%@@@%@@@@@@%%%#**++++====+****#%###                ',
-    '          %####***++=++*##%#=#%%*#*-:--+##%%%%%@@%=%@@@@@@%%@@@@@@@@@@@@@@@@@@%%%                   ',
-    '       *###%+:-+*#%%%%%%*%**@%+#+::::::=*##*=+%@@@%=%@@@%@@@@@@@@@@@@@@@@@@%#%                      ',
-    '    #%#%%%%#-=*###%%%%%@@%*%%#+::::-*%@%%%%@@@*+%@@%+%%%%%%@%@@@%%%%%%%%%%                          ',
-    ' #**=+**@@@@@@@@@%*+*%%#@*@%%+-:::*@@@@@@@@@@@%#*%%%+###%@%%%##%%%%####*                            ',
-    '#%#%%%%@@@@%@@@@@%%#%%+-%@@@%#---#@%#%%%+=#%#%##-*%#=#%@%%%%%########                               ',
-    '         @@%@@@@@@%%@#*%+*%%===+%@#%%%%#:#%#*##%*#%++#*##**#*##%#*                                  ',
-    '              @@@@@@@###+-+%+**#@@%%%%@@#+%%%%%#@%=#%%%%%##%*                                       ',
-    '                 %@%*@@%*#*###%@@#%@@@@@@@*+#%#++#%@%%%%%                                           ',
-    '                   %%*%@%%%###%@@%#%%@@@@@@@@@@%*###                                                ',
-    '                      %%%%#%%%%@@@%%@@%@%@@%%%%#%#%#%%%                                             ',
-    '                       #%%%%%%@@@@@@%%*%%##%%%#*+++****%%%####                                      ',
-    '                         @@%@@@@@@@%%%%%#**%@%#*#*****###%#%                                        ',
-    '                            %%%@@@@@@@@@%#%###%%#%%%%#####***##%#%%%#%                              ',
-    '                               @%%@%%%=+%@%@@@@@@%***%%%##%#%%%%%@%%%%#                             ',
-    '                                   %%*+#@##@@@@@@@@@%#+*%%%%%#****#####*##*                         ',
-    '                                   %%*%@@%#%@@@%@@%%@@@@%#=#%%%%%%%##++++**####**++++++++           ',
-    '                                    ####%%%%% @@%%%%#%@@%#%@%#=+*%%%%%%%%########***+*++*           ',
-    '                                      %%%%%%    %%%%%#%@@@@%%@@@%%%##%%%%#%%#%%%%                   ',
-    '                                                  %%%%%%%%%@@%%%%%%%%%%###%%%                       ',
-    '                                                    %#  %%%%%%%*#  ####%%##**                       ',
-    '                                                            %%###*                                  ',
-  ];
+// ── Symbols (matching Gemini/Claude patterns) ───────────
+export const sym = {
+  crow:      '◆',           // Brand mark (filled diamond)
+  prompt:    '❯',           // User input prompt
+  assistant: '✦',           // Assistant message prefix
+  success:   '✓',           // Tool success
+  error:     '✗',           // Tool error
+  pending:   '○',           // Tool pending
+  running:   '●',           // Tool running
+  thinking:  '∴',           // Thinking indicator
+  warn:      '⚠',           // Warning
+  arrow:     '→',           // Flow indicator
+  bullet:    '▸',           // List item
+  divider:   '─',           // Horizontal rule char
+};
 
-  return lines.map(line => {
-    // Colorize character by character
-    return line.split('').map(ch => {
-      if (ch === '@') return c.body(ch);
-      if (ch === '%') return c.body(ch);
-      if (ch === '#') return c.detail(ch);
-      if (ch === '*') return c.edge(ch);
-      if (ch === '+' || ch === '=') return c.shadow(ch);
-      if (ch === '-' || ch === ':') return c.shadow(ch);
-      return ch;
-    }).join('');
-  }).join('\n');
-}
-
-// ── Compact crow for banner use ──────────────────────────
-export function getSmallCrow(): string {
-  // Simplified 8-line crow silhouette
-  return [
-    c.detail('            ') + c.edge('*+'),
-    c.detail('         ') + c.edge('*+++') + c.detail('***'),
-    c.detail('     ') + c.body('%#') + c.detail('**') + c.edge('==') + c.detail('*###'),
-    c.detail('   ##') + c.edge('*++=') + c.detail('*') + c.body('%%%%') + c.detail('##'),
-    c.detail(' #') + c.edge('*+') + c.detail('  ') + c.body('%%') + c.detail('##') + c.edge('+=++') + c.detail('#') + c.body('%@@@@') + c.detail('%%#'),
-    c.detail(' %#') + c.edge('++') + c.detail('  ') + c.body('%%') + c.detail('###') + c.edge('+++++') + c.body('%@@@@@@@') + c.detail('%%'),
-    c.detail('  ###+') + c.edge('*') + c.detail(' #%##') + c.edge('*##') + c.body('%%%%@@@%%@@@@%@'),
-    c.detail('    ####') + c.edge('*=') + c.detail('#%') + c.edge('**') + c.detail('###') + c.body('%@@@@@@@@@@@') + c.detail('%%##'),
-  ].join('\n');
-}
-
-// ── Theme Colors ─────────────────────────────────────────
+// ── Theme (semantic color tokens) ───────────────────────
 export const theme = {
-  // Primary branding
-  brand:       chalk.hex('#8B5CF6'),        // Purple — main brand
-  brandBold:   chalk.hex('#8B5CF6').bold,
-  brandDim:    chalk.hex('#6D28D9'),
+  // ── Brand ──
+  brand:       chalk.hex(palette.cyan),
+  brandBold:   chalk.hex(palette.cyan).bold,
+  brandDim:    chalk.hex(palette.cyanDim),
 
-  // Semantic colors
-  success:     chalk.hex('#10B981'),         // Green
-  warning:     chalk.hex('#F59E0B'),         // Amber
-  error:       chalk.hex('#EF4444'),         // Red
-  info:        chalk.hex('#3B82F6'),         // Blue
+  // ── Semantic Status ──
+  success:     chalk.hex('#4DD0E1'),
+  warning:     chalk.hex(palette.yellow),
+  error:       chalk.hex(palette.magenta),
+  info:        chalk.hex(palette.cyanLight),
 
-  // UI chrome
-  header:      chalk.hex('#8B5CF6').bold,
-  subheader:   chalk.hex('#A78BFA'),
-  dim:         chalk.hex('#6B7280'),
-  muted:       chalk.hex('#9CA3AF'),
+  // ── Text Hierarchy ──
+  primary:     chalk.hex(palette.white),
+  secondary:   chalk.hex(palette.mid),
+  dim:         chalk.hex(palette.gray),
+  muted:       chalk.hex(palette.darkGray),
   bright:      chalk.white.bold,
+  italic:      chalk.hex(palette.mid).italic,
 
-  // Special elements
-  prompt:      chalk.hex('#10B981').bold,     // Green prompt
-  toolName:    chalk.hex('#3B82F6'),          // Blue for tool names
-  toolStatus:  chalk.hex('#10B981'),          // Green checkmarks
-  toolError:   chalk.hex('#EF4444'),          // Red for errors
-  cost:        chalk.hex('#6B7280'),          // Dim for cost info
-  command:     chalk.hex('#F59E0B'),          // Amber for slash commands
+  // ── UI Elements ──
+  header:      chalk.hex(palette.cyan).bold,
+  subheader:   chalk.hex(palette.cyanLight),
+  command:     chalk.hex(palette.yellow),
+  cost:        chalk.hex(palette.gray),
+  link:        chalk.hex(palette.cyanLight).underline,
 
-  // Mode badges
+  // ── Prompt & Messages ──
+  prompt:      chalk.hex(palette.cyan).bold,
+  assistant:   chalk.hex(palette.cyanLight).bold,
+  user:        chalk.hex(palette.white),
+
+  // ── Tool Calls ──
+  toolName:    chalk.hex(palette.cyan).bold,
+  toolArgs:    chalk.hex(palette.mid),
+  toolStatus:  chalk.hex('#4DD0E1'),
+  toolError:   chalk.hex(palette.magenta),
+  toolTime:    chalk.hex(palette.gray),
+
+  // ── Thinking ──
+  thinkBorder: chalk.hex(palette.darkGray),
+  thinkText:   chalk.hex(palette.gray).italic,
+  thinkLabel:  chalk.hex(palette.darkGray).italic,
+
+  // ── Mode Badges ──
   modeBadge: (mode: string): string => {
     const colors: Record<string, typeof chalk> = {
-      dev:       chalk.bgHex('#10B981').black,
-      review:    chalk.bgHex('#3B82F6').white,
-      tdd:       chalk.bgHex('#EF4444').white,
-      research:  chalk.bgHex('#8B5CF6').white,
-      plan:      chalk.bgHex('#F59E0B').black,
-      debug:     chalk.bgHex('#EF4444').white,
-      architect: chalk.bgHex('#6366F1').white,
+      dev:       chalk.bgHex(palette.cyan).hex(palette.key),
+      review:    chalk.bgHex(palette.cyanDim).hex(palette.white),
+      tdd:       chalk.bgHex(palette.magenta).hex(palette.white),
+      research:  chalk.bgHex(palette.yellow).hex(palette.key),
+      plan:      chalk.bgHex(palette.yellowDim).hex(palette.key),
+      debug:     chalk.bgHex(palette.magentaDim).hex(palette.white),
+      architect: chalk.bgHex(palette.cyanLight).hex(palette.key),
     };
-    const colorFn = colors[mode] || chalk.bgGray.white;
-    return colorFn(` ${mode.toUpperCase()} `);
+    return (colors[mode] || chalk.bgGray.white)(` ${mode.toUpperCase()} `);
   },
 
-  // Security level badges
+  // ── Security Badges ──
   secBadge: (level: string): string => {
     const colors: Record<string, typeof chalk> = {
-      critical: chalk.bgRed.white.bold,
-      high:     chalk.red.bold,
-      medium:   chalk.hex('#F59E0B'),
-      low:      chalk.hex('#6B7280'),
-      safe:     chalk.hex('#10B981'),
+      critical: chalk.bgHex(palette.magenta).white.bold,
+      high:     chalk.hex(palette.magenta).bold,
+      medium:   chalk.hex(palette.yellow),
+      low:      chalk.hex(palette.gray),
+      safe:     chalk.hex(palette.cyan),
     };
     return (colors[level] || chalk.white)(level.toUpperCase());
   },
 };
 
-// ── Banner ───────────────────────────────────────────────
+// ── Banner (single unified startup display) ────────────
 export function printBanner(
   provider: string,
   model: string,
@@ -153,99 +126,130 @@ export function printBanner(
   sessionId: string,
   toolNames: string[],
 ): void {
+  const b = theme.brandBold;
+  const d = theme.dim;
+  const s = theme.secondary;
+  const w = theme.bright;
+
   console.log('');
-  console.log(theme.brandBold('    ╔══════════════════════════════════════════════╗'));
-  console.log(theme.brandBold('    ║') + theme.bright('        C R O W C O D E R                ') + theme.brandBold('║'));
-  console.log(theme.brandBold('    ║') + theme.dim('     AI Coding Assistant for the Terminal  ') + theme.brandBold('║'));
-  console.log(theme.brandBold('    ╚══════════════════════════════════════════════╝'));
+  console.log(b(`  ${sym.crow}  C R O W C O D E R`));
+  console.log(d('     AI Coding Assistant'));
   console.log('');
-  console.log(theme.dim('  ┌─────────────────────────────────────────────┐'));
-  console.log(theme.dim('  │') + theme.muted('  Provider  ') + theme.bright(pad(provider, 12)) + theme.muted('  Model  ') + theme.bright(truncate(model, 16)) + theme.dim('  │'));
-  console.log(theme.dim('  │') + theme.muted('  Mode      ') + theme.modeBadge(mode) + ' '.repeat(Math.max(1, 12 - mode.length - 2)) + theme.muted('  Perms  ') + theme.bright(pad(permissionMode, 16)) + theme.dim('  │'));
-  console.log(theme.dim('  │') + theme.muted('  Session   ') + theme.dim(pad(sessionId.slice(0, 12), 12)) + theme.muted('  CWD    ') + theme.dim(truncate(process.cwd(), 16)) + theme.dim('  │'));
-  console.log(theme.dim('  ├─────────────────────────────────────────────┤'));
-  console.log(theme.dim('  │') + theme.muted('  Tools: ') + theme.dim(pad(toolNames.join(', '), 36)) + theme.dim('  │'));
-  console.log(theme.dim('  └─────────────────────────────────────────────┘'));
+  console.log(d('  ' + sym.divider.repeat(40)));
+  console.log(s('  Provider  ') + w(provider) + s('  ') + d('│') + s('  Model  ') + w(model));
+  console.log(s('  Mode      ') + theme.modeBadge(mode) + s('     ') + d('│') + s('  Perms  ') + w(permissionMode));
+  console.log(s('  Session   ') + d(sessionId.slice(0, 12)));
+  console.log(d('  ' + sym.divider.repeat(40)));
+  console.log(s('  Tools: ') + d(toolNames.join(', ')));
   console.log('');
-  console.log(theme.dim('  Type ') + theme.command('/help') + theme.dim(' for commands, ') + theme.dim('Ctrl+C to exit'));
+  console.log(d('  Type ') + theme.command('/help') + d(' for commands  ') + d('•') + d('  Ctrl+C to exit'));
   console.log('');
 }
 
-// ── Crow Splash Screen ───────────────────────────────────
+// ── Splash Screen (for full mode — feather above the banner) ──
 export function printSplash(): void {
-  console.log(getCrowArt());
+  const c  = chalk.hex(palette.cyan);
+  const cl = chalk.hex(palette.cyanLight);
+  const cd = chalk.hex(palette.cyanDim);
+  const d  = chalk.hex(palette.darkGray);
+  const m  = chalk.hex(palette.mid);
+
   console.log('');
-  console.log(theme.brandBold('                                    C R O W C O D E R'));
-  console.log(theme.dim('                              AI Coding Assistant for the Terminal'));
-  console.log('');
+  console.log('                          ' + cl('**'));
+  console.log('                        ' + cl('****'));
+  console.log('                    ' + c('*********'));
+  console.log('               ' + c('**************'));
+  console.log('          ' + c('*******************'));
+  console.log('       ' + cd('**********************'));
+  console.log('      ' + cd('*********************'));
+  console.log('     ' + cd('********************'));
+  console.log('     ' + cd('*******************'));
+  console.log('    ' + d('***** **************'));
+  console.log('     ' + d('*******************'));
+  console.log('  ' + d('** ********') + ' ' + d('**********'));
+  console.log('   ' + d('*********') + ' ' + d('********'));
+  console.log('    ' + d('*******') + ' ' + d('******'));
+  console.log('     ' + d('*** ** ****'));
+  console.log('     ' + d('** **'));
+  console.log('    ' + d('** **'));
+  console.log('   ' + d('******'));
+  console.log('   ' + d('****'));
 }
 
-// ── Styled helpers ───────────────────────────────────────
-
-/** Print a section header */
+// ── Section Header ──────────────────────────────────────
 export function printSection(title: string): void {
   console.log('');
-  console.log(theme.header(`  ── ${title} ──`));
+  console.log(theme.header(`  ${sym.divider}${sym.divider} ${title} ${sym.divider.repeat(Math.max(2, 36 - title.length))}`));
 }
 
-/** Print a key-value pair */
+// ── Key-Value Pair ──────────────────────────────────────
 export function printKV(key: string, value: string, indent = 2): void {
   const padding = ' '.repeat(indent);
-  console.log(padding + theme.muted(key.padEnd(14)) + theme.bright(value));
+  console.log(padding + theme.secondary(key.padEnd(14)) + theme.bright(value));
 }
 
-/** Print a tool execution line */
+// ── Tool Execution Display ──────────────────────────────
 export function printToolRun(name: string, args: string): void {
-  console.log(theme.toolName(`  ▶ ${name}`) + theme.dim(` ${args}`));
+  console.log(
+    theme.toolName(`  ${sym.running} ${name}`) +
+    theme.toolArgs(` ${args}`),
+  );
 }
 
-/** Print a tool result line */
 export function printToolResult(success: boolean, elapsed: number, output: string): void {
-  const icon = success ? theme.toolStatus('✓') : theme.toolError('✗');
-  const time = theme.dim(`(${elapsed}ms)`);
+  const icon = success ? theme.toolStatus(sym.success) : theme.toolError(sym.error);
+  const time = theme.toolTime(`(${elapsed}ms)`);
   const preview = output.length > 200
     ? theme.dim(output.slice(0, 150) + '...')
     : theme.dim(output);
   console.log(`  ${icon} ${time} ${preview}`);
 }
 
-/** Print a cost/token line */
+// ── Thinking Display ────────────────────────────────────
+export function printThinkingOpen(): void {
+  console.log('');
+  console.log(theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} Thinking...`));
+}
+
+export function printThinkingText(text: string): void {
+  // Prefix each line with the left border
+  process.stdout.write(theme.thinkBorder('  │ ') + theme.thinkText(text));
+}
+
+export function printThinkingClose(): void {
+  console.log('');
+  console.log(theme.thinkBorder('  │'));
+}
+
+// ── Cost Display ────────────────────────────────────────
 export function printCost(prompt: number, completion: number, cost: number, warning?: string): void {
+  const p = prompt > 999 ? `${(prompt / 1000).toFixed(1)}K` : String(prompt);
+  const c = completion > 999 ? `${(completion / 1000).toFixed(1)}K` : String(completion);
   process.stdout.write(
-    theme.cost(`\n[${prompt}→${completion} tokens | $${cost.toFixed(4)}]`),
+    theme.cost(`\n  ${p}${sym.arrow}${c} tokens  $${cost.toFixed(4)}`),
   );
   if (warning) {
-    console.log(theme.warning(`\n  ⚠ ${warning}`));
+    console.log(theme.warning(`\n  ${sym.warn} ${warning}`));
   }
 }
 
-/** Print a security warning */
+// ── Security Display ────────────────────────────────────
 export function printSecurityBadge(level: string, threats: string[], blocked: boolean): void {
-  console.log(`  ⚠ Security: ${theme.secBadge(level)}`);
+  console.log(`  ${sym.warn} Security: ${theme.secBadge(level)}`);
   for (const t of threats) {
-    console.log(theme.warning(`    ${t}`));
+    console.log(theme.warning(`    ${sym.bullet} ${t}`));
   }
   if (blocked) {
-    console.log(chalk.bgRed.white('    BLOCKED — this operation was prevented.'));
+    console.log(chalk.bgHex(palette.magenta).white(`    BLOCKED ${sym.divider} this operation was prevented`));
   }
 }
 
-/** Print a divider */
+// ── Divider ─────────────────────────────────────────────
 export function printDivider(): void {
-  console.log(theme.dim('  ─────────────────────────────────────'));
+  console.log(theme.muted('  ' + sym.divider.repeat(38)));
 }
 
-/** Progress spinner text */
+// ── Spinner ─────────────────────────────────────────────
 export function spinner(text: string): string {
-  return theme.dim(`  ⟳ ${text}`);
-}
-
-// ── Utilities ────────────────────────────────────────────
-function truncate(str: string, max: number): string {
-  if (str.length <= max) return str.padEnd(max);
-  return str.slice(0, max - 1) + '…';
-}
-
-function pad(str: string, len: number): string {
-  return str.slice(0, len).padEnd(len);
+  return theme.dim(`  ${sym.running} ${text}`);
 }

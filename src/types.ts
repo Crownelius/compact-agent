@@ -22,6 +22,7 @@ export interface CrowcoderConfig {
   permissionMode: 'ask' | 'auto' | 'yolo';  // ask=prompt, auto=safe-only, yolo=all
   dryRun?: boolean;        // when true, show what tools WOULD execute without running them
   theme?: 'full' | 'compact' | 'minimal';   // startup display mode
+  showThinking?: boolean;  // when true, display model reasoning/thinking tokens
 }
 
 // ── Provider presets ──────────────────────────────────────
@@ -33,16 +34,34 @@ export interface ProviderPreset {
 }
 
 export const PROVIDERS: Record<string, ProviderPreset> = {
+  anthropic: {
+    name: 'Anthropic (Claude)',
+    baseURL: 'https://api.anthropic.com/v1/',
+    defaultModel: 'claude-sonnet-4-20250514',
+    requiresKey: true,
+  },
+  openai: {
+    name: 'OpenAI (GPT)',
+    baseURL: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4o',
+    requiresKey: true,
+  },
   openrouter: {
-    name: 'OpenRouter',
+    name: 'OpenRouter (Any Model)',
     baseURL: 'https://openrouter.ai/api/v1',
     defaultModel: 'anthropic/claude-sonnet-4',
     requiresKey: true,
   },
-  glm: {
-    name: 'GLM (ZhipuAI)',
-    baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-    defaultModel: 'glm-4-plus',
+  google: {
+    name: 'Google (Gemini)',
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+    defaultModel: 'gemini-2.5-flash',
+    requiresKey: true,
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    baseURL: 'https://api.deepseek.com/v1',
+    defaultModel: 'deepseek-chat',
     requiresKey: true,
   },
   ollama: {
@@ -57,16 +76,10 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     defaultModel: 'loaded-model',
     requiresKey: false,
   },
-  openai: {
-    name: 'OpenAI',
-    baseURL: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o',
-    requiresKey: true,
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    baseURL: 'https://api.deepseek.com/v1',
-    defaultModel: 'deepseek-chat',
+  glm: {
+    name: 'GLM (ZhipuAI)',
+    baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+    defaultModel: 'glm-4-plus',
     requiresKey: true,
   },
   custom: {

@@ -11,6 +11,7 @@ import { scanToolCall, printSecurityWarning } from './security.js';
 import { trackUsage } from './cost-tracker.js';
 import { shouldCompact, compactMessages, quickCompact, DEFAULT_COMPACTION } from './compaction.js';
 import type { Mode } from './modes.js';
+import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost } from './theme.js';
 
 export interface QueryContext {
   config: CrowcoderConfig;
@@ -69,7 +70,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
 
   // Auto-compact if context is getting large
   if (shouldCompact(ctx.messages, DEFAULT_COMPACTION)) {
-    console.log(chalk.dim('  [auto-compacting conversation context...]'));
+    console.log(theme.dim(`  ${sym.running} auto-compacting conversation context...`));
     ctx.messages = await compactMessages(ctx.messages, ctx.config);
   } else {
     // Quick compact: truncate oversized tool results
@@ -93,15 +94,29 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     let fullText = '';
     let toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[] | undefined;
     let hasOutput = false;
+    let thinkingActive = false;
 
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS)) {
-        if (event.type === 'text' && event.content) {
+        if (event.type === 'thinking' && event.content) {
+          // Show thinking tokens if the toggle is enabled
+          if (ctx.config.showThinking) {
+            if (!thinkingActive) {
+              printThinkingOpen();
+              thinkingActive = true;
+            }
+            printThinkingText(event.content);
+          }
+        } else if (event.type === 'text' && event.content) {
+          if (thinkingActive) {
+            printThinkingClose();
+            thinkingActive = false;
+          }
           if (!hasOutput) {
             process.stdout.write('\n');
             hasOutput = true;
           }
-          process.stdout.write(chalk.white(event.content));
+          process.stdout.write(theme.primary(event.content));
           fullText += event.content;
         } else if (event.type === 'tool_call') {
           toolCalls = event.toolCalls;
@@ -115,18 +130,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
               u.prompt,
               u.completion,
             );
-            process.stdout.write(
-              chalk.dim(`\n[${u.prompt}→${u.completion} tokens | $${cost.toFixed(4)}]`),
-            );
-            if (warning) {
-              console.log(chalk.yellow(`\n  ⚠ ${warning}`));
-            }
+            printCost(u.prompt, u.completion, cost, warning);
           }
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.log(chalk.red(`\nAPI Error: ${msg}`));
+      console.log(theme.error(`\n  ${sym.error} API Error: ${msg}`));
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
       break;
     }
@@ -151,7 +161,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   }
 
   if (turns >= maxTurns) {
-    console.log(chalk.yellow('\n(reached max turns limit)'));
+    console.log(theme.warning(`\n  ${sym.warn} reached max turns limit`));
   }
 }
 
@@ -166,7 +176,7 @@ async function executeToolCalls(
     const tool = getToolByName(toolName);
 
     if (!tool) {
-      console.log(chalk.red(`  Unknown tool: ${toolName}`));
+      console.log(theme.error(`  ${sym.error} Unknown tool: ${toolName}`));
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -179,7 +189,7 @@ async function executeToolCalls(
     try {
       input = JSON.parse(tc.function.arguments);
     } catch {
-      console.log(chalk.red(`  Invalid tool arguments for ${toolName}`));
+      console.log(theme.error(`  ${sym.error} Invalid tool arguments for ${toolName}`));
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -191,7 +201,7 @@ async function executeToolCalls(
     // Validate arguments against tool's JSON schema
     const validation = validateToolArguments(tool, input);
     if (!validation.valid) {
-      console.log(chalk.red(`  Invalid tool arguments for ${toolName}: ${validation.error}`));
+      console.log(theme.error(`  ${sym.error} Invalid tool arguments for ${toolName}: ${validation.error}`));
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -234,7 +244,7 @@ async function executeToolCalls(
     // ── Permission check ──────────────────────────────────
     const allowed = await checkPermission(tool, input, ctx.config, ctx.rl);
     if (!allowed) {
-      console.log(chalk.yellow(`  Denied: ${toolName}`));
+      console.log(theme.warning(`  ${sym.warn} Denied: ${toolName}`));
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -244,13 +254,12 @@ async function executeToolCalls(
     }
 
     // ── Execute ───────────────────────────────────────────
-    console.log(chalk.cyan(`  ▶ ${toolName}`) + chalk.dim(` ${formatArgs(tool, input)}`));
+    printToolRun(toolName, formatArgs(tool, input));
 
     let result;
     if (ctx.config.dryRun) {
-      // Dry-run mode: show what would happen without executing
-      console.log(chalk.yellow(`  [DRY RUN] Would execute: ${toolName}`));
-      console.log(chalk.yellow(`           Arguments: ${JSON.stringify(input).slice(0, 100)}`));
+      console.log(theme.warning(`  ${sym.pending} [DRY RUN] Would execute: ${toolName}`));
+      console.log(theme.warning(`           Arguments: ${JSON.stringify(input).slice(0, 100)}`));
       result = {
         isError: false,
         output: `[DRY RUN] Tool execution skipped`,
@@ -259,14 +268,7 @@ async function executeToolCalls(
       const startTime = Date.now();
       result = await tool.call(input, ctx.cwd);
       const elapsed = Date.now() - startTime;
-
-      const status = result.isError ? chalk.red('✗') : chalk.green('✓');
-      console.log(
-        `  ${status} ${chalk.dim(`(${elapsed}ms)`)}` +
-          (result.output.length > 200
-            ? chalk.dim(` ${result.output.slice(0, 150)}...`)
-            : chalk.dim(` ${result.output}`)),
-      );
+      printToolResult(!result.isError, elapsed, result.output);
     }
 
     // ── Post-tool hook ────────────────────────────────────
