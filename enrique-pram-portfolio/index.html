@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enrique Pram — JavaScript Engineer</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="particles"></canvas>
+<div class="cursor-dot"></div>
+<div class="cursor-outline"></div>
+
+<nav id="navbar" class="navbar">
+  <div class="nav-container">
+    <a href="#hero" class="nav-logo">EP</a>
+    <div class="nav-links">
+      <a href="#about">About</a>
+      <a href="#skills">Skills</a>
+      <a href="#credentials">Credentials</a>
+      <a href="#projects">Projects</a>
+      <a href="#contact">Contact</a>
+    </div>
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">
+      <span class="sun">☀</span>
+      <span class="moon">☾</span>
+    </button>
+  </div>
+</nav>
+
+<section id="hero" class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">Available for work</div>
+    <h1>Hi, I'm <span class="gradient-text">Enrique Pram</span></h1>
+    <p class="hero-subtitle">JavaScript Engineer & Full-Stack Developer</p>
+    <p class="hero-desc">I build performant, scalable web applications with modern JavaScript. From pixel-perfect UIs to robust back-end systems, I turn complex problems into elegant solutions.</p>
+    <div class="hero-actions">
+      <a href="#projects" class="btn btn-primary">View My Work</a>
+      <a href="#contact" class="btn btn-ghost">Let's Talk →</a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><span class="stat-num" data-target="5">0</span><span class="stat-label">Credentials</span></div>
+      <div class="stat"><span class="stat-num" data-target="12">0</span><span class="stat-label">Projects</span></div>
+      <div class="stat"><span class="stat-num" data-target="7">0</span><span class="stat-label">Years Exp.</span></div>
+    </div>
+  </div>
+  <div class="hero-visual">
+    <div class="code-window">
+      <div class="code-dots"><span></span><span></span><span></span></div>
+      <pre class="code-scroll"><code><span class="kw">const</span> enrique = {
+  passion: <span class="str">"building things that matter"</span>,
+  stack: [<span class="str">"React"</span>, <span class="str">"Node.js"</span>, <span class="str">"TypeScript"</span>, <span class="str">"AWS"</span>],
+  mission: <span class="str">"crafting elegant, performant web experiences"</span>,
+  alwaysLearning: <span class="bool">true</span>
+};</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="about" class="section about-section">
+  <div class="section-container">
+    <h2 class="section-title">About <span class="gradient-text">Me</span></h2>
+    <div class="about-grid">
+      <div class="about-text">
+        <p>I'm a passionate JavaScript engineer with over 7 years of experience building modern web applications. I specialize in React, Node.js, and cloud-native architectures, and I thrive on turning ambiguous requirements into clean, maintainable code.</p>
+        <p>My approach combines deep technical expertise with a relentless focus on user experience. I believe great software is invisible — it just works.</p>
+        <p>When I'm not coding, you'll find me contributing to open-source projects, writing technical articles, and mentoring junior developers.</p>
+      </div>
+      <div class="about-sidebar">
+        <div class="info-card">
+          <h4>Location</h4>
+          <p>San Francisco, CA</p>
+        </div>
+        <div class="info-card">
+          <h4>Experience</h4>
+          <p>7+ Years</p>
+        </div>
+        <div class="info-card">
+          <h4>Email</h4>
+          <p>enrique@enriquepram.dev</p>
+        </div>
+        <div class="info-card">
+          <h4>Socials</h4>
+          <div class="social-links">
+            <a href="#" aria-label="GitHub">GitHub</a>
+            <a href="#" aria-label="LinkedIn">LinkedIn</a>
+            <a href="#" aria-label="Twitter">Twitter</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="skills" class="section skills-section">
+  <div class="section-container">
+    <h2 class="section-title">Core <span class="gradient-text">Skills</span></h2>
+    <div class="skills-grid">
+      <div class="skill-category">
+        <h3>Frontend</h3>
+        <div class="skill-bar"><div class="skill-fill" data-width="95%"><span>React / Next.js</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="90%"><span>TypeScript</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="88%"><span>HTML5 / CSS3 / Tailwind</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="82%"><span>Vue.js / Svelte</span></div></div>
+      </div>
+      <div class="skill-category">
+        <h3>Backend & DevOps</h3>
+        <div class="skill-bar"><div class="skill-fill" data-width="90%"><span>Node.js / Express</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="85%"><span>AWS (Lambda, S3, DynamoDB)</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="80%"><span>PostgreSQL / MongoDB</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="78%"><span>Docker / CI-CD</span></div></div>
+      </div>
+      <div class="skill-category">
+        <h3>Tools & Practices</h3>
+        <div class="skill-bar"><div class="skill-fill" data-width="92%"><span>Git / GitHub</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="88%"><span>Jest / Cypress Testing</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="85%"><span>Agile / Scrum</span></div></div>
+        <div class="skill-bar"><div class="skill-fill" data-width="80%"><span>Figma / Design Systems</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="credentials" class="section credentials-section">
+  <div class="section-container">
+    <h2 class="section-title">Professional <span class="gradient-text">Credentials</span></h2>
+    <p class="section-subtitle">5 verified micro-credentials demonstrating continuous learning and industry-recognized expertise.</p>
+    <div class="credentials-grid">
+      <div class="credential-card">
+        <div class="cred-badge">🎓</div>
+        <h3>Meta Front-End Developer</h3>
+        <p class="cred-issuer">Coursera · Meta</p>
+        <p class="cred-desc">Professional certificate covering HTML, CSS, React, and JavaScript with hands-on portfolio projects.</p>
+        <div class="cred-tags"><span>React</span><span>CSS</span><span>UI Design</span></div>
+      </div>
+      <div class="credential-card">
+        <div class="cred-badge">🏆</div>
+        <h3>JavaScript Algorithms & Data Structures</h3>
+        <p class="cred-issuer">freeCodeCamp</p>
+        <p class="cred-desc">300-hour certification covering ES6 syntax, algorithms, DOM manipulation, and 300+ coding challenges.</p>
+        <div class="cred-tags"><span>Algorithms</span><span>ES6</span><span>Data Structures</span></div>
+      </div>
+      <div class="credential-card">
+        <div class="cred-badge">☁️</div>
+        <h3>AWS Certified Developer</h3>
+        <p class="cred-issuer">Amazon Web Services</p>
+        <p class="cred-desc">Associate-level certification validating expertise in developing, deploying, and debugging cloud-native applications on AWS.</p>
+        <div class="cred-tags"><span>Cloud</span><span>Lambda</span><span>DevOps</span></div>
+      </div>
+      <div class="credential-card">
+        <div class="cred-badge">🎨</div>
+        <h3>Google UX Design Professional</h3>
+        <p class="cred-issuer">Google · Coursera</p>
+        <p class="cred-desc">Professional certificate covering user research, wireframing, prototyping, and usability testing for human-centered design.</p>
+        <div class="cred-tags"><span>UX Research</span><span>Prototyping</span><span>Figma</span></div>
+      </div>
+      <div class="credential-card">
+        <div class="cred-badge">🚀</div>
+        <h3>Full-Stack JavaScript Developer</h3>
+        <p class="cred-issuer">Udacity Nanodegree</p>
+        <p class="cred-desc">Comprehensive program covering full-stack JavaScript development with Node.js, Express, React, and database design.</p>
+        <div class="cred-tags"><span>Node.js</span><span>Full-Stack</span><span>React</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="projects" class="section projects-section">
+  <div class="section-container">
+    <h2 class="section-title">Featured <span class="gradient-text">Projects</span></h2>
+    <p class="section-subtitle">A selection of projects that showcase my technical range and problem-solving approach.</p>
+    <div class="projects-grid">
+      <div class="project-card">
+        <div class="project-img" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+          <div class="project-overlay">→</div>
+        </div>
+        <h3>Realtime Collab Board</h3>
+        <p>A Figma-like collaborative whiteboard with WebSocket-powered real-time sync, built with React, Canvas API, and Socket.io.</p>
+        <div class="project-tags"><span>React</span><span>Socket.io</span><span>Canvas</span></div>
+      </div>
+      <div class="project-card">
+        <div class="project-img" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
+          <div class="project-overlay">→</div>
+        </div>
+        <h3>CloudVault</h3>
+        <p>Serverless file storage platform using AWS Lambda, S3, and Cognito with end-to-end encryption and drag-and-drop uploads.</p>
+        <div class="project-tags"><span>AWS</span><span>Node.js</span><span>Serverless</span></div>
+      </div>
+      <div class="project-card">
+        <div class="project-img" style="background: linear-gradient(135deg, #4facfe, #00f2fe);">
+          <div class="project-overlay">→</div>
+        </div>
+        <h3>Metrics Dashboard</h3>
+        <p>Real-time analytics dashboard with D3.js visualizations, live data streaming, and role-based access control.</p>
+        <div class="project-tags"><span>D3.js</span><span>TypeScript</span><span>PostgreSQL</span></div>
+      </div>
+      <div class="project-card">
+        <div class="project-img" style="background: linear-gradient(135deg, #43e97b, #38f9d7);">
+          <div class="project-overlay">→</div>
+        </div>
+        <h3>AI Code Review Bot</h3>
+        <p>Automated PR review bot using OpenAI API that analyzes code quality, suggests improvements, and generates documentation.</p>
+        <div class="project-tags"><span>OpenAI API</span><span>GitHub Actions</span><span>Python</span></div>
+      </div>
+    </div>
+    <div class="cta-center">
+      <a href="#contact" class="btn btn-primary btn-lg">Start a Project Together →</a>
+    </div>
+  </div>
+</section>
+
+<section id="contact" class="section contact-section">
+  <div class="section-container">
+    <h2 class="section-title">Get In <span class="gradient-text">Touch</span></h2>
+    <p class="section-subtitle">Have a project in mind or just want to say hello? I'd love to hear from you.</p>
+    <div class="contact-grid">
+      <form class="contact-form" id="contactForm">
+        <div class="form-group">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" required placeholder="Your name">
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required placeholder="you@example.com">
+        </div>
+        <div class="form-group">
+          <label for="message">Message</label>
+          <textarea id="message" name="message" rows="5" required placeholder="Tell me about your project..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-full">Send Message</button>
+        <div id="form-status" class="form-status"></div>
+      </form>
+      <div class="contact-info">
+        <div class="contact-item">
+          <h4>Email</h4>
+          <a href="mailto:enrique@enriquepram.dev">enrique@enriquepram.dev</a>
+        </div>
+        <div class="contact-item">
+          <h4>Socials</h4>
+          <div class="social-links">
+            <a href="#">GitHub</a>
+            <a href="#">LinkedIn</a>
+            <a href="#">Twitter / X</a>
+          </div>
+        </div>
+        <div class="contact-item">
+          <h4>Open to</h4>
+          <p>Freelance · Full-time · Consulting · Speaking</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-container">
+    <p>Designed & Built by <span class="gradient-text">Enrique Pram</span> with ❤️</p>
+    <p class="footer-copy">&copy; 2026 Enrique Pram. All rights reserved.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
