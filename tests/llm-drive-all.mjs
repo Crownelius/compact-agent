@@ -89,63 +89,63 @@ const VALID_TOOL_NAMES = new Set(ALL_TOOLS.map((t) => t.name));
 // Mostly built-in commands; ECC-only ones are flagged.
 const TESTS = [
   // The user's original failing scenario — should trigger web_search now
-  { name: 'enrique-pram',       cmd: 'I need you to write a website for a javascript engineer named Enrique Pram. Research what the theme and selling points should be. He has completed 5 micro-credentials you choose. Don\'t worry about being factual about location/age.', kind: 'freeform', timeoutMs: 90000 },
+  { name: 'enrique-pram',       cmd: 'I need you to write a website for a javascript engineer named Enrique Pram. Research what the theme and selling points should be. He has completed 5 micro-credentials you choose. Don\'t worry about being factual about location/age.', kind: 'freeform', timeoutMs: 240000 },
 
   // Code Quality
-  { name: '/tdd',               cmd: '/tdd add a counter button',                      timeoutMs: 60000 },
-  { name: '/review',            cmd: '/review',                                        timeoutMs: 45000 },
-  { name: '/security-review',   cmd: '/security-review',                               timeoutMs: 45000 },
-  { name: '/build-fix',         cmd: '/build-fix',                                     timeoutMs: 45000 },
-  { name: '/refactor',          cmd: '/refactor',                                      timeoutMs: 45000 },
-  { name: '/e2e',               cmd: '/e2e login flow',                                timeoutMs: 45000 },
-  { name: '/eval',              cmd: '/eval correctness of the test files',            timeoutMs: 45000 },
-  { name: '/plan',              cmd: '/plan add a settings page',                      timeoutMs: 60000 },
-  { name: '/verify',            cmd: '/verify',                                        timeoutMs: 45000 },
-  { name: '/test-coverage',     cmd: '/test-coverage',                                 timeoutMs: 45000 },
-  { name: '/update-docs',       cmd: '/update-docs',                                   timeoutMs: 45000 },
+  { name: '/tdd',               cmd: '/tdd add a counter button',                      timeoutMs: 180000 },
+  { name: '/review',            cmd: '/review',                                        timeoutMs: 180000 },
+  { name: '/security-review',   cmd: '/security-review',                               timeoutMs: 180000 },
+  { name: '/build-fix',         cmd: '/build-fix',                                     timeoutMs: 180000 },
+  { name: '/refactor',          cmd: '/refactor',                                      timeoutMs: 180000 },
+  { name: '/e2e',               cmd: '/e2e login flow',                                timeoutMs: 180000 },
+  { name: '/eval',              cmd: '/eval correctness of the test files',            timeoutMs: 180000 },
+  { name: '/plan',              cmd: '/plan add a settings page',                      timeoutMs: 180000 },
+  { name: '/verify',            cmd: '/verify',                                        timeoutMs: 180000 },
+  { name: '/test-coverage',     cmd: '/test-coverage',                                 timeoutMs: 180000 },
+  { name: '/update-docs',       cmd: '/update-docs',                                   timeoutMs: 180000 },
 
   // Git workflows — may noop if no changes; verify no crash
-  { name: '/commit',            cmd: '/commit',                                        timeoutMs: 30000 },
-  { name: '/pr',                cmd: '/pr',                                            timeoutMs: 30000 },
+  { name: '/commit',            cmd: '/commit',                                        timeoutMs: 120000 },
+  { name: '/pr',                cmd: '/pr',                                            timeoutMs: 120000 },
 
   // Walkthrough — verify the tour fires + agent goes into onboarding mode
-  { name: '/walkthrough',       cmd: '/walkthrough',                                   timeoutMs: 45000 },
+  { name: '/walkthrough',       cmd: '/walkthrough',                                   timeoutMs: 180000 },
 
   // Search/research — these SHOULD use the new web_search tool
-  { name: '/search-first',      cmd: '/search-first refactor the parser to use streams',timeoutMs: 60000 },
-  { name: '/docs-lookup',       cmd: '/docs-lookup how to use the OpenAI SDK streaming',timeoutMs: 60000 },
+  { name: '/search-first',      cmd: '/search-first refactor the parser to use streams',timeoutMs: 180000 },
+  { name: '/docs-lookup',       cmd: '/docs-lookup how to use the OpenAI SDK streaming',timeoutMs: 180000 },
 
   // Orchestration & multi-agent
-  { name: '/orchestrate',       cmd: '/orchestrate refactor billing service',          timeoutMs: 45000 },
-  { name: '/multi-plan',        cmd: '/multi-plan refactor billing service',           timeoutMs: 45000 },
-  { name: '/multi-execute',     cmd: '/multi-execute add users table',                 timeoutMs: 45000 },
-  { name: '/multi-backend',     cmd: '/multi-backend users,billing',                   timeoutMs: 45000 },
-  { name: '/multi-frontend',    cmd: '/multi-frontend header,footer',                  timeoutMs: 45000 },
-  { name: '/pr-loop',           cmd: '/pr-loop',                                       timeoutMs: 45000 },
+  { name: '/orchestrate',       cmd: '/orchestrate refactor billing service',          timeoutMs: 180000 },
+  { name: '/multi-plan',        cmd: '/multi-plan refactor billing service',           timeoutMs: 180000 },
+  { name: '/multi-execute',     cmd: '/multi-execute add users table',                 timeoutMs: 180000 },
+  { name: '/multi-backend',     cmd: '/multi-backend users,billing',                   timeoutMs: 180000 },
+  { name: '/multi-frontend',    cmd: '/multi-frontend header,footer',                  timeoutMs: 180000 },
+  { name: '/pr-loop',           cmd: '/pr-loop',                                       timeoutMs: 180000 },
 
   // Language-specific reviewers (sample, not all 10)
-  { name: '/auto-review',       cmd: '/auto-review',                                   timeoutMs: 45000 },
-  { name: '/ts-review',         cmd: '/ts-review',                                     timeoutMs: 45000 },
-  { name: '/py-review',         cmd: '/py-review',                                     timeoutMs: 45000 },
+  { name: '/auto-review',       cmd: '/auto-review',                                   timeoutMs: 180000 },
+  { name: '/ts-review',         cmd: '/ts-review',                                     timeoutMs: 180000 },
+  { name: '/py-review',         cmd: '/py-review',                                     timeoutMs: 180000 },
 
   // Language-specific build fixes (sample)
-  { name: '/ts-build-fix',      cmd: '/ts-build-fix',                                  timeoutMs: 45000 },
-  { name: '/pytorch-fix',       cmd: '/pytorch-fix',                                   timeoutMs: 45000 },
+  { name: '/ts-build-fix',      cmd: '/ts-build-fix',                                  timeoutMs: 180000 },
+  { name: '/pytorch-fix',       cmd: '/pytorch-fix',                                   timeoutMs: 180000 },
 
   // Content engine (sample)
-  { name: '/article',           cmd: '/article 5 productivity hacks for engineers',    timeoutMs: 60000 },
-  { name: '/slides',            cmd: '/slides intro to TDD 5',                         timeoutMs: 60000 },
-  { name: '/market-research',   cmd: '/market-research developer productivity tools',  timeoutMs: 60000 },
-  { name: '/code-quality',      cmd: '/code-quality',                                  timeoutMs: 60000 },
-  { name: '/skill-stocktake',   cmd: '/skill-stocktake',                               timeoutMs: 45000 },
+  { name: '/article',           cmd: '/article 5 productivity hacks for engineers',    timeoutMs: 180000 },
+  { name: '/slides',            cmd: '/slides intro to TDD 5',                         timeoutMs: 180000 },
+  { name: '/market-research',   cmd: '/market-research developer productivity tools',  timeoutMs: 180000 },
+  { name: '/code-quality',      cmd: '/code-quality',                                  timeoutMs: 180000 },
+  { name: '/skill-stocktake',   cmd: '/skill-stocktake',                               timeoutMs: 180000 },
 
   // Skill creation
-  { name: '/skill-create',      cmd: '/skill-create',                                  timeoutMs: 45000 },
+  { name: '/skill-create',      cmd: '/skill-create',                                  timeoutMs: 180000 },
 
   // ECC-only (no built-in equivalent)
-  { name: '/ecc-feature-development', cmd: '/ecc-feature-development add login flow',  timeoutMs: 45000 },
-  { name: '/ecc-database-migration',  cmd: '/ecc-database-migration add users table',  timeoutMs: 45000 },
-  { name: '/ecc-add-language-rules',  cmd: '/ecc-add-language-rules typescript',       timeoutMs: 45000 },
+  { name: '/ecc-feature-development', cmd: '/ecc-feature-development add login flow',  timeoutMs: 180000 },
+  { name: '/ecc-database-migration',  cmd: '/ecc-database-migration add users table',  timeoutMs: 180000 },
+  { name: '/ecc-add-language-rules',  cmd: '/ecc-add-language-rules typescript',       timeoutMs: 180000 },
 ];
 
 // ── Driver ──────────────────────────────────────────────────────────
@@ -161,15 +161,26 @@ function logJsonl(entry) {
 }
 
 function captureStdoutDuring(fn) {
+  // Returns { captured, error } — preserves the captured string even if fn()
+  // rejects (e.g. on timeout), so timeout cases don't show empty transcripts.
   const orig = process.stdout.write.bind(process.stdout);
   const origErr = process.stderr.write.bind(process.stderr);
   let captured = '';
   process.stdout.write = (s) => { captured += String(s); return true; };
   process.stderr.write = (s) => { captured += String(s); return true; };
-  return fn().finally(() => {
-    process.stdout.write = orig;
-    process.stderr.write = origErr;
-  }).then(() => captured);
+  return new Promise((resolve) => {
+    fn()
+      .then(() => {
+        process.stdout.write = orig;
+        process.stderr.write = origErr;
+        resolve({ captured, error: null });
+      })
+      .catch((e) => {
+        process.stdout.write = orig;
+        process.stderr.write = origErr;
+        resolve({ captured, error: e });
+      });
+  });
 }
 
 async function withTimeout(promise, ms, label) {
@@ -245,17 +256,28 @@ for (let i = 0; i < TESTS.length; i++) {
     }
 
     if (outcome === 'ok') {
-      captured = await captureStdoutDuring(async () => {
+      const { captured: cap, error } = await captureStdoutDuring(async () => {
         await withTimeout(
           runQuery({ config, messages, cwd, rl: rlStub, sessionId: session.id, mode: mode.current }),
           t.timeoutMs,
           t.name,
         );
       });
+      captured = cap;
+      if (error) {
+        const msg = String(error?.message || error);
+        outcome = msg.startsWith('TIMEOUT') ? 'timeout' : 'error';
+        detail = msg;
+      }
+      // Always analyze captured + messages — hallucinations can happen before
+      // a timeout fires, and we want to count them.
       analysis = analyzeOutput(captured, messages);
-      if (analysis.hallucinated.length) {
+      if (outcome === 'ok' && analysis.hallucinated.length) {
         outcome = 'hallucinated';
         detail = `bad tool calls: ${analysis.hallucinated.join(', ')}`;
+      } else if (analysis.hallucinated.length) {
+        // Tag hallucinations seen during timeouts/errors in the detail
+        detail += ` (also saw bad tool calls: ${analysis.hallucinated.join(', ')})`;
       }
     }
   } catch (e) {
@@ -282,7 +304,7 @@ for (let i = 0; i < TESTS.length; i++) {
   });
 
   // Throttle a bit between calls to be friendly to the free tier
-  await new Promise((r) => setTimeout(r, 3000));
+  await new Promise((r) => setTimeout(r, 10000));
 }
 
 // ── Summary ─────────────────────────────────────────────────────────

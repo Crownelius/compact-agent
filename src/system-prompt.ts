@@ -6,6 +6,7 @@ import { buildRulesPrompt } from './rules.js';
 import { getRelevantInstincts } from './learning.js';
 import { findEccSkillForQuery } from './ecc.js';
 import { ALL_TOOLS } from './tools/index.js';
+import { buildUserContext } from './users.js';
 
 function buildToolList(): string {
   const lines = ALL_TOOLS.map((t) => {
@@ -69,6 +70,9 @@ export function buildSystemPrompt(
     } catch { /* skill matching is best-effort */ }
   }
 
+  // User context
+  const userAddition = buildUserContext();
+
   return `You are Crowcoder, a powerful AI coding assistant running in the user's terminal.
 You help with software engineering tasks: writing code, fixing bugs, refactoring, explaining code, running commands, and more.
 
@@ -104,6 +108,6 @@ IMPORTANT — tool-call rules:
 - Use markdown formatting in your responses.
 - For git operations: prefer new commits over amending, never force-push without asking.
 - Respond in the same language the user writes in.
-${modeAddition}${rulesAddition}${instinctAddition}${eccSkillAddition}
+${modeAddition}${rulesAddition}${instinctAddition}${eccSkillAddition}${userAddition}
 `;
 }

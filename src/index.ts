@@ -33,6 +33,19 @@ import { buildDocsUpdatePrompt, detectDocFiles } from './docs-sync.js';
 import { listSkills, findSkill, applySkill, printSkillList, evolveInstinctsToSkills } from './skills.js';
 import { onSessionStart, onSessionEnd, printMemoryStatus, searchMemory } from './memory.js';
 import { incrementCounter, decrementCounter, resetCounter, getCounter } from './counter.js';
+import {
+  createUser,
+  listUsers,
+  getUser,
+  getActiveUser,
+  setActiveUser,
+  updateUser,
+  deleteUser,
+  setUserMetadata,
+  getUserMetadata,
+  printUserList,
+  buildUserContext,
+} from './users.js';
 import { shouldSuggestCompaction } from './strategic-compaction.js';
 // Language-specific agents & review
 import {
@@ -282,6 +295,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/prune') + d('            — delete expired instincts'));
       console.log(d('  ') + c('/skills') + d('           — list learned skills'));
       console.log(d('  ') + c('/memory') + d('           — show memory status'));
+      console.log(d('  ') + c('/users') + d('           — manage users table'));
       console.log(d('  ') + c('/count [inc|dec|reset]') + d(' — increment/decrement/reset counter'));
       console.log(d('  ') + c('/detect') + d('           — detect package manager, test runner, build tool'));
       console.log(d('  ') + c('/hook-profile') + d('     — show hook profile & controls'));
@@ -771,6 +785,87 @@ export function handleSlashCommand(
     case '/memory':
       printMemoryStatus();
       return { handled: true };
+
+    // ── Users Table ──────────────────────────────────────
+    case '/users': {
+      const sub = args.trim();
+      if (sub === 'ls' || sub === 'list' || !sub) {
+        printUserList();
+        return { handled: true };
+      }
+
+      const parts = sub.split(/\s+/);
+      const action = parts[0];
+
+      if (action === 'add') {
+        const name = parts[1] || '';
+        if (!name) {
+          console.log(chalk.yellow('  Usage: /users add <name> [email] [role]'));
+          return { handled: true };
+        }
+        const email = parts[2] || '';
+        const role = parts[3] || '';
+        const user = createUser(name, email || undefined, role || undefined);
+        console.log(chalk.green(`  User created: ${user.id} — ${user.name}`));
+        return { handled: true };
+      }
+
+      if (action === 'rm' || action === 'del' || action === 'delete') {
+        const id = parts[1];
+        if (!id) {
+          console.log(chalk.yellow('  Usage: /users rm <id>'));
+          return { handled: true };
+        }
+        if (deleteUser(id)) {
+          console.log(chalk.green(`  User deleted: ${id}`));
+        } else {
+          console.log(chalk.yellow(`  User not found: ${id}`));
+        }
+        return { handled: true };
+      }
+
+      if (action === 'set' || action === 'activate') {
+        const id = parts[1];
+        if (!id) {
+          console.log(chalk.yellow('  Usage: /users set <id>'));
+          return { handled: true };
+        }
+        const user = setActiveUser(id);
+        if (user) {
+          console.log(chalk.green(`  Active user: ${user.name} (${user.id})`));
+        } else {
+          console.log(chalk.yellow(`  User not found: ${id}`));
+        }
+        return { handled: true };
+      }
+
+      if (action === 'meta' || action === 'metadata') {
+        const id = parts[1];
+        const key = parts[2];
+        const value = parts.slice(3).join(' ');
+        if (!id || !key) {
+          console.log(chalk.yellow('  Usage: /users meta <id> <key> [value]'));
+          return { handled: true };
+        }
+        if (value) {
+          setUserMetadata(id, key, value);
+          console.log(chalk.green(`  Metadata set: ${key}=${value}`));
+        } else {
+          const val = getUserMetadata(id, key);
+          console.log(chalk.dim(`  ${key}: ${val || '(not set)'}`));
+        }
+        return { handled: true };
+      }
+
+      // Unknown subcommand
+      console.log(chalk.yellow('  Usage: /users [ls|add|rm|set|meta] ...'));
+      console.log(chalk.dim('  ls              — list all users'));
+      console.log(chalk.dim('  add <name> [email] [role] — create user'));
+      console.log(chalk.dim('  rm <id>         — delete user'));
+      console.log(chalk.dim('  set <id>        — set active user'));
+      console.log(chalk.dim('  meta <id> <key> [value] — get/set metadata'));
+      return { handled: true };
+    }
 
     // ── Counter ─────────────────────────────────────────
     case '/count': {
