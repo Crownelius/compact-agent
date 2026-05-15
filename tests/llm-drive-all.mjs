@@ -50,11 +50,16 @@ process.on('exit', () => {
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }); } catch {}
 });
 
-// Write the test config — same model the user reported using
+// Write the test config — model + filter overridable via env so we can re-run
+// just the timeouts against a different model without editing source.
+const TEST_MODEL = process.env.CROWCODER_TEST_MODEL || 'inclusionai/ring-2.6-1t:free';
+const TEST_FILTER = (process.env.CROWCODER_TEST_FILTER || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+
 const TEST_CONFIG = {
   apiKey,
   baseURL: 'https://openrouter.ai/api/v1',
-  model: 'inclusionai/ring-2.6-1t:free',
+  model: TEST_MODEL,
   provider: 'OpenRouter',
   maxTokens: 4096,
   temperature: 0.3,
@@ -153,7 +158,11 @@ const config = loadConfig();
 const cwd = process.cwd();
 const rlStub = { question: async () => 'y', close: () => {} };
 
-const LOG_FILE = path.join(__dirname, 'llm-drive-all.log');
+// Use a model-suffixed log name when overriding, so we don't clobber prior runs.
+const LOG_SUFFIX = process.env.CROWCODER_TEST_MODEL
+  ? '.' + TEST_MODEL.replace(/[^A-Za-z0-9]+/g, '-')
+  : '';
+const LOG_FILE = path.join(__dirname, `llm-drive-all${LOG_SUFFIX}.log`);
 fs.writeFileSync(LOG_FILE, ''); // truncate
 
 function logJsonl(entry) {
@@ -223,12 +232,24 @@ function analyzeOutput(stdout, messages) {
   };
 }
 
-console.log(`\n  ── LLM driver: ${TESTS.length} commands, free model ${TEST_CONFIG.model}\n`);
+// Apply optional filter — runs only the named tests (comma-separated).
+const ACTIVE_TESTS = TEST_FILTER.length
+  ? TESTS.filter((t) => TEST_FILTER.includes(t.name))
+  : TESTS;
+if (TEST_FILTER.length && ACTIVE_TESTS.length === 0) {
+  console.error(`No tests matched filter: ${TEST_FILTER.join(', ')}`);
+  console.error(`Available names: ${TESTS.map((t) => t.name).join(', ')}`);
+  process.exit(2);
+}
+
+console.log(`\n  ── LLM driver: ${ACTIVE_TESTS.length}/${TESTS.length} commands, model ${TEST_CONFIG.model}`);
+if (TEST_FILTER.length) console.log(`     filter: ${TEST_FILTER.join(', ')}`);
+console.log('');
 
 const results = [];
-for (let i = 0; i < TESTS.length; i++) {
-  const t = TESTS[i];
-  const idx = `${i + 1}/${TESTS.length}`;
+for (let i = 0; i < ACTIVE_TESTS.length; i++) {
+  const t = ACTIVE_TESTS[i];
+  const idx = `${i + 1}/${ACTIVE_TESTS.length}`;
   process.stdout.write(`  [${idx}] ${t.name.padEnd(34)} … `);
 
   // Per-command session + messages so prior turns don't bleed
