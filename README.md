@@ -1,305 +1,173 @@
+<div align="center"><pre>
+         @@@@@@@@  @@@@@@@@
+       @@@@    @@@@@@    @@@@@
+     @@@@      @@@@@@      @@@@
+    @@@@@@    @@@  @@@@   @@@@@@
+  @@@@   @@@@@@ @@@@ @@@@@@@   @@@
+  @@@     @@@@  @@@@@ @@@@      @@
+  @@@   @@@@@ @@@@ @@@  @@@@    @@
+  @@@  @@@  @@@@    @@@@  @@@@ @@@
+   @@@@@  @@@@        @@@@@ @@@@@
+   @@@@@  @@@@        @@@@@ @@@@@
+  @@@  @@@  @@@@    @@@@  @@@  @@@
+  @@@   @@@@@ @@@@@@@@ @@@@@    @@
+  @@@     @@@@  @@@@  @@@@@     @@
+  @@@@  @@@@@@@  @@@ @@@@@@@   @@@
+    @@@@@@    @@@  @@@    @@@@@@
+     @@@@      @@@@@@      @@@@
+       @@@@@@@@@@@@@@@@@@@@@@
+         @@@@@@@@  @@@@@@@@
+</pre></div>
+
+<div align="center">
+
 # Compact Agent
 
-Universal AI coding assistant for the terminal. Works with OpenRouter, GLM, Ollama, OpenAI, DeepSeek, LM Studio, or any OpenAI-compatible API.
+**A dense, feature-rich AI coding agent for the terminal.**
 
-Ships bundled with the full **[everything-claude-code](https://github.com/Crownelius/everything-claude-code)** harness library — skills, agents, slash commands, language rules, and security hooks — automatically installed on first launch.
+[![npm](https://img.shields.io/npm/v/compact-agent?color=cyan)](https://www.npmjs.com/package/compact-agent)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A518.0-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Hermes](https://img.shields.io/badge/Mode-Hermes-purple)](https://github.com/nousresearch/hermes-agent)
+[![ECC](https://img.shields.io/badge/Bundled-everything--claude--code-orange)](https://github.com/Crownelius/everything-claude-code)
 
-```
-npm install -g compact-agent
-compact-agent
-```
+Compact Agent is a single-command terminal AI coding CLI. It speaks any OpenAI-compatible API (OpenRouter, OpenAI, Anthropic via compatible endpoints, Ollama, LM Studio, DeepSeek, GLM). It ships with **80+ slash commands**, **8 operation modes** including the self-improving **Hermes** mode, the bundled **everything-claude-code** skill library, multi-agent orchestration, a cross-session learning system, and zero telemetry.
 
-> **New here?** See [INSTALL.md](INSTALL.md) for setup (prerequisites, providers, troubleshooting) and [COMMANDS.md](COMMANDS.md) for a complete reference of every slash command. Inside the REPL, type `/walkthrough` for an agent-led tour.
+[Features](#-features) • [Modes](#-operation-modes) • [Skills](#-skills-system) • [Tools](#-tool-arsenal) • [Providers](#-supported-providers) • [Installation](#-installation) • [Commands](#-slash-commands) • [Privacy](#-privacy) • [Architecture](#-architecture)
 
----
-
-## Features
-
-Each feature is labeled with its data scope:
-
-| Label | Meaning |
-|-------|---------|
-| **LOCAL** | All data stays on your machine in `~/.crowcoder/` |
-| **API** | Sends data to your chosen AI provider only (required for the feature to work) |
-| **NONE** | No data stored or sent |
-
-### Core — API
-
-| Feature | Data Scope | Description |
-|---------|------------|-------------|
-| Streaming chat | **API** | Send messages to your configured AI provider, stream responses |
-| Tool execution | **API** | AI calls tools (bash, read, write, edit, grep, glob, list_dir, web_fetch, web_search) |
-| Context compaction | **API** | Summarizes old messages via your AI provider when context grows large |
-| AI code review | **API** | `/review` — sends diff to your AI for quality/security analysis |
-| AI TDD mode | **API** | `/tdd` — AI writes tests first, then implementation |
-| AI security review | **API** | `/security-review` — AI audits project for vulnerabilities |
-| AI commit/PR | **API** | `/commit`, `/pr` — AI generates commit messages and PR descriptions |
-| Multi-agent orchestration | **API** | Spawn parallel sub-tasks using your AI provider |
-| Verification loop | **API** | `/verify` — run tests, fix failures, repeat until green |
-| Build fix | **API** | `/build-fix` — auto-detect and fix build errors for all major languages |
-| E2E test generation | **API** | `/e2e` — generate end-to-end tests (Playwright, Cypress, Puppeteer) |
-| Evaluation | **API** | `/eval` — evaluate project against custom criteria |
-| Documentation sync | **API** | `/update-docs` — sync documentation with code |
-| Coverage analysis | **API** | `/test-coverage` — analyze test coverage, suggest tests |
-| Refactoring | **API** | `/refactor` — dead code detection & cleanup |
-| Content engine | **API** | `/article`, `/slides`, `/repurpose`, `/market-research`, `/investor-deck` |
-| Codemap generation | **NONE** | `/codemap`, `/update-codemaps` — project structure mapping |
-| Skill creation | **API** | `/skill-create` — create reusable skills from git patterns |
-| Search-first research | **API** | `/search-first` — research before coding |
-| Docs lookup | **API** | `/docs-lookup` — search docs for answers |
-| Walkthrough tour | **API** | `/walkthrough` (aliases: `/tour`, `/guide`) — agent-led onboarding |
-
-### Session & History — LOCAL
-
-| Feature | Data Scope | Storage Location |
-|---------|------------|------------------|
-| Session persistence | **LOCAL** | `~/.crowcoder/sessions/*.json` |
-| Auto-save | **LOCAL** | Saves after every turn to `~/.crowcoder/sessions/` |
-| Session resume | **LOCAL** | `/resume <id>` loads from local files |
-| Checkpoints | **LOCAL** | `/checkpoint` — save/restore git state |
-
-### Cost & Usage Tracking — LOCAL
-
-| Feature | Data Scope | Storage Location |
-|---------|------------|------------------|
-| Token counting | **LOCAL** | `~/.crowcoder/usage.json` |
-| Cost estimation | **LOCAL** | Estimated from local model cost table, never sent anywhere |
-| Budget alerts | **LOCAL** | `/budget` sets local daily/monthly limits |
-| Usage summary | **LOCAL** | `/usage` reads from local file only |
-
-### Learning System — LOCAL
-
-| Feature | Data Scope | Storage Location |
-|---------|------------|------------------|
-| Pattern extraction | **LOCAL** | `~/.crowcoder/instincts/*.json` |
-| Instinct confidence | **LOCAL** | Scores stored and decayed locally |
-| Import/export | **LOCAL** | `/learn`, `/instincts`, `/instinct-export`, `/instinct-import`, `/prune` |
-| Skill evolution | **LOCAL** | `/evolve` — cluster instincts into reusable skills |
-| Memory persistence | **LOCAL** | `~/.crowcoder/memory/` — cross-session project context |
-
-### Security — NONE / LOCAL
-
-| Feature | Data Scope | Description |
-|---------|------------|-------------|
-| Dangerous command detection | **NONE** | Regex-based, runs in-process, no data stored |
-| Secret scanning | **NONE** | Regex-based, runs in-process, blocks secrets from being written |
-| Security threat levels | **NONE** | Critical commands (rm -rf, DROP TABLE, force push) auto-blocked |
-
-### Hooks — LOCAL
-
-| Feature | Data Scope | Storage Location |
-|---------|------------|------------------|
-| Hook configuration | **LOCAL** | `~/.crowcoder/hooks.json` |
-| PreToolUse / PostToolUse | **LOCAL** | User-defined scripts, run locally |
-| SessionStart / SessionStop | **LOCAL** | User-defined scripts, run locally |
-| Hook profiles | **LOCAL** | `/hook-profile` — minimal/standard/strict profiles via `CROWCODER_HOOK_PROFILE` |
-
-### Modes — NONE
-
-| Feature | Data Scope | Description |
-|---------|------------|-------------|
-| Mode switching | **NONE** | `/mode dev\|review\|tdd\|research\|plan\|debug\|architect\|hermes` — changes system prompt only, no data stored |
-
-### Model Routing — LOCAL
-
-| Feature | Data Scope | Description |
-|---------|------------|-------------|
-| Cost-aware routing | **LOCAL** | `/route` classifies task complexity locally, switches model |
-| Model switching | **LOCAL** | `/model`, `/models` — updates `~/.crowcoder/config.json` |
-
-### Rules Engine — LOCAL
-
-| Feature | Data Scope | Storage Location |
-|---------|------------|------------------|
-| Built-in rules | **NONE** | Hardcoded for TS, Python, Go, Rust, Java, Kotlin, C++, PHP |
-| Custom rules | **LOCAL** | `~/.crowcoder/rules/<language>.md` |
-| Auto-detection | **NONE** | Scans cwd file extensions in-process |
-
-### Project Audit — NONE
-
-| Feature | Data Scope | Description |
-|---------|------------|-------------|
-| Harness audit | **NONE** | `/audit` checks local project files (git, tests, linter, secrets) — no data leaves your machine |
-| Project detection | **NONE** | `/detect` — detect package manager, test runner, build tool |
-
-### Configuration — LOCAL
-
-| Feature | Data Scope | Storage Location |
-|---------|------------|------------------|
-| API key storage | **LOCAL** | `~/.crowcoder/config.json` (plaintext — protect this file) |
-| Provider config | **LOCAL** | `~/.crowcoder/config.json` |
-| Permission mode | **LOCAL** | `~/.crowcoder/config.json` |
-| Theme | **LOCAL** | `full`, `compact`, or `minimal` startup display |
-| Dry-run mode | **LOCAL** | `/dry-run` — toggle tool execution preview |
-| Thinking display | **LOCAL** | `/thinking` — toggle model reasoning visibility |
+</div>
 
 ---
 
-## Privacy
+## ✨ Features
 
-**Crowcoder has zero telemetry, zero analytics, and zero phone-home.**
-
-- No data is sent to Crowcoder developers or any third party
-- No tracking headers, no analytics SDKs, no crash reporting
-- The only external network calls are to **your chosen AI provider** (OpenRouter, OpenAI, etc.) when you send a message
-- The `web_fetch` tool only fetches URLs **you explicitly ask for**
-- All local data lives in `~/.crowcoder/` — delete that folder to remove everything
-
-### What goes where
-
-```
-~/.crowcoder/
-  config.json          — API key, provider, model, permissions, theme
-  usage.json           — token counts, cost estimates (local only)
-  hooks.json           — hook definitions
-  users.json           — user management table
-  ecc-state.json       — ECC install state
-  sessions/            — saved conversations (*.json)
-  instincts/           — learned patterns (*.json)
-  skills/              — reusable skill templates (*.json)
-  memory/              — cross-session project memory (*.json)
-  checkpoints/         — git state checkpoints (*.json)
-  rules/               — custom coding rules (*.md)
-  hooks/               — user hook scripts
-  ecc-commands/        — ECC command prompt templates (*.md)
-  ecc-agents/          — ECC agent prompt templates (*.md)
-```
-
-**Your API key** is stored in plaintext in `config.json`. Keep `~/.crowcoder/` private.
+- **Single-command install** — `npm install -g compact-agent && compact-agent`. No clone, no build step, no Docker, no IDE extension.
+- **Universal LLM transport** — works with any OpenAI-compatible API. Switch providers and models from inside the REPL with `/model`, `/provider`, `/route`.
+- **8 operation modes** — `dev`, `review`, `tdd`, `research`, `plan`, `debug`, `architect`, and `hermes` (self-improving learning loop). Each rewrites the system prompt to bias the agent toward its specific workflow.
+- **Hermes self-improving mode** — recalls prior sessions, models the user across conversations, parallelizes independent subtasks, distills new skills from experience, and proposes what's worth banking before finishing. Inspired by [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent).
+- **Bundled everything-claude-code library** — 33 high-quality skills, 16 agents, 9 workflow commands, 7 language rule bundles, and 5 default security hooks. Auto-installed on first launch via [Crownelius/everything-claude-code](https://github.com/Crownelius/everything-claude-code).
+- **Unified slash-command surface** — `/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix` automatically use the ECC prompts when ECC is installed. **No `/ecc-tdd` vs `/tdd` duplication.**
+- **Multi-agent orchestration** — `/orchestrate`, `/multi-plan`, `/multi-execute`, `/multi-backend`, `/multi-frontend`, `/pr-loop` spawn parallel sub-tasks against the same project.
+- **10 language-specific reviewers** — `/auto-review` (auto-detects the language) plus dedicated reviewers for TS, Python, Go, Rust, Java, C++, Kotlin, PHP, and SQL.
+- **6 language-specific build fixers** — `/ts-build-fix`, `/go-build-fix`, `/rust-build-fix`, `/java-build-fix`, `/cpp-build-fix`, `/pytorch-fix`.
+- **Learning system** — `/learn` extracts patterns from the current session into confidence-scored instincts. `/evolve` promotes high-confidence instincts into reusable skills. Confidence decays automatically; `/prune` removes stale patterns.
+- **Cross-session memory** — `~/.crowcoder/memory/` retains project context across sessions. Hermes mode searches it before answering.
+- **Sessions & checkpoints** — `/sessions`, `/save`, `/resume`, `/delete` for full session snapshots; `/checkpoint` for git-state snapshots inside a session.
+- **Agent-led walkthrough** — type `/walkthrough` (or `/tour`, `/guide`) and the agent walks new users through every feature interactively.
+- **Native security hooks** — by default, block `git --no-verify`, warn on reading `.env`/`.key`/`.pem`, warn when an edit leaves `console.*` statements, suggest tmux for long-running dev servers. Fully configurable in `~/.crowcoder/hooks.json`.
+- **Permission modes** — `/perm ask` prompts before every tool use, `/perm auto` allows non-destructive ops, `/perm yolo` approves everything. Per-tool dry-run via `/dry-run`.
+- **Cost & budget tracking** — `/usage`, `/budget` keep token counts and cost estimates entirely local in `~/.crowcoder/usage.json`. Cost-aware routing via `/route`.
+- **Real web search** — `web_search` tool backed by DuckDuckGo Lite (no API key). The LLM gets unknown-tool errors with the valid tool list so free models that hallucinate `web_search_exa` can self-correct.
+- **Zero telemetry** — no analytics SDKs, no phone-home, no crash reporting. The only network calls are to your chosen LLM provider when you send a message.
 
 ---
 
-## Supported Providers
+## 🧠 Operation Modes
 
-| Provider | Base URL | Default Model |
-|----------|----------|---------------|
-| OpenRouter | `openrouter.ai/api/v1` | anthropic/claude-sonnet-4 |
-| Anthropic (Claude) | `api.anthropic.com/v1/` | claude-sonnet-4-20250514 |
-| OpenAI (GPT) | `api.openai.com/v1` | gpt-4o |
-| Google (Gemini) | `generativelanguage.googleapis.com/v1beta/openai/` | gemini-2.5-flash |
-| DeepSeek | `api.deepseek.com/v1` | deepseek-chat |
-| GLM (ZhipuAI) | `open.bigmodel.cn/api/paas/v4` | glm-4-plus |
-| Ollama (Local) | `localhost:11434/v1` | qwen2.5-coder:latest |
-| LM Studio | `localhost:1234/v1` | loaded-model |
-| Custom | you provide | you provide |
+Switchable any time with `/mode <name>`. Each mode injects a specialized system-prompt addition.
 
----
+### ⚡ dev — *default*
 
-## Slash Commands
+General coding. Write features, fix bugs, refactor. Reads files before editing, prefers minimal changes.
 
-```
-General                 Model & Provider        Modes
-/help                   /model [name]           /mode [name]
-/config                 /models                 /modes
-/theme [full|compact|minimal]  /provider          /hermes
-/clear                  /route
-/history                                        Code Quality
-/export [md|json|txt]   Session                 /review [target]
-/exit | /quit           /sessions               /tdd <desc>
-/walkthrough | /tour    /save [name]            /security-review
-  | /guide              /resume <id>            /audit
-                        /delete <id>            /verify [cmd]
-                                                /build-fix
-Git                     /test-coverage
-/commit                 /refactor [target]
-/pr                     /e2e <feature>
-/diff                   /eval <criteria>
-/log
+### 🔍 review
 
-Planning & Docs         Language Reviews        Language Build Fixes
-/plan <task>            /auto-review            /ts-build-fix
-/update-docs            /ts-review              /go-build-fix
-/checkpoint [label]     /py-review              /rust-build-fix
-/checkpoints            /go-review              /java-build-fix
-/search-first <task>    /rust-review            /cpp-build-fix
-/docs-lookup <query>    /java-review            /pytorch-fix
-                        /cpp-review
-Tools & Config          /kotlin-review
-/tools                  /php-review
-/rules                  /db-review
-/perm <mode>
-/dry-run                Orchestration
-/thinking               /orchestrate <task>
-/cd <path>              /pr-loop
-/hooks                  /multi-plan <task>
-                        /multi-execute
-Learning & Cost         /multi-backend
-/usage                  /multi-frontend
-/budget <d> <m>
-/learn                  Codemaps
-/instincts              /codemap
-/instinct-export        /update-codemaps
-/instinct-import
-/evolve                 Content Engine
-/skills                 /article <topic>
-/memory                 /slides <topic>
-/users                  /repurpose <text>
-/count [inc|dec|reset]  /market-research
-/detect                 /investor-deck
-/hook-profile           /investor-outreach
-/pm2 [action]           /code-quality
-                        /skill-stocktake
-ECC                     /chief-of-staff
-/ecc
-/ecc-install            Skills & Patterns
-/ecc-skills             /skill-create
-/ecc-agents             /git-patterns
-/ecc-commands           /git-workflow
-/ecc-feature-development
-/ecc-add-language-rules
-/ecc-database-migration
-```
+Code review with severity-rated findings (CRITICAL/HIGH/MEDIUM/LOW). Confidence-filtered: only reports issues the model is >80% sure about.
 
-### Modes
+### 🧪 tdd
 
-`/mode <name>` (or shorthand commands where shown):
+Strict RED → GREEN → REFACTOR cycle. Will **not** write implementation before a failing test. Lower temperature for tighter cycles.
 
-- `dev` — general coding
-- `review` — code review
-- `tdd` — strict RED → GREEN → REFACTOR
-- `research` — read-only exploration
-- `plan` — design before coding (no edits)
-- `debug` — systematic root-cause hunt
-- `architect` — system-level design
-- `hermes` (`/hermes`) — **self-improving learning loop**: recall prior memory + instincts before acting, model the user across sessions, parallelize independent subtasks, distill skills from experience, nudge to persist knowledge. Inspired by [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent).
+### 🔭 research
 
-### Theme Modes
+Read-only exploration. The agent reads code, traces execution paths, maps architecture, and reports — without modifying files.
 
-`/theme [full|compact|minimal]`:
+### 📋 plan
 
-- `full` — splash screen + banner (default)
-- `compact` — banner only
-- `minimal` — one-liner
+Design before building. Produces numbered step-by-step plans with file paths, trade-offs, and risk assessment. Does **not** write code in this mode.
 
-### Permission Modes
+### 🐛 debug
 
-`/perm <ask|auto|yolo>`:
+Systematic root-cause hunting. Reproduce → hypothesize → narrow → fix → verify. Never guesses — always confirms with evidence.
 
-- `ask` — prompt before writes/commands (safest)
-- `auto` — auto-approve reads, ask for destructive
-- `yolo` — approve everything (fastest)
+### 🏛 architect
 
-Type `always` when prompted to permanently switch to `auto`.
+System-level design. Component boundaries, data flow, technology choices, scalability, API design, database schemas, deployment.
 
-### Shell Escape
+### 🜲 hermes
 
-Prefix any line with `!` to run a shell command directly without AI involvement:
+**The agent that grows with you.** Recalls prior sessions and instincts before answering, builds a model of the user across conversations, parallelizes independent subtasks, distills skills from experience, nudges to persist knowledge at end of work, and proactively suggests scheduled follow-ups.
 
-```
-!ls -la
-!git status
-```
+Activate with `/hermes` or `/mode hermes`.
 
 ---
 
-## Install
+## 🛠 Skills System
+
+Skills are reusable prompt templates stored in `~/.crowcoder/skills/`. Three sources:
+
+| Source | Stored as | Origin |
+| :--- | :--- | :--- |
+| **ECC bundled** | `ecc-<name>.json` | The 33 skills from [everything-claude-code](https://github.com/Crownelius/everything-claude-code), auto-installed on first launch |
+| **ECC agents** | `ecc-agent-<name>.json` | 16 specialized agent prompts (code-reviewer, planner, doc-updater, etc.) |
+| **Your own** | `<id>.json` | Created via `/skill-create` (distilled from git patterns) or `/evolve` (promoted from high-confidence instincts) |
+
+When you send a message, Compact Agent auto-matches the highest-scoring skill against your query and injects its body into the system prompt for that turn. Browse with `/skills`, filter to ECC with `/ecc-skills`.
+
+---
+
+## 🔧 Tool Arsenal
+
+The LLM has access to these tools. Each call is gated by your permission mode (`ask`/`auto`/`yolo`).
+
+| Tool | Description | R/W |
+| :--- | :--- | :---: |
+| `bash` | Run a shell command. Spawns via Git Bash on Windows, `/bin/bash` elsewhere. | RW |
+| `read_file` | Read a file with paging + size limits. | R |
+| `write_file` | Create or overwrite a file. Auto-creates parent dirs. | W |
+| `edit_file` | Find-and-replace within a file with optional `replace_all`. | W |
+| `grep` | Search file contents. Uses ripgrep when available, falls back to grep. | R |
+| `glob` | Find files by glob pattern (e.g. `src/**/*.ts`). | R |
+| `list_dir` | List directory entries (type, size, name). | R |
+| `web_fetch` | Fetch a URL and convert HTML → readable text. | R |
+| `web_search` | Keyword search via DuckDuckGo Lite. Returns title/URL/snippet. No API key required. | R |
+
+Unknown-tool calls are intercepted: when a free model hallucinates `web_search_exa`, `TodoWrite`, or similar, the error response lists the valid tool names so the model self-corrects on the next iteration.
+
+---
+
+## 🌐 Supported Providers
+
+| Provider | Base URL | Notes |
+| :--- | :--- | :--- |
+| **OpenRouter** | `https://openrouter.ai/api/v1` | One key, hundreds of models, free tier available. Recommended for new users. |
+| **OpenAI** | `https://api.openai.com/v1` | GPT-4o / o-series. |
+| **Anthropic** (via OpenRouter) | `https://openrouter.ai/api/v1` | Use `anthropic/claude-sonnet-4` etc. (native Anthropic API is not OpenAI-compatible). |
+| **DeepSeek** | `https://api.deepseek.com/v1` | Cheap, strong on code. |
+| **GLM (ZhipuAI)** | `https://open.bigmodel.cn/api/paas/v4` | GLM family. |
+| **Ollama** | `http://localhost:11434/v1` | Local models — no API key needed. |
+| **LM Studio** | `http://localhost:1234/v1` | Local models — no API key needed. |
+| **Custom** | you provide | Anything that speaks OpenAI Chat Completions. |
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) **18 or newer** (tested on 18, 20, 22, 24)
+- An API key from any supported provider (or use a local Ollama / LM Studio)
+- A POSIX-like shell. Compact Agent spawns Git Bash for shell tools on Windows.
+
+### Single-command install
 
 ```bash
 npm install -g compact-agent
 compact-agent
 ```
 
-For the full setup walkthrough (prerequisites, providers, troubleshooting) see [INSTALL.md](INSTALL.md).
+First run launches the setup wizard (provider, key, model, permission mode). After that, `compact-agent` from any directory drops you into the REPL.
 
 ### From source (development)
 
@@ -310,92 +178,187 @@ npm install
 npm link
 ```
 
-Rebuild after edits:
+Rebuild after edits: `npx tsc` (or `npm run build`). The `prepare` script also runs `tsc` automatically on `npm install`, so a clean clone produces a working `dist/` without an extra step.
+
+### Updating
 
 ```bash
-npx tsc
+npm install -g compact-agent@latest
 ```
 
-## Environment Variables
+### Uninstalling
 
-| Variable | Purpose | Default |
-|----------|---------|---------|
-| `CROWCODER_HOME` | Override config directory | `~/.crowcoder` |
-| `CROWCODER_HOOK_PROFILE` | Hook strictness: `minimal`, `standard`, `strict` | `standard` |
-| `CROWCODER_DISABLED_HOOKS` | Comma-separated hook IDs to disable | (none) |
-| `CROWCODER_PACKAGE_MANAGER` | Override package manager detection | (auto-detect) |
+```bash
+npm uninstall -g compact-agent
+rm -rf ~/.crowcoder        # remove all local state (config, sessions, skills, ...)
+```
+
+See [INSTALL.md](INSTALL.md) for the full setup walkthrough including provider-specific tips and troubleshooting.
 
 ---
 
-## everything-claude-code (ECC) integration
+## ⌨ Slash commands
 
-Crowcoder ships with the full ECC library — imported from
-[Crownelius/everything-claude-code](https://github.com/Crownelius/everything-claude-code) — and
-installs it automatically on first launch. The library lives at `resources/ecc/`
-inside the install and is materialized into your Crowcoder data dir as:
+The most-used commands at a glance. See **[COMMANDS.md](COMMANDS.md)** for the complete reference (~80 commands).
 
-| Resource | Source                          | Destination                       | Used by                                |
-|----------|---------------------------------|-----------------------------------|----------------------------------------|
-| Skills   | `resources/ecc/skills/*/SKILL.md` | `~/.crowcoder/skills/ecc-*.json`  | `/skills`, system-prompt auto-injection |
-| Agents   | `resources/ecc/agents/*.{json,md}` | `~/.crowcoder/ecc-agents/*.md` + `~/.crowcoder/skills/ecc-agent-*.json` | `/ecc-agents`, `/skills` |
-| Commands | `resources/ecc/commands/*.md` + `prompts/*.md` | `~/.crowcoder/ecc-commands/*.md` | `/ecc-<command-name>`                  |
-| Rules    | `resources/ecc/rules/<lang>-*.md` | `~/.crowcoder/rules/<lang>.md`    | System prompt language rules           |
-| Hooks    | Native Crowcoder ports          | `~/.crowcoder/hooks.json`         | PreToolUse / PostToolUse pipeline       |
+| Command | Description |
+| :--- | :--- |
+| `/walkthrough` | Agent-led tour of every feature *(aliases: `/tour`, `/guide`)* |
+| `/help` | Print the full command list |
+| `/mode <name>` | Switch operation mode (dev/review/tdd/research/plan/debug/architect/hermes) |
+| `/model [name]` | Switch model, or show the current one |
+| `/perm <mode>` | Change permission mode (ask/auto/yolo) |
+| `/tdd <feature>` | Test-driven workflow — tests first, then implementation |
+| `/review [target]` | AI code review with severity ratings |
+| `/orchestrate <task>` | Decompose a task and run sub-agents in parallel |
+| `/skills` | List all skills (built-in, ECC bundled, learned) |
+| `/learn` | Extract patterns from the current session into instincts |
+| `/usage` | Show token + cost summary |
+| `/audit` | Local-only project health check (no data leaves your machine) |
+| `/export [md\|json\|txt]` | Save the current conversation to a file |
+| `!<cmd>` | Run a shell command directly without involving the AI |
+| `/exit` | Quit the REPL |
 
-### ECC slash commands
+---
 
-ECC commands are auto-injected into their built-in equivalents (e.g. `/tdd`, `/review`, `/plan` automatically use ECC prompts when ECC is installed). The following ECC-only commands have no built-in equivalent:
+## 🔒 Privacy
+
+**Zero telemetry, zero analytics, zero phone-home.**
+
+| Data | Where it goes |
+| :--- | :--- |
+| Conversation messages | Your chosen LLM provider only (required for the model to respond) |
+| Token counts, costs | `~/.crowcoder/usage.json` — local file only, never transmitted |
+| Sessions | `~/.crowcoder/sessions/*.json` — local files |
+| Learned instincts & skills | `~/.crowcoder/instincts/`, `~/.crowcoder/skills/` — local files |
+| Memory | `~/.crowcoder/memory/` — local files |
+| API keys | `~/.crowcoder/config.json` — plaintext, local only. **Protect this file.** |
+| Hook execution | All hooks run locally in your shell. No external calls. |
+
+The `web_fetch` and `web_search` tools only contact URLs the agent decides to fetch in response to your request. There is no background telemetry, no crash reporting, no auto-update beacon.
+
+**To remove everything:** `rm -rf ~/.crowcoder`.
+
+---
+
+## 🪝 Default Hooks
+
+Five hooks ship by default via the bundled everything-claude-code library. Configured in `~/.crowcoder/hooks.json` — disable any you don't want.
+
+| Event | Match | Behavior |
+| :--- | :--- | :--- |
+| `PreToolUse` | `bash` | **Block** `git ... --no-verify` and `--no-gpg-sign` — they skip pre-commit hooks |
+| `PreToolUse` | `bash` | Warn (non-blocking) when running a dev server outside tmux on POSIX |
+| `PreToolUse` | `read_file` | Warn when reading `.env`, `.key`, `.pem`, or paths containing `credentials`/`secrets`/`id_rsa` |
+| `PostToolUse` | `edit_file` | Warn when an edit leaves `console.log`/`console.warn`/`console.error` statements in `.ts`/`.js` files |
+| `PostToolUse` | `write_file` | Same console-statement warning on new files |
+
+Set `CROWCODER_HOOK_PROFILE=minimal` to silence all but the blocking ones. Set `=strict` to enable additional reminders (tmux prompts, git-push warnings). Write your own hooks by adding entries to `hooks.json` with `event`, `match`, `command`, `blocking`, `timeout`, `enabled`.
+
+---
+
+## 🏛 Architecture
 
 ```
-/ecc                       — show install state + counts
-/ecc-install               — install or refresh ECC resources (idempotent)
-/ecc-skills                — list ECC skills
-/ecc-agents                — list ECC agents
-/ecc-commands              — list ECC-only commands
-/ecc-feature-development   — feature implementation workflow
-/ecc-add-language-rules    — add language-specific rule files
-/ecc-database-migration    — database migration workflow
-```
+src/
+├── index.ts                 # REPL main loop + ~80 slash-command dispatcher
+├── api.ts                   # OpenAI-compatible client (streaming, retries, 429-aware)
+├── query.ts                 # Tool-call loop: stream chat → exec tools → feed back results
+├── system-prompt.ts         # System prompt assembly (env + mode + rules + ECC skill)
+├── config.ts                # ~/.crowcoder/config.json (CROWCODER_HOME-aware)
+├── modes.ts                 # 8 operation modes — dev/review/tdd/research/plan/debug/architect/hermes
+├── walkthrough.ts           # /walkthrough — agent-led tour prompt
+├── ecc.ts                   # everything-claude-code installer + skill/agent/command loader
+├── tools/                   # 9 tools — each implements { name, parameters, call(input, cwd) }
+│   ├── bash.ts              # Shell exec with timeout, 10 MB buffer
+│   ├── read.ts              # Paged file read with size limit
+│   ├── write.ts             # File creation/overwrite, auto mkdir
+│   ├── edit.ts              # Find/replace with optional replace_all
+│   ├── grep.ts              # ripgrep with grep fallback
+│   ├── glob.ts              # File pattern matching
+│   ├── list-dir.ts          # Directory listing
+│   ├── web-fetch.ts         # URL fetch + HTML→text
+│   ├── web-search.ts        # DuckDuckGo Lite — no API key
+│   └── index.ts             # ALL_TOOLS registry
+├── hooks.ts                 # PreToolUse / PostToolUse / SessionStart / SessionStop dispatcher
+├── hook-controls.ts         # Hook profile system (minimal/standard/strict)
+├── permissions.ts           # ask/auto/yolo gating per tool
+├── security.ts              # Dangerous-command + secret-write scanner
+├── sessions.ts              # ~/.crowcoder/sessions/*.json — save/load/resume
+├── memory.ts                # Cross-session project memory
+├── learning.ts              # Instincts: pattern extraction, confidence decay, pruning
+├── skills.ts                # Skill JSON store + trigger-based auto-injection
+├── skill-create.ts          # Distill new skills from git history patterns
+├── orchestration.ts         # /orchestrate + /multi-* parallel sub-agent prompts
+├── autonomous-loops.ts      # /pr-loop + multi-plan/multi-execute prompts
+├── search-first.ts          # /search-first /docs-lookup research-before-code prompts
+├── modes.ts, codemaps.ts, compaction.ts, strategic-compaction.ts
+├── verification.ts          # /verify /test-coverage prompts + checkpoint helpers
+├── refactor.ts              # /refactor /refactor-clean prompts
+├── evaluation.ts            # /review /tdd /security-review /audit /plan prompts
+├── content-engine.ts        # /article /slides /investor-deck /chief-of-staff prompts
+├── git-workflow.ts          # /commit /pr /diff /log + branch helpers
+├── agents.ts                # 10 language-specific review + build-fix prompt builders
+├── cost-tracker.ts          # ~/.crowcoder/usage.json — token counts, cost estimates
+├── model-router.ts          # /route — complexity-based model switching
+├── docs-sync.ts             # /update-docs + project language detection
+├── package-detect.ts        # /detect — package manager / test runner / build tool
+├── rules.ts                 # Language-specific coding rules (loaded into system prompt)
+├── pm2-manager.ts           # /pm2 wrapper
+├── theme.ts                 # TUI colors + splash + banner + tool-call rendering
+├── retry.ts                 # API call retry with backoff
+├── export.ts                # /export md/json/txt
+├── html-parser.ts           # HTML→text for web_fetch
+└── types.ts                 # CrowcoderConfig, Message, Session, Mode types
 
-Any `/ecc-<command-name>` dynamic dispatch is also supported for commands in `~/.crowcoder/ecc-commands/`.
+bin/
+└── crowcoder.js             # CLI entry — DEP0040 suppress + dynamic import dist/index.js
 
-### Skill auto-injection
+resources/
+└── ecc/                     # Bundled everything-claude-code library
+    ├── skills/              # 33 SKILL.md files (one per skill)
+    ├── agents/              # 16 kiro agent JSON+MD pairs
+    ├── commands/            # 9 workflow command prompts
+    ├── rules/               # 39 language-specific rule files
+    └── prompts/             # 6 GitHub prompt files
 
-When you send a prompt that matches an ECC skill's triggers
-(e.g. asking about *TDD*, *bun*, *e2e testing*, *MCP servers*, *frontend slides*),
-the highest-scoring skill's body is auto-injected into the system prompt for
-that turn. Skills also appear in `/skills` so you can invoke them by trigger
-matching from any prompt.
-
-### ECC hooks (security)
-
-Five native hooks are installed (auto-disabled if you remove them from
-`~/.crowcoder/hooks.json`):
-
-| Event       | Match       | Behavior                                         |
-|-------------|-------------|--------------------------------------------------|
-| PreToolUse  | `bash`      | Block `git ... --no-verify` and `--no-gpg-sign`  |
-| PreToolUse  | `bash`      | Remind to run dev servers under tmux (non-blocking) |
-| PreToolUse  | `read_file` | Warn when reading `.env / .key / .pem / credentials*` |
-| PostToolUse | `edit_file` | Warn when an edit leaves `console.*` statements  |
-| PostToolUse | `write_file`| Same console-statement warning on new files      |
-
-All hook entries are tagged `__ecc__` so `/ecc-install` can refresh them
-without touching hooks you've defined yourself.
-
-### Rebuilding bundled ECC resources
-
-The bundled `resources/ecc/` is a frozen snapshot of the upstream repo. To
-refresh from upstream:
-
-```bash
-git -C /e/ecc-mirror/everything-claude-code pull
-# then re-copy: skills, agents, commands, rules, prompts
-# (run /ecc-install afterwards to re-import)
+tests/
+├── smoke-commands.mjs       # 88-command dispatch smoke test (no LLM calls)
+├── llm-drive-all.mjs        # End-to-end LLM driver against a real API
+├── users.test.ts            # Vitest unit tests
+└── e2e/                     # Playwright E2E
 ```
 
 ---
 
-## License
+## 🤝 Contributing
 
-MIT
+PRs welcome. Please:
+
+- Strict TypeScript — avoid `any`
+- Focused PRs — one thing per PR
+- Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`)
+- Never commit API keys, tokens, or paths containing your username
+- Run `node tests/smoke-commands.mjs` before submitting — must report `88/88 pass`
+
+For larger features (new mode, new tool, new orchestration pattern), open an issue first to discuss the design.
+
+---
+
+## 📜 License
+
+Distributed under the **[MIT License](LICENSE)**.
+
+Crowcoder bundles content from these projects, each under their own license:
+- [everything-claude-code](https://github.com/Crownelius/everything-claude-code) — agent harness library
+- [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) — Hermes mode inspiration
+
+---
+
+<div align="center">
+
+**Compact Agent** — Built to fit a lot of intelligence in a small command.
+
+[Bug reports](https://github.com/Crownelius/Crowcoder/issues) • [Install guide](INSTALL.md) • [Command reference](COMMANDS.md) • [npm](https://www.npmjs.com/package/compact-agent)
+
+</div>
