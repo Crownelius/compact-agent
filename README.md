@@ -9,7 +9,7 @@ npm install -g compact-agent
 compact-agent
 ```
 
-> **New here?** See [INSTALL.md](INSTALL.md) for the full setup walkthrough (prerequisites, providers, troubleshooting). Inside the REPL, type `/walkthrough` for an agent-led tour.
+> **New here?** See [INSTALL.md](INSTALL.md) for setup (prerequisites, providers, troubleshooting) and [COMMANDS.md](COMMANDS.md) for a complete reference of every slash command. Inside the REPL, type `/walkthrough` for an agent-led tour.
 
 ---
 

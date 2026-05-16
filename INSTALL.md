@@ -19,8 +19,9 @@ compact-agent
 
 First run launches the setup wizard.
 
-Inside the REPL, type `/walkthrough` and an agent will walk you through the
-features. `/help` shows every command. `Ctrl+C` exits.
+Inside the REPL, type `/walkthrough` for an agent-led tour, `/help` for a
+quick command list, or see [COMMANDS.md](COMMANDS.md) for a complete
+reference of every slash command. `Ctrl+C` exits.
 
 ## Prerequisites
 
