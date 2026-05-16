@@ -10,15 +10,15 @@ Crowcoder at any OpenAI-compatible API.
 
 ## TL;DR
 
+**Single command** (Node 18+ required):
+
 ```bash
-# from source today — single command after this:
-git clone https://github.com/Crownelius/Crowcoder.git
-cd Crowcoder
-npm install
-npx tsc
-npm link            # puts `crowcoder` on your PATH globally
-crowcoder           # first run launches the setup wizard
+npm install -g github:Crownelius/Crowcoder
+crowcoder
 ```
+
+That clones the repo, installs deps, builds the TypeScript, and puts
+`crowcoder` on your PATH. First run launches the setup wizard.
 
 Inside the REPL, type `/walkthrough` and an agent will walk you through the
 features. `/help` shows every command. `Ctrl+C` exits.
@@ -32,48 +32,56 @@ features. `/help` shows every command. `Ctrl+C` exits.
 - **A POSIX-like shell** (macOS, Linux, WSL, or Git Bash on Windows). PowerShell
   and CMD work too — Crowcoder spawns Git Bash for shell commands on Windows.
 
-## Install from source (current default)
+## Install from GitHub (recommended — single command, no token needed)
 
-Crowcoder is not yet published to npm. Until it is, install from source:
+```bash
+npm install -g github:Crownelius/Crowcoder
+```
+
+That's it. npm clones the repo, installs runtime + dev deps, runs the
+`prepare` script which compiles TypeScript into `dist/`, and writes a
+`crowcoder` shim into your global npm bin (already on `PATH`).
+
+Verify:
+
+```bash
+crowcoder --help        # or just `crowcoder` for the REPL
+```
+
+To uninstall later: `npm uninstall -g crowcoder-cli`.
+
+## Install from npm registry (when published)
+
+Once Crowcoder is published to the registry, the command shortens further:
+
+```bash
+npm install -g crowcoder
+```
+
+Same setup wizard, same UX. Watch the repo's releases for the announcement.
+
+## Install from source (for development)
+
+If you want to hack on Crowcoder itself, clone and link:
 
 ```bash
 git clone https://github.com/Crownelius/Crowcoder.git
 cd Crowcoder
-npm install
-npx tsc                # compile TypeScript -> dist/
-npm link               # creates a global `crowcoder` shim
+npm install            # also runs prepare/tsc automatically
+npm link               # global `crowcoder` points at this checkout
 ```
 
-`npm link` creates a symlink to this checkout in your global npm bin (which is
-already on `PATH` for any sane Node install). After this, `crowcoder` works
-from any directory.
-
-To uninstall later: `npm unlink -g crowcoder` (removes the global shim;
-the source tree stays).
+Now edits in `src/` take effect after `npx tsc` (or `npm run build`). To
+uninstall the global shim: `npm unlink -g crowcoder-cli`.
 
 ### Without `npm link`
 
 If you prefer not to touch your global bin:
 
 ```bash
-# Always run from this directory:
-node ./bin/crowcoder.js
-
-# Or alias it for your shell:
-alias crowcoder='node /full/path/to/Crowcoder/bin/crowcoder.js'
+node ./bin/crowcoder.js                                   # always run from here
+alias crowcoder='node /full/path/to/Crowcoder/bin/crowcoder.js'   # or alias it
 ```
-
-## Install from npm (when published)
-
-Once Crowcoder is published, a single command:
-
-```bash
-npm install -g crowcoder
-crowcoder
-```
-
-Same setup wizard, same UX as the from-source install. Watch the repo's
-releases for the announcement.
 
 ## First-run setup
 
@@ -188,6 +196,14 @@ Refresh anytime with `/ecc-install`. Disable a specific hook by editing
 
 ## Updating
 
+If you installed via `npm install -g github:Crownelius/Crowcoder`:
+
+```bash
+npm install -g github:Crownelius/Crowcoder      # same command — re-fetches latest
+```
+
+If you installed from a source clone:
+
 ```bash
 cd Crowcoder
 git pull
@@ -195,14 +211,12 @@ npm install            # in case dependencies changed
 npx tsc                # rebuild
 ```
 
-The next `crowcoder` invocation picks up the new dist automatically.
-
 ## Uninstall
 
 ```bash
-npm unlink -g crowcoder            # remove the global shim
-rm -rf ~/.crowcoder                # remove all local state (config, sessions, etc.)
-rm -rf /path/to/Crowcoder          # remove the source clone
+npm uninstall -g crowcoder-cli     # if installed via npm install -g
+npm unlink -g crowcoder-cli        # if installed via `npm link` from a source clone
+rm -rf ~/.crowcoder                # local state (config, sessions, instincts, etc.)
 ```
 
 If you set up hooks or wrote skills, back up `~/.crowcoder/skills/` and

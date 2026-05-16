@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
-    "dev": "tsx --watch src/index.ts"
+    "dev": "tsx --watch src/index.ts",
+    "prepare": "tsc || echo 'prepare: tsc skipped (dist may already be built)'"
   },
   "engines": {
     "node": ">=18.0.0"

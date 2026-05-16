@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { getProjectLanguage } from './docs-sync.js';
 
 // ── Types ──────────────────────────────────────────────
 export interface DeadCodeAnalysis {
@@ -14,29 +15,6 @@ export interface DeadCodeAnalysis {
   unusedVariables: string[];
   duplicatedLogic: string[];
   highComplexityFunctions: string[];
-}
-
-// ── Helper: Detect Language ──────────────────────────────────────
-function detectProjectLanguage(cwd: string): 'typescript' | 'javascript' | 'python' | 'rust' | 'unknown' {
-  const pkgPath = join(cwd, 'package.json');
-  const cargoPath = join(cwd, 'Cargo.toml');
-  const pyPath = join(cwd, 'pyproject.toml');
-
-  if (existsSync(pkgPath)) {
-    const srcDir = join(cwd, 'src');
-    if (existsSync(srcDir)) {
-      const files = readdirSync(srcDir, { recursive: true });
-      if (files.some((f) => f.toString().endsWith('.ts'))) {
-        return 'typescript';
-      }
-    }
-    return 'javascript';
-  }
-
-  if (existsSync(cargoPath)) return 'rust';
-  if (existsSync(pyPath)) return 'python';
-
-  return 'unknown';
 }
 
 // ── Helper: Find source files ──────────────────────────────────────
@@ -93,7 +71,7 @@ function hasTestCommand(cwd: string): boolean {
  * Optionally targets a specific file or pattern.
  */
 export function buildRefactorPrompt(cwd: string, target?: string): string {
-  const language = detectProjectLanguage(cwd);
+  const language = getProjectLanguage(cwd);
   const sourceFiles = findSourceFiles(cwd, language);
   const testAvailable = hasTestCommand(cwd);
 
@@ -164,7 +142,7 @@ For each finding, provide:
  * Build a more focused prompt for dead code cleanup only.
  */
 export function buildCleanupPrompt(cwd: string): string {
-  const language = detectProjectLanguage(cwd);
+  const language = getProjectLanguage(cwd);
 
   return `Clean up dead code in this project.
 
@@ -263,12 +241,11 @@ export function printDeadCodeAnalysis(analysis: DeadCodeAnalysis): void {
 }
 
 // ── Exports ──────────────────────────────────────────────
-export function getProjectLanguage(cwd: string): 'typescript' | 'javascript' | 'python' | 'rust' | 'unknown' {
-  return detectProjectLanguage(cwd);
-}
+// `getProjectLanguage` is exported from docs-sync.ts (imported above) — don't
+// re-export the same identifier here, it collides at the ESM module level.
 
 export function getSourceFiles(cwd: string): string[] {
-  const language = detectProjectLanguage(cwd);
+  const language = getProjectLanguage(cwd);
   return findSourceFiles(cwd, language);
 }
 
