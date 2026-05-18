@@ -259,7 +259,8 @@ Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX desi
 |---|---|
 | `/stitch <query>` | Stitch intelligent interface. Routes by intent: `enhance: <prompt>` improves the prompt using Stitch's prompting guide; anything else hits the assistant (list projects, get screens, generate UI from text). |
 | `/stitch-config <api-key>` | Save your Stitch API key to `~/.crowcoder/stitch.json`. |
-| `/stitch-status` | Show config + connection state. |
+| `/stitch-status` | Show config (masked key, configured-at timestamp, server URL). |
+| `/stitch-tools` | Live verification — calls `tools/list` against the server and renders the discovered tool catalog as a Markdown table. Confirms auth + endpoint reachability. |
 
 **Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
 

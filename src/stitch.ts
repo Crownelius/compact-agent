@@ -134,6 +134,36 @@ export async function callStitchMcp(req: McpRpcRequest): Promise<McpRpcResponse>
   }
 }
 
+/**
+ * /stitch-tools — inject a prompt that drives the agent to call tools/list
+ * and pretty-print the catalog. Routes through the standard LLM tool loop
+ * (async via runQuery) so we don't need to make handleSlashCommand async.
+ */
+export function buildStitchToolsPrompt(): string {
+  return `# Stitch — list available MCP tools
+
+Call the \`stitch\` tool with:
+
+\`\`\`json
+{ "method": "tools/list" }
+\`\`\`
+
+The response will be \`{ tools: [{ name, description, inputSchema }, ...] }\`.
+
+Then render the catalog as a clean Markdown table with columns:
+- **name** (exact string the user types)
+- **description** (first line, trimmed)
+- **required args** (comma-separated list from inputSchema.required, or "—")
+
+If the call fails (non-ok response), report the HTTP status and error
+message verbatim and suggest:
+  - Check the API key is valid (\`/stitch-status\`)
+  - Re-set it via \`/stitch-config <api-key>\`
+  - Confirm internet reachability
+
+Do not invoke any tools other than \`stitch\`. Do not edit any files.`;
+}
+
 // ── Status ──────────────────────────────────────────────
 export function printStitchStatus(): void {
   const cfg = loadStitchConfig();
@@ -214,13 +244,45 @@ prompt?
    Stitch — Google's AI tool that generates UI designs from text prompts
    and images, iterates on designs quickly, and exports HTML + Tailwind
    CSS code.
-2. If the user wants to list / get / generate something on Stitch: call
-   the \`stitch\` tool. Start with \`{ "method": "tools/list" }\` if you're
-   unsure what's available, then \`{ "method": "tools/call", ... }\`.
-3. Domain model: a user has **projects**; each project has many **screens**;
+
+2. **For any operation that needs Stitch data, ALWAYS follow this two-step
+   discover-then-call flow** to handle tool-name drift between docs and
+   the live server:
+
+   **Step 2a — discover** (call this first if you haven't this session):
+   \`\`\`json
+   { "method": "tools/list" }
+   \`\`\`
+   The response shape is \`{ tools: [{ name, description, inputSchema }, ...] }\`.
+   Note the exact tool names and required arguments.
+
+   **Step 2b — call**:
+   \`\`\`json
+   { "method": "tools/call",
+     "name": "<exact-name-from-step-2a>",
+     "arguments": { "<arg>": "<value>", ... } }
+   \`\`\`
+
+3. Likely tool names (verify via tools/list — exact strings may differ):
+   - \`list_projects\` — args: usually none. Returns project list.
+   - \`get_project\` — args: \`project_id\`.
+   - \`list_screens\` — args: \`project_id\`. Returns screens.
+   - \`download_asset\` — args: \`screen_id\`, possibly \`format\` (image/html).
+   - \`generate_screen_from_text\` — args: \`prompt\` (required),
+     \`model\` (optional: \`gemini-3-flash\` default, or \`gemini-3-pro\`).
+
+4. Domain model: a user has **projects**; each project has many **screens**;
    each screen has an **image** + a full HTML/Tailwind document. When the
    user says "design", they usually mean a single screen or a full project.
-4. Respond conversationally with the result of any tool call.`;
+
+5. Error handling: if a tool call returns "tool not found" or "unknown
+   tool", re-run \`tools/list\` and pick the closest matching name.
+   Don't guess.
+
+6. Respond conversationally with the result of any tool call. For lists,
+   show ids + names in a table. For generated screens, share the screen
+   id + a brief description; if the user wants the code, call
+   \`download_asset\` with the appropriate format.`;
 }
 
 // ── Re-exports ──────────────────────────────────────────

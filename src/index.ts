@@ -84,8 +84,8 @@ import {
 } from './ecc.js';
 // Walkthrough — agent-led tour of Crowcoder (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
-// Stitch (Google's AI UI/UX design tool) — /stitch, /stitch-config
-import { buildStitchPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
+// Stitch (Google's AI UI/UX design tool) — /stitch, /stitch-config, /stitch-tools
+import { buildStitchPrompt, buildStitchToolsPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -317,7 +317,8 @@ export function handleSlashCommand(
       console.log(h('\n  ── Stitch (Google AI UI/UX design) ──'));
       console.log(d('  ') + c('/stitch <query>') + d('     — Stitch assistant (enhance prompts, list projects, generate screens)'));
       console.log(d('  ') + c('/stitch-config <key>') + d('— save your Stitch API key locally'));
-      console.log(d('  ') + c('/stitch-status') + d('       — show config + connection status'));
+      console.log(d('  ') + c('/stitch-status') + d('       — show config'));
+      console.log(d('  ') + c('/stitch-tools') + d('        — live verification: tools/list against the server'));
       console.log();
       return { handled: true };
     }
@@ -1190,6 +1191,13 @@ export function handleSlashCommand(
       console.log(chalk.dim('  Restart the REPL for the tool to appear in /tools.'));
       return { handled: true };
     }
+
+    case '/stitch-tools':
+      if (!stitchConfigured()) {
+        console.log(chalk.yellow('  Stitch is not configured. Run /stitch-config <api-key>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildStitchToolsPrompt() };
 
     // ── ECC (everything-claude-code) ──────────────────
     case '/ecc':
