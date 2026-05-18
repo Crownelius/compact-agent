@@ -190,48 +190,100 @@ export function printKV(key: string, value: string, indent = 2): void {
 }
 
 // ── Tool Execution Display ──────────────────────────────
+// Args are condensed to a single line, truncated to 80 chars to keep the
+// vertical footprint low.
 export function printToolRun(name: string, args: string): void {
+  const compactArgs = args.replace(/\s+/g, ' ').trim();
+  const display = compactArgs.length > 80 ? compactArgs.slice(0, 77) + '...' : compactArgs;
   console.log(
     theme.toolName(`  ${sym.running} ${name}`) +
-    theme.toolArgs(` ${args}`),
+    (display ? theme.toolArgs(` ${display}`) : ''),
   );
 }
 
+// Result is always a single line: icon + elapsed + first non-empty line of
+// output (max 120 chars). No more multi-line previews — they bloat the
+// transcript and obscure the next action.
 export function printToolResult(success: boolean, elapsed: number, output: string): void {
   const icon = success ? theme.toolStatus(sym.success) : theme.toolError(sym.error);
-  const time = theme.toolTime(`(${elapsed}ms)`);
-  const preview = output.length > 200
-    ? theme.dim(output.slice(0, 150) + '...')
-    : theme.dim(output);
-  console.log(`  ${icon} ${time} ${preview}`);
+  const time = theme.toolTime(`${(elapsed / 1000).toFixed(1)}s`);
+  const firstLine = (output.split('\n').find((l) => l.trim().length > 0) || '').trim();
+  const preview = firstLine.length > 120 ? firstLine.slice(0, 117) + '...' : firstLine;
+  const tail = output.length > preview.length + 10
+    ? theme.dim(`  +${output.length - preview.length}b`)
+    : '';
+  console.log(`  ${icon} ${time}  ${theme.dim(preview)}${tail}`);
 }
 
 // ── Thinking Display ────────────────────────────────────
+// Inline streaming with a left border, no surrounding blank lines.
+// Toggle visibility with /thinking.
 export function printThinkingOpen(): void {
-  console.log('');
-  console.log(theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} Thinking...`));
+  console.log(theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} thinking`));
 }
 
 export function printThinkingText(text: string): void {
-  // Prefix each line with the left border
-  process.stdout.write(theme.thinkBorder('  │ ') + theme.thinkText(text));
+  // Prefix each newline within the chunk so multi-line thoughts stay aligned.
+  const prefixed = text.replace(/\n(?!$)/g, '\n' + theme.thinkBorder('  │ '));
+  process.stdout.write(theme.thinkBorder('  │ ') + theme.thinkText(prefixed));
 }
 
 export function printThinkingClose(): void {
-  console.log('');
-  console.log(theme.thinkBorder('  │'));
+  process.stdout.write('\n');
 }
 
-// ── Cost Display ────────────────────────────────────────
-export function printCost(prompt: number, completion: number, cost: number, warning?: string): void {
-  const p = prompt > 999 ? `${(prompt / 1000).toFixed(1)}K` : String(prompt);
-  const c = completion > 999 ? `${(completion / 1000).toFixed(1)}K` : String(completion);
-  process.stdout.write(
-    theme.cost(`\n  ${p}${sym.arrow}${c} tokens  $${cost.toFixed(4)}`),
+// ── Cost / telemetry line ─────────────────────────────────
+// One compact status line per model turn: tokens + cost + elapsed time.
+// No leading blank — caller is responsible for line state (newline as
+// needed before this is printed).
+export function printCost(
+  prompt: number,
+  completion: number,
+  cost: number,
+  warning?: string,
+  elapsedMs?: number,
+): void {
+  const fmt = (n: number) => (n > 999 ? `${(n / 1000).toFixed(1)}K` : String(n));
+  const p = fmt(prompt);
+  const c = fmt(completion);
+  const t = typeof elapsedMs === 'number'
+    ? `  ${theme.toolTime((elapsedMs / 1000).toFixed(1) + 's')}`
+    : '';
+  console.log(
+    theme.cost(`  ${p}${sym.arrow}${c} tokens  $${cost.toFixed(4)}`) + t,
   );
   if (warning) {
-    console.log(theme.warning(`\n  ${sym.warn} ${warning}`));
+    console.log(theme.warning(`  ${sym.warn} ${warning}`));
   }
+}
+
+// ── API error formatter ─────────────────────────────────
+// Distinguish actionable errors (404/401/429) from generic failures.
+// Surface the URL if the upstream message has one; suggest the fix.
+export function printApiError(message: string): void {
+  console.log('');
+  console.log(theme.error(`  ${sym.error} API error`));
+  // Indent body, wrap at ~76 chars
+  for (const line of message.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    console.log(theme.dim('    ' + trimmed));
+  }
+  const lower = message.toLowerCase();
+  let hint = '';
+  if (lower.includes('404') || lower.includes('no longer') || lower.includes('not found')) {
+    hint = 'Model unavailable. Switch with /model <name> or /config to pick a new one.';
+  } else if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
+    hint = 'Auth failed. Re-set your key with /config.';
+  } else if (lower.includes('429') || lower.includes('rate limit')) {
+    hint = 'Rate-limited. Wait a moment or switch to a different model with /model.';
+  } else if (lower.includes('econn') || lower.includes('etimedout') || lower.includes('network')) {
+    hint = 'Network issue. Check connectivity, then retry.';
+  }
+  if (hint) {
+    console.log(theme.warning(`    → ${hint}`));
+  }
+  console.log('');
 }
 
 // ── Security Display ────────────────────────────────────

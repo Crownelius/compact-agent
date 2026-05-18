@@ -11,7 +11,7 @@ import { scanToolCall, printSecurityWarning } from './security.js';
 import { trackUsage } from './cost-tracker.js';
 import { shouldCompact, compactMessages, quickCompact, DEFAULT_COMPACTION } from './compaction.js';
 import type { Mode } from './modes.js';
-import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost } from './theme.js';
+import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost, printApiError } from './theme.js';
 
 export interface QueryContext {
   config: CrowcoderConfig;
@@ -95,11 +95,42 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     let toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[] | undefined;
     let hasOutput = false;
     let thinkingActive = false;
+    let leadingTrimmed = false;        // strip leading whitespace from the model's first text chunk
+    let lastCharWasNewline = false;    // collapse 3+ consecutive newlines down to 2
+    let consecutiveNewlines = 0;
+
+    const turnStart = Date.now();
+
+    function writeStreamText(chunk: string): void {
+      // Trim leading whitespace until the first non-whitespace character so
+      // the model can't produce big vertical gaps before its real reply.
+      let text = chunk;
+      if (!leadingTrimmed) {
+        text = text.replace(/^[\s\n]+/, '');
+        if (text.length === 0) return; // entire chunk was leading whitespace
+        leadingTrimmed = true;
+      }
+      // Collapse runs of 3+ newlines into 2 so the body of the response is
+      // dense but still has paragraph breaks where the model intended them.
+      let out = '';
+      for (const ch of text) {
+        if (ch === '\n') {
+          consecutiveNewlines++;
+          if (consecutiveNewlines <= 2) out += ch;
+        } else {
+          consecutiveNewlines = 0;
+          out += ch;
+        }
+      }
+      if (out.length === 0) return;
+      lastCharWasNewline = out.endsWith('\n');
+      process.stdout.write(theme.primary(out));
+      fullText += out;
+    }
 
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS)) {
         if (event.type === 'thinking' && event.content) {
-          // Show thinking tokens if the toggle is enabled
           if (ctx.config.showThinking) {
             if (!thinkingActive) {
               printThinkingOpen();
@@ -113,15 +144,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
             thinkingActive = false;
           }
           if (!hasOutput) {
-            process.stdout.write('\n');
             hasOutput = true;
           }
-          process.stdout.write(theme.primary(event.content));
-          fullText += event.content;
+          writeStreamText(event.content);
         } else if (event.type === 'tool_call') {
           toolCalls = event.toolCalls;
         } else if (event.type === 'done') {
-          // Track usage and cost
           if (event.usage) {
             const u = event.usage;
             const { cost, warning } = trackUsage(
@@ -130,18 +158,23 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
               u.prompt,
               u.completion,
             );
-            printCost(u.prompt, u.completion, cost, warning);
+            // Single newline separator if we just streamed text, then the
+            // compact telemetry line.
+            if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
+            printCost(u.prompt, u.completion, cost, warning, Date.now() - turnStart);
           }
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.log(theme.error(`\n  ${sym.error} API Error: ${msg}`));
+      // Always close the streaming line first so the error doesn't glue to text.
+      if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
+      printApiError(msg);
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
       break;
     }
 
-    if (hasOutput) {
+    if (hasOutput && !lastCharWasNewline) {
       process.stdout.write('\n');
     }
 
