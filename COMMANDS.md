@@ -251,7 +251,32 @@ A tiny stateful demo command useful for testing/learning:
 | `/count dec` (or `/count -`) | Decrement. |
 | `/count reset` | Reset to 0. |
 
-### 2.20 ECC (everything-claude-code)
+### 2.20 Stitch (Google AI UI/UX design)
+
+Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX design + code generation tool. Ports the [gemini-cli-extensions/stitch](https://github.com/gemini-cli-extensions/stitch) extension to Compact Agent.
+
+| Command | What it does |
+|---|---|
+| `/stitch <query>` | Stitch intelligent interface. Routes by intent: `enhance: <prompt>` improves the prompt using Stitch's prompting guide; anything else hits the assistant (list projects, get screens, generate UI from text). |
+| `/stitch-config <api-key>` | Save your Stitch API key to `~/.crowcoder/stitch.json`. |
+| `/stitch-status` | Show config + connection state. |
+
+**Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
+
+**Or via env var (no file written):** `$env:STITCH_API_KEY = "..."` (PowerShell) / `export STITCH_API_KEY="..."` (POSIX) before launching `compact-agent`.
+
+Once configured, the `stitch` tool appears in `/tools` and the agent can call it directly. Common invocations:
+
+```
+❯ /stitch list my projects
+❯ /stitch generate a landing page for a podcast about productivity
+❯ /stitch enhance: dark dashboard with sidebar nav and 3 charts
+❯ /stitch get screens for project foo-bar
+```
+
+Auth is **API key only** (the simpler of Stitch's two auth modes). ADC (Application Default Credentials via gcloud) is not currently supported.
+
+### 2.21 ECC (everything-claude-code)
 
 ECC is the bundled skill / agent / hook library. Auto-installed on first launch.
 
@@ -285,6 +310,7 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `list_dir` | List directory entries (type, size, name). | Yes |
 | `web_fetch` | Fetch a URL and return text (HTML→text). | Yes |
 | `web_search` | Search the web by keyword (DuckDuckGo, no API key). | Yes |
+| `stitch` | Call Google Stitch's MCP server (`tools/list`, `tools/call`). Only present when `/stitch-config` has been run. | No |
 
 Any tool name you see in error output other than these (e.g. `web_search_exa`, `TodoWrite`, `exec_file`) is a model hallucination — the agent will be told the valid list and self-correct on the next iteration.
 
@@ -300,6 +326,7 @@ These affect the REPL's runtime behavior. Set in your shell before launching `co
 | `CROWCODER_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
 | `CROWCODER_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
 | `OPENROUTER_API_KEY` | (unset) | Picked up by the LLM driver test (`tests/llm-drive-all.mjs`) if your real `config.json` isn't available. |
+| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.crowcoder/stitch.json`. |
 
 ---
 
@@ -313,6 +340,7 @@ Compact Agent is local-first. Everything lives in `~/.crowcoder/` (or `$CROWCODE
   usage.json           # token counts, cost estimates (LOCAL ONLY)
   hooks.json           # hook definitions
   ecc-state.json       # ECC install metadata
+  stitch.json          # Google Stitch API key (if /stitch-config has been run)
   sessions/            # *.json — saved conversations
   instincts/           # *.json — learned patterns
   skills/              # *.json — reusable skill templates (ECC + your own)

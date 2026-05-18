@@ -59,6 +59,7 @@ Compact Agent is a single-command terminal AI coding CLI. It speaks any OpenAI-c
 - **Permission modes** — `/perm ask` prompts before every tool use, `/perm auto` allows non-destructive ops, `/perm yolo` approves everything. Per-tool dry-run via `/dry-run`.
 - **Cost & budget tracking** — `/usage`, `/budget` keep token counts and cost estimates entirely local in `~/.crowcoder/usage.json`. Cost-aware routing via `/route`.
 - **Real web search** — `web_search` tool backed by DuckDuckGo Lite (no API key). The LLM gets unknown-tool errors with the valid tool list so free models that hallucinate `web_search_exa` can self-correct.
+- **Google Stitch integration** — `/stitch <query>` interface to [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX design tool. List projects, generate UI from text, enhance design prompts. Ports the [gemini-cli-extensions/stitch](https://github.com/gemini-cli-extensions/stitch) extension; API-key auth.
 - **Zero telemetry** — no analytics SDKs, no phone-home, no crash reporting. The only network calls are to your chosen LLM provider when you send a message.
 
 ---
@@ -132,6 +133,7 @@ The LLM has access to these tools. Each call is gated by your permission mode (`
 | `list_dir` | List directory entries (type, size, name). | R |
 | `web_fetch` | Fetch a URL and convert HTML → readable text. | R |
 | `web_search` | Keyword search via DuckDuckGo Lite. Returns title/URL/snippet. No API key required. | R |
+| `stitch` | Call Google Stitch's MCP server for UI/UX design ops. Auto-registered when `/stitch-config` has saved an API key. | RW |
 
 Unknown-tool calls are intercepted: when a free model hallucinates `web_search_exa`, `TodoWrite`, or similar, the error response lists the valid tool names so the model self-corrects on the next iteration.
 
@@ -269,6 +271,7 @@ src/
 ├── modes.ts                 # 8 operation modes — dev/review/tdd/research/plan/debug/architect/hermes
 ├── walkthrough.ts           # /walkthrough — agent-led tour prompt
 ├── ecc.ts                   # everything-claude-code installer + skill/agent/command loader
+├── stitch.ts                # Google Stitch integration (MCP JSON-RPC client + prompt builder)
 ├── tools/                   # 9 tools — each implements { name, parameters, call(input, cwd) }
 │   ├── bash.ts              # Shell exec with timeout, 10 MB buffer
 │   ├── read.ts              # Paged file read with size limit
@@ -279,7 +282,8 @@ src/
 │   ├── list-dir.ts          # Directory listing
 │   ├── web-fetch.ts         # URL fetch + HTML→text
 │   ├── web-search.ts        # DuckDuckGo Lite — no API key
-│   └── index.ts             # ALL_TOOLS registry
+│   ├── stitch.ts            # Google Stitch MCP wrapper (opt-in via /stitch-config)
+│   └── index.ts             # ALL_TOOLS registry (stitch only listed when configured)
 ├── hooks.ts                 # PreToolUse / PostToolUse / SessionStart / SessionStop dispatcher
 ├── hook-controls.ts         # Hook profile system (minimal/standard/strict)
 ├── permissions.ts           # ask/auto/yolo gating per tool

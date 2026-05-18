@@ -8,6 +8,13 @@ import { GlobTool } from './glob.js';
 import { WebFetchTool } from './web-fetch.js';
 import { WebSearchTool } from './web-search.js';
 import { ListDirTool } from './list-dir.js';
+import { StitchTool } from './stitch.js';
+import { stitchConfigured } from '../stitch.js';
+
+// Stitch is only listed in the tool registry when configured — otherwise
+// free models hallucinate calls to it and waste turns on auth errors.
+const OPTIONAL_TOOLS: Tool[] = [];
+if (stitchConfigured()) OPTIONAL_TOOLS.push(StitchTool);
 
 export const ALL_TOOLS: Tool[] = [
   BashTool,
@@ -19,6 +26,7 @@ export const ALL_TOOLS: Tool[] = [
   ListDirTool,
   WebFetchTool,
   WebSearchTool,
+  ...OPTIONAL_TOOLS,
 ];
 
 export function getToolNames(): string[] {

@@ -84,6 +84,8 @@ import {
 } from './ecc.js';
 // Walkthrough — agent-led tour of Crowcoder (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
+// Stitch (Google's AI UI/UX design tool) — /stitch, /stitch-config
+import { buildStitchPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -312,6 +314,10 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/ecc-feature-development') + d(' — feature implementation workflow (ECC-only)'));
       console.log(d('  ') + c('/ecc-add-language-rules') + d('  — add language-specific rule files (ECC-only)'));
       console.log(d('  ') + c('/ecc-database-migration') + d('  — database migration workflow (ECC-only)'));
+      console.log(h('\n  ── Stitch (Google AI UI/UX design) ──'));
+      console.log(d('  ') + c('/stitch <query>') + d('     — Stitch assistant (enhance prompts, list projects, generate screens)'));
+      console.log(d('  ') + c('/stitch-config <key>') + d('— save your Stitch API key locally'));
+      console.log(d('  ') + c('/stitch-status') + d('       — show config + connection status'));
       console.log();
       return { handled: true };
     }
@@ -1154,6 +1160,36 @@ export function handleSlashCommand(
     case '/tour':
     case '/guide':
       return { handled: false, injectPrompt: buildWalkthroughPrompt() };
+
+    // ── Stitch (Google AI UI/UX design tool) ──────────
+    case '/stitch':
+    case '/stitch-status':
+      if (!args || cmd === '/stitch-status') {
+        printStitchStatus();
+        return { handled: true };
+      }
+      if (!stitchConfigured()) {
+        console.log(chalk.yellow('  Stitch is not configured.'));
+        console.log(chalk.dim('  Run: /stitch-config <api-key>'));
+        console.log(chalk.dim('  Or set STITCH_API_KEY in your environment before launching.'));
+        console.log(chalk.dim('  Get a key from: https://stitch.withgoogle.com/ → Stitch Settings → API Keys'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildStitchPrompt(args) };
+
+    case '/stitch-config': {
+      const key = args.trim();
+      if (!key) {
+        console.log(chalk.yellow('  Usage: /stitch-config <api-key>'));
+        console.log(chalk.dim('  Get a key from https://stitch.withgoogle.com/ → Stitch Settings → API Keys'));
+        return { handled: true };
+      }
+      saveStitchConfig(key);
+      console.log(chalk.green(`  Stitch API key saved to ~/.crowcoder/stitch.json`));
+      console.log(chalk.dim('  The `stitch` tool is now available to the agent.'));
+      console.log(chalk.dim('  Restart the REPL for the tool to appear in /tools.'));
+      return { handled: true };
+    }
 
     // ── ECC (everything-claude-code) ──────────────────
     case '/ecc':
