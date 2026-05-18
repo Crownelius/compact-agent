@@ -16,30 +16,37 @@ import { callStitchMcp, stitchConfigured } from '../stitch.js';
 export const StitchTool: Tool = {
   name: 'stitch',
   description:
-    'Call the Google Stitch MCP server (stitch.googleapis.com/mcp) for UI/UX design management. ' +
-    'Methods: "tools/list" (enumerate available tools — call this first if unsure) and "tools/call" ' +
-    '(invoke a named tool with arguments). Common tool names: list_projects, get_project, list_screens, ' +
-    'download_asset, generate_screen_from_text. Requires STITCH_API_KEY or `/stitch-config` setup.',
+    'Google Stitch MCP server (stitch.googleapis.com/mcp). 12 tools across 4 categories: ' +
+    'Project Management (create_project, get_project, list_projects), ' +
+    'Screen Management (list_screens, get_screen), ' +
+    'AI Generation (generate_screen_from_text, edit_screens, generate_variants), ' +
+    'Design Systems (create_design_system, update_design_system, list_design_systems, apply_design_system). ' +
+    'AI Generation calls take a few minutes — do not retry on connection errors; poll with get_screen instead. ' +
+    'Requires STITCH_API_KEY or `/stitch-config` setup.',
   parameters: {
     type: 'object',
     properties: {
       method: {
         type: 'string',
-        description: 'JSON-RPC method. Either "tools/list" to enumerate available tools, or "tools/call" to invoke one.',
+        description: 'JSON-RPC method. "tools/call" to invoke a tool (default). "tools/list" to re-enumerate the catalog if you hit a tool-not-found error.',
       },
       name: {
         type: 'string',
-        description: 'For "tools/call": the tool name (e.g. "list_projects", "generate_screen_from_text"). Ignored for "tools/list".',
+        description: 'For "tools/call": the exact tool name (e.g. "list_projects", "generate_screen_from_text", "edit_screens"). See description for the full 12-tool catalog.',
       },
       arguments: {
         type: 'object',
-        description: 'For "tools/call": the tool arguments. e.g. for generate_screen_from_text: { "prompt": "...", "model": "gemini-3-flash" }. Defaults to {}.',
+        description: 'For "tools/call": tool-specific arguments. Examples: get_project → { name: "projects/{id}" }; list_screens → { projectId: "<id>" }; generate_screen_from_text → { projectId, prompt, deviceType?: "MOBILE"|"DESKTOP"|"TABLET"|"AGNOSTIC", modelId?: "GEMINI_3_PRO"|"GEMINI_3_FLASH" }.',
       },
     },
     required: ['method'],
   },
-  isReadOnly: false, // generate_screen_from_text creates assets on Stitch
-  isDestructive: false,
+  isReadOnly: false,
+  // Marked destructive because the tool covers AI Generation (generate_screen_
+  // from_text, edit_screens, generate_variants) and Design System mutations
+  // (create/update/apply). Permission gating in permissions.ts will prompt
+  // under /perm ask, auto-approve in /perm yolo.
+  isDestructive: true,
 
   async call(input): Promise<ToolResult> {
     if (!stitchConfigured()) {

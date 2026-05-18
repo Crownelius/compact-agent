@@ -109,7 +109,7 @@ The LLM has access to these tools. Each call is gated by your permission mode (`
 | `list_dir` | List directory entries (type, size, name). | R |
 | `web_fetch` | Fetch a URL and convert HTML → readable text. | R |
 | `web_search` | Keyword search via DuckDuckGo Lite. Returns title/URL/snippet. No API key required. | R |
-| `stitch` | Call Google Stitch's MCP server for UI/UX design ops. Auto-registered when `/stitch-config` has saved an API key. | RW |
+| `stitch` | Google Stitch MCP server — 12 tools across Project Management, Screen Management, AI Generation (gemini-3-flash / -pro, slow), and Design Systems. Auto-registered when `/stitch-config` has saved an API key. | RW |
 
 Unknown-tool calls are intercepted: when a free model hallucinates `web_search_exa`, `TodoWrite`, or similar, the error response lists the valid tool names so the model self-corrects on the next iteration.
 

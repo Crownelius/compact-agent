@@ -272,10 +272,33 @@ Once configured, the `stitch` tool appears in `/tools` and the agent can call it
 ❯ /stitch list my projects
 ❯ /stitch generate a landing page for a podcast about productivity
 ❯ /stitch enhance: dark dashboard with sidebar nav and 3 charts
-❯ /stitch get screens for project foo-bar
+❯ /stitch edit the hero on screen abc123 to add a CTA button
+❯ /stitch get screens for project 4044680601076201931
 ```
 
 Auth is **API key only** (the simpler of Stitch's two auth modes). ADC (Application Default Credentials via gcloud) is not currently supported.
+
+#### Tool catalog (sourced from upstream reference docs)
+
+| Tool | Category | Read-only | Notes |
+|---|---|:---:|---|
+| `create_project` | Project Management | no | Create a new Stitch project |
+| `get_project` | Project Management | yes | Args: `{ name: "projects/{projectId}" }` |
+| `list_projects` | Project Management | yes | No required args |
+| `list_screens` | Screen Management | yes | Args: `{ projectId }` |
+| `get_screen` | Screen Management | yes | Prefer `{ name: "projects/{p}/screens/{s}" }`; legacy `{ projectId, screenId }` deprecated |
+| `generate_screen_from_text` | AI Generation | no | **Slow (minutes).** Args: `{ projectId, prompt, deviceType?, modelId? }`. Model enum: `GEMINI_3_PRO` / `GEMINI_3_FLASH`. Device enum: `MOBILE` / `DESKTOP` / `TABLET` / `AGNOSTIC`. |
+| `edit_screens` | AI Generation | no | **Slow.** Args: `{ projectId, selectedScreenIds: [string], prompt, deviceType? }` |
+| `generate_variants` | AI Generation | no | Produces alternate variants of a screen |
+| `create_design_system` | Design Systems | no | Create a design system |
+| `update_design_system` | Design Systems | no | Update an existing design system |
+| `list_design_systems` | Design Systems | yes | List available design systems |
+| `apply_design_system` | Design Systems | no | Apply a design system to screens |
+
+**Important behavior for AI Generation:**
+- Calls take **a few minutes**. Don't retry on connection errors — the work is likely still progressing. Poll `get_screen` after a few minutes to check status.
+- `generate_screen_from_text` may return `output_components` with prompt suggestions. The agent will present them to you in a numbered list; pick one and the agent calls again with that as the new prompt.
+- Resource-name format (`projects/{p}/screens/{s}`) is preferred over bare IDs where both are accepted.
 
 ### 2.21 ECC (everything-claude-code)
 
