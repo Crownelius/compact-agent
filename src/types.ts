@@ -6,7 +6,9 @@ export type Role = 'system' | 'user' | 'assistant' | 'tool';
 export interface Message {
   role: Role;
   content: string | null;
-  tool_calls?: OpenAI.Chat.ChatCompletionMessageToolCall[];
+  // OpenAI v6+ split ChatCompletionMessageToolCall into a union of function
+  // and custom variants. We only emit function tools, so narrow here.
+  tool_calls?: OpenAI.Chat.ChatCompletionMessageFunctionToolCall[];
   tool_call_id?: string;
   name?: string;
 }

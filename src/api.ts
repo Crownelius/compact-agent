@@ -53,7 +53,7 @@ export async function* streamChat(
 ): AsyncGenerator<{
   type: 'text' | 'thinking' | 'tool_call' | 'done';
   content?: string;
-  toolCalls?: OpenAI.Chat.ChatCompletionMessageToolCall[];
+  toolCalls?: OpenAI.Chat.ChatCompletionMessageFunctionToolCall[];
   usage?: { prompt: number; completion: number; total: number };
 }> {
   const api = getClient(config);
@@ -117,7 +117,7 @@ export async function* streamChat(
     const finishReason = chunk.choices?.[0]?.finish_reason;
     if (finishReason) {
       if (toolCallAccumulator.size > 0) {
-        const toolCalls: OpenAI.Chat.ChatCompletionMessageToolCall[] = [];
+        const toolCalls: OpenAI.Chat.ChatCompletionMessageFunctionToolCall[] = [];
         for (const [, tc] of toolCallAccumulator) {
           toolCalls.push({
             id: tc.id,
