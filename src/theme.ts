@@ -258,30 +258,309 @@ export function printCost(
 }
 
 // ── API error formatter ─────────────────────────────────
-// Distinguish actionable errors (404/401/429) from generic failures.
-// Surface the URL if the upstream message has one; suggest the fix.
-export function printApiError(message: string): void {
-  console.log('');
-  console.log(theme.error(`  ${sym.error} API error`));
-  // Indent body, wrap at ~76 chars
-  for (const line of message.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    console.log(theme.dim('    ' + trimmed));
-  }
+/**
+ * Pattern-match an API error message + status into a specific category,
+ * with provider-aware diagnosis and a one-line fix. Returns the best
+ * matching pattern, or a generic fallback.
+ */
+export interface ApiErrorContext {
+  baseURL?: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface CategorizedError {
+  category: string;          // short label like "rate-limit-free", "context-overflow"
+  status?: number;           // 401/404/429/etc.
+  provider: string;          // detected provider name
+  title: string;             // one-line headline (becomes the badge body)
+  why: string;               // explanation of what happened
+  fix: string;               // single concrete next step
+  docs?: string;             // optional doc URL
+  severity: 'auth' | 'quota' | 'model' | 'context' | 'content' | 'network' | 'server' | 'unknown';
+}
+
+function detectProvider(message: string, ctx: ApiErrorContext): string {
+  const m = message.toLowerCase();
+  if (ctx.provider) return ctx.provider;
+  const base = (ctx.baseURL || '').toLowerCase();
+  if (base.includes('openrouter') || m.includes('openrouter')) return 'OpenRouter';
+  if (base.includes('openai.com')) return 'OpenAI';
+  if (base.includes('anthropic.com') || m.includes('anthropic')) return 'Anthropic';
+  if (base.includes('deepseek')) return 'DeepSeek';
+  if (base.includes('googleapis') || m.includes('google')) return 'Google';
+  if (base.includes('bigmodel.cn') || m.includes('zhipu')) return 'GLM';
+  if (base.includes('11434')) return 'Ollama';
+  if (base.includes('1234')) return 'LM Studio';
+  return 'API';
+}
+
+function extractStatus(message: string): number | undefined {
+  // Common shapes:
+  //   "API Error: 404 Ring-..."
+  //   "Request failed with status code 401"
+  //   "404 Not Found - GET https://..."
+  //   "HTTP 502"
+  const direct = message.match(/\b(?:status(?:\s+code)?\s*[:=]?\s*|HTTP\s+|API\s+Error:\s*|^)([1-5]\d{2})\b/i);
+  if (direct) return parseInt(direct[1], 10);
+  // Bare 3-digit code at the start of the message
+  const bare = message.match(/^\s*([1-5]\d{2})\b/);
+  if (bare) return parseInt(bare[1], 10);
+  return undefined;
+}
+
+function extractUrl(message: string): string | undefined {
+  const m = message.match(/https?:\/\/[^\s)>"']+/);
+  return m ? m[0] : undefined;
+}
+
+export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): CategorizedError {
+  const provider = detectProvider(message, ctx);
+  const status = extractStatus(message);
   const lower = message.toLowerCase();
-  let hint = '';
-  if (lower.includes('404') || lower.includes('no longer') || lower.includes('not found')) {
-    hint = 'Model unavailable. Switch with /model <name> or /config to pick a new one.';
-  } else if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
-    hint = 'Auth failed. Re-set your key with /config.';
-  } else if (lower.includes('429') || lower.includes('rate limit')) {
-    hint = 'Rate-limited. Wait a moment or switch to a different model with /model.';
-  } else if (lower.includes('econn') || lower.includes('etimedout') || lower.includes('network')) {
-    hint = 'Network issue. Check connectivity, then retry.';
+
+  // ── Most specific patterns first ───────────────────────
+
+  // Free-tier per-minute rate limit (OpenRouter signature)
+  if ((status === 429 || lower.includes('rate limit')) && /free[-_\s]*models?[-_\s]*per[-_\s]*min/.test(lower)) {
+    return {
+      category: 'rate-limit-free-per-min', status, provider, severity: 'quota',
+      title: 'Free-tier rate limit (20 RPM)',
+      why: `${provider}'s free models cap at ~20 requests per minute.`,
+      fix: 'Wait ~60s, OR switch to a paid model with /model, OR add credits to your account.',
+      docs: 'https://openrouter.ai/docs/limits',
+    };
   }
-  if (hint) {
-    console.log(theme.warning(`    → ${hint}`));
+
+  // Free-tier daily limit
+  if (status === 429 && /(daily|free[-_\s]*models?[-_\s]*per[-_\s]*day|day-limit)/.test(lower)) {
+    return {
+      category: 'rate-limit-free-per-day', status, provider, severity: 'quota',
+      title: 'Free-tier daily limit reached',
+      why: `${provider}'s free tier caps daily request count (typically 50–200/day).`,
+      fix: 'Wait until the limit resets (UTC midnight), switch models with /model, or upgrade your plan.',
+      docs: 'https://openrouter.ai/docs/limits',
+    };
+  }
+
+  // Generic rate limit
+  if (status === 429 || lower.includes('rate limit') || lower.includes('too many requests')) {
+    return {
+      category: 'rate-limit', status: status ?? 429, provider, severity: 'quota',
+      title: 'Rate limited',
+      why: `${provider} rejected the request because you're sending them too fast.`,
+      fix: 'Wait a few seconds and retry, OR switch to a less-loaded model with /model.',
+    };
+  }
+
+  // Model deprecated / migrated to paid (OpenRouter "transitioned to a paid model")
+  if (/(no longer (available|free)|transitioned to|has been removed|deprecated|sunset)/.test(lower)) {
+    return {
+      category: 'model-deprecated', status: status ?? 404, provider, severity: 'model',
+      title: 'Model deprecated or moved',
+      why: 'The upstream provider removed or paywalled this model.',
+      fix: 'Pick another model with /model <name>, or run /config to switch provider.',
+      docs: extractUrl(message),
+    };
+  }
+
+  // Model not found
+  if (status === 404 || /(model[^\n]*not (found|exist)|no such model|unknown model|engine not found)/.test(lower)) {
+    return {
+      category: 'model-not-found', status: status ?? 404, provider, severity: 'model',
+      title: 'Model not found',
+      why: `${provider} doesn't recognize "${ctx.model || 'the configured model'}".`,
+      fix: 'Check the spelling with /models, or pick a different one with /model <name>.',
+    };
+  }
+
+  // Auth failures
+  if (status === 401 || /(unauthorized|invalid (api )?key|invalid token|authentication failed|incorrect api key)/.test(lower)) {
+    return {
+      category: 'auth-bad-key', status: status ?? 401, provider, severity: 'auth',
+      title: 'Authentication failed',
+      why: `${provider} rejected the API key. It's missing, malformed, or revoked.`,
+      fix: 'Re-set your key with /config. Check ~/.crowcoder/config.json if /config doesn\'t catch it.',
+    };
+  }
+
+  // Forbidden - 2FA / restricted
+  if (status === 403 && /(two[-_\s]*factor|2fa|otp|second[-_\s]*factor)/.test(lower)) {
+    return {
+      category: 'auth-2fa', status, provider, severity: 'auth',
+      title: '2FA required',
+      why: `${provider} requires a one-time code for this account/action.`,
+      fix: 'For npm: use `npm publish --otp=<code>`. For account access: complete 2FA in the web UI.',
+    };
+  }
+
+  // Forbidden - generic permission
+  if (status === 403 || lower.includes('forbidden') || lower.includes('permission denied')) {
+    return {
+      category: 'auth-forbidden', status: status ?? 403, provider, severity: 'auth',
+      title: 'Access denied',
+      why: `${provider} accepted your key but won't allow this specific action (e.g. model access, geo restriction).`,
+      fix: 'Check account permissions in the provider\'s web UI, or try a different model with /model.',
+    };
+  }
+
+  // Payment / out of credits
+  if (status === 402 || /(insufficient[_\s]*(credit|quota|funds)|payment[_\s]*required|out of credit|billing|low balance)/.test(lower)) {
+    return {
+      category: 'no-credit', status: status ?? 402, provider, severity: 'quota',
+      title: 'Out of credits',
+      why: `Your ${provider} account doesn't have enough credit/quota for this call.`,
+      fix: 'Top up credits in the provider\'s web UI, or switch to a free model with /model.',
+    };
+  }
+
+  // Context length overflow
+  if (/(context[_\s]*length|maximum context|too many tokens|max[_\s]*tokens.*exceed|reduce.*tokens|input is too long)/.test(lower)) {
+    return {
+      category: 'context-overflow', status, provider, severity: 'context',
+      title: 'Context length exceeded',
+      why: 'The conversation + system prompt + tools is bigger than the model\'s context window.',
+      fix: 'Run /clear to drop history, /history to check size, or switch to a higher-context model with /model.',
+    };
+  }
+
+  // Content moderation
+  if (/(content[_\s]*filter|content[_\s]*policy|safety[_\s]*(filter|guidelines)|blocked by (moderation|safety)|moderation[_\s]*blocked)/.test(lower)) {
+    return {
+      category: 'content-filter', status, provider, severity: 'content',
+      title: 'Content filtered',
+      why: `${provider}'s moderation blocked the request.`,
+      fix: 'Rephrase the prompt to avoid the trigger, or try a less-restrictive model with /model.',
+    };
+  }
+
+  // Provider overloaded
+  if ((status === 503 || status === 502) || /(overloaded|temporarily unavailable|capacity|try again later)/.test(lower)) {
+    return {
+      category: 'provider-overloaded', status: status ?? 503, provider, severity: 'server',
+      title: `${provider} overloaded`,
+      why: 'The upstream provider is at capacity or experiencing an outage.',
+      fix: 'Wait 30s and retry, OR switch to a different model with /model, OR check provider status page.',
+    };
+  }
+
+  // Network errors
+  if (/ECONNREFUSED/i.test(message)) {
+    const isLocal = /:11434|:1234|localhost|127\.0\.0\.1/.test(ctx.baseURL || '');
+    return {
+      category: 'network-refused', provider, severity: 'network',
+      title: 'Connection refused',
+      why: isLocal
+        ? `Nothing's listening at ${ctx.baseURL || 'the local URL'}. Is Ollama/LM Studio running?`
+        : `${provider} refused the connection — likely a firewall, proxy, or DNS issue.`,
+      fix: isLocal
+        ? 'Start the local server (`ollama serve` or open LM Studio), then retry.'
+        : 'Check internet/proxy/firewall, then retry. /config to switch provider if persistent.',
+    };
+  }
+  if (/ENOTFOUND/i.test(message)) {
+    return {
+      category: 'network-dns', provider, severity: 'network',
+      title: 'DNS lookup failed',
+      why: `Couldn't resolve the hostname for ${ctx.baseURL || provider}.`,
+      fix: 'Check your network connection and DNS. Verify the baseURL in /provider.',
+    };
+  }
+  if (/(ETIMEDOUT|timeout|timed out)/i.test(message)) {
+    return {
+      category: 'network-timeout', provider, severity: 'network',
+      title: 'Request timed out',
+      why: `${provider} didn't respond in time. Could be slow network or a stuck request.`,
+      fix: 'Retry. If persistent, try a different model with /model or check your connection.',
+    };
+  }
+  if (/fetch failed/i.test(message)) {
+    return {
+      category: 'network-generic', provider, severity: 'network',
+      title: 'Network request failed',
+      why: 'The HTTP call couldn\'t reach the provider.',
+      fix: 'Check connectivity, retry. /provider to inspect the current baseURL.',
+    };
+  }
+
+  // Bad request — usually malformed parameters
+  if (status === 400 || /(bad request|invalid[_\s]*(parameter|argument|request|input))/.test(lower)) {
+    return {
+      category: 'bad-request', status: status ?? 400, provider, severity: 'unknown',
+      title: 'Bad request',
+      why: 'The provider rejected the request shape. Often a model/tool param mismatch.',
+      fix: 'Try /clear to reset state. If it keeps happening, switch model with /model.',
+    };
+  }
+
+  // 5xx server errors
+  if (status && status >= 500) {
+    return {
+      category: 'server-error', status, provider, severity: 'server',
+      title: `${provider} server error (${status})`,
+      why: 'The provider had an internal failure. Not your fault.',
+      fix: 'Retry in 30s. If persistent, check the provider\'s status page or switch with /model.',
+    };
+  }
+
+  // Default
+  return {
+    category: 'unknown', status, provider, severity: 'unknown',
+    title: 'Request failed',
+    why: 'The provider returned an error not matching any known pattern.',
+    fix: 'Try /clear and retry. Report the full message at https://github.com/Crownelius/Crowcoder/issues if it persists.',
+  };
+}
+
+function severityColor(severity: CategorizedError['severity']): (s: string) => string {
+  switch (severity) {
+    case 'auth':    return theme.error;
+    case 'quota':   return theme.warning;
+    case 'model':   return theme.warning;
+    case 'context': return theme.cost;     // blue-ish, recoverable
+    case 'content': return theme.warning;
+    case 'network': return theme.dim;
+    case 'server':  return theme.error;
+    default:        return theme.error;
+  }
+}
+
+/**
+ * Render an API error with structured diagnosis.
+ *
+ *   ✗ API error  [429 · OpenRouter · rate-limit-free-per-min]
+ *
+ *     Free-tier rate limit (20 RPM)
+ *
+ *     OpenRouter's free models cap at ~20 requests per minute.
+ *     → Wait ~60s, OR switch to a paid model with /model, OR add credits.
+ *     · https://openrouter.ai/docs/limits
+ *
+ *     raw: 429 Rate limit exceeded: free-models-per-min.
+ */
+export function printApiError(message: string, ctx: ApiErrorContext = {}): void {
+  const e = categorizeApiError(message, ctx);
+  const color = severityColor(e.severity);
+  const tagParts: string[] = [];
+  if (e.status) tagParts.push(String(e.status));
+  tagParts.push(e.provider);
+  tagParts.push(e.category);
+  const tag = ` [${tagParts.join(' · ')}]`;
+
+  console.log('');
+  console.log(theme.error(`  ${sym.error} API error`) + color(tag));
+  console.log('');
+  console.log(color(`    ${e.title}`));
+  console.log('');
+  console.log(theme.dim(`    ${e.why}`));
+  console.log(theme.warning(`    → ${e.fix}`));
+  if (e.docs) console.log(theme.dim(`    · ${e.docs}`));
+  // Raw upstream message, dimmed, for forensics. Strip leading/trailing
+  // whitespace and any HTTP URL we already surfaced.
+  const raw = message.replace(/\s+/g, ' ').trim();
+  if (raw && raw.length < 400) {
+    console.log('');
+    console.log(theme.dim(`    raw: ${raw}`));
   }
   console.log('');
 }

@@ -211,7 +211,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
-      printApiError(msg);
+      printApiError(msg, {
+        baseURL: ctx.config.baseURL,
+        provider: ctx.config.provider,
+        model: ctx.config.model,
+      });
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
       inputGuard.restore();
       break;
