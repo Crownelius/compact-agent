@@ -20,7 +20,7 @@ Compact Agent is a single-command terminal AI coding CLI. It speaks any OpenAI-c
 
 - **Single-command install** — `npm install -g compact-agent && compact-agent`. No clone, no build step, no Docker, no IDE extension.
 - **Universal LLM transport** — works with any OpenAI-compatible API. Switch providers and models from inside the REPL with `/model`, `/provider`, `/route`.
-- **8 operation modes** — `dev`, `review`, `tdd`, `research`, `plan`, `debug`, `architect`, and `hermes` (self-improving learning loop). Each rewrites the system prompt to bias the agent toward its specific workflow.
+- **9 operation modes** — `dev`, `review`, `tdd`, `research`, `plan`, `debug`, `architect`, `hermes` (self-improving learning loop), and `design` (Stitch-powered UI generation — describe what you want, the agent uses Stitch to design it and writes the result into your code). Each rewrites the system prompt to bias the agent toward its specific workflow.
 - **Hermes self-improving mode** — recalls prior sessions, models the user across conversations, parallelizes independent subtasks, distills new skills from experience, and proposes what's worth banking before finishing. Inspired by [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent).
 - **Bundled everything-claude-code library** — 33 high-quality skills, 16 agents, 9 workflow commands, 7 language rule bundles, and 5 default security hooks. Auto-installed on first launch via [Crownelius/everything-claude-code](https://github.com/Crownelius/everything-claude-code).
 - **Unified slash-command surface** — `/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix` automatically use the ECC prompts when ECC is installed. **No `/ecc-tdd` vs `/tdd` duplication.**
@@ -77,6 +77,14 @@ System-level design. Component boundaries, data flow, technology choices, scalab
 **The agent that grows with you.** Recalls prior sessions and instincts before answering, builds a model of the user across conversations, parallelizes independent subtasks, distills skills from experience, nudges to persist knowledge at end of work, and proactively suggests scheduled follow-ups.
 
 Activate with `/hermes` or `/mode hermes`.
+
+### 🎨 design
+
+**UI work without thinking about UI tools.** In design mode, any visual / layout / theming request flows through Google Stitch automatically. The agent creates a Stitch project, generates the screens from a carefully composed prompt (with your aesthetic preferences translated into Stitch-style descriptors), fetches the result, writes the HTML/Tailwind into your code, and adds JS for interactivity. Iterate by just saying what to change.
+
+Example: `/design build me a stock portfolio app where I can add new stocks via a form — edgy aesthetic, lots of red, no blue or green`.
+
+Activate with `/design [task]` or `/mode design`. Requires `/stitch-config` first.
 
 ---
 

@@ -16,6 +16,19 @@ function buildToolList(): string {
   return lines.join('\n');
 }
 
+// In coding-oriented modes (dev/architect/plan), append a brief nudge that
+// the user can switch to design mode for UI work — but only when Stitch is
+// available so we don't waste tokens advertising a dead end.
+function buildDesignHint(mode: Mode): string {
+  if (mode === 'design' || mode === 'hermes') return '';
+  if (mode !== 'dev' && mode !== 'architect' && mode !== 'plan') return '';
+  // Stitch availability is determined by tool registry — the stitch tool is
+  // only registered when stitchConfigured() returns true.
+  const stitchAvailable = ALL_TOOLS.some((t) => t.name === 'stitch');
+  if (!stitchAvailable) return '';
+  return `\n# UI work hint\nWhen the user asks for UI / visual / layout / design work in this mode, you can either (a) write HTML/CSS directly, or (b) suggest switching to design mode (\`/mode design\` or \`/design <task>\`) which uses Google Stitch to generate real UI screens that you then integrate into the codebase. Choose (b) for anything more involved than a single static page.`;
+}
+
 export function buildSystemPrompt(
   config: CrowcoderConfig,
   cwd: string,
@@ -108,6 +121,6 @@ IMPORTANT — tool-call rules:
 - Use markdown formatting in your responses.
 - For git operations: prefer new commits over amending, never force-push without asking.
 - Respond in the same language the user writes in.
-${modeAddition}${rulesAddition}${instinctAddition}${eccSkillAddition}${userAddition}
+${modeAddition}${buildDesignHint(mode)}${rulesAddition}${instinctAddition}${eccSkillAddition}${userAddition}
 `;
 }

@@ -206,9 +206,10 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/provider') + d('         — show provider info'));
       console.log(d('  ') + c('/route') + d('            — auto-route model based on next message'));
       console.log(h('\n  ── Modes ──'));
-      console.log(d('  ') + c('/mode [name]') + d('      — switch mode (dev/review/tdd/research/plan/debug/architect/hermes)'));
+      console.log(d('  ') + c('/mode [name]') + d('      — switch mode (dev/review/tdd/research/plan/debug/architect/hermes/design)'));
       console.log(d('  ') + c('/modes') + d('            — list all modes (read-only; use /mode <name> to switch)'));
       console.log(d('  ') + c('/hermes') + d('           — alias for /mode hermes (self-improving learning loop)'));
+      console.log(d('  ') + c('/design [task]') + d('    — switch to design mode (Stitch-powered UI generation); optional task to start immediately'));
       console.log(h('\n  ── Session ──'));
       console.log(d('  ') + c('/sessions') + d('         — list saved sessions'));
       console.log(d('  ') + c('/save [name]') + d('      — save current session'));
@@ -315,10 +316,11 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/ecc-add-language-rules') + d('  — add language-specific rule files (ECC-only)'));
       console.log(d('  ') + c('/ecc-database-migration') + d('  — database migration workflow (ECC-only)'));
       console.log(h('\n  ── Stitch (Google AI UI/UX design) ──'));
-      console.log(d('  ') + c('/stitch <query>') + d('     — Stitch assistant (enhance prompts, list projects, generate screens)'));
+      console.log(d('  Use ') + c('/mode design') + d(' or ') + c('/design <task>') + d(' for UI work — the agent uses Stitch automatically.'));
+      console.log(d('  ') + c('/stitch') + d('              — show config status'));
+      console.log(d('  ') + c('/stitch tools') + d('        — live verification: tools/list against the server'));
+      console.log(d('  ') + c('/stitch <query>') + d('      — direct Stitch assistant (intent-routed)'));
       console.log(d('  ') + c('/stitch-config <key>') + d('— save your Stitch API key locally'));
-      console.log(d('  ') + c('/stitch-status') + d('       — show config'));
-      console.log(d('  ') + c('/stitch-tools') + d('        — live verification: tools/list against the server'));
       console.log();
       return { handled: true };
     }
@@ -413,6 +415,24 @@ export function handleSlashCommand(
       console.log(chalk.cyan(`  Mode: ${m.label}`));
       console.log(chalk.dim(`  ${m.description}`));
       console.log(chalk.dim(`  Recall → user-model → parallelize → distill → persist → schedule.`));
+      return { handled: true };
+    }
+
+    // ── Design mode shortcut: switch + optionally inject task ─────
+    case '/design': {
+      mode.current = 'design';
+      const m = MODES.design;
+      console.log(chalk.cyan(`  Mode: ${m.label}`));
+      console.log(chalk.dim(`  ${m.description}`));
+      if (!stitchConfigured()) {
+        console.log(chalk.yellow(`\n  ⚠ Stitch is not configured. Run /stitch-config <api-key> to enable.`));
+        console.log(chalk.dim(`  In design mode without Stitch, I'll fall back to plain HTML/CSS.`));
+      }
+      if (args.trim()) {
+        return { handled: false, injectPrompt: args.trim() };
+      }
+      console.log(chalk.dim(`\n  Now describe what you want built — e.g.:`));
+      console.log(chalk.dim(`    "Build a stock portfolio app, edgy red palette, no blue/green"`));
       return { handled: true };
     }
 
@@ -1163,17 +1183,26 @@ export function handleSlashCommand(
       return { handled: false, injectPrompt: buildWalkthroughPrompt() };
 
     // ── Stitch (Google AI UI/UX design tool) ──────────
+    // `/stitch`            → status + tip
+    // `/stitch tools`      → live tools/list against the server
+    // `/stitch <free-text>` → intent-routed assistant (enhance/generate/list)
     case '/stitch':
     case '/stitch-status':
-      if (!args || cmd === '/stitch-status') {
+      if (cmd === '/stitch-status' || !args.trim()) {
         printStitchStatus();
         return { handled: true };
       }
+      if (args.trim().toLowerCase() === 'tools' || args.trim().toLowerCase() === '--tools') {
+        if (!stitchConfigured()) {
+          console.log(chalk.yellow('  Stitch is not configured. Run /stitch-config <api-key>'));
+          return { handled: true };
+        }
+        return { handled: false, injectPrompt: buildStitchToolsPrompt() };
+      }
       if (!stitchConfigured()) {
         console.log(chalk.yellow('  Stitch is not configured.'));
-        console.log(chalk.dim('  Run: /stitch-config <api-key>'));
-        console.log(chalk.dim('  Or set STITCH_API_KEY in your environment before launching.'));
-        console.log(chalk.dim('  Get a key from: https://stitch.withgoogle.com/ → Stitch Settings → API Keys'));
+        console.log(chalk.dim('  Run: /stitch-config <api-key>  (or set STITCH_API_KEY)'));
+        console.log(chalk.dim('  Get a key: https://stitch.withgoogle.com/ → Stitch Settings → API Keys'));
         return { handled: true };
       }
       return { handled: false, injectPrompt: buildStitchPrompt(args) };
@@ -1192,12 +1221,6 @@ export function handleSlashCommand(
       return { handled: true };
     }
 
-    case '/stitch-tools':
-      if (!stitchConfigured()) {
-        console.log(chalk.yellow('  Stitch is not configured. Run /stitch-config <api-key>'));
-        return { handled: true };
-      }
-      return { handled: false, injectPrompt: buildStitchToolsPrompt() };
 
     // ── ECC (everything-claude-code) ──────────────────
     case '/ecc':

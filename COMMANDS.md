@@ -56,8 +56,10 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 | `/mode debug` | Debug | Systematic root-cause hunt with hypothesis tracking. |
 | `/mode architect` | Architect | System-level design, component boundaries, trade-offs. |
 | `/mode hermes` | Hermes | Self-improving learning loop — recalls prior memory, models the user, parallelizes, distills skills, persists knowledge. Inspired by nousresearch/hermes-agent. |
+| `/mode design` | Design | Stitch-powered UI generation. Agent uses Google Stitch automatically for any visual work and integrates the generated HTML into your code. Requires `/stitch-config`. |
 | `/modes` | (list-only) | Print all available modes. **Does NOT switch** — use `/mode <name>`. |
 | `/hermes` | Alias | Same as `/mode hermes`. |
+| `/design [task]` | Alias + shortcut | Switch to design mode. If `[task]` given, also kicks off the task immediately (e.g. `/design build a stock portfolio app, edgy red, no blue/green`). |
 
 ### 2.3 Model & provider
 
@@ -257,10 +259,14 @@ Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX desi
 
 | Command | What it does |
 |---|---|
-| `/stitch <query>` | Stitch intelligent interface. Routes by intent: `enhance: <prompt>` improves the prompt using Stitch's prompting guide; anything else hits the assistant (list projects, get screens, generate UI from text). |
+**Prefer `/mode design` or `/design <task>`** for actual UI work — the agent uses Stitch automatically and integrates the generated HTML into your code. The commands below are for direct/diagnostic access.
+
+| Command | What it does |
+|---|---|
+| `/stitch` | Show config status (masked key, configured-at timestamp, server URL). |
+| `/stitch tools` | Live verification — calls `tools/list` against the server and renders the discovered tool catalog as a Markdown table. Confirms auth + endpoint reachability. |
+| `/stitch <query>` | Direct Stitch assistant (intent-routed: `enhance: <prompt>` improves a prompt; anything else hits the assistant). Less useful now that design mode does this automatically. |
 | `/stitch-config <api-key>` | Save your Stitch API key to `~/.crowcoder/stitch.json`. |
-| `/stitch-status` | Show config (masked key, configured-at timestamp, server URL). |
-| `/stitch-tools` | Live verification — calls `tools/list` against the server and renders the discovered tool catalog as a Markdown table. Confirms auth + endpoint reachability. |
 
 **Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
 

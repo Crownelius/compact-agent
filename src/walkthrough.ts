@@ -33,7 +33,7 @@ Cover:
   task?"
 
 ### 3. Modes
-There are 8 modes. Briefly explain the role of each:
+There are 9 modes. Briefly explain the role of each:
 - \`dev\` (default) — general coding
 - \`review\` — code review with severity ratings
 - \`tdd\` — strict RED → GREEN → REFACTOR; no impl before failing test
@@ -43,6 +43,9 @@ There are 8 modes. Briefly explain the role of each:
 - \`architect\` — system-level design
 - \`hermes\` — self-improving learning loop (recall prior memory, model the
   user, parallelize, distill skills, persist)
+- \`design\` — UI/visual work powered by Google Stitch. Used automatically
+  for any visual work; integrates generated HTML into the user's code.
+  Requires \`/stitch-config\` setup. Shortcut: \`/design <task>\`.
 Switch with \`/mode <name>\`. List with \`/modes\`. Ask which they want to try.
 
 ### 4. The core command surface (ONE canonical name per intent)
