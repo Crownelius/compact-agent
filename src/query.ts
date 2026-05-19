@@ -23,6 +23,44 @@ export interface QueryContext {
 }
 
 /**
+ * Suppress terminal echo while the model is streaming.
+ *
+ * Without this, keystrokes the user types mid-stream get echoed to stdout
+ * (by the terminal driver in cooked mode) and interleave with the model's
+ * output — e.g. "hel" appearing on the cost line.
+ *
+ * We put stdin in raw mode so the OS stops echoing, attach a transient
+ * data listener that swallows keystrokes (preserving Ctrl+C → process exit),
+ * and restore both on completion. Type-ahead is intentionally discarded;
+ * the next `❯ ` prompt starts clean.
+ */
+function suppressInputDuringStream(): { restore: () => void } {
+  const stdin = process.stdin;
+  if (!stdin.isTTY) {
+    return { restore: () => {} };
+  }
+  const wasRaw = stdin.isRaw;
+  const handler = (chunk: Buffer): void => {
+    // 0x03 = Ctrl+C. Restore cooked mode before exiting so the shell behaves.
+    if (chunk[0] === 0x03) {
+      try { stdin.setRawMode(false); } catch { /* noop */ }
+      process.exit(0);
+    }
+    // Anything else: discard silently. User has no visible feedback while
+    // streaming, but that's better than scrambled output.
+  };
+  try { stdin.setRawMode(true); } catch { /* noop */ }
+  stdin.on('data', handler);
+  stdin.resume();
+  return {
+    restore: (): void => {
+      stdin.removeListener('data', handler);
+      try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
+    },
+  };
+}
+
+/**
  * Validate tool arguments against the tool's JSON schema
  */
 function validateToolArguments(tool: Tool, input: Record<string, unknown>): { valid: boolean; error?: string } {
@@ -128,6 +166,10 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       fullText += out;
     }
 
+    // Suppress terminal echo while we stream so mid-stream keystrokes
+    // don't interleave with the model's output. Restored in `finally`.
+    const inputGuard = suppressInputDuringStream();
+
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS)) {
         if (event.type === 'thinking' && event.content) {
@@ -171,8 +213,10 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
       printApiError(msg);
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
+      inputGuard.restore();
       break;
     }
+    inputGuard.restore();
 
     if (hasOutput && !lastCharWasNewline) {
       process.stdout.write('\n');
