@@ -221,12 +221,13 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/diff') + d('             — show git diff'));
       console.log(d('  ') + c('/log') + d('              — show git log'));
       console.log(h('\n  ── Code Quality ──'));
-      console.log(d('  ') + c('/review [target]') + d('  — AI code review'));
+      console.log(d('  ') + c('/review [target]') + d('  — AI code review (uses ECC prompt, language-agnostic)'));
+      console.log(d('  ') + c('/auto-review') + d('      — same, but adds a language-specific lens (auto-detected)'));
       console.log(d('  ') + c('/tdd <desc>') + d('       — test-driven development'));
       console.log(d('  ') + c('/security-review') + d('  — security audit'));
       console.log(d('  ') + c('/audit') + d('            — harness audit (score project health)'));
       console.log(d('  ') + c('/verify [cmd]') + d('     — run tests, fix failures, repeat until green'));
-      console.log(d('  ') + c('/build-fix') + d('        — auto-detect and fix build errors'));
+      console.log(d('  ') + c('/build-fix') + d('        — auto-detect language & fix build errors'));
       console.log(d('  ') + c('/test-coverage') + d('    — analyze test coverage, suggest tests'));
       console.log(d('  ') + c('/refactor [target]') + d(' — dead code detection & cleanup'));
       console.log(d('  ') + c('/e2e <feature>') + d('    — generate E2E tests'));
@@ -246,24 +247,10 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/docs-lookup <query>') + d(' — search docs for answers'));
-      console.log(h('\n  ── Language Reviews ──'));
-      console.log(d('  ') + c('/auto-review') + d('      — auto-detect language & review'));
-      console.log(d('  ') + c('/ts-review') + d('        — TypeScript-specific review'));
-      console.log(d('  ') + c('/py-review') + d('        — Python-specific review'));
-      console.log(d('  ') + c('/go-review') + d('        — Go-specific review'));
-      console.log(d('  ') + c('/rust-review') + d('      — Rust-specific review'));
-      console.log(d('  ') + c('/java-review') + d('      — Java-specific review'));
-      console.log(d('  ') + c('/cpp-review') + d('       — C++ review'));
-      console.log(d('  ') + c('/kotlin-review') + d('    — Kotlin review'));
-      console.log(d('  ') + c('/php-review') + d('       — PHP review'));
-      console.log(d('  ') + c('/db-review') + d('        — Database/SQL review'));
-      console.log(h('\n  ── Language Build Fixes ──'));
-      console.log(d('  ') + c('/ts-build-fix') + d('     — fix TypeScript build errors'));
-      console.log(d('  ') + c('/go-build-fix') + d('     — fix Go build errors'));
-      console.log(d('  ') + c('/rust-build-fix') + d('   — fix Rust build errors'));
-      console.log(d('  ') + c('/java-build-fix') + d('   — fix Java build errors'));
-      console.log(d('  ') + c('/cpp-build-fix') + d('    — fix C++ build errors'));
-      console.log(d('  ') + c('/pytorch-fix') + d('      — fix PyTorch/CUDA errors'));
+      // /review already auto-uses ECC's high-quality language-agnostic prompt;
+      // /auto-review additionally picks language-specific lens automatically.
+      // Per-language commands (/ts-review, /py-review, ...) still work as
+      // silent aliases for power users but are not listed here.
       console.log(h('\n  ── Orchestration ──'));
       console.log(d('  ') + c('/orchestrate <task>') + d(' — decompose into parallel sub-agents'));
       console.log(d('  ') + c('/pr-loop') + d('          — autonomous PR review loop'));
@@ -305,13 +292,9 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/hook-profile') + d('     — show hook profile & controls'));
       console.log(d('  ') + c('/pm2 [action]') + d('     — PM2 service management'));
       console.log(h('\n  ── ECC (everything-claude-code) ──'));
-      console.log(d('  ') + d('  Note: /tdd, /review, /security-review, /plan, /refactor, /build-fix'));
-      console.log(d('         automatically use ECC prompts when ECC is installed. No /ecc-tdd duplicates.'));
-      console.log(d('  ') + c('/ecc') + d('              — show ECC integration status'));
-      console.log(d('  ') + c('/ecc-install') + d('      — install/refresh bundled ECC skills, agents, commands, rules, hooks'));
-      console.log(d('  ') + c('/ecc-skills') + d('       — filtered view: /skills entries with category=ecc'));
-      console.log(d('  ') + c('/ecc-agents') + d('       — filtered view: /skills entries that are ECC agents'));
-      console.log(d('  ') + c('/ecc-commands') + d('     — list ECC-only commands (have no built-in equivalent)'));
+      console.log(d('  ECC is bundled + auto-installed on first launch. ') + c('/tdd /review /security-review'));
+      console.log(d('  /plan /refactor /build-fix') + d(' all use ECC prompts automatically.'));
+      console.log(d('  ') + c('/ecc') + d('              — status; ') + c('/ecc refresh') + d(' re-installs from bundled resources'));
       console.log(d('  ') + c('/ecc-feature-development') + d(' — feature implementation workflow (ECC-only)'));
       console.log(d('  ') + c('/ecc-add-language-rules') + d('  — add language-specific rule files (ECC-only)'));
       console.log(d('  ') + c('/ecc-database-migration') + d('  — database migration workflow (ECC-only)'));
@@ -1223,10 +1206,33 @@ export function handleSlashCommand(
 
 
     // ── ECC (everything-claude-code) ──────────────────
-    case '/ecc':
+    // ECC is bundled and auto-installed on first launch. Surface commands
+    // collapsed: `/ecc` shows status; `/ecc refresh` re-installs from bundled
+    // resources. The old `/ecc-install`, `/ecc-skills`, `/ecc-agents`,
+    // `/ecc-commands` still work as silent aliases for muscle memory but
+    // aren't listed in /help (use /skills for the full skill list, which
+    // already includes ECC entries).
+    case '/ecc': {
+      const sub = args.trim().toLowerCase();
+      if (sub === 'refresh' || sub === '--refresh' || sub === 'reinstall') {
+        if (!eccResourcesAvailable()) {
+          console.log(chalk.yellow('  ECC resources not bundled with this Crowcoder install.'));
+          return { handled: true };
+        }
+        const report = installEcc({ verbose: true });
+        if (report.errors.length > 5) {
+          console.log(chalk.dim(`  +${report.errors.length - 5} more errors suppressed.`));
+        }
+        return { handled: true };
+      }
+      if (sub === 'skills') { printEccSkills(); return { handled: true }; }
+      if (sub === 'agents') { printEccAgents(); return { handled: true }; }
+      if (sub === 'commands') { printEccCommandList(); return { handled: true }; }
       printEccStatus();
       return { handled: true };
+    }
 
+    // Backwards-compat aliases — hidden from /help but still functional.
     case '/ecc-install': {
       if (!eccResourcesAvailable()) {
         console.log(chalk.yellow('  ECC resources not bundled with this Crowcoder install.'));
@@ -1238,15 +1244,12 @@ export function handleSlashCommand(
       }
       return { handled: true };
     }
-
     case '/ecc-skills':
       printEccSkills();
       return { handled: true };
-
     case '/ecc-agents':
       printEccAgents();
       return { handled: true };
-
     case '/ecc-commands':
       printEccCommandList();
       return { handled: true };

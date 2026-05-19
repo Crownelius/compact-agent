@@ -110,33 +110,15 @@ These trigger an LLM workflow with an injected prompt. `/tdd`, `/review`, `/secu
 | `/plan <task>` | Structured implementation planning, no edits. |
 | `/update-docs` | Sync documentation files with current code. |
 
-### 2.7 Language-specific reviews
+### 2.7 Language-aware reviews and build fixes
 
-For when you want a reviewer with deep language-idiom knowledge.
-
-| Command | Language |
+| Command | What it does |
 |---|---|
-| `/auto-review` | Auto-detect the dominant language and review. |
-| `/ts-review` | TypeScript / JavaScript |
-| `/py-review` | Python |
-| `/go-review` | Go |
-| `/rust-review` | Rust |
-| `/java-review` | Java |
-| `/cpp-review` | C++ |
-| `/kotlin-review` | Kotlin |
-| `/php-review` | PHP |
-| `/db-review` | Databases / SQL |
+| `/review [target]` | Code review using ECC's language-agnostic high-quality prompt (default). |
+| `/auto-review` | Same, plus auto-detected language-specific lens (TS / Python / Go / Rust / Java / C++ / Kotlin / PHP / SQL). |
+| `/build-fix` | Auto-detect language and toolchain, diagnose and fix build errors. |
 
-### 2.8 Language-specific build fixes
-
-| Command | Target |
-|---|---|
-| `/ts-build-fix` | TypeScript / JavaScript build errors |
-| `/go-build-fix` | Go build/test errors |
-| `/rust-build-fix` | Rust compile errors |
-| `/java-build-fix` | Java compile/maven/gradle errors |
-| `/cpp-build-fix` | C++ compile/linker errors |
-| `/pytorch-fix` | PyTorch / CUDA setup issues |
+The legacy per-language slash commands (`/ts-review`, `/py-review`, `/go-review`, `/rust-review`, `/java-review`, `/cpp-review`, `/kotlin-review`, `/php-review`, `/db-review`, `/ts-build-fix`, `/go-build-fix`, `/rust-build-fix`, `/java-build-fix`, `/cpp-build-fix`, `/pytorch-fix`) still work as silent aliases for muscle memory, but `/auto-review` and `/build-fix` are the canonical entry points — they pick the right language-specific prompt themselves.
 
 ### 2.9 Multi-agent orchestration
 
@@ -308,20 +290,25 @@ Auth is **API key only** (the simpler of Stitch's two auth modes). ADC (Applicat
 
 ### 2.21 ECC (everything-claude-code)
 
-ECC is the bundled skill / agent / hook library. Auto-installed on first launch.
+ECC is the bundled skill / agent / hook library from [Crownelius/everything-claude-code](https://github.com/Crownelius/everything-claude-code). **Open-source, free, no opt-in** — auto-installed on first launch. Built-in commands (`/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix`) automatically use ECC's high-quality prompts.
 
 | Command | What it does |
 |---|---|
-| `/ecc` | Show ECC install state (counts of skills, agents, commands, rules). |
-| `/ecc-install` | Re-install / refresh bundled ECC resources. |
-| `/ecc-skills` | Filtered view of `/skills` — only ECC entries (`category=ecc`). |
-| `/ecc-agents` | List ECC agent prompts available via `/skills`. |
-| `/ecc-commands` | List the ECC-only workflow commands (below). |
-| `/ecc-feature-development [desc]` | ECC's feature-implementation workflow. |
-| `/ecc-add-language-rules <lang>` | Add a fresh ECC language rule bundle. |
-| `/ecc-database-migration [desc]` | ECC's database migration workflow. |
+| `/ecc` | Show install state + counts + tips. Confirms ECC is enabled. |
+| `/ecc refresh` | Re-install / refresh bundled resources (rare; only needed after an upgrade). |
+| `/ecc skills` | Filtered view of `/skills` showing only ECC entries. |
+| `/ecc agents` | List ECC agent prompts. |
+| `/ecc commands` | List the ECC-only workflow commands (below). |
 
-**Important — no duplicates.** `/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix` already use the ECC prompt when ECC is installed. You do NOT need to learn or type `/ecc-tdd` etc. — the non-prefixed version is canonical.
+**ECC-only workflows** (no built-in equivalent — these *don't* go through `/tdd` etc.):
+
+| Command | What it does |
+|---|---|
+| `/ecc-feature-development [desc]` | Feature-implementation workflow with structured stages. |
+| `/ecc-add-language-rules <lang>` | Add a fresh ECC language rule bundle. |
+| `/ecc-database-migration [desc]` | Database migration workflow. |
+
+**Legacy command aliases** (still work, hidden from `/help`): `/ecc-install`, `/ecc-skills`, `/ecc-agents`, `/ecc-commands`. Prefer the subcommand forms (`/ecc refresh`, `/ecc skills`, etc.).
 
 ---
 

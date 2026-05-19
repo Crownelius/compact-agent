@@ -605,20 +605,26 @@ export function installEcc(opts: { verbose?: boolean } = {}): ImportReport {
 export function printEccStatus(): void {
   const state = loadEccState();
   if (!state) {
-    console.log(chalk.yellow('\n  ECC not yet installed.'));
-    console.log(chalk.dim('  Run /ecc-install to import skills, agents, commands, rules, and hooks.\n'));
+    // First-launch auto-install in main() didn't run yet, or ECC resources
+    // weren't bundled with this build. Surface the issue but don't ask the
+    // user to do anything special — `/ecc refresh` is the manual path.
+    console.log(chalk.yellow('\n  everything-claude-code'));
+    console.log(chalk.dim('    not yet installed (auto-install usually runs on first launch)'));
+    console.log(chalk.dim('    → /ecc refresh   to install now\n'));
     return;
   }
-  console.log(chalk.cyan('\n  everything-claude-code integration'));
-  console.log(chalk.dim(`    installed: ${state.installedAt}`));
-  console.log(chalk.dim(`    version:   ${state.version}`));
-  console.log(chalk.dim(`    skills:    ${state.counts.skills}`));
-  console.log(chalk.dim(`    agents:    ${state.counts.agents}`));
-  console.log(chalk.dim(`    commands:  ${state.counts.commands}`));
-  console.log(chalk.dim(`    prompts:   ${state.counts.prompts}`));
-  console.log(chalk.dim(`    rules:     ${state.counts.rules} languages`));
-  console.log(chalk.dim(`\n  Commands available: /ecc, /ecc-install, /ecc-skills, /ecc-agents,`));
-  console.log(chalk.dim(`                      /ecc-commands, /ecc-<command-name>`));
+  console.log(chalk.cyan('\n  everything-claude-code') + chalk.green('  ✓ enabled'));
+  console.log(chalk.dim(`    bundled, free, open source — auto-installed on first launch`));
+  console.log(chalk.dim(`    v${state.version} · installed ${state.installedAt.slice(0, 10)}`));
+  console.log(chalk.dim(`    ${state.counts.skills} skills · ${state.counts.agents} agents · ${state.counts.commands + state.counts.prompts} commands · ${state.counts.rules} language rule sets`));
+  console.log('');
+  console.log(chalk.dim('  Built-in commands use ECC prompts automatically:'));
+  console.log(chalk.dim('    /tdd  /review  /security-review  /plan  /refactor  /build-fix'));
+  console.log('');
+  console.log(chalk.dim('  ECC-only workflows (no built-in equivalent):'));
+  console.log(chalk.dim('    /ecc-feature-development  /ecc-add-language-rules  /ecc-database-migration'));
+  console.log('');
+  console.log(chalk.dim('  Diagnostics:  /ecc refresh  /ecc skills  /ecc agents  /ecc commands'));
   console.log();
 }
 
