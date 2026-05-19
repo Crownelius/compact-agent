@@ -348,6 +348,36 @@ function importAgents(): { count: number; errors: string[] } {
  * frontmatter+body prompt templates. We copy them verbatim into
  * ~/.crowcoder/ecc-commands/ so /ecc-<name> can read them at runtime.
  */
+// Commands whose prompts are already loaded by built-in slash commands
+// (/tdd, /review, /security-review, /plan, /refactor, /build-fix all call
+// buildUnifiedPrompt which prefers the ECC prompt). Registering them as
+// auto-matchable skills too would double-inject into the system prompt.
+// Skip these in the skill registration pass.
+const BUILTIN_BACKED_COMMANDS = new Set([
+  'tdd', 'code-review', 'security-review', 'plan', 'refactor', 'build-fix',
+]);
+
+// Domain-specific trigger boost: hint keywords that should activate a
+// particular ECC command. Generic keyword derivation from filenames covers
+// the obvious cases, but these strengthen the match on natural-language
+// requests the user is likely to phrase ("add a migration", "implement a
+// feature", "add typescript rules").
+const ECC_COMMAND_EXTRA_TRIGGERS: Record<string, string[]> = {
+  'feature-development': [
+    'feature', 'feature implementation', 'implement', 'add feature',
+    'new feature', 'develop', 'build feature',
+  ],
+  'database-migration': [
+    'migration', 'migrations', 'schema', 'schema change', 'alter table',
+    'add column', 'add table', 'drop table', 'database change', 'db migration',
+    'create table', 'rls policy', 'sql migration',
+  ],
+  'add-language-rules': [
+    'language rules', 'coding style', 'style guide', 'add rules',
+    'typescript rules', 'python rules', 'lint rules', 'project rules',
+  ],
+};
+
 function importCommandsAndPrompts(): { commands: number; prompts: number; errors: string[] } {
   const errors: string[] = [];
   let commands = 0;
@@ -358,6 +388,14 @@ function importCommandsAndPrompts(): { commands: number; prompts: number; errors
   // Wipe prior ECC commands
   for (const f of readdirSync(ECC_COMMANDS_DST)) {
     try { unlinkSync(join(ECC_COMMANDS_DST, f)); } catch { /* ignore */ }
+  }
+
+  // Clean prior command-derived skills so renames/deletions upstream don't
+  // leave stragglers in the skill registry.
+  for (const s of listSkills()) {
+    if (s.id.startsWith(`${ECC_SKILL_ID_PREFIX}command-`)) {
+      deleteSkill(s.id);
+    }
   }
 
   const copyMd = (srcDir: string, suffix = ''): number => {
@@ -373,6 +411,32 @@ function importCommandsAndPrompts(): { commands: number; prompts: number; errors
       const baseName = f.replace(/\.prompt\.md$/, '').replace(/\.md$/, '');
       const dst = join(ECC_COMMANDS_DST, `${baseName}${suffix}.md`);
       copyFileSync(src, dst);
+
+      // ALSO register as an auto-matchable skill — but only commands that
+      // don't have a built-in `/tdd`/`/review`/etc. equivalent. Otherwise we'd
+      // double-inject into the system prompt.
+      if (!BUILTIN_BACKED_COMMANDS.has(baseName)) {
+        try {
+          const raw = readFileSync(src, 'utf-8');
+          const { frontmatter, body } = parseFrontmatter(raw);
+          const description = String(frontmatter.description || `ECC workflow: ${baseName}`);
+          const extras = ECC_COMMAND_EXTRA_TRIGGERS[baseName] || [];
+          const triggers = deriveTriggers(baseName, description, [baseName, 'workflow', ...extras]);
+          saveSkill({
+            id: `${ECC_SKILL_ID_PREFIX}command-${baseName}${suffix}`,
+            name: `workflow: ${baseName}`,
+            description,
+            prompt: body.trim(),
+            triggers,
+            category: 'ecc-command',
+            createdAt: new Date().toISOString(),
+            useCount: 0,
+          });
+        } catch (err) {
+          errors.push(`command-skill ${baseName}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
       n++;
     }
     return n;

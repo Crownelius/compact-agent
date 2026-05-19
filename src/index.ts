@@ -79,8 +79,7 @@ import { printHookControlStatus, getHookProfile } from './hook-controls.js';
 import { buildPM2Prompt, isPM2Available, listPM2Services } from './pm2-manager.js';
 // ECC (everything-claude-code) integration
 import {
-  installEcc, printEccStatus, printEccSkills, printEccAgents, printEccCommandList,
-  getEccCommandPrompt, listEccCommands, loadEccState, eccResourcesAvailable,
+  installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable,
 } from './ecc.js';
 // Walkthrough — agent-led tour of Crowcoder (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
@@ -190,6 +189,13 @@ export function handleSlashCommand(
       const h = theme.header;
       const d = theme.dim;
       const c = theme.command;
+      // Inline status line: confirms ECC is on (and how many skills it brings)
+      // without giving it its own section. ECC has no user-facing commands;
+      // it works automatically.
+      const eccState = loadEccState();
+      if (eccState) {
+        console.log(d(`\n  ECC: `) + theme.toolStatus('✓ enabled') + d(` — ${eccState.counts.skills} skills, ${eccState.counts.agents} agents, ${eccState.counts.commands + eccState.counts.prompts} workflows auto-loaded`));
+      }
       console.log(h('\n  ── General ──'));
       console.log(d('  ') + c('/help') + d('             — this help'));
       console.log(d('  ') + c('/config') + d('           — reconfigure provider/model/key'));
@@ -291,13 +297,12 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/detect') + d('           — detect package manager, test runner, build tool'));
       console.log(d('  ') + c('/hook-profile') + d('     — show hook profile & controls'));
       console.log(d('  ') + c('/pm2 [action]') + d('     — PM2 service management'));
-      console.log(h('\n  ── ECC (everything-claude-code) ──'));
-      console.log(d('  ECC is bundled + auto-installed on first launch. ') + c('/tdd /review /security-review'));
-      console.log(d('  /plan /refactor /build-fix') + d(' all use ECC prompts automatically.'));
-      console.log(d('  ') + c('/ecc') + d('              — status; ') + c('/ecc refresh') + d(' re-installs from bundled resources'));
-      console.log(d('  ') + c('/ecc-feature-development') + d(' — feature implementation workflow (ECC-only)'));
-      console.log(d('  ') + c('/ecc-add-language-rules') + d('  — add language-specific rule files (ECC-only)'));
-      console.log(d('  ') + c('/ecc-database-migration') + d('  — database migration workflow (ECC-only)'));
+      // ECC is bundled, free, auto-installed on first launch, and used
+      // automatically. Built-in /tdd /review /security-review /plan /refactor
+      // /build-fix use ECC prompts. ECC-only workflows (feature-development,
+      // database-migration, add-language-rules) auto-inject when you describe
+      // matching work — no slash command needed. Status line below confirms
+      // it's enabled.
       console.log(h('\n  ── Stitch (Google AI UI/UX design) ──'));
       console.log(d('  Use ') + c('/mode design') + d(' or ') + c('/design <task>') + d(' for UI work — the agent uses Stitch automatically.'));
       console.log(d('  ') + c('/stitch') + d('              — show config status'));
@@ -1205,54 +1210,13 @@ export function handleSlashCommand(
     }
 
 
-    // ── ECC (everything-claude-code) ──────────────────
-    // ECC is bundled and auto-installed on first launch. Surface commands
-    // collapsed: `/ecc` shows status; `/ecc refresh` re-installs from bundled
-    // resources. The old `/ecc-install`, `/ecc-skills`, `/ecc-agents`,
-    // `/ecc-commands` still work as silent aliases for muscle memory but
-    // aren't listed in /help (use /skills for the full skill list, which
-    // already includes ECC entries).
-    case '/ecc': {
-      const sub = args.trim().toLowerCase();
-      if (sub === 'refresh' || sub === '--refresh' || sub === 'reinstall') {
-        if (!eccResourcesAvailable()) {
-          console.log(chalk.yellow('  ECC resources not bundled with this Crowcoder install.'));
-          return { handled: true };
-        }
-        const report = installEcc({ verbose: true });
-        if (report.errors.length > 5) {
-          console.log(chalk.dim(`  +${report.errors.length - 5} more errors suppressed.`));
-        }
-        return { handled: true };
-      }
-      if (sub === 'skills') { printEccSkills(); return { handled: true }; }
-      if (sub === 'agents') { printEccAgents(); return { handled: true }; }
-      if (sub === 'commands') { printEccCommandList(); return { handled: true }; }
-      printEccStatus();
-      return { handled: true };
-    }
-
-    // Backwards-compat aliases — hidden from /help but still functional.
-    case '/ecc-install': {
-      if (!eccResourcesAvailable()) {
-        console.log(chalk.yellow('  ECC resources not bundled with this Crowcoder install.'));
-        return { handled: true };
-      }
-      const report = installEcc({ verbose: true });
-      if (report.errors.length > 5) {
-        console.log(chalk.dim(`  +${report.errors.length - 5} more errors suppressed.`));
-      }
-      return { handled: true };
-    }
-    case '/ecc-skills':
-      printEccSkills();
-      return { handled: true };
-    case '/ecc-agents':
-      printEccAgents();
-      return { handled: true };
-    case '/ecc-commands':
-      printEccCommandList();
-      return { handled: true };
+    // ── ECC (everything-claude-code) — no slash commands ───
+    // ECC is bundled, free, auto-installed on first launch, and used
+    // automatically: built-in commands (/tdd /review /security-review /plan
+    // /refactor /build-fix) use ECC prompts; ECC-only workflows
+    // (feature-development, add-language-rules, database-migration) are
+    // registered as auto-matchable skills — describe what you want and the
+    // right workflow prompt injects itself. No /ecc-* slash commands needed.
 
     // ── Config (trigger wizard) ───────────────────────
     case '/config':
@@ -1262,22 +1226,16 @@ export function handleSlashCommand(
     case '/quit':
       return { handled: true, shouldExit: true };
 
-    // ── Default: ECC dynamic dispatch + unknown command ──
+    // ── Default: unknown command ──────────────────────────
     default: {
-      if (cmd.startsWith('/ecc-')) {
-        const eccName = cmd.slice('/ecc-'.length);
-        const prompt = getEccCommandPrompt(eccName);
-        if (prompt) {
-          const merged = args.trim()
-            ? `${prompt}\n\n## User Input\n\n${args}`
-            : prompt;
-          return { handled: false, injectPrompt: merged };
-        }
-        const available = listEccCommands();
-        console.log(chalk.yellow(`  Unknown ECC command: ${cmd}`));
-        if (available.length) {
-          console.log(chalk.dim(`  Available: ${available.map(c => `/ecc-${c}`).join(', ')}`));
-        }
+      // Friendly migration aid: if user types any /ecc* command (muscle
+      // memory from earlier versions), redirect them to natural language.
+      if (cmd.startsWith('/ecc')) {
+        console.log(chalk.dim(`  ECC works automatically now — just describe what you want.`));
+        console.log(chalk.dim(`  Examples:`));
+        console.log(chalk.dim(`    "add a database migration for a users table"`));
+        console.log(chalk.dim(`    "implement a feature to export CSV"`));
+        console.log(chalk.dim(`    "add typescript coding rules to this project"`));
         return { handled: true };
       }
       console.log(chalk.dim(`  Unknown command: ${cmd}. Type /help`));

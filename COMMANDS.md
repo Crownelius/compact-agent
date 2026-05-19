@@ -288,27 +288,20 @@ Auth is **API key only** (the simpler of Stitch's two auth modes). ADC (Applicat
 - `generate_screen_from_text` may return `output_components` with prompt suggestions. The agent will present them to you in a numbered list; pick one and the agent calls again with that as the new prompt.
 - Resource-name format (`projects/{p}/screens/{s}`) is preferred over bare IDs where both are accepted.
 
-### 2.21 ECC (everything-claude-code)
+### 2.21 ECC (everything-claude-code) — no commands, all automatic
 
-ECC is the bundled skill / agent / hook library from [Crownelius/everything-claude-code](https://github.com/Crownelius/everything-claude-code). **Open-source, free, no opt-in** — auto-installed on first launch. Built-in commands (`/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix`) automatically use ECC's high-quality prompts.
+ECC is the bundled skill / agent / hook library from [Crownelius/everything-claude-code](https://github.com/Crownelius/everything-claude-code). **Open-source, free, auto-installed on first launch, no commands needed.**
 
-| Command | What it does |
-|---|---|
-| `/ecc` | Show install state + counts + tips. Confirms ECC is enabled. |
-| `/ecc refresh` | Re-install / refresh bundled resources (rare; only needed after an upgrade). |
-| `/ecc skills` | Filtered view of `/skills` showing only ECC entries. |
-| `/ecc agents` | List ECC agent prompts. |
-| `/ecc commands` | List the ECC-only workflow commands (below). |
+How it works:
 
-**ECC-only workflows** (no built-in equivalent — these *don't* go through `/tdd` etc.):
+- **Built-in commands use ECC prompts automatically** — `/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix` all run ECC's high-quality prompts under the hood.
+- **ECC skills + agents auto-inject** — the highest-scoring skill matching your query is added to the system prompt for that turn. You never type `/ecc-skills` or pick a skill manually.
+- **ECC-only workflows auto-trigger by keyword** — say "add a database migration", "implement a feature for CSV export", or "add typescript rules" and the relevant workflow prompt injects itself. No `/ecc-*` command needed.
+- **Default security hooks fire automatically** — block `git --no-verify`, warn on reading `.env`/`.key`/`.pem`, console-log warnings on edits.
 
-| Command | What it does |
-|---|---|
-| `/ecc-feature-development [desc]` | Feature-implementation workflow with structured stages. |
-| `/ecc-add-language-rules <lang>` | Add a fresh ECC language rule bundle. |
-| `/ecc-database-migration [desc]` | Database migration workflow. |
+There are no `/ecc-*` slash commands. The previous diagnostic commands (`/ecc`, `/ecc-install`, `/ecc-skills`, `/ecc-agents`, `/ecc-commands`, `/ecc-feature-development`, etc.) have been removed. If you type one, you'll see a hint pointing you to natural language.
 
-**Legacy command aliases** (still work, hidden from `/help`): `/ecc-install`, `/ecc-skills`, `/ecc-agents`, `/ecc-commands`. Prefer the subcommand forms (`/ecc refresh`, `/ecc skills`, etc.).
+Verify ECC is enabled by running `/help` — the first line shows `ECC: ✓ enabled — N skills, N agents, N workflows auto-loaded`.
 
 ---
 
