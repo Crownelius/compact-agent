@@ -97,6 +97,97 @@ function tokenize(s: string): string[] {
   return out;
 }
 
+// ── Mic detection ─────────────────────────────────────────
+/**
+ * Quick probe: try to capture 200ms of audio from the default mic.
+ * Returns:
+ *   'ok'        — got audio bytes, mic is alive
+ *   'no-mic'    — ffmpeg started but failed to open the input device
+ *   'no-ffmpeg' — ffmpeg isn't on PATH
+ *   'error'     — something else went wrong
+ *
+ * Cached for 10 seconds so repeated F5 presses don't spawn a fresh
+ * subprocess each time. Pass `force=true` to bypass the cache (e.g.
+ * after the user plugs in a mic mid-session).
+ */
+export type MicProbeResult = 'ok' | 'no-mic' | 'no-ffmpeg' | 'error';
+let micProbeCache: { result: MicProbeResult; at: number } | null = null;
+const MIC_PROBE_TTL_MS = 10_000;
+
+export async function probeMic(force = false): Promise<MicProbeResult> {
+  if (!force && micProbeCache && (Date.now() - micProbeCache.at) < MIC_PROBE_TTL_MS) {
+    return micProbeCache.result;
+  }
+  if (!(await isFfmpegAvailable())) {
+    micProbeCache = { result: 'no-ffmpeg', at: Date.now() };
+    return 'no-ffmpeg';
+  }
+  const result = await new Promise<MicProbeResult>((resolve) => {
+    const args = [
+      ...getMicInputArgs(),
+      '-t', '0.2',          // 200ms is enough to confirm the device opens
+      '-ac', '1',
+      '-ar', '16000',
+      '-f', 'wav',
+      '-loglevel', 'error',
+      'pipe:1',
+    ];
+    let child;
+    try {
+      child = spawn(ffmpegPathCache, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch {
+      resolve('error');
+      return;
+    }
+    let gotBytes = false;
+    let errBuf = '';
+    child.stdout.on('data', (c: Buffer) => { if (c.length > 0) gotBytes = true; });
+    child.stderr.on('data', (c: Buffer) => { errBuf += c.toString(); });
+    child.on('error', () => resolve('error'));
+
+    // Safety timeout — some configurations hang opening the device
+    const killer = setTimeout(() => { try { child.kill('SIGTERM'); } catch { /* noop */ } }, 1500);
+
+    child.on('close', (code) => {
+      clearTimeout(killer);
+      if (gotBytes) { resolve('ok'); return; }
+      // ffmpeg's "no such device" / "could not find audio only device" /
+      // "I/O error" / "No such file or directory" all indicate the mic
+      // isn't reachable. Match loosely — different platforms phrase it
+      // differently.
+      const lower = errBuf.toLowerCase();
+      if (
+        lower.includes('could not') ||
+        lower.includes('no such') ||
+        lower.includes('not found') ||
+        lower.includes('cannot open') ||
+        lower.includes('device or resource busy') ||
+        lower.includes('input/output error') ||
+        code !== 0
+      ) {
+        resolve('no-mic');
+      } else {
+        resolve('error');
+      }
+    });
+  });
+  micProbeCache = { result, at: Date.now() };
+  return result;
+}
+
+/**
+ * Friendly one-line message explaining a probe result. Caller logs +
+ * announces via TTS. Returned phrasing is screen-reader-friendly.
+ */
+export function micProbeMessage(r: MicProbeResult): string {
+  switch (r) {
+    case 'ok':        return 'Microphone ready.';
+    case 'no-mic':    return 'No microphone detected. Plug one in or set COMPACT_AGENT_AUDIO_INPUT to a specific device.';
+    case 'no-ffmpeg': return 'ffmpeg is not installed. Install ffmpeg to enable dictation.';
+    case 'error':     return 'Microphone probe failed.';
+  }
+}
+
 // ── Recording ─────────────────────────────────────────────
 /**
  * Record from the default mic for up to `maxSeconds`, return WAV-encoded

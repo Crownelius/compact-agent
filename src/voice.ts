@@ -19,7 +19,7 @@ import chalk from 'chalk';
 import type {
   CrowcoderConfig, VoiceConfig, VoiceSttConfig, VoiceTtsConfig, VoiceAccessibilityConfig,
 } from './types.js';
-import { isFfmpegAvailable, playAudioBuffer, recordAudio, audioCue } from './audio.js';
+import { isFfmpegAvailable, playAudioBuffer, recordAudio, audioCue, probeMic, micProbeMessage } from './audio.js';
 
 // ── Default voice ids (ElevenLabs preset voices, available with any key) ──
 export const DEFAULT_ASSISTANT_VOICE = '21m00Tcm4TlvDq8ikWAM'; // Rachel
@@ -348,13 +348,18 @@ export async function dictateOnce(
 ): Promise<string | null> {
   const a = getAccessibilityConfig(cfg);
 
-  if (!(await isFfmpegAvailable())) {
-    console.log(chalk.yellow('  [voice] ffmpeg not found. Install ffmpeg to enable dictation: https://ffmpeg.org/'));
-    return null;
-  }
   const stt = getSttConfig(cfg);
   if (!stt.apiKey) {
     console.log(chalk.yellow('  [voice] STT not configured. Set voice.stt.apiKey (OpenAI key) via /voice config.'));
+    return null;
+  }
+
+  // Probe the mic / ffmpeg up-front so a missing device fails fast with
+  // a specific message rather than silently spawning a zombie ffmpeg.
+  const probe = await probeMic();
+  if (probe !== 'ok') {
+    console.log(chalk.yellow(`  [voice] ${micProbeMessage(probe)}`));
+    if (a.audioCues) await audioCue('error');
     return null;
   }
 

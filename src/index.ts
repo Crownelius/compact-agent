@@ -90,7 +90,7 @@ import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
   speakAssistantResponse, speak, dictateOnce, DEFAULT_ASSISTANT_VOICE, DEFAULT_USER_VOICE,
 } from './voice.js';
-import { isFfmpegAvailable, audioCue, startRecording, type RecordController } from './audio.js';
+import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage, type RecordController } from './audio.js';
 import { applyScreenReader, summarize } from './accessibility.js';
 
 /**
@@ -1593,9 +1593,21 @@ async function main(): Promise<void> {
       if (!key) return;
       const name = String(key.name || '').toLowerCase();
       if (!INTERCEPT.has(name)) return;
-      if (!isVoiceEnabled(config)) return;
+
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
+
+      // F1–F4 are STATUS hotkeys. They always work, even when voice is off
+      // and even when there's no TTS key — they print the status line to
+      // stdout regardless. TTS is only added on top when a key is present.
+      // The whole point of these keys is "tell me what's happening", which
+      // is just as useful via text + screen reader as via voice.
+      const isStatusKey = name === 'f1' || name === 'f2' || name === 'f3' || name === 'f4';
+
+      // F5–F10 are DICTATION/PLAYBACK hotkeys — they only make sense when
+      // voice features are enabled. Bail early to avoid spurious ffmpeg
+      // spawns and "TTS not configured" log lines.
+      if (!isStatusKey && !isVoiceEnabled(config)) return;
 
       // ── F5: push-to-talk dictation toggle ──────────────
       if (name === 'f5') {
@@ -1629,8 +1641,17 @@ async function main(): Promise<void> {
           })();
         } else {
           (async () => {
-            if (!(await isFfmpegAvailable())) {
-              console.log(chalk.yellow('  [F5] ffmpeg not on PATH. Install ffmpeg to dictate.'));
+            // Probe the mic FIRST so a missing-device case fails fast with
+            // a clear message + audio cue, instead of silently spawning a
+            // zombie ffmpeg in the background.
+            const probe = await probeMic();
+            if (probe !== 'ok') {
+              const msg = micProbeMessage(probe);
+              console.log(chalk.yellow(`  [F5] ${msg}`));
+              if (a.audioCues) await audioCue('error');
+              if (tts.apiKey) {
+                speak(msg, config, { voiceId: tts.assistantVoiceId }).catch(() => { /* noop */ });
+              }
               return;
             }
             const ctl = await startRecording(60);
@@ -1720,6 +1741,9 @@ async function main(): Promise<void> {
           console.log(chalk.dim('  [F3] nothing to read.'));
           return;
         }
+        // Always print a short marker so the screen reader has something
+        // to announce. Then add TTS playback on top if a key is configured.
+        console.log(chalk.dim(`  [F3] reading full last response (${text.length} chars).`));
         if (!tts.apiKey) return;
         (async () => {
           const { speakAssistantResponse } = await import('./voice.js');
@@ -1738,8 +1762,12 @@ async function main(): Promise<void> {
           console.log(chalk.dim('  [F4] nothing to summarize.'));
           return;
         }
-        if (!tts.apiKey) return;
         const summary = summarize(text, a.longResponseThreshold);
+        // Print the summary itself so it's reachable via screen reader
+        // even without an ElevenLabs key.
+        console.log(chalk.dim('  [F4] summary:'));
+        console.log(chalk.white('  ' + summary));
+        if (!tts.apiKey) return;
         (async () => {
           const ctl = new AbortController();
           (globalThis as { __voicePlaybackCtl?: AbortController | null }).__voicePlaybackCtl = ctl;
@@ -1762,9 +1790,22 @@ async function main(): Promise<void> {
   while (true) {
     let input: string;
     try {
-      const sessionTag = theme.dim(`[${formatDuration(Date.now() - sessionStartMs)}] `);
+      // Screen-reader-aware prompt construction:
+      //   - The Unicode prompt glyph (❯) gets re-substituted by the
+      //     symbol→word filter on EVERY readline redraw (one per keystroke),
+      //     so the screen reader hears "prompt h", "prompt he", "prompt hel"
+      //     as the user types. Use plain ASCII to avoid the substitution.
+      //   - The session timer ([5s] …) changes every second and adds
+      //     redraw churn the user can already get on-demand via F1.
+      //   - The mode tag is preserved because mode info is genuinely useful
+      //     contextual signal that doesn't tick.
+      const screenReader = config.voice?.accessibility?.screenReader === true;
+      const sessionTag = screenReader
+        ? ''
+        : theme.dim(`[${formatDuration(Date.now() - sessionStartMs)}] `);
       const modeTag = mode.current !== 'dev' ? theme.dim(`[${mode.current}] `) : '';
-      input = await rl.question(sessionTag + modeTag + theme.prompt(`${sym.prompt} `));
+      const promptGlyph = screenReader ? '> ' : `${sym.prompt} `;
+      input = await rl.question(sessionTag + modeTag + theme.prompt(promptGlyph));
     } catch {
       break;
     }
