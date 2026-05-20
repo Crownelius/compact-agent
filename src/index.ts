@@ -1674,7 +1674,12 @@ async function main(): Promise<void> {
       'f5', 'f6', 'f7', 'f8', 'f9', 'f10',     // dictation + playback
     ]);
 
-    stdin.on('keypress', (_str, key) => {
+    // Define the hotkey listener as a NAMED, TAGGED function so
+    // suppressInputDuringStream() in query.ts can isolate it among stdin's
+    // 'keypress' listeners. During streaming we detach readline's own
+    // keypress listener (to prevent echo + line-buffer pollution) while
+    // keeping this one attached so F1–F10 keep working mid-response.
+    const hotkeyListener = function hotkeyListener(_str: string, key: { name?: string }): void {
       if (!key) return;
       const name = String(key.name || '').toLowerCase();
       if (!INTERCEPT.has(name)) return;
@@ -1860,7 +1865,11 @@ async function main(): Promise<void> {
         })();
         return;
       }
-    });
+    };
+    // Tag so suppressInputDuringStream() can identify and preserve this
+    // specific listener while detaching readline's own keypress handler.
+    (hotkeyListener as unknown as { __crowcoderHotkey__: boolean }).__crowcoderHotkey__ = true;
+    stdin.on('keypress', hotkeyListener);
   } catch {
     // No keypress support — accessibility users can still use /dictate.
   }

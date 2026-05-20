@@ -30,38 +30,65 @@ export interface QueryContext {
 }
 
 /**
- * Suppress terminal echo while the model is streaming.
+ * Suppress input during streaming.
  *
- * Without this, keystrokes the user types mid-stream get echoed to stdout
- * (by the terminal driver in cooked mode) and interleave with the model's
- * output — e.g. "hel" appearing on the cost line.
+ * The previous version only set raw mode and added a passive 'data' swallow
+ * listener — but readline's Interface registers its own 'keypress' listener
+ * that fires in parallel. That listener does TWO things we don't want:
+ *   1. Echoes every typed character back to stdout (readline does the echo
+ *      itself in raw mode, since the terminal can't), polluting the streamed
+ *      response text
+ *   2. Buffers characters into its internal line state, so when the next
+ *      `rl.question()` runs the user finds their mid-stream typing already
+ *      sitting in the prompt
  *
- * We put stdin in raw mode so the OS stops echoing, attach a transient
- * data listener that swallows keystrokes (preserving Ctrl+C → process exit),
- * and restore both on completion. Type-ahead is intentionally discarded;
- * the next `❯ ` prompt starts clean.
+ * So we surgically detach readline's keypress listener for the duration of
+ * the stream and reattach it on restore. The tagged F-key handler from
+ * index.ts (carrying __crowcoderHotkey__) is preserved so F1–F10 still
+ * work during streaming.
+ *
+ * We also add a 'data' listener purely so Ctrl+C still exits cleanly while
+ * readline is detached.
  */
+type TaggedListener = ((...args: unknown[]) => void) & { __crowcoderHotkey__?: boolean };
+
 function suppressInputDuringStream(): { restore: () => void } {
   const stdin = process.stdin;
   if (!stdin.isTTY) {
     return { restore: () => {} };
   }
   const wasRaw = stdin.isRaw;
-  const handler = (chunk: Buffer): void => {
-    // 0x03 = Ctrl+C. Restore cooked mode before exiting so the shell behaves.
+
+  // Snapshot the keypress listeners that aren't ours. Those are what we
+  // need to detach to stop readline from echoing + buffering. Slice to
+  // protect against the array mutating mid-iteration.
+  const allKeypressListeners = stdin.listeners('keypress').slice() as TaggedListener[];
+  const detachedListeners = allKeypressListeners.filter(
+    (l) => !l.__crowcoderHotkey__,
+  );
+  for (const l of detachedListeners) {
+    stdin.removeListener('keypress', l);
+  }
+
+  // Swallow data — Ctrl+C still exits, everything else is discarded so
+  // it can't bubble up to anything we missed.
+  const dataHandler = (chunk: Buffer): void => {
     if (chunk[0] === 0x03) {
       try { stdin.setRawMode(false); } catch { /* noop */ }
       process.exit(0);
     }
-    // Anything else: discard silently. User has no visible feedback while
-    // streaming, but that's better than scrambled output.
   };
   try { stdin.setRawMode(true); } catch { /* noop */ }
-  stdin.on('data', handler);
+  stdin.on('data', dataHandler);
   stdin.resume();
+
   return {
     restore: (): void => {
-      stdin.removeListener('data', handler);
+      stdin.removeListener('data', dataHandler);
+      // Re-attach readline's keypress listeners in the original order.
+      for (const l of detachedListeners) {
+        stdin.on('keypress', l);
+      }
       try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
     },
   };
