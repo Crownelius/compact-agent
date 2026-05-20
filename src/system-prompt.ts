@@ -107,7 +107,7 @@ ${fileList ? `- Files in cwd: ${fileList}` : ''}
 # Available Tools (these and ONLY these — do not invent tool names)
 ${buildToolList()}
 
-# Memory (MemPalace) — when to use the memory_* tools
+${config.memory?.enabled !== false ? `# Memory (MemPalace) — when to use the memory_* tools
 
 This agent has a persistent memory subsystem with two scopes:
   - **global** memory at ~/.crowcoder/memory/ — cross-project: user preferences,
@@ -133,7 +133,7 @@ You have these memory tools available:
 
 Be conservative — don't write a drawer for every passing comment. Write
 when the user makes a STATEMENT OF FACT or PREFERENCE that you'd benefit
-from knowing in a future session. Quality > quantity.
+from knowing in a future session. Quality > quantity.` : ''}
 
 # Turn semantics — read carefully
 Each user message is an INDEPENDENT request. Conversation history is a record

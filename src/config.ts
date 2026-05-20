@@ -29,6 +29,15 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
   // Thinking / reasoning shown by default — gives users live "the model isn't
   // dead" feedback during long turns. Toggle off with /thinking.
   showThinking: true,
+  // MemPalace persistent memory. ON by default — it's a featured capability,
+  // zero overhead until something is written, and the agent only uses the
+  // tools when it sees a durable fact worth keeping. User can opt out during
+  // the setup wizard or anytime via /memory disable.
+  memory: {
+    enabled: true,
+    globalScope: true,
+    projectScope: true,
+  },
   // Voice / accessibility is OFF by default. ffmpeg is optional. Users opt in
   // via `/voice on` (and set the two API keys via `/voice config`). The
   // sub-blocks define what becomes active once enabled; this just primes them
@@ -120,7 +129,7 @@ function validateConfig(config: CrowcoderConfig): void {
   }
 
   // Warn on unexpected fields
-  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice']);
+  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory']);
   for (const key in config) {
     if (!expectedFields.has(key)) {
       console.warn(`Warning: Unexpected config field: ${key}`);

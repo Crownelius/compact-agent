@@ -15,8 +15,10 @@
  * + slash commands.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { JsonStore, globalStorePath, projectStorePath } from './store.js';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type {
   Drawer, Tunnel, KGTriple, Scope, SearchOptions, SearchHit, WingMeta, RoomMeta,
 } from './types.js';
@@ -30,6 +32,28 @@ let _projectCwd: string | null = null;
 export function getGlobalStore(): JsonStore {
   if (!_global) _global = new JsonStore(globalStorePath(), 'global');
   return _global;
+}
+
+/**
+ * Is MemPalace enabled in the user's config? Read directly from
+ * ~/.crowcoder/config.json so this can be checked at module-load time
+ * by src/tools/index.ts without creating an import cycle through
+ * src/config.ts (which imports types.ts which we import here).
+ *
+ * Treats missing config / missing memory block / undefined enabled as
+ * TRUE (default-on for the featured capability). Only explicit false
+ * disables.
+ */
+export function isMemoryEnabled(): boolean {
+  try {
+    const cfgPath = join(process.env.CROWCODER_HOME || join(homedir(), '.crowcoder'), 'config.json');
+    if (!existsSync(cfgPath)) return true;
+    const raw = readFileSync(cfgPath, 'utf-8');
+    const cfg = JSON.parse(raw) as { memory?: { enabled?: boolean } };
+    return cfg.memory?.enabled !== false;
+  } catch {
+    return true;
+  }
 }
 
 /**

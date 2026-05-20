@@ -29,6 +29,18 @@ export interface CrowcoderConfig {
   palette?: string;        // color palette id (compact-cmyk, dracula, nord, etc.) — see src/theme.ts
   showThinking?: boolean;  // when true, display model reasoning/thinking tokens
   voice?: VoiceConfig;     // accessibility: STT (Whisper) + TTS (ElevenLabs) + screen-reader mode
+  memory?: MemoryConfig;   // MemPalace-style persistent memory (wings/rooms/drawers/tunnels/KG)
+}
+
+// ── MemPalace memory config ──────────────────────────────
+// Lives at ~/.crowcoder/memory/store.json (global) and
+// <cwd>/.crowcoder/memory/store.json (project). When disabled, the
+// memory_* tools are NOT registered with the model (no wasted tokens)
+// and the system prompt's memory section is omitted.
+export interface MemoryConfig {
+  enabled?: boolean;        // default true; user can opt out during setup or /memory disable
+  globalScope?: boolean;    // default true — cross-project knowledge enabled
+  projectScope?: boolean;   // default true — per-repo knowledge enabled
 }
 
 // ── Voice / accessibility config ─────────────────────────

@@ -145,6 +145,17 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   const permChoice = await rl.question(chalk.yellow('  Permission mode [1]: '));
   const permMode = (['ask', 'auto', 'yolo'] as const)[parseInt(permChoice || '1', 10) - 1] || 'ask';
 
+  // ── MemPalace memory setup ──────────────────────────────
+  // Featured capability, opt-out at setup time. Explain briefly so the
+  // user can make an informed choice — most users want this on.
+  console.log(chalk.white('\n  MemPalace persistent memory'));
+  console.log(chalk.dim('  Lets the agent remember your preferences, codebase landmarks, and lessons across sessions.'));
+  console.log(chalk.dim('  Two stores: global (~/.crowcoder/memory) for cross-project facts, project (.crowcoder/memory'));
+  console.log(chalk.dim('  in each repo) for codebase-specific knowledge. Searchable via /memory or by the agent itself.'));
+  console.log(chalk.dim('  Zero external dependencies; storage is local JSON files. Can be toggled anytime via /memory disable.'));
+  const memoryChoice = await rl.question(chalk.yellow('  Enable MemPalace memory? [Y/n]: '));
+  const memoryEnabled = !(memoryChoice.trim().toLowerCase().startsWith('n'));
+
   const config: CrowcoderConfig = {
     apiKey,
     baseURL,
@@ -153,10 +164,21 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
     maxTokens: 8192,
     temperature: 0.3,
     permissionMode: permMode,
+    memory: {
+      enabled: memoryEnabled,
+      globalScope: true,
+      projectScope: true,
+    },
   };
 
   saveConfig(config);
-  console.log(chalk.green(`\n  Config saved to ${getConfigDir()}/config.json\n`));
+  console.log(chalk.green(`\n  Config saved to ${getConfigDir()}/config.json`));
+  if (memoryEnabled) {
+    console.log(chalk.dim(`  MemPalace: ENABLED — 7 memory_* tools available to the agent. Storage created on first write.`));
+  } else {
+    console.log(chalk.dim(`  MemPalace: disabled. Re-enable anytime with /memory enable.`));
+  }
+  console.log();
   return config;
 }
 
@@ -305,7 +327,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/evolve') + d('           — cluster instincts into reusable skills'));
       console.log(d('  ') + c('/prune') + d('            — delete expired instincts'));
       console.log(d('  ') + c('/skills') + d('           — list learned skills'));
-      console.log(d('  ') + c('/memory [sub]') + d('     — MemPalace memory: status (default), wings, rooms, ls, search <q>, get <id>, rm <id>'));
+      console.log(d('  ') + c('/memory [sub]') + d('     — MemPalace: status, enable/disable, wings, rooms, ls, search <q>, get <id>, rm <id>'));
       console.log(d('  ') + c('/users') + d('           — manage users table'));
       console.log(d('  ') + c('/count [inc|dec|reset]') + d(' — increment/decrement/reset counter'));
       console.log(d('  ') + c('/detect') + d('           — detect package manager, test runner, build tool'));
@@ -894,9 +916,30 @@ export function handleSlashCommand(
       const parts = args.trim().split(/\s+/).filter(Boolean);
       const sub = (parts[0] || '').toLowerCase();
       try {
+        // Enable / disable — affects whether the memory_* tools are
+        // registered for the model on next REPL boot. Existing data is
+        // preserved either way; toggling never deletes anything.
+        if (sub === 'enable' || sub === 'on') {
+          config.memory = { ...(config.memory || {}), enabled: true };
+          saveConfig(config);
+          console.log(chalk.green('  MemPalace: ENABLED.'));
+          console.log(chalk.dim('  Restart the REPL for the memory_* tools to appear in the agent\'s registry.'));
+          return { handled: true };
+        }
+        if (sub === 'disable' || sub === 'off') {
+          config.memory = { ...(config.memory || {}), enabled: false };
+          saveConfig(config);
+          console.log(chalk.green('  MemPalace: disabled.'));
+          console.log(chalk.dim('  Existing drawers/tunnels/triples preserved. Restart the REPL to remove memory_* tools from the agent.'));
+          return { handled: true };
+        }
+
+        const enabled = config.memory?.enabled !== false;
+
         if (!sub || sub === 'status' || sub === 'stats') {
           const s = mempalace.stats(process.cwd());
           console.log(chalk.cyan('\n  MemPalace status'));
+          console.log(chalk.dim(`    enabled: ${enabled ? '✓ yes' : '✗ no (toggle with /memory enable)'}`));
           console.log(chalk.dim(`    global  ${s.globalPath}`));
           console.log(chalk.dim(`      ${s.global.drawers} drawer(s) · ${s.global.wings} wing(s) · ${s.global.rooms} room(s) · ${s.global.tunnels} tunnel(s) · ${s.global.triples} fact(s)`));
           console.log(chalk.dim(`    project ${s.projectPath}${s.projectExists ? '' : '  (not yet created)'}`));

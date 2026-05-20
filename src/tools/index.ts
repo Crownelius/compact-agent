@@ -11,11 +11,19 @@ import { ListDirTool } from './list-dir.js';
 import { StitchTool } from './stitch.js';
 import { stitchConfigured } from '../stitch.js';
 import { MEMORY_TOOLS } from './memory.js';
+import { isMemoryEnabled } from '../mempalace/index.js';
 
 // Stitch is only listed in the tool registry when configured — otherwise
 // free models hallucinate calls to it and waste turns on auth errors.
 const OPTIONAL_TOOLS: Tool[] = [];
 if (stitchConfigured()) OPTIONAL_TOOLS.push(StitchTool);
+
+// MemPalace memory tools — only registered when the user enabled the
+// feature (default true). Disabling it during the setup wizard or via
+// /memory disable removes them from the registry entirely so the model
+// doesn't see them at all (no wasted tokens advertising tools it can't
+// use, no risk of the model hallucinating memory calls).
+const MEMORY_TOOLS_IF_ENABLED: Tool[] = isMemoryEnabled() ? MEMORY_TOOLS : [];
 
 export const ALL_TOOLS: Tool[] = [
   BashTool,
@@ -27,8 +35,7 @@ export const ALL_TOOLS: Tool[] = [
   ListDirTool,
   WebFetchTool,
   WebSearchTool,
-  // MemPalace memory tools — always available (zero external deps)
-  ...MEMORY_TOOLS,
+  ...MEMORY_TOOLS_IF_ENABLED,
   ...OPTIONAL_TOOLS,
 ];
 
