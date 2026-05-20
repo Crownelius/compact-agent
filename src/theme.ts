@@ -677,6 +677,18 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
     };
   }
 
+  // Cryptic short error from the provider (e.g. owl-alpha returning just
+  // "ERROR" or "Provider returned error" with no detail). These are almost
+  // always a sign the model itself is broken on the provider's end.
+  if (lower.length < 80 && /^(error|provider returned error|request failed)\.?$/i.test(lower.trim())) {
+    return {
+      category: 'unknown', status, provider, severity: 'unknown',
+      title: `${provider} returned an empty / cryptic error`,
+      why: 'The model returned no detail — usually means the model itself is broken or deprecated on the provider\'s end.',
+      fix: `Switch with /model <name>. Common reliable choices: anthropic/claude-sonnet-4, deepseek-chat, google/gemini-2.5-flash. Set /fallback <model> to auto-retry on the next failure.`,
+    };
+  }
+
   // Default
   return {
     category: 'unknown', status, provider, severity: 'unknown',

@@ -218,6 +218,7 @@ export function handleSlashCommand(
       console.log(h('\n  ── Model & Provider ──'));
       console.log(d('  ') + c('/model [name]') + d('     — switch or show model'));
       console.log(d('  ') + c('/models') + d('           — list available models for provider'));
+      console.log(d('  ') + c('/fallback [model]') + d(' — set/show the model auto-retried on cryptic provider errors'));
       console.log(d('  ') + c('/provider') + d('         — show provider info'));
       console.log(d('  ') + c('/route') + d('            — auto-route model based on next message'));
       console.log(h('\n  ── Modes ──'));
@@ -392,6 +393,31 @@ export function handleSlashCommand(
       printModelOptions(config);
       return { handled: true };
 
+    // /fallback — set or show the model used as a one-shot rescue when the
+    // primary model returns a cryptic provider error. Set to '' / 'off' to
+    // disable. Independent from /model (which switches the primary).
+    case '/fallback': {
+      const target = args.trim();
+      if (!target) {
+        const cur = config.fallbackModel ?? '(not set)';
+        console.log(chalk.dim(`  Current fallback model: ${cur}`));
+        console.log(chalk.dim(`  Used once per chain when the primary returns "unknown" provider errors.`));
+        console.log(chalk.dim(`  Set with: /fallback <model-id>  · disable with: /fallback off`));
+        return { handled: true };
+      }
+      if (target === 'off' || target === 'none' || target === 'disable') {
+        config.fallbackModel = undefined;
+        saveConfig(config);
+        console.log(chalk.green('  Fallback model disabled.'));
+        return { handled: true };
+      }
+      config.fallbackModel = target;
+      saveConfig(config);
+      console.log(chalk.green(`  Fallback model: ${target}`));
+      console.log(chalk.dim(`  Will be tried automatically once per chain if ${config.model} returns a cryptic provider error.`));
+      return { handled: true };
+    }
+
     case '/route': {
       console.log(chalk.dim('  Auto-routing enabled for next message.'));
       return { handled: true };
@@ -410,6 +436,14 @@ export function handleSlashCommand(
         mode.current = args as Mode;
         const m = MODES[mode.current];
         console.log(chalk.green(`  Mode: ${m.label} — ${m.description}`));
+        // Soft hint when switching mode with conversation history present.
+        // Mode switches DON'T clear context, which means a previous
+        // request's residue (e.g. "write me a poem") can leak into the
+        // new mode's responses ("I'll handle both requests…"). Suggest
+        // /clear so users notice this and decide intentionally.
+        if (messages.length > 0) {
+          console.log(chalk.dim(`  Note: conversation history kept across mode switch. Run /clear for a fresh context if you don't want it.`));
+        }
         // Accessibility: speak the mode-switch when configured. Doesn't
         // block — fire-and-forget. Errors swallowed (voice should never
         // break the REPL).

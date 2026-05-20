@@ -3,7 +3,7 @@ import * as readline from 'node:readline/promises';
 import type { Message, CrowcoderConfig } from './types.js';
 import type { Tool } from './tools/types.js';
 import { ALL_TOOLS, getToolByName } from './tools/index.js';
-import { streamChat } from './api.js';
+import { streamChat, resetClient } from './api.js';
 import { checkPermission } from './permissions.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runHooks } from './hooks.js';
@@ -11,7 +11,7 @@ import { scanToolCall, printSecurityWarning } from './security.js';
 import { trackUsage } from './cost-tracker.js';
 import { shouldCompact, compactMessages, quickCompact, DEFAULT_COMPACTION } from './compaction.js';
 import type { Mode } from './modes.js';
-import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost, printApiError, formatDuration } from './theme.js';
+import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost, printApiError, formatDuration, categorizeApiError } from './theme.js';
 import {
   isVoiceEnabled, getTtsConfig, getAccessibilityConfig,
   speakAssistantResponse, speak, speakUserEcho,
@@ -30,44 +30,58 @@ export interface QueryContext {
 }
 
 /**
- * Suppress input during streaming.
+ * Suppress input during agent work — model streaming AND tool execution.
  *
- * The previous version only set raw mode and added a passive 'data' swallow
- * listener — but readline's Interface registers its own 'keypress' listener
- * that fires in parallel. That listener does TWO things we don't want:
- *   1. Echoes every typed character back to stdout (readline does the echo
- *      itself in raw mode, since the terminal can't), polluting the streamed
- *      response text
- *   2. Buffers characters into its internal line state, so when the next
- *      `rl.question()` runs the user finds their mid-stream typing already
- *      sitting in the prompt
+ * Earlier versions only suppressed during the `for await streamChat()`
+ * phase, leaving a gap during tool execution where the user's typing
+ * leaked through inline with tool output (e.g. "sdsds" appearing between
+ * web_fetch calls). Now the guard spans the entire runQuery, and
+ * executeToolCalls calls `pause()` / `resume()` around the permission
+ * prompt so rl.question() can read Y/n input cleanly.
  *
- * So we surgically detach readline's keypress listener for the duration of
- * the stream and reattach it on restore. The tagged F-key handler from
- * index.ts (carrying __crowcoderHotkey__) is preserved so F1–F10 still
- * work during streaming.
+ * Mechanism: detach every 'keypress' listener on stdin that isn't tagged
+ * with __crowcoderHotkey__ (the F-key listener from index.ts). That stops
+ * readline from echoing typed chars or buffering them into its next-line
+ * state, while keeping F1–F10 status hotkeys live.
  *
- * We also add a 'data' listener purely so Ctrl+C still exits cleanly while
- * readline is detached.
+ * Returned shape:
+ *   pause()   — re-attach readline listeners so permission prompts work
+ *   resume()  — detach again to re-suppress
+ *   restore() — final cleanup: re-attach, drop data listener, restore raw mode
  */
 type TaggedListener = ((...args: unknown[]) => void) & { __crowcoderHotkey__?: boolean };
 
-function suppressInputDuringStream(): { restore: () => void } {
+export interface InputGuard {
+  pause(): void;
+  resume(): void;
+  restore(): void;
+}
+
+function startInputSuppression(): InputGuard {
   const stdin = process.stdin;
   if (!stdin.isTTY) {
-    return { restore: () => {} };
+    return { pause: () => { /* noop */ }, resume: () => { /* noop */ }, restore: () => { /* noop */ } };
   }
   const wasRaw = stdin.isRaw;
 
-  // Snapshot the keypress listeners that aren't ours. Those are what we
-  // need to detach to stop readline from echoing + buffering. Slice to
-  // protect against the array mutating mid-iteration.
+  // Snapshot non-tagged keypress listeners. These are the ones we toggle
+  // on suppress/unsuppress; the tagged hotkey listener (F1–F10) stays
+  // attached unconditionally so status keys work during streaming and
+  // tool execution alike.
   const allKeypressListeners = stdin.listeners('keypress').slice() as TaggedListener[];
-  const detachedListeners = allKeypressListeners.filter(
-    (l) => !l.__crowcoderHotkey__,
-  );
-  for (const l of detachedListeners) {
-    stdin.removeListener('keypress', l);
+  const togglableListeners = allKeypressListeners.filter((l) => !l.__crowcoderHotkey__);
+
+  let detached = false;
+
+  function suppress(): void {
+    if (detached) return;
+    for (const l of togglableListeners) stdin.removeListener('keypress', l);
+    detached = true;
+  }
+  function unsuppress(): void {
+    if (!detached) return;
+    for (const l of togglableListeners) stdin.on('keypress', l);
+    detached = false;
   }
 
   // Swallow data — Ctrl+C still exits, everything else is discarded so
@@ -82,13 +96,15 @@ function suppressInputDuringStream(): { restore: () => void } {
   stdin.on('data', dataHandler);
   stdin.resume();
 
+  // Start suppressed — typing during model streaming is the default-block case
+  suppress();
+
   return {
-    restore: (): void => {
+    pause: unsuppress,    // pause suppression = allow typing (for permission prompts)
+    resume: suppress,     // resume suppression = block typing again
+    restore: () => {
+      unsuppress();       // ensure listeners are back before we leave
       stdin.removeListener('data', dataHandler);
-      // Re-attach readline's keypress listeners in the original order.
-      for (const l of detachedListeners) {
-        stdin.on('keypress', l);
-      }
       try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
     },
   };
@@ -157,6 +173,22 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // assistant turn, but the final TTS pass only fires after the no-tool-call
   // exit so tool descriptions aren't read out.
   let accumulatedAssistantText = '';
+
+  // Auto-fallback: when the primary model returns a cryptic / unknown
+  // provider error (common for free experimental models like
+  // openrouter/owl-alpha which returns literally "ERROR" or "Provider
+  // returned error"), we transparently retry the SAME turn once with the
+  // user's configured fallbackModel. After we use it, this latches so we
+  // don't bounce back and forth between failing models in a single chain.
+  let usedFallbackModel = false;
+
+  // Input suppression spans the entire chain: model streaming AND tool
+  // execution. executeToolCalls calls inputGuard.pause()/resume() around
+  // permission prompts so rl.question() can still read user input. Final
+  // teardown happens in the finally block at the bottom of runQuery so
+  // the guard is always cleaned up even if something throws unexpectedly.
+  const inputGuard = startInputSuppression();
+  try {
 
   // Auto-compact if context is getting large
   if (shouldCompact(ctx.messages, DEFAULT_COMPACTION)) {
@@ -229,9 +261,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       fullText += out;
     }
 
-    // Suppress terminal echo while we stream so mid-stream keystrokes
-    // don't interleave with the model's output. Restored in `finally`.
-    const inputGuard = suppressInputDuringStream();
+    // (inputGuard is now lifted to runQuery scope — see above. It spans
+    // both streaming and tool execution, with pause/resume around the
+    // permission prompts inside executeToolCalls.)
 
     // We're about to wait on the API; tell the status singleton so a blind
     // user pressing F1 hears "calling claude-sonnet-4, 6 seconds elapsed"
@@ -283,6 +315,38 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
+
+      // ── Auto-fallback path ─────────────────────────────────
+      // Categorize the error. If it's "unknown" (the provider returned a
+      // cryptic empty error like "ERROR" or "Provider returned error" that
+      // matches no specific pattern) AND we have a fallbackModel configured
+      // AND we haven't already used it, swap models and silently retry the
+      // same turn. This rescues users from broken free models without them
+      // having to manually /clear and /model switch.
+      const cat = categorizeApiError(msg, {
+        baseURL: ctx.config.baseURL,
+        provider: ctx.config.provider,
+        model: ctx.config.model,
+      });
+      const canFallback =
+        cat.category === 'unknown'
+        && ctx.config.fallbackModel
+        && ctx.config.fallbackModel !== ctx.config.model
+        && !usedFallbackModel;
+      if (canFallback) {
+        usedFallbackModel = true;
+        const failedModel = ctx.config.model;
+        const fallback = ctx.config.fallbackModel as string;
+        ctx.config.model = fallback;
+        resetClient();
+        console.log(theme.warning(
+          `  ${sym.warn} ${failedModel} returned a cryptic provider error — retrying once with fallback model ${fallback}.`,
+        ));
+        console.log(theme.dim('    (configure a different fallback with: /fallback <model-id>)'));
+        turns--;  // this retry doesn't burn a turn slot from the max-turns budget
+        continue;
+      }
+
       printApiError(msg, {
         baseURL: ctx.config.baseURL,
         provider: ctx.config.provider,
@@ -302,10 +366,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         }
       }
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
-      inputGuard.restore();
       break;
     }
-    inputGuard.restore();
 
     if (hasOutput && !lastCharWasNewline) {
       process.stdout.write('\n');
@@ -327,7 +389,10 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     if (!toolCalls || toolCalls.length === 0) break;
 
     // Execute tool calls — executeToolCalls itself flips per-tool state
-    const toolResults = await executeToolCalls(toolCalls, ctx);
+    // and uses inputGuard.pause()/resume() around each permission prompt
+    // so rl.question() can read user input even though suppression is on
+    // for the rest of the chain.
+    const toolResults = await executeToolCalls(toolCalls, ctx, inputGuard);
     ctx.messages.push(...toolResults);
   }
 
@@ -380,11 +445,15 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   if (chainMs > 1500) {
     console.log(theme.dim(`  chain ${formatDuration(chainMs)} · ${turns} ${turns === 1 ? 'turn' : 'turns'}`));
   }
+  } finally {
+    inputGuard.restore();
+  }
 }
 
 async function executeToolCalls(
   toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[],
   ctx: QueryContext,
+  inputGuard: InputGuard,
 ): Promise<Message[]> {
   const results: Message[] = [];
 
@@ -481,7 +550,17 @@ async function executeToolCalls(
     }
 
     // ── Permission check ──────────────────────────────────
-    const allowed = await checkPermission(tool, input, ctx.config, ctx.rl);
+    // Pause input suppression so rl.question() can read the user's
+    // Y/n/always response — without this, readline's keypress listener is
+    // detached and the prompt would hang forever. Re-suppress immediately
+    // after so any typing during the next tool's execution is blocked.
+    inputGuard.pause();
+    let allowed: boolean;
+    try {
+      allowed = await checkPermission(tool, input, ctx.config, ctx.rl);
+    } finally {
+      inputGuard.resume();
+    }
     if (!allowed) {
       console.log(theme.warning(`  ${sym.warn} Denied: ${toolName}`));
       results.push({

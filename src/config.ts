@@ -13,6 +13,12 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
   apiKey: '',
   baseURL: 'https://openrouter.ai/api/v1',
   model: 'anthropic/claude-sonnet-4',
+  // When the primary model returns a cryptic/empty provider error
+  // (common for free / experimental OpenRouter models like owl-alpha
+  // returning literally "ERROR"), runQuery retries ONCE with this
+  // fallback. anthropic/claude-sonnet-4 is paid but rarely fails this
+  // way — chosen as a safe escape hatch, not a default model.
+  fallbackModel: 'anthropic/claude-sonnet-4',
   provider: 'OpenRouter',
   maxTokens: 8192,
   temperature: 0.3,
@@ -114,7 +120,7 @@ function validateConfig(config: CrowcoderConfig): void {
   }
 
   // Warn on unexpected fields
-  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'dryRun', 'theme', 'palette', 'showThinking', 'voice']);
+  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'dryRun', 'theme', 'palette', 'showThinking', 'voice']);
   for (const key in config) {
     if (!expectedFields.has(key)) {
       console.warn(`Warning: Unexpected config field: ${key}`);

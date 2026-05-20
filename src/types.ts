@@ -18,6 +18,7 @@ export interface CrowcoderConfig {
   apiKey: string;
   baseURL: string;
   model: string;
+  fallbackModel?: string;  // tried automatically once when the primary model errors with an empty/unknown provider error
   provider: string;        // display name: "OpenRouter", "GLM", "Ollama", etc.
   maxTokens: number;
   temperature: number;
