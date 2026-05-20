@@ -85,6 +85,8 @@ import {
 import { buildWalkthroughPrompt } from './walkthrough.js';
 // Stitch (Google's AI UI/UX design tool) — /stitch, /stitch-config, /stitch-tools
 import { buildStitchPrompt, buildStitchToolsPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
+// MemPalace memory subsystem — wings/rooms/drawers/tunnels/KG, both global + project stores
+import * as mempalace from './mempalace/index.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
 import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
@@ -303,7 +305,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/evolve') + d('           — cluster instincts into reusable skills'));
       console.log(d('  ') + c('/prune') + d('            — delete expired instincts'));
       console.log(d('  ') + c('/skills') + d('           — list learned skills'));
-      console.log(d('  ') + c('/memory') + d('           — show memory status'));
+      console.log(d('  ') + c('/memory [sub]') + d('     — MemPalace memory: status (default), wings, rooms, ls, search <q>, get <id>, rm <id>'));
       console.log(d('  ') + c('/users') + d('           — manage users table'));
       console.log(d('  ') + c('/count [inc|dec|reset]') + d(' — increment/decrement/reset counter'));
       console.log(d('  ') + c('/detect') + d('           — detect package manager, test runner, build tool'));
@@ -879,9 +881,106 @@ export function handleSlashCommand(
       printSkillList();
       return { handled: true };
 
-    case '/memory':
-      printMemoryStatus();
-      return { handled: true };
+    // /memory <sub> — MemPalace inventory & inspection.
+    //   /memory               status + counts (legacy + new combined)
+    //   /memory wings         list wings in both stores
+    //   /memory rooms <wing>  rooms within a wing
+    //   /memory ls <w> <r>    drawers in a wing/room
+    //   /memory search <q>    text search (same backend as memory_search tool)
+    //   /memory get <id>      full content of a single drawer
+    //   /memory rm <id>       delete a drawer (cascades tunnels + triples)
+    //   /memory stats         storage + counts per scope
+    case '/memory': {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      const sub = (parts[0] || '').toLowerCase();
+      try {
+        if (!sub || sub === 'status' || sub === 'stats') {
+          const s = mempalace.stats(process.cwd());
+          console.log(chalk.cyan('\n  MemPalace status'));
+          console.log(chalk.dim(`    global  ${s.globalPath}`));
+          console.log(chalk.dim(`      ${s.global.drawers} drawer(s) · ${s.global.wings} wing(s) · ${s.global.rooms} room(s) · ${s.global.tunnels} tunnel(s) · ${s.global.triples} fact(s)`));
+          console.log(chalk.dim(`    project ${s.projectPath}${s.projectExists ? '' : '  (not yet created)'}`));
+          console.log(chalk.dim(`      ${s.project.drawers} drawer(s) · ${s.project.wings} wing(s) · ${s.project.rooms} room(s) · ${s.project.tunnels} tunnel(s) · ${s.project.triples} fact(s)`));
+          console.log();
+          printMemoryStatus();
+          return { handled: true };
+        }
+        if (sub === 'wings') {
+          const w = mempalace.listWings(process.cwd());
+          console.log(chalk.cyan('\n  Wings:'));
+          if (w.global.length === 0 && w.project.length === 0) {
+            console.log(chalk.dim('    (none yet — agent will create wings as it learns)'));
+          }
+          for (const wm of w.global) console.log(chalk.dim(`    global · ${wm.name.padEnd(20)} ${wm.drawerCount} drawer(s)`));
+          for (const wm of w.project) console.log(chalk.dim(`    project · ${wm.name.padEnd(19)} ${wm.drawerCount} drawer(s)`));
+          console.log();
+          return { handled: true };
+        }
+        if (sub === 'rooms') {
+          const r = mempalace.listRooms(process.cwd(), parts[1]);
+          const all = [...r.global.map((m) => ({ ...m, s: 'global' })), ...r.project.map((m) => ({ ...m, s: 'project' }))];
+          if (all.length === 0) { console.log(chalk.dim(`  No rooms${parts[1] ? ' in wing ' + parts[1] : ''}.`)); return { handled: true }; }
+          console.log(chalk.cyan(`\n  Rooms${parts[1] ? ' in ' + parts[1] : ''}:`));
+          for (const m of all) console.log(chalk.dim(`    ${m.s.padEnd(7)} ${m.wing}/${m.name}  — ${m.drawerCount} drawer(s), last ${m.lastTouched.slice(0, 10)}`));
+          console.log();
+          return { handled: true };
+        }
+        if (sub === 'ls' || sub === 'list') {
+          const drawers = mempalace.listDrawers({ wing: parts[1], room: parts[2], cwd: process.cwd() });
+          if (drawers.length === 0) { console.log(chalk.dim('  No drawers match.')); return { handled: true }; }
+          console.log(chalk.cyan(`\n  Drawers (${drawers.length}):`));
+          for (const d of drawers.slice(0, 50)) {
+            const excerpt = d.content.length > 90 ? d.content.slice(0, 90) + '…' : d.content;
+            console.log(chalk.dim(`    ${d.id} (${d.scope}) ${d.wing}/${d.room}: `) + chalk.white(excerpt));
+          }
+          if (drawers.length > 50) console.log(chalk.dim(`    … and ${drawers.length - 50} more`));
+          console.log();
+          return { handled: true };
+        }
+        if (sub === 'search') {
+          const q = parts.slice(1).join(' ');
+          if (!q) { console.log(chalk.yellow('  Usage: /memory search <query>')); return { handled: true }; }
+          const hits = mempalace.search(q, process.cwd(), { limit: 10 });
+          if (hits.length === 0) { console.log(chalk.dim(`  No matches for "${q}".`)); return { handled: true }; }
+          console.log(chalk.cyan(`\n  ${hits.length} match(es) for "${q}":`));
+          for (const h of hits) {
+            const excerpt = h.drawer.content.length > 200 ? h.drawer.content.slice(0, 200) + '…' : h.drawer.content;
+            const tagStr = h.drawer.tags.length > 0 ? ` [${h.drawer.tags.join(', ')}]` : '';
+            console.log(chalk.dim(`    ${h.drawer.id} (${h.drawer.scope} · ${h.drawer.wing}/${h.drawer.room}${tagStr}) score ${h.score.toFixed(2)}`));
+            console.log(chalk.white(`      ${excerpt}`));
+          }
+          console.log();
+          return { handled: true };
+        }
+        if (sub === 'get' || sub === 'recall') {
+          const id = parts[1];
+          if (!id) { console.log(chalk.yellow('  Usage: /memory get <drawer-id>')); return { handled: true }; }
+          const d = mempalace.getDrawer(id, process.cwd());
+          if (!d) { console.log(chalk.yellow(`  No drawer ${id}.`)); return { handled: true }; }
+          const tagStr = d.tags.length > 0 ? ` [${d.tags.join(', ')}]` : '';
+          console.log(chalk.cyan(`\n  ${d.id} (${d.scope} · ${d.wing}/${d.room}${tagStr})`));
+          console.log(chalk.dim(`  importance ${d.importance} · created ${d.createdAt} · updated ${d.updatedAt}\n`));
+          console.log(d.content);
+          console.log();
+          return { handled: true };
+        }
+        if (sub === 'rm' || sub === 'delete') {
+          const id = parts[1];
+          if (!id) { console.log(chalk.yellow('  Usage: /memory rm <drawer-id>')); return { handled: true }; }
+          // Try both stores; whichever owns it returns true
+          const removed = mempalace.getGlobalStore().deleteDrawer(id)
+            || mempalace.getProjectStore(process.cwd()).deleteDrawer(id);
+          console.log(removed ? chalk.green(`  Deleted drawer ${id} (cascaded tunnels + triples).`) : chalk.yellow(`  No drawer ${id}.`));
+          return { handled: true };
+        }
+        console.log(chalk.yellow(`  Unknown /memory subcommand: ${sub}`));
+        console.log(chalk.dim('  Try: /memory (status), wings, rooms <wing>, ls <wing> <room>, search <q>, get <id>, rm <id>'));
+        return { handled: true };
+      } catch (e) {
+        console.log(chalk.red(`  /memory failed: ${e instanceof Error ? e.message : e}`));
+        return { handled: true };
+      }
+    }
 
     // ── Users Table ──────────────────────────────────────
     case '/users': {

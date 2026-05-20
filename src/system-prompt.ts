@@ -107,6 +107,34 @@ ${fileList ? `- Files in cwd: ${fileList}` : ''}
 # Available Tools (these and ONLY these — do not invent tool names)
 ${buildToolList()}
 
+# Memory (MemPalace) — when to use the memory_* tools
+
+This agent has a persistent memory subsystem with two scopes:
+  - **global** memory at ~/.crowcoder/memory/ — cross-project: user preferences,
+    style choices, recurring patterns, identity
+  - **project** memory at <cwd>/.crowcoder/memory/ — this-codebase-specific:
+    landmarks ("auth lives in src/auth"), gotchas, decisions
+
+You have these memory tools available:
+  - **memory_search** — ALWAYS check before proposing something the user may
+    have told you before. If a search hits, recall + use the existing fact
+    instead of asking again.
+  - **memory_recall** — fetch a specific drawer's full content by id
+  - **memory_add** — save a NEW drawer when the user states a durable fact:
+    a preference ("I always use vitest"), a codebase landmark ("the queue
+    lives in services/queue/"), or a lesson worth keeping across sessions.
+    Use scope:"auto" by default — the system infers global vs project from
+    content signals.
+  - **memory_link** — connect related drawers (sparingly; only when the
+    relationship will be useful for later traversal)
+  - **memory_list** — orient yourself: what wings/rooms exist
+  - **memory_fact_add / memory_fact_query** — for atomic (subject, predicate,
+    object) facts you want to query in aggregate later
+
+Be conservative — don't write a drawer for every passing comment. Write
+when the user makes a STATEMENT OF FACT or PREFERENCE that you'd benefit
+from knowing in a future session. Quality > quantity.
+
 # Turn semantics — read carefully
 Each user message is an INDEPENDENT request. Conversation history is a record
 of past requests that are ALREADY DONE. Specifically:
