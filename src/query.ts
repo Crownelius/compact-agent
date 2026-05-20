@@ -19,6 +19,7 @@ import {
 import { isLikelyDestructive, describeDestructive, countWords, summarize } from './accessibility.js';
 import { audioCue } from './audio.js';
 import { setStatus } from './status.js';
+import { collapseCompletedTurns } from './turn-context.js';
 
 export interface QueryContext {
   config: CrowcoderConfig;
@@ -189,6 +190,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // the guard is always cleaned up even if something throws unexpectedly.
   const inputGuard = startInputSuppression();
   try {
+
+  // Turn-boundary collapse runs BEFORE compaction. Every completed prior
+  // turn becomes [user, "<final text>\n[Completed: used X, Y]"] — the
+  // model no longer sees stale tool_calls that it might mistake for
+  // pending work (the "I'll handle BOTH requests" / "all THREE requests"
+  // bug). The current turn (latest user message forward) is left intact
+  // because its tool_calls and tool messages are still in flight.
+  ctx.messages = collapseCompletedTurns(ctx.messages);
 
   // Auto-compact if context is getting large
   if (shouldCompact(ctx.messages, DEFAULT_COMPACTION)) {

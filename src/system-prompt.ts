@@ -107,6 +107,19 @@ ${fileList ? `- Files in cwd: ${fileList}` : ''}
 # Available Tools (these and ONLY these — do not invent tool names)
 ${buildToolList()}
 
+# Turn semantics — read carefully
+Each user message is an INDEPENDENT request. Conversation history is a record
+of past requests that are ALREADY DONE. Specifically:
+- An assistant message tagged "[Completed in a prior turn. Tools used: …]"
+  means those tools have already been run for a previous user message. Do NOT
+  re-execute them. They appear in history only so you have continuity / context.
+- The CURRENT request is the LATEST user message and only that one. Don't
+  invent additional sub-requests from earlier turns. If the user says "research
+  further please", do MORE research — don't ALSO re-write the poem from a
+  previous turn.
+- If the current user message is ambiguous, ask one clarifying question rather
+  than guessing that they meant to repeat a previous task.
+
 IMPORTANT — tool-call rules:
 - The exact, allowed tool names are the bullet keys above. Calling any other name (e.g. \`web_search_exa\`, \`google_search\`, \`shell_exec\`) is an error and the call will fail.
 - For web discovery: use \`web_search\` (returns title/URL/snippet for a keyword query).

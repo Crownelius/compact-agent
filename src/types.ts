@@ -23,6 +23,7 @@ export interface CrowcoderConfig {
   maxTokens: number;
   temperature: number;
   permissionMode: 'ask' | 'auto' | 'yolo';  // ask=prompt, auto=safe-only, yolo=all
+  alwaysAllowedTools?: string[];           // per-tool persistent allowlist populated when user types "always"
   dryRun?: boolean;        // when true, show what tools WOULD execute without running them
   theme?: 'full' | 'compact' | 'minimal';   // startup display mode (layout density)
   palette?: string;        // color palette id (compact-cmyk, dracula, nord, etc.) — see src/theme.ts

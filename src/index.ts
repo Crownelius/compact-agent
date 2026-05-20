@@ -251,7 +251,8 @@ export function handleSlashCommand(
       console.log(h('\n  ── Tools & Config ──'));
       console.log(d('  ') + c('/tools') + d('            — list tools'));
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
-      console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode'));
+      console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode (ask/auto/yolo); no arg shows current + always-allow list'));
+      console.log(d('  ') + c('/perm-reset') + d('       — clear the per-tool always-allow list'));
       console.log(d('  ') + c('/dry-run') + d('          — toggle dry-run mode'));
       console.log(d('  ') + c('/thinking') + d('         — toggle thinking/reasoning display'));
       console.log(d('  ') + c('/cd <path>') + d('        — change directory'));
@@ -633,8 +634,23 @@ export function handleSlashCommand(
         console.log(chalk.green(`  Permissions: ${config.permissionMode}`));
       } else {
         console.log(chalk.dim(`  Current: ${config.permissionMode} (options: ask, auto, yolo)`));
+        const allowed = config.alwaysAllowedTools || [];
+        if (allowed.length > 0) {
+          console.log(chalk.dim(`  Always-allow list: ${allowed.join(', ')}`));
+          console.log(chalk.dim(`  Clear with /perm-reset`));
+        }
       }
       return { handled: true };
+
+    // Clear the per-tool always-allow list. Useful after typing "always"
+    // by accident, or to re-tighten security after a session of work.
+    case '/perm-reset': {
+      const had = (config.alwaysAllowedTools || []).length;
+      config.alwaysAllowedTools = [];
+      saveConfig(config);
+      console.log(chalk.green(`  Cleared ${had} always-allowed tool(s). Permission prompts re-enabled.`));
+      return { handled: true };
+    }
 
     case '/dry-run':
       config.dryRun = !config.dryRun;
