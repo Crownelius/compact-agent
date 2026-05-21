@@ -197,29 +197,46 @@ export function listRuleSets(): { language: string; source: 'builtin' | 'custom'
   return result.sort((a, b) => a.language.localeCompare(b.language));
 }
 
+// Centralized extension → language map. Used by all three detection
+// paths (whole-repo scan, user-query scan, git-diff scan) so they stay
+// consistent.
+const EXT_TO_LANG: Record<string, string> = {
+  '.ts': 'typescript', '.tsx': 'typescript', '.js': 'typescript', '.jsx': 'typescript',
+  '.mjs': 'typescript', '.cjs': 'typescript',
+  '.py': 'python', '.pyw': 'python',
+  '.go': 'go',
+  '.rs': 'rust',
+  '.java': 'java',
+  '.kt': 'kotlin', '.kts': 'kotlin',
+  '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.h': 'cpp', '.hpp': 'cpp', '.hxx': 'cpp',
+  '.cs': 'csharp',
+  '.php': 'php',
+  '.rb': 'ruby',
+  '.swift': 'swift',
+  '.dart': 'dart',
+  '.fs': 'fsharp', '.fsx': 'fsharp',
+  '.sql': 'sql',
+};
+
+function extOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  if (dot < 0) return '';
+  return name.slice(dot).toLowerCase();
+}
+
 /**
  * Auto-detect languages in the project by file extensions.
+ * Broad scan — walks the whole cwd. Used as the fallback when targeted
+ * detection (query + git diff) finds nothing.
  */
 export function detectLanguages(cwd: string): string[] {
-  const extMap: Record<string, string> = {
-    '.ts': 'typescript', '.tsx': 'typescript', '.js': 'typescript', '.jsx': 'typescript',
-    '.py': 'python', '.pyw': 'python',
-    '.go': 'go',
-    '.rs': 'rust',
-    '.java': 'java',
-    '.kt': 'kotlin', '.kts': 'kotlin',
-    '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.h': 'cpp', '.hpp': 'cpp',
-    '.php': 'php',
-  };
-
   const detected = new Set<string>();
   try {
     const files = readdirSync(cwd, { recursive: true, withFileTypes: true });
     for (const f of files as any[]) {
       if (!f.isFile()) continue;
-      const name: string = f.name;
-      const ext = name.slice(name.lastIndexOf('.'));
-      if (extMap[ext]) detected.add(extMap[ext]);
+      const lang = EXT_TO_LANG[extOf(f.name)];
+      if (lang) detected.add(lang);
       if (detected.size >= 5) break; // enough
     }
   } catch {
@@ -229,16 +246,92 @@ export function detectLanguages(cwd: string): string[] {
 }
 
 /**
- * Build rules section for system prompt based on detected languages.
+ * Detect languages mentioned in a free-form user message via file-path
+ * extensions. Matches paths like `src/foo.ts`, `~/Downloads/bar.py`,
+ * `C:\\path\\baz.go`. Ignores bare extensions like ".ts" alone — they're
+ * too often false positives (version strings, regex patterns).
  */
-export function buildRulesPrompt(cwd: string): string {
-  const languages = detectLanguages(cwd);
+export function detectLanguagesFromQuery(query: string): string[] {
+  const detected = new Set<string>();
+  if (!query) return [];
+  // Match path-like tokens: at least one [\w/\\.-] before the extension
+  const pathRe = /[\w/\\.-]+(\.[a-z]{1,5})\b/gi;
+  let m;
+  while ((m = pathRe.exec(query)) !== null) {
+    const lang = EXT_TO_LANG[m[1].toLowerCase()];
+    if (lang) detected.add(lang);
+  }
+  return [...detected];
+}
+
+/**
+ * Detect languages from files changed in the working tree. Uses
+ * `git diff --name-only HEAD` (uncommitted + staged) and falls back to
+ * `git status --porcelain` if the diff command fails. Times out fast
+ * to never block startup.
+ */
+export function detectLanguagesFromGit(cwd: string): string[] {
+  const detected = new Set<string>();
+  try {
+    // Dynamic require so this module stays usable in non-git contexts
+    // without importing the child_process spawn cost unnecessarily.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execSync } = require('node:child_process') as typeof import('node:child_process');
+    const out = execSync('git diff --name-only HEAD 2>nul || git status --porcelain', {
+      cwd, timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8',
+    });
+    for (const line of out.split('\n')) {
+      // Strip git-status porcelain prefix (XY space)
+      const path = line.replace(/^[\sMADRCU?!]+/, '').trim();
+      if (!path) continue;
+      const lang = EXT_TO_LANG[extOf(path)];
+      if (lang) detected.add(lang);
+    }
+  } catch {
+    // Not a git repo, no changes, or git unavailable — silent
+  }
+  return [...detected];
+}
+
+/**
+ * Build rules section for system prompt. Detection prefers TARGETED
+ * sources (user query + git diff) over a broad repo scan, so polyglot
+ * repos don't have to inject every language's rules on every turn.
+ *
+ *   priority 1: file paths mentioned in the user's current message
+ *   priority 2: files changed in the working tree (git diff)
+ *   fallback:   broad recursive scan of cwd (the old behavior)
+ *
+ * Returns "" if no languages detected at all. Total injected length
+ * capped at ~3000 chars to avoid bloat (rules-per-language are usually
+ * 500-1500 chars each, so 3-4 languages fit comfortably).
+ */
+export function buildRulesPrompt(cwd: string, userQuery?: string): string {
+  let languages: string[] = [];
+
+  // Priority 1+2: query + git
+  const fromQuery = userQuery ? detectLanguagesFromQuery(userQuery) : [];
+  const fromGit = detectLanguagesFromGit(cwd);
+  const targeted = [...new Set([...fromQuery, ...fromGit])];
+
+  if (targeted.length > 0) {
+    languages = targeted;
+  } else {
+    // Fallback to broad scan
+    languages = detectLanguages(cwd);
+  }
+
   if (languages.length === 0) return '';
 
   const sections: string[] = [];
+  let totalLen = 0;
+  const CAP = 3000;
   for (const lang of languages) {
     const rules = loadRules(lang);
-    if (rules) sections.push(rules);
+    if (!rules) continue;
+    if (totalLen + rules.length > CAP && sections.length > 0) break;
+    sections.push(rules);
+    totalLen += rules.length;
   }
 
   if (sections.length === 0) return '';

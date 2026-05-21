@@ -63,8 +63,11 @@ export function buildSystemPrompt(
   // Mode-specific prompt addition
   const modeAddition = getModePromptAddition(mode);
 
-  // Language-specific rules
-  const rulesAddition = buildRulesPrompt(cwd);
+  // Language-specific rules. Pass userQuery so the detector can scope
+  // injection to languages mentioned in the message or changed in git
+  // — narrower than the old "every language found anywhere in cwd"
+  // sweep, which over-injected in polyglot repos.
+  const rulesAddition = buildRulesPrompt(cwd, userQuery);
 
   // Relevant instincts from learning system
   let instinctAddition = '';

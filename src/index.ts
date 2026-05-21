@@ -273,6 +273,11 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/build-fix') + d('        — auto-detect language & fix build errors'));
       console.log(d('  ') + c('/test-coverage') + d('    — analyze test coverage, suggest tests'));
       console.log(d('  ') + c('/refactor [target]') + d(' — dead code detection & cleanup'));
+      console.log(d('  ') + c('/hunt-silent') + d('      — silent-failure-hunter agent (empty catch, log-and-forget, etc.)'));
+      console.log(d('  ') + c('/explore') + d('          — code-explorer agent (codebase reconnaissance pass)'));
+      console.log(d('  ') + c('/types') + d('            — type-design-analyzer agent (type system + API shape critique)'));
+      console.log(d('  ') + c('/architect <task>') + d(' — code-architect agent (structural critique). Distinct from /mode architect.'));
+      console.log(d('  ') + c('/simplify') + d('         — code-simplifier agent (find + collapse incidental complexity)'));
       console.log(d('  ') + c('/e2e <feature>') + d('    — generate E2E tests'));
       console.log(d('  ') + c('/eval <criteria>') + d('  — evaluate project against criteria'));
       console.log(h('\n  ── Tools & Config ──'));
@@ -987,6 +992,48 @@ export function handleSlashCommand(
       }
       console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.crowcoder/skills/.\n'));
       return { handled: true };
+    }
+
+    // ── ECC agent shortcuts (5 commands, ECC audit item 4) ─────
+    // The ECC v2 bundle ships agents with focused single-purpose prompts:
+    //   silent-failure-hunter — finds empty catch, log-and-forget, etc.
+    //   code-explorer         — codebase reconnaissance pass
+    //   type-design-analyzer  — type-system + API shape critique
+    //   code-architect        — structural critique + refactor plan
+    //   code-simplifier       — find + collapse incidental complexity
+    //
+    // None of our 9 modes cover these niches. Each command takes an
+    // optional task arg, looks up the ECC agent skill by slug, and
+    // injects its prompt + the user's task as the next user message.
+    case '/hunt-silent':
+    case '/explore':
+    case '/types':
+    case '/architect':
+    case '/simplify': {
+      // Map slash command → ECC agent slug
+      const agentMap: Record<string, string> = {
+        '/hunt-silent': 'silent-failure-hunter',
+        '/explore': 'code-explorer',
+        '/types': 'type-design-analyzer',
+        '/architect': 'code-architect',
+        '/simplify': 'code-simplifier',
+      };
+      const agentSlug = agentMap[cmd];
+      const targetName = `agent: ${agentSlug}`.toLowerCase();
+      const skill = listSkills().find((s) => s.name.toLowerCase() === targetName);
+      if (!skill) {
+        console.log(chalk.yellow(`  The "${agentSlug}" agent isn't in your bundle.`));
+        console.log(chalk.dim(`  Run /reset-hooks (forces ECC re-import) or upgrade compact-agent.`));
+        return { handled: true };
+      }
+      // Prefix with the agent prompt, then the user's task. The agent
+      // prompts are self-contained — they explain their role + expected
+      // format — so the model picks up the right persona for this turn.
+      const task = args.trim();
+      const prompt = task
+        ? `${skill.prompt}\n\n## Task\n\n${task}`
+        : `${skill.prompt}\n\nWait for the user to describe what they want analyzed.`;
+      return { handled: false, injectPrompt: prompt };
     }
 
     // /ecc-guide — navigable browser of the bundled ECC corpus. With 228
