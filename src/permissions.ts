@@ -14,6 +14,7 @@ import chalk from 'chalk';
 import type { Tool } from './tools/types.js';
 import type { CrowcoderConfig } from './types.js';
 import { saveConfig } from './config.js';
+import { evaluateCommand } from './execpolicy.js';
 
 /**
  * Check if a tool call is allowed under the current permission mode.
@@ -31,7 +32,29 @@ export async function checkPermission(
   config: CrowcoderConfig,
   rl: readline.Interface,
 ): Promise<boolean> {
-  // yolo mode = everything allowed
+  // ── Execpolicy intent-gate (runs BEFORE other checks) ──
+  // For bash commands, evaluate the static-policy DSL first. This lets
+  // us auto-approve obviously-safe ops (cat, ls, git log) AND block
+  // obviously-dangerous ones (rm -rf system path, shutdown) without
+  // burning a user prompt either way. Only fires for the `bash` tool.
+  if (tool.name === 'bash') {
+    const cmd = String(input.command || '');
+    const policy = evaluateCommand(cmd);
+    if (policy.decision === 'forbidden') {
+      console.log(chalk.red(`\n  ✗ Blocked by execpolicy${policy.ruleId ? ` (${policy.ruleId})` : ''}: ${policy.reason || 'command not permitted'}`));
+      console.log(chalk.dim(`    $ ${cmd.slice(0, 120)}`));
+      return false;
+    }
+    if (policy.decision === 'allow') {
+      // Skip the full permission flow — policy says this is safe
+      return true;
+    }
+    // policy.decision === 'prompt' → fall through to the usual flow
+    // (alwaysAllowedTools check, mode check, ask if needed)
+  }
+
+  // yolo mode = everything allowed (execpolicy 'forbidden' still wins,
+  // applied above; allow + prompt both pass through yolo)
   if (config.permissionMode === 'yolo') return true;
 
   // Read-only tools always allowed
