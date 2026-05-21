@@ -1,14 +1,14 @@
 {
   "name": "compact-agent",
   "version": "1.24.2",
-  "description": "A dense, feature-rich AI coding agent for the terminal. Built-in voice dictation (Whisper) + TTS readout (ElevenLabs) + screen-reader mode for blind / low-vision users. 80+ slash commands, 9 modes including Hermes self-improving loop, multi-agent orchestration, bundled everything-claude-code skills library, learning system, and observable LLM transport. Works with OpenRouter, OpenAI, Anthropic-compatible, Ollama, LM Studio, DeepSeek, or any OpenAI-compatible API.",
+  "description": "Terminal AI coding CLI. Speaks any OpenAI-compatible API (OpenRouter, OpenAI, NVIDIA, Ollama, LM Studio, DeepSeek). Modes, slash commands, multi-agent swarming, key-rotation pool, optional voice + screen-reader, sandbox + permission gates, persistent input box, bundled everything-claude-code skills.",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/Crownelius/Crowcoder#readme",
-  "bugs": "https://github.com/Crownelius/Crowcoder/issues",
+  "homepage": "https://github.com/Crownelius/compact-agent#readme",
+  "bugs": "https://github.com/Crownelius/compact-agent/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Crownelius/Crowcoder.git"
+    "url": "git+https://github.com/Crownelius/compact-agent.git"
   },
   "keywords": [
     "ai",
