@@ -4,7 +4,7 @@
  *
  * Uses an isolated CROWCODER_HOME temp dir so the user's real config stays
  * untouched. API key is read from OPENROUTER_API_KEY env var, or fall back
- * to the user's ~/.crowcoder/config.json if they've restored it.
+ * to the user's ~/.compact-agent/config.json if they've restored it.
  *
  * Each command:
  *   - Dispatches via handleSlashCommand to get the injectPrompt
@@ -31,7 +31,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 // ── Bootstrap: API key + temp config dir ────────────────────────────
 let apiKey = process.env.OPENROUTER_API_KEY || '';
-const realConfig = path.join(homedir(), '.crowcoder', 'config.json');
+const realConfig = path.join(homedir(), '.compact-agent', 'config.json');
 if (!apiKey && fs.existsSync(realConfig)) {
   try {
     const real = JSON.parse(fs.readFileSync(realConfig, 'utf-8'));
@@ -40,7 +40,7 @@ if (!apiKey && fs.existsSync(realConfig)) {
 }
 if (!apiKey) {
   console.error('No OpenRouter API key found.');
-  console.error('Set OPENROUTER_API_KEY env var, or restore ~/.crowcoder/config.json by running `crowcoder` and going through setup.');
+  console.error('Set OPENROUTER_API_KEY env var, or restore ~/.compact-agent/config.json by running `crowcoder` and going through setup.');
   process.exit(2);
 }
 

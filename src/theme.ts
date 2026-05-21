@@ -558,7 +558,7 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
       category: 'auth-bad-key', status: status ?? 401, provider, severity: 'auth',
       title: 'Authentication failed',
       why: `${provider} rejected the API key. It's missing, malformed, or revoked.`,
-      fix: 'Re-set your key with /config. Check ~/.crowcoder/config.json if /config doesn\'t catch it.',
+      fix: 'Re-set your key with /config. Check ~/.compact-agent/config.json if /config doesn\'t catch it.',
     };
   }
 

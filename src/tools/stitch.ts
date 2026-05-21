@@ -7,7 +7,7 @@
  *   - Download assets (images, HTML)
  *   - Generate a new screen from a text prompt
  *
- * Auth: API key from ~/.crowcoder/stitch.json or STITCH_API_KEY env var.
+ * Auth: API key from ~/.compact-agent/stitch.json or STITCH_API_KEY env var.
  * Configure with `/stitch-config <key>` inside the REPL.
  */
 import type { Tool, ToolResult } from './types.js';

@@ -26,7 +26,7 @@ Cover:
 - Universal OpenAI-compatible CLI — works with OpenRouter, OpenAI, Anthropic,
   Ollama, LM Studio, DeepSeek.
 - Local-first: your config, sessions, and learned patterns live in
-  \`~/.crowcoder/\`. No telemetry.
+  \`~/.compact-agent/\`. No telemetry.
 - Bundled everything-claude-code (ECC) library: 33 skills, 16 agents, 9
   workflow commands, 7 language rule sets, 5 security hooks. Auto-installed.
 - Then ask: "Want me to show you the modes, or jump straight into doing a

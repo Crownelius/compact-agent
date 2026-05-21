@@ -12,7 +12,6 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import type {
   Drawer, Tunnel, KGTriple, StoreState, Scope,
@@ -20,15 +19,16 @@ import type {
 } from './types.js';
 import { SCHEMA_VERSION } from './types.js';
 import { searchDrawers } from './search.js';
+import { getHomeStateDir, getProjectStateDir } from '../config.js';
 
 // ── Paths ─────────────────────────────────────────────────
-/** ~/.crowcoder/memory/store.json — cross-project knowledge */
+/** ~/.compact-agent/memory/store.json — cross-project knowledge */
 export function globalStorePath(): string {
-  return join(homedir(), '.crowcoder', 'memory', 'store.json');
+  return join(getHomeStateDir(), 'memory', 'store.json');
 }
-/** <cwd>/.crowcoder/memory/store.json — per-repo knowledge */
+/** <cwd>/.compact-agent/memory/store.json — per-repo knowledge */
 export function projectStorePath(cwd: string): string {
-  return join(cwd, '.crowcoder', 'memory', 'store.json');
+  return join(getProjectStateDir(cwd), 'memory', 'store.json');
 }
 
 // ── ID generation ─────────────────────────────────────────

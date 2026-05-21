@@ -13,9 +13,9 @@
  * structure. Tunnels and KG triples give them relational structure.
  *
  * Two stores live side-by-side:
- *   GLOBAL   ~/.crowcoder/memory/    cross-project knowledge (user prefs,
+ *   GLOBAL   ~/.compact-agent/memory/    cross-project knowledge (user prefs,
  *                                    recurring patterns, skills)
- *   PROJECT  <cwd>/.crowcoder/memory/  this-codebase-specific (e.g. "build
+ *   PROJECT  <cwd>/.compact-agent/memory/  this-codebase-specific (e.g. "build
  *                                    is broken because X", "the queue lives
  *                                    in services/queue/...")
  *
@@ -27,8 +27,8 @@
 /**
  * Which memory store an operation targets.
  *
- *   'global'  — ~/.crowcoder/memory/ (cross-project)
- *   'project' — <cwd>/.crowcoder/memory/ (per-repo)
+ *   'global'  — ~/.compact-agent/memory/ (cross-project)
+ *   'project' — <cwd>/.compact-agent/memory/ (per-repo)
  *   'both'    — search both; writes pick based on content (global for user
  *               preferences, project for codebase facts)
  */

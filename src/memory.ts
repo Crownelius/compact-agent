@@ -1,6 +1,6 @@
 /**
  * Enhanced memory persistence — session-aware memory that persists key context across sessions.
- * Data stored in ~/.crowcoder/memory/
+ * Data stored in ~/.compact-agent/memory/
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';

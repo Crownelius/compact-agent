@@ -72,7 +72,7 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 
 ### 2.4 Sessions
 
-Sessions are JSON snapshots stored in `~/.crowcoder/sessions/`.
+Sessions are JSON snapshots stored in `~/.compact-agent/sessions/`.
 
 | Command | What it does |
 |---|---|
@@ -206,7 +206,7 @@ The learning system extracts patterns from your sessions and decays unused ones.
 | `/instinct-import <file>` | Import instincts from JSON. |
 | `/evolve` | Cluster high-confidence instincts into reusable skills. |
 | `/prune` | Delete instincts whose confidence has decayed below threshold. |
-| `/memory` | Show cross-session memory status (`~/.crowcoder/memory/`). |
+| `/memory` | Show cross-session memory status (`~/.compact-agent/memory/`). |
 
 ### 2.17 Detection
 
@@ -248,7 +248,7 @@ Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX desi
 | `/stitch` | Show config status (masked key, configured-at timestamp, server URL). |
 | `/stitch tools` | Live verification — calls `tools/list` against the server and renders the discovered tool catalog as a Markdown table. Confirms auth + endpoint reachability. |
 | `/stitch <query>` | Direct Stitch assistant (intent-routed: `enhance: <prompt>` improves a prompt; anything else hits the assistant). Less useful now that design mode does this automatically. |
-| `/stitch-config <api-key>` | Save your Stitch API key to `~/.crowcoder/stitch.json`. |
+| `/stitch-config <api-key>` | Save your Stitch API key to `~/.compact-agent/stitch.json`. |
 
 **Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
 
@@ -332,20 +332,20 @@ These affect the REPL's runtime behavior. Set in your shell before launching `co
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CROWCODER_HOME` | `~/.crowcoder` | Override config/state directory (useful for tests and sandboxes). |
+| `CROWCODER_HOME` | `~/.compact-agent` | Override config/state directory (useful for tests and sandboxes). |
 | `CROWCODER_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
 | `CROWCODER_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
 | `OPENROUTER_API_KEY` | (unset) | Picked up by the LLM driver test (`tests/llm-drive-all.mjs`) if your real `config.json` isn't available. |
-| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.crowcoder/stitch.json`. |
+| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.compact-agent/stitch.json`. |
 
 ---
 
 ## 5. Files & state
 
-Compact Agent is local-first. Everything lives in `~/.crowcoder/` (or `$CROWCODER_HOME` if set):
+Compact Agent is local-first. Everything lives in `~/.compact-agent/` (or `$CROWCODER_HOME` if set):
 
 ```
-~/.crowcoder/
+~/.compact-agent/
   config.json          # provider, model, key, theme, perms
   usage.json           # token counts, cost estimates (LOCAL ONLY)
   hooks.json           # hook definitions
@@ -362,13 +362,13 @@ Compact Agent is local-first. Everything lives in `~/.crowcoder/` (or `$CROWCODE
   ecc-agents/          # bundled agent prompts
 ```
 
-**To wipe all state:** `rm -rf ~/.crowcoder`.
+**To wipe all state:** `rm -rf ~/.compact-agent`.
 
 ---
 
 ## 6. Hooks
 
-Default ECC-bundled hooks (configured in `~/.crowcoder/hooks.json`):
+Default ECC-bundled hooks (configured in `~/.compact-agent/hooks.json`):
 
 | Event | Match | What fires |
 |---|---|---|
@@ -376,7 +376,7 @@ Default ECC-bundled hooks (configured in `~/.crowcoder/hooks.json`):
 | PreToolUse | `read_file` | Warn when reading `.env` / `.key` / `.pem` / credential paths. |
 | PostToolUse | `edit_file` / `write_file` | Warn when an edit leaves `console.*` statements in `.ts`/`.js`. |
 
-Disable individual hooks by editing the `enabled` field in `~/.crowcoder/hooks.json`, or set `CROWCODER_HOOK_PROFILE=minimal` to silence all but the most critical.
+Disable individual hooks by editing the `enabled` field in `~/.compact-agent/hooks.json`, or set `CROWCODER_HOOK_PROFILE=minimal` to silence all but the most critical.
 
 Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool name glob), `command` (shell), and optional `blocking`/`timeout`. The hook receives `CROWCODER_TOOL`, `CROWCODER_TOOL_INPUT`, `CROWCODER_CWD` in its env.
 

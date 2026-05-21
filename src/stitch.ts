@@ -11,7 +11,7 @@
  *      gemini-extension commands/stitch.toml — intent routing between
  *      "enhance a prompt" and "use the assistant" modes.
  *
- * Auth: API key only, stored at ~/.crowcoder/stitch.json. ADC auth
+ * Auth: API key only, stored at ~/.compact-agent/stitch.json. ADC auth
  * (Google Cloud) would require gcloud + the OAuth dance — out of scope
  * for now. Get a key from https://stitch.withgoogle.com/ → profile menu
  * → Stitch Settings → API Keys → Create Key.

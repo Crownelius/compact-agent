@@ -173,9 +173,9 @@ ${buildToolList()}
 ${config.memory?.enabled !== false ? `# Memory (MemPalace) — when to use the memory_* tools
 
 This agent has a persistent memory subsystem with two scopes:
-  - **global** memory at ~/.crowcoder/memory/ — cross-project: user preferences,
+  - **global** memory at ~/.compact-agent/memory/ — cross-project: user preferences,
     style choices, recurring patterns, identity
-  - **project** memory at <cwd>/.crowcoder/memory/ — this-codebase-specific:
+  - **project** memory at <cwd>/.compact-agent/memory/ — this-codebase-specific:
     landmarks ("auth lives in src/auth"), gotchas, decisions
 
 You have these memory tools available:

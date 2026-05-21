@@ -36,9 +36,13 @@ export function getGlobalStore(): JsonStore {
 
 /**
  * Is MemPalace enabled in the user's config? Read directly from
- * ~/.crowcoder/config.json so this can be checked at module-load time
- * by src/tools/index.ts without creating an import cycle through
+ * ~/.compact-agent/config.json so this can be checked at module-load
+ * time by src/tools/index.ts without creating an import cycle through
  * src/config.ts (which imports types.ts which we import here).
+ *
+ * Resolves the dir manually (same priority as config.ts) instead of
+ * importing getHomeStateDir to keep this side of the import graph free
+ * of side-effecting modules.
  *
  * Treats missing config / missing memory block / undefined enabled as
  * TRUE (default-on for the featured capability). Only explicit false
@@ -46,7 +50,11 @@ export function getGlobalStore(): JsonStore {
  */
 export function isMemoryEnabled(): boolean {
   try {
-    const cfgPath = join(process.env.CROWCODER_HOME || join(homedir(), '.crowcoder'), 'config.json');
+    const cfgDir =
+      process.env.COMPACT_AGENT_HOME ||
+      process.env.CROWCODER_HOME ||
+      join(homedir(), '.compact-agent');
+    const cfgPath = join(cfgDir, 'config.json');
     if (!existsSync(cfgPath)) return true;
     const raw = readFileSync(cfgPath, 'utf-8');
     const cfg = JSON.parse(raw) as { memory?: { enabled?: boolean } };

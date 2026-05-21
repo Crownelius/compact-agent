@@ -51,8 +51,8 @@ export interface SandboxConfig {
 }
 
 // ── MemPalace memory config ──────────────────────────────
-// Lives at ~/.crowcoder/memory/store.json (global) and
-// <cwd>/.crowcoder/memory/store.json (project). When disabled, the
+// Lives at ~/.compact-agent/memory/store.json (global) and
+// <cwd>/.compact-agent/memory/store.json (project). When disabled, the
 // memory_* tools are NOT registered with the model (no wasted tokens)
 // and the system prompt's memory section is omitted.
 export interface MemoryConfig {

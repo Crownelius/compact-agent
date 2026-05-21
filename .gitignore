@@ -5,7 +5,7 @@ node_modules/
 dist/
 
 # Config (contains API keys)
-# ~/.crowcoder/ is the runtime config dir, not in repo
+# ~/.compact-agent/ is the runtime config dir, not in repo
 
 # OS files
 .DS_Store

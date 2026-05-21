@@ -1,7 +1,7 @@
 /**
  * Instinct/learning system — extract patterns from sessions,
  * store with confidence scores, cluster into reusable instincts.
- * Data stored in ~/.crowcoder/instincts/
+ * Data stored in ~/.compact-agent/instincts/
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';

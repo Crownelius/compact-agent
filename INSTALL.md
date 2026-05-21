@@ -90,7 +90,7 @@ The first time you run `compact-agent`, the setup wizard fires. It asks for:
    LM Studio, DeepSeek, or a custom OpenAI-compatible endpoint.
 2. **Base URL.** Pre-filled per provider. Only override if you're using a
    custom endpoint or a proxy.
-3. **API key.** Stored plaintext in `~/.crowcoder/config.json` — keep that
+3. **API key.** Stored plaintext in `~/.compact-agent/config.json` — keep that
    file private (it's only readable by you on POSIX).
 4. **Model.** Pre-filled with a sensible default; you can paste any model
    slug the provider supports. For OpenRouter free tier, try
@@ -99,7 +99,7 @@ The first time you run `compact-agent`, the setup wizard fires. It asks for:
    non-destructive ops), or `yolo` (approve everything — fastest, riskiest).
    Default is `ask`. You can change later with `/perm <mode>`.
 
-Your config is saved to `~/.crowcoder/config.json` and Compact Agent drops
+Your config is saved to `~/.compact-agent/config.json` and Compact Agent drops
 into the REPL.
 
 To re-run the wizard later: type `/config` inside the REPL.
@@ -148,7 +148,7 @@ If `compact-agent` isn't found after `npm link`, see [Troubleshooting](#troubles
 Compact Agent is local-first:
 
 ```
-~/.crowcoder/
+~/.compact-agent/
   config.json          API key, provider, model, permissions
   usage.json           token counts, cost estimates (local only)
   hooks.json           PreToolUse / PostToolUse hook config
@@ -178,7 +178,7 @@ ECC ready: 33 skills, 16 agents, 9 commands, 7 rule sets.
 ```
 
 That's the bundled [everything-claude-code][ecc] library being installed into
-`~/.crowcoder/`. It adds:
+`~/.compact-agent/`. It adds:
 
 - High-quality prompts for `/tdd`, `/review`, `/security-review`, `/plan`,
   `/refactor`, `/build-fix` (these use the ECC version automatically when ECC
@@ -190,7 +190,7 @@ That's the bundled [everything-claude-code][ecc] library being installed into
   suggest tmux for dev servers.
 
 Refresh anytime with `/ecc-install`. Disable a specific hook by editing
-`~/.crowcoder/hooks.json`.
+`~/.compact-agent/hooks.json`.
 
 ## Updating
 
@@ -212,11 +212,11 @@ npx tsc                # rebuild
 ```bash
 npm uninstall -g compact-agent         # if installed via npm install -g
 npm unlink -g compact-agent            # if installed via `npm link` from a source clone
-rm -rf ~/.crowcoder                # local state (config, sessions, instincts, etc.)
+rm -rf ~/.compact-agent                # local state (config, sessions, instincts, etc.)
 ```
 
-If you set up hooks or wrote skills, back up `~/.crowcoder/skills/` and
-`~/.crowcoder/hooks.json` first.
+If you set up hooks or wrote skills, back up `~/.compact-agent/skills/` and
+`~/.compact-agent/hooks.json` first.
 
 ## Troubleshooting
 

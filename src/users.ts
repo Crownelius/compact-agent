@@ -1,6 +1,6 @@
 /**
  * Users table — persistent user management.
- * Stores user data in ~/.crowcoder/users.json
+ * Stores user data in ~/.compact-agent/users.json
  *
  * Each user has a unique ID, display name, and metadata.
  * Users can be activated/deactivated, and the active user's context
@@ -10,27 +10,15 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getConfigDir } from './config.js';
+import { type UserRow, type UsersTable, createEmptyUsersTable } from './schema.js';
+
+export type User = UserRow;
+export type UsersData = UsersTable;
 
 const USERS_FILE = join(getConfigDir(), 'users.json');
 
-export interface User {
-  id: string;
-  name: string;
-  email?: string;
-  role?: string;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-  metadata: Record<string, string>;
-}
-
-interface UsersData {
-  users: User[];
-  activeUserId: string | null;
-}
-
 function defaultUsersData(): UsersData {
-  return { users: [], activeUserId: null };
+  return createEmptyUsersTable();
 }
 
 function loadUsers(): UsersData {
@@ -83,6 +71,14 @@ export function listUsers(): User[] {
 export function getUser(id: string): User | null {
   const data = loadUsers();
   return data.users.find((u) => u.id === id) || null;
+}
+
+/**
+ * Get a user by email address.
+ */
+export function getUserByEmail(email: string): User | null {
+  const data = loadUsers();
+  return data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) || null;
 }
 
 /**

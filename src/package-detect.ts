@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { getProjectStateDir } from './config.js';
 
 // ── Package Manager Detection ──────────────────────────────────────────
 
@@ -28,21 +29,23 @@ export interface BuildToolInfo {
 /**
  * Detects the package manager used in the project.
  * Priority order:
- * 1. CROWCODER_PACKAGE_MANAGER env var
- * 2. .crowcoder/package-manager.json in cwd
+ * 1. COMPACT_AGENT_PACKAGE_MANAGER (or legacy CROWCODER_PACKAGE_MANAGER) env var
+ * 2. .compact-agent/package-manager.json in cwd (falls back to .crowcoder if present)
  * 3. package.json packageManager field
  * 4. Lock file detection
  * 5. Fallback: which command check
  */
 export function detectPackageManager(cwd: string): PackageManagerInfo {
-  // 1. Check environment variable
-  const envPm = process.env.CROWCODER_PACKAGE_MANAGER;
+  // 1. Check environment variable (new name first, legacy as fallback)
+  const envPm =
+    process.env.COMPACT_AGENT_PACKAGE_MANAGER ||
+    process.env.CROWCODER_PACKAGE_MANAGER;
   if (envPm) {
     return getPackageManagerInfo(envPm);
   }
 
-  // 2. Check .crowcoder/package-manager.json
-  const configPath = join(cwd, '.crowcoder', 'package-manager.json');
+  // 2. Check <project-state>/package-manager.json
+  const configPath = join(getProjectStateDir(cwd), 'package-manager.json');
   if (existsSync(configPath)) {
     try {
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));

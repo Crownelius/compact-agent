@@ -1,6 +1,6 @@
 /**
  * Rules engine — per-language coding standards.
- * Loads rules from ~/.crowcoder/rules/ and injects into system prompt.
+ * Loads rules from ~/.compact-agent/rules/ and injects into system prompt.
  * Ships with built-in presets for common languages.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
@@ -1063,6 +1063,6 @@ export function printRules(): void {
   for (const s of sets) {
     console.log(chalk.dim(`  ${s.language.padEnd(15)} [${s.source}]`));
   }
-  console.log(chalk.dim('  \n  Custom rules: ~/.crowcoder/rules/<language>.md'));
+  console.log(chalk.dim('  \n  Custom rules: ~/.compact-agent/rules/<language>.md'));
   console.log();
 }

@@ -158,7 +158,7 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   // user can make an informed choice — most users want this on.
   console.log(chalk.white('\n  MemPalace persistent memory'));
   console.log(chalk.dim('  Lets the agent remember your preferences, codebase landmarks, and lessons across sessions.'));
-  console.log(chalk.dim('  Two stores: global (~/.crowcoder/memory) for cross-project facts, project (.crowcoder/memory'));
+  console.log(chalk.dim('  Two stores: global (~/.compact-agent/memory) for cross-project facts, project (.compact-agent/memory'));
   console.log(chalk.dim('  in each repo) for codebase-specific knowledge. Searchable via /memory or by the agent itself.'));
   console.log(chalk.dim('  Zero external dependencies; storage is local JSON files. Can be toggled anytime via /memory disable.'));
   const memoryChoice = await rl.question(chalk.yellow('  Enable MemPalace memory? [Y/n]: '));
@@ -783,7 +783,7 @@ export function handleSlashCommand(
     case '/hooks': {
       const hooks = listHooks();
       if (hooks.length === 0) {
-        console.log(chalk.dim('  No hooks configured. Edit ~/.crowcoder/hooks.json'));
+        console.log(chalk.dim('  No hooks configured. Edit ~/.compact-agent/hooks.json'));
       } else {
         console.log(chalk.cyan(`\n  Hooks (${hooks.length}):`));
         hooks.forEach((h, i) => {
@@ -1025,7 +1025,7 @@ export function handleSlashCommand(
         }
         if (items.length > 20) console.log(chalk.dim(`    … and ${items.length - 20} more`));
       }
-      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.crowcoder/skills/.\n'));
+      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.compact-agent/skills/.\n'));
       return { handled: true };
     }
 
@@ -1697,7 +1697,7 @@ export function handleSlashCommand(
         return { handled: true };
       }
       saveStitchConfig(key);
-      console.log(chalk.green(`  Stitch API key saved to ~/.crowcoder/stitch.json`));
+      console.log(chalk.green(`  Stitch API key saved to ~/.compact-agent/stitch.json`));
       console.log(chalk.dim('  The `stitch` tool is now available to the agent.'));
       console.log(chalk.dim('  Restart the REPL for the tool to appear in /tools.'));
       return { handled: true };
@@ -1820,7 +1820,7 @@ export function handleSlashCommand(
     }
 
     // ── Reset hooks (clear stale entries from old installs) ──
-    // Wipes ~/.crowcoder/hooks.json, clears the in-memory quarantine, and
+    // Wipes ~/.compact-agent/hooks.json, clears the in-memory quarantine, and
     // re-seeds the ECC default hooks against this install's bin path. Use
     // this when stale dev-machine paths from a prior install are crashing
     // every tool call.

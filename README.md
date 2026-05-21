@@ -142,7 +142,7 @@ See **[COMMANDS.md](COMMANDS.md)** for the full reference.
 | `auto` | Reads and safe writes go through. Bash + destructive ops still prompt. |
 | `yolo` | Approves everything. Use with caution. |
 
-A separate execpolicy gate intercepts dangerous bash patterns (`rm -rf`, `git ... --no-verify`, secret scanners) before they reach the shell — independent of the permission mode. Five default hooks (configurable in `~/.crowcoder/hooks.json`) cover console-leftover warnings, `.env` reads, missing tmux for dev servers, and a hard block on `--no-verify`.
+A separate execpolicy gate intercepts dangerous bash patterns (`rm -rf`, `git ... --no-verify`, secret scanners) before they reach the shell — independent of the permission mode. Five default hooks (configurable in `~/.compact-agent/hooks.json`) cover console-leftover warnings, `.env` reads, missing tmux for dev servers, and a hard block on `--no-verify`.
 
 ---
 
@@ -151,12 +151,12 @@ A separate execpolicy gate intercepts dangerous bash patterns (`rm -rf`, `git ..
 | Data | Where it lives |
 | :--- | :--- |
 | Conversation messages | Your chosen provider only — required for inference. |
-| Token counts, costs | `~/.crowcoder/usage.json`. Local. |
-| Sessions, skills, instincts, memory | `~/.crowcoder/`. Local. |
-| API keys | `~/.crowcoder/config.json`. Plaintext, local. Protect this file. |
+| Token counts, costs | `~/.compact-agent/usage.json`. Local. |
+| Sessions, skills, instincts, memory | `~/.compact-agent/`. Local. |
+| API keys | `~/.compact-agent/config.json`. Plaintext, local. Protect this file. |
 | Hooks | Run locally in your shell. No outbound calls. |
 
-No analytics SDKs, no crash reporting, no auto-update beacon. `rm -rf ~/.crowcoder` removes everything.
+No analytics SDKs, no crash reporting, no auto-update beacon. `rm -rf ~/.compact-agent` removes everything.
 
 ---
 
@@ -171,7 +171,7 @@ npm link
 
 Rebuild after edits with `npm run build` (or `npx tsc`). The `prepare` script also runs `tsc` on `npm install`, so a clean clone produces a working `dist/` without an extra step.
 
-Update: `npm install -g compact-agent@latest`. Uninstall: `npm uninstall -g compact-agent && rm -rf ~/.crowcoder`.
+Update: `npm install -g compact-agent@latest`. Uninstall: `npm uninstall -g compact-agent && rm -rf ~/.compact-agent`.
 
 ---
 

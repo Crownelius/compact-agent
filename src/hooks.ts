@@ -1,12 +1,12 @@
 /**
  * Hook system — configurable pre/post tool execution hooks.
- * Hooks are scripts in ~/.crowcoder/hooks/ that fire on events:
+ * Hooks are scripts in ~/.compact-agent/hooks/ that fire on events:
  *   - PreToolUse:  before a tool runs (can block)
  *   - PostToolUse: after a tool runs (can log/alert)
  *   - SessionStart: when a session begins
  *   - SessionStop:  when a session ends
  *
- * Hook config in ~/.crowcoder/hooks.json:
+ * Hook config in ~/.compact-agent/hooks.json:
  * {
  *   "hooks": [
  *     { "event": "PreToolUse", "match": "bash", "command": "node guard.js" },
@@ -95,7 +95,7 @@ function matchesTool(pattern: string, toolName: string): boolean {
 // (ENOENT, ETIMEDOUT, MODULE_NOT_FOUND, etc.) we add it to this set and
 // skip it for the rest of the session. Otherwise a single bad hook will
 // crash every tool call. Logged ONCE on first quarantine so the user
-// knows to clean up ~/.crowcoder/hooks.json.
+// knows to clean up ~/.compact-agent/hooks.json.
 const quarantinedHooks = new Set<string>();
 
 function hookSignature(h: HookDef): string {

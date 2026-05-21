@@ -2,7 +2,7 @@
  * Login flow — authentication and session management.
  *
  * Passwords are hashed with scrypt (built-in Node.js crypto).
- * Auth tokens are persisted in ~/.crowcoder/auth.json.
+ * Auth tokens are persisted in ~/.compact-agent/auth.json.
  *
  * Flow:
  *   1. User runs /login <email>

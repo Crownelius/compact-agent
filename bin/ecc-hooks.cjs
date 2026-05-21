@@ -153,7 +153,7 @@ const checks = {
    * SQL pattern matching. We port the highest-leverage mechanism: a
    * per-session per-file flag that demands investigation on first touch.
    *
-   * State lives at ~/.crowcoder/state/gateguard/<sessionId>.json — a
+   * State lives at ~/.compact-agent/state/gateguard/<sessionId>.json — a
    * JSON array of paths already touched. After the first touch of a file,
    * subsequent Edit/Write calls pass through normally.
    *
@@ -169,7 +169,7 @@ const checks = {
     if (!targetPath) return ok();
 
     const sessionId = process.env.CROWCODER_SESSION_ID || 'unknown';
-    const stateDir = pathMod.join(os.homedir(), '.crowcoder', 'state', 'gateguard');
+    const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'gateguard');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
 
     // GC: drop any state files older than 24h. Best-effort, never throws.
@@ -296,7 +296,7 @@ const checks = {
    * before considering this session done" at the end of substantial
    * work. Detects the right command via package.json scripts.
    *
-   * Tracks per-session state at ~/.crowcoder/state/quality-hint/<id>.json
+   * Tracks per-session state at ~/.compact-agent/state/quality-hint/<id>.json
    * so we only nudge once per session (per project).
    */
   'format-typecheck-hint': () => {
@@ -310,7 +310,7 @@ const checks = {
     const pathMod = require('path');
     const os = require('os');
     const sessionId = process.env.CROWCODER_SESSION_ID || 'unknown';
-    const stateDir = pathMod.join(os.homedir(), '.crowcoder', 'state', 'quality-hint');
+    const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'quality-hint');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
 
     // Already nudged this session — silent

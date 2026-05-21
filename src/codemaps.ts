@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { join, relative, extname, dirname, basename } from 'node:path';
 import chalk from 'chalk';
-import { getConfigDir } from './config.js';
+import { getConfigDir, getProjectStateDir } from './config.js';
 
 export interface FileEntry {
   path: string;
@@ -256,7 +256,7 @@ export function generateCodeMap(cwd: string): CodeMap {
  * Save code map to disk
  */
 export function saveCodeMap(cwd: string, map: CodeMap): void {
-  const codemapDir = join(cwd, '.crowcoder');
+  const codemapDir = getProjectStateDir(cwd);
   if (!existsSync(codemapDir)) {
     mkdirSync(codemapDir, { recursive: true });
   }
@@ -269,7 +269,7 @@ export function saveCodeMap(cwd: string, map: CodeMap): void {
  * Load code map from disk
  */
 export function loadCodeMap(cwd: string): CodeMap | null {
-  const codemapFile = join(cwd, '.crowcoder', 'codemap.json');
+  const codemapFile = join(getProjectStateDir(cwd), 'codemap.json');
   if (!existsSync(codemapFile)) {
     return null;
   }

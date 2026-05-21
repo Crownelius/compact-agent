@@ -1,13 +1,95 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, cpSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { CrowcoderConfig } from './types.js';
 
-// CROWCODER_HOME lets tests / sandboxed runs point at a temp config dir
-// instead of clobbering the user's real ~/.crowcoder/config.json. Default
-// is the real home dir so production behavior is unchanged.
-const CONFIG_DIR = process.env.CROWCODER_HOME || join(homedir(), '.crowcoder');
+// State dir names. The legacy name shipped under the "Crowcoder" brand;
+// new installs use ".compact-agent". Resolution priority for CONFIG_DIR:
+//
+//   1. $COMPACT_AGENT_HOME    — explicit override (tests / sandboxes)
+//   2. $CROWCODER_HOME        — legacy alias, still honored
+//   3. ~/.compact-agent       — new default
+//
+// A one-shot migration runs the first time loadConfig() executes after an
+// upgrade: if the new dir doesn't exist but the legacy ~/.crowcoder does,
+// it gets renamed in place so existing users keep their config, sessions,
+// skills, memory etc. without any manual step.
+export const CONFIG_DIR_NAME = '.compact-agent';
+export const LEGACY_CONFIG_DIR_NAME = '.crowcoder';
+
+const CONFIG_DIR =
+  process.env.COMPACT_AGENT_HOME ||
+  process.env.CROWCODER_HOME ||
+  join(homedir(), CONFIG_DIR_NAME);
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+
+// Tracks whether we've already attempted the legacy-dir migration this
+// process. Migration is idempotent (existsSync guard) but we still cache
+// the decision so loadConfig() can be called repeatedly without re-stat'ing.
+let _legacyMigrationChecked = false;
+
+/**
+ * One-shot rename of ~/.crowcoder → ~/.compact-agent for users upgrading
+ * across the rebrand. Runs lazily from loadConfig() so tests that point
+ * COMPACT_AGENT_HOME at a temp dir don't trigger it.
+ *
+ * Skipped if:
+ *   - The new dir already exists (already migrated, or fresh install).
+ *   - The legacy dir doesn't exist (fresh install — nothing to migrate).
+ *   - CONFIG_DIR is overridden via env (tests / sandboxes).
+ *
+ * Strategy: prefer `rename` (atomic on same filesystem). If that fails
+ * (e.g. EXDEV cross-device link), fall back to recursive copy + remove.
+ * On any error, log a warning and proceed — the user's data is untouched
+ * and they can rename manually.
+ */
+function migrateLegacyHomeDir(): void {
+  if (_legacyMigrationChecked) return;
+  _legacyMigrationChecked = true;
+
+  // Env override → don't touch the user's real home dir.
+  if (process.env.COMPACT_AGENT_HOME || process.env.CROWCODER_HOME) return;
+
+  const newDir = join(homedir(), CONFIG_DIR_NAME);
+  const legacyDir = join(homedir(), LEGACY_CONFIG_DIR_NAME);
+
+  if (existsSync(newDir) || !existsSync(legacyDir)) return;
+
+  try {
+    renameSync(legacyDir, newDir);
+    console.warn(
+      `Note: migrated ~/${LEGACY_CONFIG_DIR_NAME} → ~/${CONFIG_DIR_NAME} (rebrand from Crowcoder to compact-agent).`,
+    );
+  } catch {
+    // rename failed — most likely cross-device or permission. Fall back
+    // to copy + remove. cpSync with recursive lands on Node 16.7+.
+    try {
+      cpSync(legacyDir, newDir, { recursive: true });
+      rmSync(legacyDir, { recursive: true, force: true });
+      console.warn(
+        `Note: migrated ~/${LEGACY_CONFIG_DIR_NAME} → ~/${CONFIG_DIR_NAME} (copy mode).`,
+      );
+    } catch (err) {
+      console.warn(
+        `Warning: could not auto-migrate ~/${LEGACY_CONFIG_DIR_NAME} → ~/${CONFIG_DIR_NAME}: ${err instanceof Error ? err.message : err}. Move it manually if you want to keep your existing state.`,
+      );
+    }
+  }
+}
+
+/**
+ * Resolve the per-project state dir (codemap cache, project memory,
+ * package-manager pref). Prefers `<cwd>/.compact-agent`; falls back to
+ * the legacy `<cwd>/.crowcoder` only if it exists and the new one
+ * doesn't. Project dirs are NOT auto-renamed — they often live inside
+ * repos and migrating them silently could surprise teammates / CI.
+ */
+export function getProjectStateDir(cwd: string): string {
+  const newDir = join(cwd, CONFIG_DIR_NAME);
+  const legacyDir = join(cwd, LEGACY_CONFIG_DIR_NAME);
+  if (!existsSync(newDir) && existsSync(legacyDir)) return legacyDir;
+  return newDir;
+}
 
 const DEFAULT_CONFIG: CrowcoderConfig = {
   apiKey: '',
@@ -95,7 +177,19 @@ export function getConfigDir(): string {
   return CONFIG_DIR;
 }
 
+/**
+ * Same as CONFIG_DIR but exported as a function so callers in other
+ * modules don't have to import the private const + re-derive the env
+ * fallback chain. Use this anywhere you previously wrote
+ * `join(homedir(), '.crowcoder')`.
+ */
+export function getHomeStateDir(): string {
+  return CONFIG_DIR;
+}
+
 export function loadConfig(): CrowcoderConfig {
+  // Try to migrate legacy ~/.crowcoder → ~/.compact-agent before reading.
+  migrateLegacyHomeDir();
   if (!existsSync(CONFIG_FILE)) {
     return { ...DEFAULT_CONFIG };
   }

@@ -1,6 +1,6 @@
 /**
  * Session persistence — save, resume, list, delete conversations.
- * Stores sessions as JSON files in ~/.crowcoder/sessions/
+ * Stores sessions as JSON files in ~/.compact-agent/sessions/
  */
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
