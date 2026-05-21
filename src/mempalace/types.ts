@@ -115,6 +115,16 @@ export interface KGTriple {
   sourceSessionId?: string;
   createdAt: string;
   scope: Scope;
+  // ── Temporal validity (MemPalace audit item 4) ──────────
+  // Both fields are ISO strings, both optional. Semantics:
+  //   validFrom undefined  → "this fact has always been true (or we don't know when it started)"
+  //   validTo   undefined  → "this fact is currently true"
+  //   validTo   set         → "this fact was invalidated at validTo"
+  //
+  // Lets us answer "what was true about X in January?" — see queryTriples
+  // with asOf. Invalidation via kgInvalidate sets validTo to now.
+  validFrom?: string;
+  validTo?: string;
 }
 
 /**

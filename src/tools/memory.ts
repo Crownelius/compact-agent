@@ -24,6 +24,7 @@ import type { Tool, ToolResult } from './types.js';
 import {
   addDrawer, getDrawer, listDrawers, search, linkDrawers,
   kgAdd, kgQuery, listWings, listRooms, stats,
+  diaryWrite, diaryRead,
 } from '../mempalace/index.js';
 import type { Scope } from '../mempalace/index.js';
 
@@ -301,7 +302,10 @@ export const MemoryFactQueryTool: Tool = {
   description:
     'Query the knowledge graph for facts. Any of subject/predicate/object can be ' +
     'left unspecified to act as a wildcard. e.g. predicate="prefers" finds all ' +
-    'preferences; subject="rsfit" finds everything we know about the user.',
+    'preferences; subject="rsfit" finds everything we know about the user. ' +
+    'Temporal: by default returns only CURRENT facts (not invalidated). Pass ' +
+    'as_of with an ISO date to query historical state ("what was true on 2025-12-01?"), ' +
+    'or as_of="all" to ignore validity intervals.',
   parameters: {
     type: 'object',
     properties: {
@@ -309,6 +313,7 @@ export const MemoryFactQueryTool: Tool = {
       predicate: { type: 'string' },
       object: { type: 'string' },
       scope: { type: 'string', description: '"global" | "project" | "both" (default both)' },
+      as_of: { type: 'string', description: 'ISO timestamp or "all"; omit for current facts only' },
     },
   },
   isReadOnly: true,
@@ -320,14 +325,85 @@ export const MemoryFactQueryTool: Tool = {
         subject: input.subject as string,
         predicate: input.predicate as string,
         object: input.object as string,
+        asOf: input.as_of as (string | 'all' | undefined),
       }, cwd, (input.scope as Scope) || 'both');
       if (triples.length === 0) return { output: 'No matching facts.', isError: false };
-      const lines = triples.map((t) =>
-        `(${t.subject}, ${t.predicate}, ${t.object}) [${t.scope}, confidence ${t.confidence}, ${t.createdAt.slice(0, 10)}]`,
-      );
+      const lines = triples.map((t) => {
+        const status = t.validTo ? ` [invalidated ${t.validTo.slice(0, 10)}]` : ' [current]';
+        return `(${t.subject}, ${t.predicate}, ${t.object}) [${t.scope}, confidence ${t.confidence}, ${t.createdAt.slice(0, 10)}]${status}`;
+      });
       return { output: `${triples.length} fact(s):\n${lines.join('\n')}`, isError: false };
     } catch (e) {
       return { output: `Error querying: ${e instanceof Error ? e.message : e}`, isError: true };
+    }
+  },
+};
+
+// ── diary_write / diary_read ────────────────────────────────
+export const DiaryWriteTool: Tool = {
+  name: 'diary_write',
+  description:
+    'Append a timestamped journal entry to a named agent\'s diary. Use to record ' +
+    'observations, lessons, or decisions the agent should be able to scan back ' +
+    'through later. Lives in global memory under wing "diary", room "agent_<name>" ' +
+    '(lowercased — case is silently folded so "Claude" and "claude" stay together).',
+  parameters: {
+    type: 'object',
+    properties: {
+      agent_name: { type: 'string', description: 'Free-form agent identifier (case-insensitive)' },
+      entry: { type: 'string', description: 'The journal entry text' },
+      topic: { type: 'string', description: 'Optional topic tag for filtering' },
+    },
+    required: ['agent_name', 'entry'],
+  },
+  isReadOnly: false,
+  isDestructive: false,
+
+  async call(input, cwd): Promise<ToolResult> {
+    try {
+      const d = diaryWrite({
+        agentName: input.agent_name as string,
+        entry: input.entry as string,
+        topic: input.topic as string | undefined,
+        cwd,
+      });
+      return { output: `Diary entry saved as ${d.id} (agent ${(input.agent_name as string).toLowerCase()}).`, isError: false };
+    } catch (e) {
+      return { output: `Error writing diary: ${e instanceof Error ? e.message : e}`, isError: true };
+    }
+  },
+};
+
+export const DiaryReadTool: Tool = {
+  name: 'diary_read',
+  description:
+    'Read the most-recent entries from a named agent\'s diary. Returns up to ' +
+    'last_n entries (default 20), newest first. Agent name is case-insensitive.',
+  parameters: {
+    type: 'object',
+    properties: {
+      agent_name: { type: 'string', description: 'Free-form agent identifier (case-insensitive)' },
+      last_n: { type: 'number', description: 'Max entries to return (default 20)' },
+    },
+    required: ['agent_name'],
+  },
+  isReadOnly: true,
+  isDestructive: false,
+
+  async call(input, cwd): Promise<ToolResult> {
+    try {
+      const entries = diaryRead({
+        agentName: input.agent_name as string,
+        lastN: typeof input.last_n === 'number' ? input.last_n : 20,
+        cwd,
+      });
+      if (entries.length === 0) {
+        return { output: `No diary entries for agent "${input.agent_name}".`, isError: false };
+      }
+      const lines = entries.map((d) => `[${d.createdAt}] ${d.content.length > 200 ? d.content.slice(0, 200) + '…' : d.content}`);
+      return { output: `${entries.length} entry/entries (newest first):\n\n${lines.join('\n\n')}`, isError: false };
+    } catch (e) {
+      return { output: `Error reading diary: ${e instanceof Error ? e.message : e}`, isError: true };
     }
   },
 };
@@ -341,4 +417,6 @@ export const MEMORY_TOOLS: Tool[] = [
   MemoryListTool,
   MemoryFactAddTool,
   MemoryFactQueryTool,
+  DiaryWriteTool,
+  DiaryReadTool,
 ];

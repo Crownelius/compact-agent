@@ -219,7 +219,7 @@ export function kgAdd(
 }
 
 export function kgQuery(
-  q: { subject?: string; predicate?: string; object?: string },
+  q: { subject?: string; predicate?: string; object?: string; asOf?: string | 'all' },
   cwd: string,
   scope: Scope = 'both',
 ): KGTriple[] {
@@ -227,6 +227,63 @@ export function kgQuery(
   if (scope === 'global' || scope === 'both') out.push(...getGlobalStore().queryTriples(q));
   if (scope === 'project' || scope === 'both') out.push(...getProjectStore(cwd).queryTriples(q));
   return out;
+}
+
+/**
+ * Invalidate a triple by id — finds it in whichever scope owns it,
+ * sets validTo. Use for "this fact stopped being true" without
+ * deleting historical record.
+ */
+export function kgInvalidate(id: string, cwd: string, endedAt?: string): KGTriple | null {
+  const g = getGlobalStore();
+  if (g.getDrawer(id) !== null || g.queryTriples({ asOf: 'all' }).some((t) => t.id === id)) {
+    try { return g.invalidateTriple(id, endedAt); } catch { /* try project */ }
+  }
+  return getProjectStore(cwd).invalidateTriple(id, endedAt);
+}
+
+// ── Diary (MemPalace audit item 3) ───────────────────────
+/**
+ * Per-agent timestamped journal. Stored as drawers with
+ * wing="diary", room=`agent_<name>`, tags including the agent name.
+ *
+ * MemPalace's hard-won lesson: lowercase the agent name on both
+ * write and read so "Claude" and "claude" don't silently store/return
+ * disjoint sets.
+ */
+export function diaryWrite(opts: {
+  agentName: string;
+  entry: string;
+  topic?: string;
+  cwd: string;
+  sourceSessionId?: string;
+}): Drawer {
+  const agent = opts.agentName.toLowerCase().trim();
+  const tags = ['diary', `agent:${agent}`];
+  if (opts.topic) tags.push(`topic:${opts.topic.toLowerCase().trim()}`);
+  return addDrawer({
+    wing: 'diary',
+    room: `agent_${agent}`,
+    content: opts.entry,
+    tags,
+    importance: 0.4,
+    scope: 'global',
+    sourceSessionId: opts.sourceSessionId,
+    cwd: opts.cwd,
+  });
+}
+
+export function diaryRead(opts: { agentName: string; lastN?: number; cwd: string }): Drawer[] {
+  const agent = opts.agentName.toLowerCase().trim();
+  const drawers = listDrawers({
+    wing: 'diary',
+    room: `agent_${agent}`,
+    scope: 'global',
+    cwd: opts.cwd,
+  });
+  // Most-recent-first
+  drawers.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return drawers.slice(0, opts.lastN ?? 20);
 }
 
 export function kgTimeline(cwd: string, limit = 20, scope: Scope = 'both'): KGTriple[] {

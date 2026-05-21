@@ -54,35 +54,121 @@ export function tokenize(s: string): string[] {
 }
 
 /**
+ * BM25 (Okapi) ranking on the content field, plus field-weight boosts for
+ * tags/room/wing matches.
+ *
+ * Why BM25 over substring counting (the previous implementation): common
+ * tokens (e.g. "test" appearing in every drawer of a testing-heavy repo)
+ * drowned out distinctive ones. BM25's inverse-document-frequency term
+ * naturally downweights tokens that appear in most drawers, and the
+ * length-normalization keeps short drawers from being unfairly favored
+ * just because their token density is higher.
+ *
+ * Parameters chosen to match MemPalace upstream:
+ *   k1 = 1.5   — saturates term frequency around the third occurrence
+ *   b  = 0.75  — moderate length normalization (full vs none = 1.0 vs 0)
+ *
+ * Field boosts (tags×4 > room×3 > wing×2) preserve the intuition that
+ * tags are the strongest semantic signal. Importance + recency boosts
+ * are unchanged from the prior implementation.
+ *
+ * Corpus stats (IDF + average length) are computed once per searchDrawers
+ * call — fine for stores up to ~10k drawers. Beyond that, persist a
+ * pre-computed index alongside the JSON store.
+ */
+
+interface CorpusStats {
+  N: number;                  // total drawer count
+  avgDocLength: number;       // mean tokenized-content length
+  docFreq: Map<string, number>; // token → number of drawers containing it
+}
+
+function buildCorpusStats(drawers: Drawer[]): CorpusStats {
+  const docFreq = new Map<string, number>();
+  let totalLength = 0;
+  for (const d of drawers) {
+    const tokens = tokenize(d.content);
+    totalLength += tokens.length;
+    const seen = new Set<string>();   // count document frequency once per drawer
+    for (const t of tokens) {
+      if (seen.has(t)) continue;
+      seen.add(t);
+      docFreq.set(t, (docFreq.get(t) || 0) + 1);
+    }
+  }
+  return {
+    N: drawers.length,
+    avgDocLength: drawers.length > 0 ? totalLength / drawers.length : 1,
+    docFreq,
+  };
+}
+
+const BM25_K1 = 1.5;
+const BM25_B = 0.75;
+
+function bm25Score(drawer: Drawer, queryTokens: string[], stats: CorpusStats): number {
+  const docTokens = tokenize(drawer.content);
+  const docLength = docTokens.length || 1;
+  // Term frequencies within this document
+  const tf = new Map<string, number>();
+  for (const t of docTokens) tf.set(t, (tf.get(t) || 0) + 1);
+
+  let score = 0;
+  for (const qt of queryTokens) {
+    const f = tf.get(qt) || 0;
+    if (f === 0) continue;
+    const df = stats.docFreq.get(qt) || 0;
+    // Smoothed IDF: log((N - df + 0.5) / (df + 0.5) + 1). The +1 keeps
+    // IDF non-negative even when a token appears in more than half the
+    // corpus (otherwise the score for very common tokens goes negative
+    // and we'd subtract relevance, which is wrong here).
+    const idf = Math.log((stats.N - df + 0.5) / (df + 0.5) + 1);
+    const tfNorm = (f * (BM25_K1 + 1)) / (f + BM25_K1 * (1 - BM25_B + BM25_B * (docLength / stats.avgDocLength)));
+    score += idf * tfNorm;
+  }
+  return score;
+}
+
+/**
  * Score a single drawer against a tokenized query. Returns 0 if no match,
  * otherwise a positive score (higher = better).
  *
- * The `matchedFields` array tracks which fields contributed so callers
- * can use it for diagnostics / highlighting.
+ * Combines BM25 on content with simple field-weight boosts on tags/
+ * room/wing. The field boosts use the original substring-presence model
+ * (still a token-set check) because BM25 over very-short fields like
+ * a 1-2 word wing name is poorly behaved.
  */
 function scoreDrawer(
   drawer: Drawer,
   queryTokens: string[],
   matchedFields: Set<'content' | 'tags' | 'wing' | 'room'>,
+  stats: CorpusStats,
 ): number {
   if (queryTokens.length === 0) return 0;
 
-  const contentTokens = new Set(tokenize(drawer.content));
   const tagSet = new Set(drawer.tags.flatMap(tokenize));
   const wingTokens = new Set(tokenize(drawer.wing));
   const roomTokens = new Set(tokenize(drawer.room));
 
-  let score = 0;
+  let fieldScore = 0;
   let anyMatch = false;
 
   for (const qt of queryTokens) {
-    if (tagSet.has(qt)) { score += 4; matchedFields.add('tags'); anyMatch = true; }
-    if (roomTokens.has(qt)) { score += 3; matchedFields.add('room'); anyMatch = true; }
-    if (wingTokens.has(qt)) { score += 2; matchedFields.add('wing'); anyMatch = true; }
-    if (contentTokens.has(qt)) { score += 1; matchedFields.add('content'); anyMatch = true; }
+    if (tagSet.has(qt)) { fieldScore += 4; matchedFields.add('tags'); anyMatch = true; }
+    if (roomTokens.has(qt)) { fieldScore += 3; matchedFields.add('room'); anyMatch = true; }
+    if (wingTokens.has(qt)) { fieldScore += 2; matchedFields.add('wing'); anyMatch = true; }
+  }
+
+  // BM25 on content
+  const contentBm25 = bm25Score(drawer, queryTokens, stats);
+  if (contentBm25 > 0) {
+    matchedFields.add('content');
+    anyMatch = true;
   }
 
   if (!anyMatch) return 0;
+
+  let score = fieldScore + contentBm25;
 
   // Importance multiplier — 0.5 default gives no boost, 1.0 → 1.5×, 0 → 0.5×
   score *= 1 + (drawer.importance - 0.5);
@@ -119,10 +205,15 @@ export function searchDrawers(
     candidates = candidates.filter((d) => d.importance >= opts.minImportance!);
   }
 
+  // BM25 needs corpus-level IDF + average document length. Compute it
+  // once over the candidate set (post-filter, so it reflects the search
+  // scope's actual distribution).
+  const stats = buildCorpusStats(candidates);
+
   const hits: SearchHit[] = [];
   for (const d of candidates) {
     const matchedFields = new Set<'content' | 'tags' | 'wing' | 'room'>();
-    const score = scoreDrawer(d, tokens, matchedFields);
+    const score = scoreDrawer(d, tokens, matchedFields, stats);
     if (score > 0) {
       hits.push({ drawer: d, score, matchedFields: [...matchedFields] });
     }

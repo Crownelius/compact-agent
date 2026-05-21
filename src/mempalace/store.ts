@@ -291,19 +291,58 @@ export class JsonStore {
    * Query triples with optional s/p/o filters. Any field left undefined
    * acts as a wildcard. Matching is case-insensitive equality on each
    * specified field.
+   *
+   * If `asOf` is provided (ISO string), only triples whose validity
+   * interval CONTAINS asOf are returned. Semantics:
+   *   include if (validFrom undefined OR validFrom <= asOf)
+   *           AND (validTo   undefined OR validTo   >  asOf)
+   *
+   * If `asOf` is omitted, "current" facts are returned (validTo undef).
+   * Pass `asOf: 'all'` to return everything regardless of temporal state.
    */
-  queryTriples(q: { subject?: string; predicate?: string; object?: string }): KGTriple[] {
+  queryTriples(q: { subject?: string; predicate?: string; object?: string; asOf?: string | 'all' }): KGTriple[] {
     const triples = this.read().triples;
     const lc = (s: string | undefined): string | undefined => s?.toLowerCase();
     const s = lc(q.subject);
     const p = lc(q.predicate);
     const o = lc(q.object);
-    return triples.filter(
+    const filtered = triples.filter(
       (t) =>
         (s === undefined || t.subject.toLowerCase() === s) &&
         (p === undefined || t.predicate.toLowerCase() === p) &&
         (o === undefined || t.object.toLowerCase() === o),
     );
+    if (q.asOf === 'all') return filtered;
+    if (q.asOf === undefined) {
+      // Default: current facts only (not yet invalidated)
+      return filtered.filter((t) => !t.validTo);
+    }
+    // Specific point in time — interval-contains check
+    return filtered.filter((t) => {
+      const from = t.validFrom ?? '0000';
+      const to = t.validTo ?? '9999';
+      return from <= q.asOf! && q.asOf! < to;
+    });
+  }
+
+  /**
+   * Invalidate a triple by id — sets validTo to now (or a caller-
+   * supplied ISO timestamp). The triple is preserved in the store so
+   * historical queries (asOf in the past) still find it; "current"
+   * queries (asOf default) will exclude it.
+   */
+  invalidateTriple(id: string, endedAt?: string): KGTriple | null {
+    const state = this.read();
+    const idx = state.triples.findIndex((t) => t.id === id);
+    if (idx < 0) return null;
+    const when = endedAt || new Date().toISOString();
+    // Defensive: reject inverted intervals
+    if (state.triples[idx].validFrom && state.triples[idx].validFrom! > when) {
+      throw new Error(`invalidateTriple: validTo (${when}) precedes validFrom (${state.triples[idx].validFrom})`);
+    }
+    state.triples[idx] = { ...state.triples[idx], validTo: when };
+    this.write(state);
+    return state.triples[idx];
   }
 
   /** Most-recent triples first. For "what have I been learning?" views. */
