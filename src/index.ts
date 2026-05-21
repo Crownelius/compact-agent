@@ -236,6 +236,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/palette [id]') + d('     — switch color palette; run /palettes to list'));
       console.log(d('  ') + c('/palettes') + d('         — list available color palettes with preview'));
       console.log(d('  ') + c('/clear') + d('            — clear conversation'));
+      console.log(d('  ') + c('/back [n]') + d('         — rewind to before the nth most-recent user turn (no arg lists turns)'));
       console.log(d('  ') + c('/history') + d('          — message count & token estimate'));
       console.log(d('  ') + c('/export [fmt]') + d('     — export conversation (md/json/txt)'));
       console.log(d('  ') + c('/exit') + d('             — quit (alias: /quit)'));
@@ -386,6 +387,54 @@ export function handleSlashCommand(
     case '/clear':
       console.log(chalk.dim('  Conversation cleared.'));
       return { handled: true, newMessages: [] };
+
+    // ── Backtrack — rewind to a prior user turn (Codex audit item 4) ──
+    //   /back          list recent user messages with numbers
+    //   /back <n>      truncate conversation to BEFORE the nth most-recent
+    //                  user message (1 = drop the latest user turn + everything after)
+    //
+    // Killer UX for fixing a misdirected agent: instead of /clear then
+    // retyping the original request, jump back N turns and try again from
+    // the same starting point. Codex implements this as Esc-Esc + transcript
+    // overlay; we use a slash command for now (keyboard binding TBD).
+    case '/back':
+    case '/rewind': {
+      // Find user message indices in order (oldest → newest)
+      const userIdx: number[] = [];
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i].role === 'user') userIdx.push(i);
+      }
+      if (userIdx.length === 0) {
+        console.log(chalk.dim('  No user messages to rewind to.'));
+        return { handled: true };
+      }
+      const arg = args.trim();
+      if (!arg) {
+        // List most-recent user turns with their position
+        console.log(chalk.cyan(`\n  Recent user turns (most recent first):`));
+        const recent = userIdx.slice(-10).reverse();
+        recent.forEach((idx, n) => {
+          const c = messages[idx].content;
+          const text = typeof c === 'string' ? c : '(non-text)';
+          const excerpt = text.length > 90 ? text.slice(0, 87) + '…' : text;
+          console.log(chalk.dim(`    ${(n + 1).toString().padStart(2)}. ${excerpt}`));
+        });
+        console.log(chalk.dim('\n  Rewind with: /back <n>  (n=1 = drop the most recent user turn + everything after)\n'));
+        return { handled: true };
+      }
+      const n = parseInt(arg, 10);
+      if (isNaN(n) || n < 1 || n > userIdx.length) {
+        console.log(chalk.yellow(`  Invalid index. Usage: /back <n>  (1..${userIdx.length})`));
+        return { handled: true };
+      }
+      // We want to truncate to BEFORE the n-th most-recent user message.
+      // userIdx is oldest-first; the n-th most-recent is at userIdx[len - n].
+      const cutIdx = userIdx[userIdx.length - n];
+      const dropped = messages.length - cutIdx;
+      const newMessages = messages.slice(0, cutIdx);
+      console.log(chalk.green(`  Rewound to before user turn ${n} (dropped ${dropped} message(s)).`));
+      return { handled: true, newMessages };
+    }
 
     // ── History ───────────────────────────────────────
     case '/history': {
