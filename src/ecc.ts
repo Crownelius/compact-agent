@@ -48,6 +48,18 @@ const ECC_STATE_FILE   = join(getConfigDir(), 'ecc-state.json');
 const ECC_SKILL_ID_PREFIX = 'ecc-';
 const ECC_HOOK_TAG = '__ecc__';
 
+/**
+ * Bundle version. Bumped whenever resources/ecc/ is refreshed from
+ * upstream so startup logic can detect stale state and re-import.
+ *
+ * History:
+ *   '1.0.0' — initial bundle (33 skills, 16 agents, 3 commands, flat rules)
+ *   '2.0.0' — refreshed from upstream 2.0.0-rc.1
+ *             (228 skills, 60 agents, 75 commands, 19 language rule subdirs;
+ *              adds config-protection + simplified GateGuard hooks)
+ */
+export const BUNDLE_VERSION = '2.0.0';
+
 // ── State ───────────────────────────────────────────────
 export interface EccState {
   installedAt: string;
@@ -291,24 +303,48 @@ function importAgents(): { count: number; errors: string[] } {
     }
   }
 
+  // Discover agent slugs from either .json or .md files. The upstream
+  // bundle shape changed:
+  //   pre-2.0:  each agent had `<slug>.json` (metadata) + `<slug>.md` (prompt)
+  //   2.0+:     only `<slug>.md` with YAML frontmatter (name, description,
+  //             tools, model, etc.) and the prompt as body
+  // We accept both layouts. Slug is the basename without extension; if
+  // both exist for the same slug we use the .json as authoritative.
   let count = 0;
-  const files = readdirSync(ECC_AGENTS_SRC).filter(f => f.endsWith('.json'));
-  for (const file of files) {
-    const slug = file.replace(/\.json$/, '');
+  const all = readdirSync(ECC_AGENTS_SRC);
+  const slugs = new Set<string>();
+  for (const f of all) {
+    if (f.endsWith('.json')) slugs.add(f.replace(/\.json$/, ''));
+    else if (f.endsWith('.md')) slugs.add(f.replace(/\.md$/, ''));
+  }
+  for (const slug of slugs) {
     try {
-      const jsonPath = join(ECC_AGENTS_SRC, file);
+      const jsonPath = join(ECC_AGENTS_SRC, `${slug}.json`);
       const mdPath = join(ECC_AGENTS_SRC, `${slug}.md`);
-      const jsonRaw = readFileSync(jsonPath, 'utf-8');
-      const json = JSON.parse(jsonRaw) as Record<string, unknown>;
-      let prompt = String(json.prompt || '');
-      let description = String(json.description || `ECC agent: ${slug}`);
-      const allowed = (json.allowedTools as string[]) || [];
+      let prompt = '';
+      let description = `ECC agent: ${slug}`;
+      let allowed: string[] = [];
+      if (existsSync(jsonPath)) {
+        const jsonRaw = readFileSync(jsonPath, 'utf-8');
+        const json = JSON.parse(jsonRaw) as Record<string, unknown>;
+        prompt = String(json.prompt || '');
+        description = String(json.description || description);
+        allowed = (json.allowedTools as string[]) || [];
+      }
       if (existsSync(mdPath)) {
         const md = readFileSync(mdPath, 'utf-8');
         const { frontmatter, body } = parseFrontmatter(md);
         if (body.trim().length > prompt.length) prompt = body.trim();
         if (frontmatter.description) description = String(frontmatter.description);
+        // Frontmatter `tools` is the 2.0 location for allowed-tools
+        const fmTools = frontmatter.tools;
+        if (Array.isArray(fmTools)) allowed = fmTools.map((t) => String(t));
+        else if (typeof fmTools === 'string') {
+          allowed = fmTools.split(',').map((t) => t.trim()).filter(Boolean);
+        }
       }
+      // Skip if neither file produced a non-empty prompt
+      if (!prompt.trim()) continue;
 
       // Write canonical agent prompt to ecc-agents dir
       const agentDoc = [
@@ -481,11 +517,19 @@ export function getEccCommandPrompt(name: string): string | null {
 
 // ── Rules import ────────────────────────────────────────
 /**
- * ECC ships per-language rules split into 5 files
- * (coding-style, security, patterns, testing, hooks). Crowcoder reads
- * `~/.crowcoder/rules/<language>.md` as a single bundle per language, so we
- * concatenate the 5 files per language. Existing user content in those files
- * is preserved by appending under a clearly-marked ECC section.
+ * ECC ships per-language rules. Two layouts are supported:
+ *
+ *   OLD (pre-2.0):  rules/<lang>-<section>.md  (flat)
+ *   NEW (2.0+):     rules/<lang>/<section>.md  (subdir per language)
+ *
+ * The upstream 2.0 refresh introduced the subdir layout AND added more
+ * sections (security, testing, patterns, hooks plus a few new ones like
+ * coding-style). We detect which layout is present and load accordingly.
+ *
+ * Both produce the same output: one `~/.crowcoder/rules/<language>.md`
+ * file per language, with all sections concatenated. Existing user
+ * content in those files is preserved by appending under a clearly-marked
+ * ECC section.
  */
 function importRules(): { count: number; errors: string[] } {
   const errors: string[] = [];
@@ -494,15 +538,33 @@ function importRules(): { count: number; errors: string[] } {
   mkdirSync(RULES_DIR, { recursive: true });
 
   const byLang = new Map<string, string[]>();
-  for (const f of readdirSync(ECC_RULES_SRC)) {
-    if (!f.endsWith('.md')) continue;
-    const m = f.match(/^([a-z]+)-([a-z-]+)\.md$/);
-    if (!m) continue;
-    const lang = m[1];
-    const section = m[2];
-    const content = readFileSync(join(ECC_RULES_SRC, f), 'utf-8');
-    if (!byLang.has(lang)) byLang.set(lang, []);
-    byLang.get(lang)!.push(`## ${section}\n\n${content.trim()}`);
+
+  // Walk ECC_RULES_SRC. For each entry:
+  //   - If it's a .md file matching `<lang>-<section>.md` → old layout
+  //   - If it's a directory → new layout; read `<section>.md` files inside
+  for (const entry of readdirSync(ECC_RULES_SRC, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.md')) {
+      const m = entry.name.match(/^([a-z]+)-([a-z-]+)\.md$/);
+      if (!m) continue;
+      const [, lang, section] = m;
+      const content = readFileSync(join(ECC_RULES_SRC, entry.name), 'utf-8');
+      if (!byLang.has(lang)) byLang.set(lang, []);
+      byLang.get(lang)!.push(`## ${section}\n\n${content.trim()}`);
+    } else if (entry.isDirectory()) {
+      const lang = entry.name;
+      // Skip the `zh` directory — Chinese translations, not language rules
+      if (lang === 'zh') continue;
+      const subdir = join(ECC_RULES_SRC, lang);
+      let subEntries: string[] = [];
+      try { subEntries = readdirSync(subdir); } catch { continue; }
+      for (const sub of subEntries) {
+        if (!sub.endsWith('.md')) continue;
+        const section = sub.replace(/\.md$/, '');
+        const content = readFileSync(join(subdir, sub), 'utf-8');
+        if (!byLang.has(lang)) byLang.set(lang, []);
+        byLang.get(lang)!.push(`## ${section}\n\n${content.trim()}`);
+      }
+    }
   }
 
   let count = 0;
@@ -602,6 +664,49 @@ function seedHooks(): number {
       enabled: true,
       timeout: 5000,
     },
+    // ── New in 1.11: config-protection ──────────────────
+    // Blocks edits to linter/formatter config files. Most common
+    // failure mode it prevents: agent hits a lint error, "fixes" it
+    // by relaxing the eslint/tsconfig rule instead of the source file.
+    {
+      event: 'PreToolUse',
+      match: 'write_file',
+      command: `${nodeBin} "${hookScript}" config-protection ${ECC_HOOK_TAG}`,
+      blocking: true,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PreToolUse',
+      match: 'edit_file',
+      command: `${nodeBin} "${hookScript}" config-protection ${ECC_HOOK_TAG}`,
+      blocking: true,
+      enabled: true,
+      timeout: 5000,
+    },
+    // ── New in 1.11: GateGuard fact-forcing ─────────────
+    // Blocks the FIRST Edit/Write to each file per session and demands
+    // the agent investigate (read + grep) before proceeding. Upstream
+    // reports a 2.25-point quality lift in A/B tests. Simplified port
+    // of the 878-line ECC original — per-session-per-file state in
+    // ~/.crowcoder/state/gateguard/<sessionId>.json. Subsequent edits
+    // to the same file pass through normally.
+    {
+      event: 'PreToolUse',
+      match: 'write_file',
+      command: `${nodeBin} "${hookScript}" gateguard ${ECC_HOOK_TAG}`,
+      blocking: true,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PreToolUse',
+      match: 'edit_file',
+      command: `${nodeBin} "${hookScript}" gateguard ${ECC_HOOK_TAG}`,
+      blocking: true,
+      enabled: true,
+      timeout: 5000,
+    },
   ];
 
   saveHooksConfig({ hooks: [...existing, ...eccHooks] });
@@ -649,7 +754,7 @@ export function installEcc(opts: { verbose?: boolean } = {}): ImportReport {
 
   saveEccState({
     installedAt: new Date().toISOString(),
-    version: '1.0.0',
+    version: BUNDLE_VERSION,
     counts: {
       skills: report.skills,
       agents: report.agents,

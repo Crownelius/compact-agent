@@ -79,7 +79,7 @@ import { printHookControlStatus, getHookProfile } from './hook-controls.js';
 import { buildPM2Prompt, isPM2Available, listPM2Services } from './pm2-manager.js';
 // ECC (everything-claude-code) integration
 import {
-  installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable, reseedEccHooks,
+  installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable, reseedEccHooks, BUNDLE_VERSION as ECC_BUNDLE_VERSION,
 } from './ecc.js';
 // Walkthrough — agent-led tour of Crowcoder (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
@@ -326,7 +326,8 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/instinct-import') + d('  — import instincts from JSON file'));
       console.log(d('  ') + c('/evolve') + d('           — cluster instincts into reusable skills'));
       console.log(d('  ') + c('/prune') + d('            — delete expired instincts'));
-      console.log(d('  ') + c('/skills') + d('           — list learned skills'));
+      console.log(d('  ') + c('/skills') + d('           — list learned skills (and bundled ECC skills)'));
+      console.log(d('  ') + c('/skill-show <name>') + d(' — print the full prompt text of a specific skill'));
       console.log(d('  ') + c('/memory [sub]') + d('     — MemPalace: status, enable/disable, wings, rooms, ls, search <q>, get <id>, rm <id>'));
       console.log(d('  ') + c('/users') + d('           — manage users table'));
       console.log(d('  ') + c('/count [inc|dec|reset]') + d(' — increment/decrement/reset counter'));
@@ -902,6 +903,39 @@ export function handleSlashCommand(
     case '/skills':
       printSkillList();
       return { handled: true };
+
+    // /skill-show <name>  — print the full skill prompt text. Used to
+    // inspect what an auto-matched ECC skill would inject, or to learn
+    // why /tdd or /review produced a particular shape of response. The
+    // bundled ECC corpus has 228 skills as of v1.11 — most users won't
+    // know they exist unless they can browse them.
+    case '/skill-show': {
+      const name = args.trim();
+      if (!name) {
+        console.log(chalk.yellow('  Usage: /skill-show <skill-name>'));
+        console.log(chalk.dim('  Run /skills to list available skills.'));
+        return { handled: true };
+      }
+      const target = name.toLowerCase();
+      // Try exact name match first, then fall back to substring match.
+      const all = listSkills();
+      let hit = all.find((s) => s.name.toLowerCase() === target);
+      if (!hit) hit = all.find((s) => s.name.toLowerCase().includes(target));
+      if (!hit) {
+        console.log(chalk.yellow(`  No skill matches "${name}".`));
+        const close = all.filter((s) => s.name.toLowerCase().includes(target.slice(0, 4))).slice(0, 5);
+        if (close.length > 0) {
+          console.log(chalk.dim('  Did you mean: ') + close.map((s) => s.name).join(', '));
+        }
+        return { handled: true };
+      }
+      console.log(chalk.cyan(`\n  Skill: ${hit.name}`));
+      console.log(chalk.dim(`  Category: ${hit.category}  ·  Triggers: ${hit.triggers.slice(0, 6).join(', ')}${hit.triggers.length > 6 ? '…' : ''}`));
+      console.log(chalk.dim(`  Description: ${hit.description}\n`));
+      console.log(hit.prompt);
+      console.log();
+      return { handled: true };
+    }
 
     // /memory <sub> — MemPalace inventory & inspection.
     //   /memory               status + counts (legacy + new combined)
@@ -1718,16 +1752,22 @@ async function main(): Promise<void> {
   // Initialize subsystems
   initHooksDir();
 
-  // First-run ECC install — silent if already installed, silent if resources missing
-  if (eccResourcesAvailable() && !loadEccState()) {
+  // First-run ECC install — silent if already installed, silent if resources missing.
+  // Also re-installs when the saved state's version is older than the bundle's
+  // BUNDLE_VERSION (so an `npm i -g compact-agent@latest` upgrade picks up the
+  // refreshed corpus without manual /reset-hooks).
+  const eccState = loadEccState();
+  const needsReimport = eccState && eccState.version !== ECC_BUNDLE_VERSION;
+  if (eccResourcesAvailable() && (!eccState || needsReimport)) {
     try {
       const report = installEcc({ verbose: false });
-      console.log(chalk.dim(`  ECC ready: ${report.skills} skills, ${report.agents} agents, ${report.commands + report.prompts} commands, ${report.rules} rule sets.`));
+      const verb = needsReimport ? `refreshed to v${ECC_BUNDLE_VERSION}` : 'ready';
+      console.log(chalk.dim(`  ECC ${verb}: ${report.skills} skills, ${report.agents} agents, ${report.commands + report.prompts} commands, ${report.rules} rule sets.`));
     } catch (err) {
       // Never block startup on ECC failures
       console.log(chalk.dim(`  ECC install skipped: ${err instanceof Error ? err.message : err}`));
     }
-  } else if (eccResourcesAvailable() && loadEccState()) {
+  } else if (eccResourcesAvailable() && eccState) {
     // Self-heal stale ECC hook paths on every startup. seedHooks() writes
     // absolute paths derived from __dirname; after a global npm install
     // (or moving the dev tree, or any path change), those paths become
