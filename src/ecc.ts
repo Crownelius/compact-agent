@@ -845,18 +845,44 @@ export function printEccCommandList(): void {
  * skill content into the system prompt — bumps relevance for that turn.
  */
 export function findEccSkillForQuery(query: string): Skill | null {
-  if (!query) return null;
+  const hits = findEccSkillsForQuery(query, 1);
+  return hits[0] ?? null;
+}
+
+/**
+ * Same scoring as findEccSkillForQuery but returns the top-K hits.
+ * Used by the progressive-disclosure system prompt injection to surface
+ * multiple potentially-relevant skill names + descriptions without
+ * burning the token budget on full prompt bodies.
+ */
+export function findEccSkillsForQuery(query: string, limit = 3): Skill[] {
+  if (!query) return [];
   const q = query.toLowerCase();
-  const candidates = listSkills().filter(s => s.id.startsWith(ECC_SKILL_ID_PREFIX));
-  let best: { skill: Skill; score: number } | null = null;
+  const candidates = listSkills().filter((s) => s.id.startsWith(ECC_SKILL_ID_PREFIX));
+  const scored: { skill: Skill; score: number }[] = [];
   for (const s of candidates) {
     let score = 0;
     for (const t of s.triggers) {
       if (q.includes(t.toLowerCase())) score += t.length;
     }
-    if (score > 0 && (!best || score > best.score)) {
-      best = { skill: s, score };
-    }
+    if (score > 0) scored.push({ skill: s, score });
   }
-  return best?.skill ?? null;
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((x) => x.skill);
+}
+
+/**
+ * Look up a skill by exact or substring name match. Used by the
+ * skill_view tool to expand a Level-0 reference (name only) to the
+ * Level-1 full prompt body the model needs to actually apply.
+ */
+export function findEccSkillByName(name: string): Skill | null {
+  if (!name) return null;
+  const target = name.toLowerCase().trim();
+  const all = listSkills().filter((s) => s.id.startsWith(ECC_SKILL_ID_PREFIX));
+  return (
+    all.find((s) => s.name.toLowerCase() === target)
+    ?? all.find((s) => s.name.toLowerCase().includes(target))
+    ?? null
+  );
 }

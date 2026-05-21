@@ -4,7 +4,7 @@ import type { CrowcoderConfig } from './types.js';
 import { getModePromptAddition, type Mode } from './modes.js';
 import { buildRulesPrompt } from './rules.js';
 import { getRelevantInstincts } from './learning.js';
-import { findEccSkillForQuery } from './ecc.js';
+import { findEccSkillsForQuery } from './ecc.js';
 import { ALL_TOOLS } from './tools/index.js';
 import { buildUserContext } from './users.js';
 import * as mempalace from './mempalace/index.js';
@@ -76,15 +76,32 @@ export function buildSystemPrompt(
     }
   }
 
-  // Auto-inject the highest-scoring ECC skill for this query, if any
+  // ── ECC skills — Level 0 disclosure (M2 item 3, Hermes audit) ───
+  // Previously we injected the FULL prompt body of the single best-
+  // matching ECC skill (~4KB ceiling) into every system prompt. With
+  // 228 skills bundled that's an expensive default. Hermes's
+  // progressive-disclosure schema is sharper:
+  //
+  //   Level 0 (here) — top-3 matching skill NAMES + one-line desc only
+  //   Level 1 — model calls `skill_view(name)` tool to load full text
+  //
+  // Net effect: the model sees what's available, decides whether any
+  // applies, and only pays the token cost to load full content for the
+  // ones it picks. For most turns, Level 0 is enough — the model never
+  // needs to escalate.
   let eccSkillAddition = '';
   if (userQuery) {
     try {
-      const skill = findEccSkillForQuery(userQuery);
-      if (skill) {
-        // Truncate large skills so we don't blow the context budget
-        const body = skill.prompt.length > 4000 ? skill.prompt.slice(0, 4000) + '\n...[truncated]' : skill.prompt;
-        eccSkillAddition = `\n# ECC Skill: ${skill.name}\n${body}\n`;
+      const skills = findEccSkillsForQuery(userQuery, 3);
+      if (skills.length > 0) {
+        const lines = skills.map((s) => {
+          const desc = s.description.length > 90 ? s.description.slice(0, 87) + '…' : s.description;
+          return `- **${s.name}** — ${desc}`;
+        });
+        eccSkillAddition =
+          '\n# Relevant skills (Level 0 — names only)\n' +
+          'These bundled skills match the current request by keyword. Call `skill_view("<name>")` to load the full prompt body for one that applies. If none look relevant, ignore this list.\n' +
+          lines.join('\n') + '\n';
       }
     } catch { /* skill matching is best-effort */ }
   }

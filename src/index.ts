@@ -87,6 +87,8 @@ import { buildWalkthroughPrompt } from './walkthrough.js';
 import { buildStitchPrompt, buildStitchToolsPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
 // MemPalace memory subsystem — wings/rooms/drawers/tunnels/KG, both global + project stores
 import * as mempalace from './mempalace/index.js';
+// Curator — periodic skill consolidation pass (/curate)
+import { runCurator } from './curator.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
 import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
@@ -328,6 +330,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/prune') + d('            — delete expired instincts'));
       console.log(d('  ') + c('/skills') + d('           — list learned skills (and bundled ECC skills)'));
       console.log(d('  ') + c('/skill-show <name>') + d(' — print the full prompt text of a specific skill'));
+      console.log(d('  ') + c('/curate') + d('           — scan skill registry for dupes / stale items (report-only)'));
       console.log(d('  ') + c('/memory [sub]') + d('     — MemPalace: status, enable/disable, wings, rooms, ls, search <q>, get <id>, rm <id>'));
       console.log(d('  ') + c('/users') + d('           — manage users table'));
       console.log(d('  ') + c('/count [inc|dec|reset]') + d(' — increment/decrement/reset counter'));
@@ -909,6 +912,33 @@ export function handleSlashCommand(
     // why /tdd or /review produced a particular shape of response. The
     // bundled ECC corpus has 228 skills as of v1.11 — most users won't
     // know they exist unless they can browse them.
+    // /curate — manual skill-registry curation pass. Report-only;
+    // surfaces duplicate names, high-overlap pairs, stale single-use,
+    // and never-invoked skills > 60 days old. User decides what to do.
+    case '/curate': {
+      const report = runCurator();
+      console.log(chalk.cyan(`\n  Curator scan — ${report.totalSkills} skills checked, ${report.findings.length} finding(s)`));
+      if (report.findings.length === 0) {
+        console.log(chalk.dim('  No issues. Registry is clean.\n'));
+        return { handled: true };
+      }
+      // Group by recommendation
+      const groups: Record<string, typeof report.findings> = {};
+      for (const f of report.findings) {
+        (groups[f.recommendation] = groups[f.recommendation] || []).push(f);
+      }
+      for (const [rec, items] of Object.entries(groups)) {
+        console.log(chalk.bold(`\n  ${rec.toUpperCase()} (${items.length}):`));
+        for (const f of items.slice(0, 20)) {
+          console.log(chalk.dim(`    [${f.kind}] ${f.primary}${f.secondary ? ' ↔ ' + f.secondary : ''}`));
+          console.log(chalk.dim(`      ${f.reason}`));
+        }
+        if (items.length > 20) console.log(chalk.dim(`    … and ${items.length - 20} more`));
+      }
+      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.crowcoder/skills/.\n'));
+      return { handled: true };
+    }
+
     case '/skill-show': {
       const name = args.trim();
       if (!name) {

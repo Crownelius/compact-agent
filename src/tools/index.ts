@@ -12,6 +12,7 @@ import { StitchTool } from './stitch.js';
 import { stitchConfigured } from '../stitch.js';
 import { MEMORY_TOOLS } from './memory.js';
 import { isMemoryEnabled } from '../mempalace/index.js';
+import { SkillViewTool } from './skill.js';
 
 // Stitch is only listed in the tool registry when configured — otherwise
 // free models hallucinate calls to it and waste turns on auth errors.
@@ -36,6 +37,10 @@ export const ALL_TOOLS: Tool[] = [
   WebFetchTool,
   WebSearchTool,
   ...MEMORY_TOOLS_IF_ENABLED,
+  // skill_view — Level-1 of the progressive-disclosure skill schema.
+  // Always available; the system prompt only injects skill NAMES at
+  // Level 0 and the model uses this tool to load full text on demand.
+  SkillViewTool,
   ...OPTIONAL_TOOLS,
 ];
 
