@@ -397,9 +397,13 @@ export function printThinkingOpen(): void {
 }
 
 export function printThinkingText(text: string): void {
-  // Prefix each newline within the chunk so multi-line thoughts stay aligned.
+  // Add the border prefix only after newlines within the chunk — NOT at
+  // the start. printThinkingOpen() already wrote the first-line prefix.
+  // Adding `'  │ '` to every chunk produced "| word | word | word" output
+  // when the model streamed thinking token-by-token, because each token
+  // arrived as its own writeStream call and each got a fresh prefix.
   const prefixed = text.replace(/\n(?!$)/g, '\n' + theme.thinkBorder('  │ '));
-  process.stdout.write(theme.thinkBorder('  │ ') + theme.thinkText(prefixed));
+  process.stdout.write(theme.thinkText(prefixed));
 }
 
 export function printThinkingClose(): void {

@@ -21,6 +21,12 @@ import { audioCue } from './audio.js';
 import { setStatus } from './status.js';
 import { collapseCompletedTurns } from './turn-context.js';
 
+// Per-session set: once we've told the user "this model didn't emit
+// reasoning tokens" we don't repeat it on every turn. Cleared per process,
+// not persisted — restart, see hint again. Keyed by sessionId so different
+// sessions get fresh hints.
+const _thinkingHintShownForSession = new Set<string>();
+
 export interface QueryContext {
   config: CrowcoderConfig;
   messages: Message[];
@@ -183,6 +189,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // don't bounce back and forth between failing models in a single chain.
   let usedFallbackModel = false;
 
+  // Tracks whether ANY reasoning tokens arrived across the entire chain.
+  // Used at chain-end to print a one-time "/thinking is ON but this model
+  // doesn't emit reasoning" hint. Hoisted to chain scope (not per-turn)
+  // because we only care about "in this whole exchange did we see any
+  // reasoning at all".
+  let sawAnyThinking = false;
+
   // Input suppression spans the entire chain: model streaming AND tool
   // execution. executeToolCalls calls inputGuard.pause()/resume() around
   // permission prompts so rl.question() can still read user input. Final
@@ -282,6 +295,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS)) {
         if (event.type === 'thinking' && event.content) {
+          sawAnyThinking = true;
           // showThinking defaults to true; only off when explicitly disabled.
           if (ctx.config.showThinking !== false) {
             if (!thinkingActive) {
@@ -453,6 +467,21 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // chains (slash command rejects, instant returns) don't need a chain line.
   if (chainMs > 1500) {
     console.log(theme.dim(`  chain ${formatDuration(chainMs)} · ${turns} ${turns === 1 ? 'turn' : 'turns'}`));
+  }
+
+  // /thinking visibility hint. If the user has thinking enabled but the
+  // model didn't emit any reasoning tokens this turn AND we haven't
+  // already shown the hint for this session, explain why nothing showed.
+  // Most users hit this with general-purpose models (gpt-4o, claude-sonnet
+  // without `thinking: enabled`, owl-alpha, etc.) — only reasoning models
+  // (DeepSeek-R1, Claude with extended thinking, o1, etc.) actually emit
+  // reasoning over the API.
+  const showThinking = ctx.config.showThinking !== false;
+  if (showThinking && !sawAnyThinking && !_thinkingHintShownForSession.has(ctx.sessionId)) {
+    _thinkingHintShownForSession.add(ctx.sessionId);
+    console.log(theme.dim(`  [hint] /thinking is ON, but ${ctx.config.model} didn't emit reasoning tokens.`));
+    console.log(theme.dim(`         Reasoning models (DeepSeek-R1, o1, Claude with extended thinking) emit them; most general-purpose models don't.`));
+    console.log(theme.dim(`         Hide this hint with /thinking (toggles off).`));
   }
   } finally {
     inputGuard.restore();

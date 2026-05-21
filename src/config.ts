@@ -104,6 +104,14 @@ export function loadConfig(): CrowcoderConfig {
   }
 }
 
+// Track which fields we've already warned about this process. loadConfig()
+// is called both from configExists() and from main(), and each invocation
+// validates — so without this set we'd print "Warning: Unexpected config
+// field: X" twice on every startup. Per-process is the right scope; cross-
+// process spam would require persisting the set to disk which isn't worth
+// the complexity for a defensive log message.
+const _alreadyWarnedFields = new Set<string>();
+
 function validateConfig(config: CrowcoderConfig): void {
   // Validate baseURL
   if (config.baseURL && typeof config.baseURL === 'string') {
@@ -131,7 +139,8 @@ function validateConfig(config: CrowcoderConfig): void {
   // Warn on unexpected fields
   const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory']);
   for (const key in config) {
-    if (!expectedFields.has(key)) {
+    if (!expectedFields.has(key) && !_alreadyWarnedFields.has(key)) {
+      _alreadyWarnedFields.add(key);
       console.warn(`Warning: Unexpected config field: ${key}`);
     }
   }
