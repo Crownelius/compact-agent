@@ -20,6 +20,7 @@ import { isLikelyDestructive, describeDestructive, countWords, summarize } from 
 import { audioCue } from './audio.js';
 import { setStatus } from './status.js';
 import { collapseCompletedTurns } from './turn-context.js';
+import * as liveQueue from './live-queue.js';
 
 // Per-session set: once we've told the user "this model didn't emit
 // reasoning tokens" we don't repeat it on every turn. Cleared per process,
@@ -63,20 +64,40 @@ export interface InputGuard {
   resume(): void;
   /** Return whatever the user typed during streaming, then clear the buffer. */
   drainQueuedInput(): string;
+  /**
+   * Register a callback invoked when the user presses Ctrl+G (Steer).
+   * The handler is responsible for aborting the active stream / chain
+   * and treating the queued buffer as the next user message.
+   */
+  onSteer(handler: () => void): void;
   restore(): void;
 }
 
-function startInputSuppression(): InputGuard {
+function startInputSuppression(screenReader: boolean = false): InputGuard {
   const stdin = process.stdin;
   if (!stdin.isTTY) {
     return {
       pause: () => { /* noop */ },
       resume: () => { /* noop */ },
       drainQueuedInput: () => '',
+      onSteer: () => { /* noop */ },
       restore: () => { /* noop */ },
     };
   }
   const wasRaw = stdin.isRaw;
+
+  // Live queue display — bottom-anchored input box that shows what the
+  // user has typed into the queue. Activate immediately so the box is
+  // present from the start of streaming, even when empty. Skip entirely
+  // in screen-reader mode: NVDA / JAWS read every cursor move as fresh
+  // content, which makes a live-updating widget far worse than silent.
+  const liveBoxActive = !screenReader && liveQueue.activate();
+
+  // Steer (Ctrl+G mid-stream cancel). Caller registers a handler via
+  // onSteer(); we invoke it when 0x07 (BEL / Ctrl+G) arrives during
+  // suppression. The handler is responsible for aborting the active
+  // stream — we just route the signal.
+  let steerHandler: (() => void) | null = null;
 
   // Snapshot non-tagged keypress listeners. These are the ones we toggle
   // on suppress/unsuppress; the tagged hotkey listener (F1–F10) stays
@@ -115,21 +136,47 @@ function startInputSuppression(): InputGuard {
   const dataHandler = (chunk: Buffer): void => {
     if (chunk[0] === 0x03) {
       try { stdin.setRawMode(false); } catch { /* noop */ }
+      liveQueue.deactivate();
       process.exit(0);
+    }
+    // Ctrl+G (BEL, 0x07) → Steer trigger. Fires the registered handler
+    // which aborts the active stream + uses the queued buffer as the
+    // next user turn. Doesn't append the 0x07 itself to the queue.
+    if (chunk[0] === 0x07 && detached) {
+      if (steerHandler) {
+        try { steerHandler(); } catch { /* never break input on a steer error */ }
+      }
+      return;
     }
     if (!detached) return;          // only collect while we're suppressing
     // Drop chunks that look like escape sequences (start with 0x1B)
     // — those are arrow keys, function keys, etc. Already handled by
     // the keypress emitter for tagged hotkeys; for us they're garbage.
     if (chunk[0] === 0x1B) return;
+    let mutated = false;
     for (const byte of chunk) {
-      // Printable ASCII or CR/LF
+      // Backspace (0x08) or DEL (0x7F) → erase last char from queue
+      if (byte === 0x08 || byte === 0x7F) {
+        if (queued.length > 0) {
+          queued.pop();
+          mutated = true;
+        }
+        continue;
+      }
+      // Printable ASCII or CR/LF → append
       if ((byte >= 0x20 && byte < 0x7F) || byte === 0x0A || byte === 0x0D) {
         queued.push(byte);
+        mutated = true;
       }
     }
     // Cap to avoid runaway accumulation if the user holds down a key
     if (queued.length > 4096) queued.splice(0, queued.length - 4096);
+    // Refresh the live box with current buffer contents so the user
+    // sees their typing in real time. Done lazily — only when mutated
+    // — to avoid drawing on every random byte.
+    if (mutated && liveBoxActive) {
+      liveQueue.update(Buffer.from(queued).toString('utf-8').replace(/\r\n?/g, '\n'));
+    }
   };
   try { stdin.setRawMode(true); } catch { /* noop */ }
   stdin.on('data', dataHandler);
@@ -147,10 +194,16 @@ function startInputSuppression(): InputGuard {
       // Normalize CR-only or CR-LF to LF, strip trailing whitespace
       return text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
     },
+    onSteer: (handler: () => void): void => {
+      steerHandler = handler;
+    },
     restore: () => {
       unsuppress();       // ensure listeners are back before we leave
       stdin.removeListener('data', dataHandler);
       try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
+      // Tear down the live queue box + restore default scroll region.
+      // Idempotent; safe to call even if activation was skipped.
+      liveQueue.deactivate();
     },
   };
 }
@@ -254,7 +307,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // permission prompts so rl.question() can still read user input. Final
   // teardown happens in the finally block at the bottom of runQuery so
   // the guard is always cleaned up even if something throws unexpectedly.
-  const inputGuard = startInputSuppression();
+  //
+  // Pass the screen-reader flag through — when on, suppressInputDuringStream
+  // skips the live queue box (NVDA/JAWS would re-read every cursor move
+  // as new text, drowning the actual response).
+  const isScreenReader = ctx.config.voice?.accessibility?.screenReader === true;
+  const inputGuard = startInputSuppression(isScreenReader);
   try {
 
   // Turn-boundary collapse runs BEFORE compaction. Every completed prior
@@ -345,8 +403,20 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // instead of a stale "idle".
     setStatus({ state: 'streaming' });
 
+    // Steer support — Ctrl+G during streaming aborts the API call and
+    // treats the queued buffer as the next user message (with a marker
+    // so the model knows the prior turn was interrupted). The handler
+    // is wired through InputGuard.onSteer; we create a fresh
+    // AbortController per turn and pass it to streamChat.
+    const streamAbort = new AbortController();
+    let wasSteered = false;
+    inputGuard.onSteer(() => {
+      wasSteered = true;
+      try { streamAbort.abort(); } catch { /* noop */ }
+    });
+
     try {
-      for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS)) {
+      for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS, streamAbort.signal)) {
         if (event.type === 'thinking' && event.content) {
           sawAnyThinking = true;
           // showThinking defaults to true; only off when explicitly disabled.
@@ -391,6 +461,37 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
+
+      // ── Steer path (graceful — not an error) ──────────────
+      // If the user pressed Ctrl+G during streaming, the AbortController
+      // fired and the OpenAI SDK threw something like "Request was
+      // aborted" or our own "Aborted before stream start". Treat as a
+      // controlled end-of-turn: save partial assistant text, push the
+      // queued buffer as the next user message, continue the chain.
+      const aborted = wasSteered || /abort|cancel/i.test(msg);
+      if (wasSteered || (aborted && streamAbort.signal.aborted)) {
+        console.log(theme.warning('  ⮌ steered — taking your queued input as the next turn'));
+        // Save whatever the model managed to emit before the abort
+        if (fullText.trim()) {
+          accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + fullText + '\n[interrupted by user steer]';
+          ctx.messages.push({ role: 'assistant', content: fullText + '\n[interrupted by user steer]' });
+        }
+        // Drain the queue and push as the next user turn with a marker.
+        const steerText = inputGuard.drainQueuedInput().trim();
+        if (steerText) {
+          ctx.messages.push({
+            role: 'user',
+            content: `[steer mid-turn] ${steerText}`,
+          });
+          // Don't break — continue the while loop so the new user turn
+          // gets processed in the next iteration. turns-- because the
+          // steer doesn't count against the max-turn budget.
+          turns--;
+          continue;
+        }
+        // No steer text (user hit Ctrl+G but typed nothing) — just end the chain.
+        break;
+      }
 
       // ── Auto-fallback path ─────────────────────────────────
       // Categorize the error. If it's "unknown" (the provider returned a

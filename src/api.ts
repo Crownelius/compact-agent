@@ -50,6 +50,7 @@ export async function* streamChat(
   config: CrowcoderConfig,
   messages: Message[],
   tools: Tool[],
+  signal?: AbortSignal,
 ): AsyncGenerator<{
   type: 'text' | 'thinking' | 'tool_call' | 'done';
   content?: string;
@@ -58,6 +59,9 @@ export async function* streamChat(
 }> {
   const api = getClient(config);
   const toolDefs = toolsToFunctions(tools);
+
+  // Bail early if the caller already cancelled before we even started
+  if (signal?.aborted) throw new Error('Aborted before stream start');
 
   const stream = await withRetry(
     () =>
@@ -68,7 +72,9 @@ export async function* streamChat(
         max_tokens: config.maxTokens,
         temperature: config.temperature,
         stream: true,
-      }),
+        // OpenAI SDK supports cancellation via signal; pass it through
+        // so the underlying fetch can be aborted on Steer.
+      }, signal ? { signal } : undefined),
     { maxRetries: 3, baseDelay: 1000, maxDelay: 30000 },
   );
 

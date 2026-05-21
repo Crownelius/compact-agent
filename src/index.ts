@@ -242,6 +242,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/exit') + d('             — quit (alias: /quit)'));
       console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of Crowcoder (aliases: /tour, /guide)'));
       console.log(d('  ') + c('!<cmd>') + d('            — run shell command directly'));
+      console.log(d('  ') + c('Ctrl+G') + d('            — steer: cancel current turn + use what you\'ve queued as the next message'));
       console.log(h('\n  ── Model & Provider ──'));
       console.log(d('  ') + c('/model [name]') + d('     — switch or show model'));
       console.log(d('  ') + c('/models') + d('           — list available models for provider'));
