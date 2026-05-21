@@ -92,7 +92,7 @@ import { runCurator } from './curator.js';
 // Sandbox — OS-native isolation for bash tool (/sandbox)
 import { status as sandboxStatus } from './sandbox.js';
 // API key rotation pool (/keys)
-import { listStatus as keyPoolStatus } from './key-rotation.js';
+import { listStatus as keyPoolStatus, setPool as syncKeyPool } from './key-rotation.js';
 // Agentic swarm — fan-out concurrent agents on the same task (/swarm)
 import { runSwarm, resolveAgents, formatSwarmResults } from './swarm.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
@@ -1713,6 +1713,10 @@ export function handleSlashCommand(
       const parts = args.trim().split(/\s+/).filter(Boolean);
       const sub = (parts[0] || '').toLowerCase();
       if (!sub || sub === 'status' || sub === 'list') {
+        // Sync the in-memory pool from current config before reporting
+        // — otherwise the user sees "empty" right after /keys add because
+        // the pool only auto-populates on the next API call (via getClient).
+        syncKeyPool(config.apiKey, config.apiKeys || []);
         const status = keyPoolStatus();
         if (status.length === 0) {
           console.log(chalk.dim('  Key pool is empty. /keys add <key> to start rotation.'));
@@ -1741,6 +1745,7 @@ export function handleSlashCommand(
         extras.push(newKey);
         config.apiKeys = extras;
         saveConfig(config);
+        syncKeyPool(config.apiKey, extras);
         resetClient();
         console.log(chalk.green(`  Key added (…${newKey.slice(-4)}). Pool size: ${1 + extras.length}.`));
         return { handled: true };
@@ -1755,6 +1760,7 @@ export function handleSlashCommand(
         }
         config.apiKeys = extras;
         saveConfig(config);
+        syncKeyPool(config.apiKey, extras);
         resetClient();
         console.log(chalk.green(`  Key removed. Pool size: ${1 + extras.length}.`));
         return { handled: true };
@@ -1762,6 +1768,7 @@ export function handleSlashCommand(
       if (sub === 'clear') {
         config.apiKeys = [];
         saveConfig(config);
+        syncKeyPool(config.apiKey, []);
         resetClient();
         console.log(chalk.green('  Extras pool cleared. Primary key remains.'));
         return { handled: true };
@@ -1797,7 +1804,13 @@ export function handleSlashCommand(
         } else if (s.available) {
           console.log(chalk.green(`  Sandbox: ${sub} — bash commands wrap via ${s.backend}.`));
         } else {
-          console.log(chalk.yellow(`  Sandbox set to ${sub}, but ${s.backend} isn't available here (${s.reason}).`));
+          // s.backend can be 'none' on Windows; phrase the message so it
+          // reads naturally either way.
+          const backendMsg = s.backend === 'none'
+            ? 'no compatible sandbox backend is available on this platform'
+            : `${s.backend} isn't installed on this machine`;
+          console.log(chalk.yellow(`  Sandbox level set to ${sub}, but ${backendMsg}.`));
+          console.log(chalk.dim(`  Reason: ${s.reason}`));
           console.log(chalk.dim('  Commands will still run, just unwrapped. Install the backend to actually sandbox.'));
         }
         return { handled: true };
