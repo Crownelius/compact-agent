@@ -30,6 +30,18 @@ export interface CrowcoderConfig {
   showThinking?: boolean;  // when true, display model reasoning/thinking tokens
   voice?: VoiceConfig;     // accessibility: STT (Whisper) + TTS (ElevenLabs) + screen-reader mode
   memory?: MemoryConfig;   // MemPalace-style persistent memory (wings/rooms/drawers/tunnels/KG)
+  sandbox?: SandboxConfig; // OS-native sandbox wrap for bash tool (Seatbelt/bwrap)
+}
+
+// ── Sandbox config ───────────────────────────────────────
+// Defense-in-depth on top of the execpolicy DSL. When enabled, bash
+// commands run inside an OS-native sandbox (sandbox-exec on macOS,
+// bwrap on Linux). Default OFF — most workflows don't want the
+// restrictions, and the execpolicy intent gate already catches the
+// highest-risk commands.
+export interface SandboxConfig {
+  /** off (no wrap) | standard (cwd + /tmp writable, net allowed) | strict (cwd-only) */
+  level?: 'off' | 'standard' | 'strict';
 }
 
 // ── MemPalace memory config ──────────────────────────────

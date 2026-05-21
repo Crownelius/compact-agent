@@ -89,6 +89,8 @@ import { buildStitchPrompt, buildStitchToolsPrompt, saveStitchConfig, printStitc
 import * as mempalace from './mempalace/index.js';
 // Curator — periodic skill consolidation pass (/curate)
 import { runCurator } from './curator.js';
+// Sandbox — OS-native isolation for bash tool (/sandbox)
+import { status as sandboxStatus } from './sandbox.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
 import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
@@ -286,6 +288,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
       console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode (ask/auto/yolo); no arg shows current + always-allow list'));
       console.log(d('  ') + c('/perm-reset') + d('       — clear the per-tool always-allow list'));
+      console.log(d('  ') + c('/sandbox [level]') + d('  — OS-native bash sandbox (off / standard / strict)'));
       console.log(d('  ') + c('/dry-run') + d('          — toggle dry-run mode'));
       console.log(d('  ') + c('/thinking') + d('         — toggle thinking/reasoning display'));
       console.log(d('  ') + c('/cd <path>') + d('        — change directory'));
@@ -1669,6 +1672,42 @@ export function handleSlashCommand(
       return { handled: true };
     }
 
+
+    // ── Sandbox — OS-native isolation for bash tool ──────────
+    //   /sandbox                show backend + current level
+    //   /sandbox off|standard|strict
+    case '/sandbox': {
+      const sub = args.trim().toLowerCase();
+      const s = sandboxStatus();
+      if (!sub || sub === 'status') {
+        const current = config.sandbox?.level || 'off';
+        console.log(chalk.cyan('\n  Sandbox status'));
+        console.log(chalk.dim(`    platform: ${s.platform}`));
+        console.log(chalk.dim(`    backend:  ${s.backend}${s.available ? ' ✓' : ' ✗ ' + (s.reason || 'unavailable')}`));
+        console.log(chalk.dim(`    level:    ${current}${current === 'off' ? '' : (s.available ? ' (active)' : ' (config says ' + current + ' but backend unavailable → unsandboxed)')}`));
+        console.log(chalk.dim('\n  Levels:'));
+        console.log(chalk.dim('    off       — no wrap, behave as before'));
+        console.log(chalk.dim('    standard  — read everywhere, write to cwd + /tmp, full network'));
+        console.log(chalk.dim('    strict    — read/write cwd only, no network, no /tmp'));
+        console.log(chalk.dim('\n  Change with: /sandbox <level>\n'));
+        return { handled: true };
+      }
+      if (sub === 'off' || sub === 'standard' || sub === 'strict') {
+        config.sandbox = { ...(config.sandbox || {}), level: sub };
+        saveConfig(config);
+        if (sub === 'off') {
+          console.log(chalk.green(`  Sandbox: OFF — bash commands run unwrapped.`));
+        } else if (s.available) {
+          console.log(chalk.green(`  Sandbox: ${sub} — bash commands wrap via ${s.backend}.`));
+        } else {
+          console.log(chalk.yellow(`  Sandbox set to ${sub}, but ${s.backend} isn't available here (${s.reason}).`));
+          console.log(chalk.dim('  Commands will still run, just unwrapped. Install the backend to actually sandbox.'));
+        }
+        return { handled: true };
+      }
+      console.log(chalk.yellow(`  Unknown /sandbox level: ${sub}. Use: off, standard, strict.`));
+      return { handled: true };
+    }
 
     // ── Reset hooks (clear stale entries from old installs) ──
     // Wipes ~/.crowcoder/hooks.json, clears the in-memory quarantine, and

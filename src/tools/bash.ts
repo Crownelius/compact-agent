@@ -1,5 +1,7 @@
 import { exec } from 'node:child_process';
 import type { Tool, ToolResult } from './types.js';
+import { loadConfig } from '../config.js';
+import { wrapCommand, detectBackend } from '../sandbox.js';
 
 /**
  * Shell tool. Kept named `bash` for tool-call API compatibility, but on
@@ -60,9 +62,33 @@ export const BashTool: Tool = {
   isDestructive: true,
 
   async call(input, cwd): Promise<ToolResult> {
-    const command = input.command as string;
+    const rawCommand = input.command as string;
     const timeout = (input.timeout as number) || 120_000;
     const shell = pickShell();
+
+    // Sandbox wrap (no-op when level=off or backend unavailable).
+    // Loading config per-call keeps the bash tool stateless and means
+    // /sandbox level changes apply on the very next command.
+    const cfg = loadConfig();
+    const level = cfg.sandbox?.level || 'off';
+    let command = rawCommand;
+    let sandboxLabel = '';
+    if (level !== 'off') {
+      const det = detectBackend();
+      if (det.available) {
+        const wrapped = wrapCommand(rawCommand, { level, cwd });
+        command = wrapped.cmd;
+        sandboxLabel = wrapped.label;
+      } else {
+        // Sandbox requested but unavailable on this platform — print
+        // once-per-call diagnostic. Doesn't block; falls through to
+        // unsandboxed exec because failing closed silently is worse.
+        process.stderr.write(`  [sandbox] requested ${level} but ${det.reason}\n`);
+      }
+    }
+    if (sandboxLabel) {
+      process.stderr.write(`  [sandbox] ${sandboxLabel}\n`);
+    }
 
     return new Promise((resolve) => {
       exec(

@@ -29,6 +29,13 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
   // Thinking / reasoning shown by default — gives users live "the model isn't
   // dead" feedback during long turns. Toggle off with /thinking.
   showThinking: true,
+  // Sandbox config. Default off: most workflows don't want the
+  // restrictions, and the execpolicy intent gate from 1.19.0 already
+  // catches the highest-risk commands. Users opt in via /sandbox standard
+  // or /sandbox strict.
+  sandbox: {
+    level: 'off',
+  },
   // MemPalace persistent memory. ON by default — it's a featured capability,
   // zero overhead until something is written, and the agent only uses the
   // tools when it sees a durable fact worth keeping. User can opt out during
@@ -137,7 +144,7 @@ function validateConfig(config: CrowcoderConfig): void {
   }
 
   // Warn on unexpected fields
-  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory']);
+  const expectedFields = new Set(['apiKey', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory', 'sandbox']);
   for (const key in config) {
     if (!expectedFields.has(key) && !_alreadyWarnedFields.has(key)) {
       _alreadyWarnedFields.add(key);
