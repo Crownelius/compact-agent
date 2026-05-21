@@ -13,6 +13,7 @@ import { stitchConfigured } from '../stitch.js';
 import { MEMORY_TOOLS } from './memory.js';
 import { isMemoryEnabled } from '../mempalace/index.js';
 import { SkillViewTool } from './skill.js';
+import { ApplyPatchTool } from './apply-patch.js';
 
 // Stitch is only listed in the tool registry when configured — otherwise
 // free models hallucinate calls to it and waste turns on auth errors.
@@ -31,6 +32,9 @@ export const ALL_TOOLS: Tool[] = [
   ReadTool,
   WriteTool,
   EditTool,
+  // apply_patch — multi-file atomic edits (replaces chained edit/write
+  // for refactors). Inspired by codex-cli's *** Begin Patch envelope.
+  ApplyPatchTool,
   GrepTool,
   GlobTool,
   ListDirTool,
