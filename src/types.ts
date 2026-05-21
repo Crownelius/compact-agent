@@ -16,6 +16,12 @@ export interface Message {
 // ── Config ────────────────────────────────────────────────
 export interface CrowcoderConfig {
   apiKey: string;
+  // Optional pool of API keys (e.g. multiple OpenRouter free-tier accounts).
+  // When present, the client rotates through them on 429/401, isolating
+  // each key's rate-limit / quota state. The single `apiKey` field above
+  // remains the primary; `apiKeys` is the rotation pool. If both are set,
+  // `apiKey` is used as the first entry of the effective pool.
+  apiKeys?: string[];
   baseURL: string;
   model: string;
   fallbackModel?: string;  // tried automatically once when the primary model errors with an empty/unknown provider error
@@ -152,6 +158,17 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     name: 'GLM (ZhipuAI)',
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
     defaultModel: 'glm-4-plus',
+    requiresKey: true,
+  },
+  nvidia: {
+    name: 'NVIDIA NIM',
+    baseURL: 'https://integrate.api.nvidia.com/v1',
+    // meta/llama-3.1-70b-instruct is the most-reliable widely-available
+    // default on build.nvidia.com's free tier as of 2026. Users can switch
+    // to nvidia/nemotron-4-340b-instruct, qwen/qwen-2.5-coder-32b-instruct,
+    // deepseek-ai/deepseek-coder-6.7b-instruct, or any of the ~100 models
+    // exposed at /v1/chat/completions via /model.
+    defaultModel: 'meta/llama-3.1-70b-instruct',
     requiresKey: true,
   },
   custom: {

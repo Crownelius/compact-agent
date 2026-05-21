@@ -2,38 +2,72 @@ import OpenAI from 'openai';
 import type { CrowcoderConfig, Message } from './types.js';
 import type { Tool } from './tools/types.js';
 import { withRetry } from './retry.js';
+import { setPool, pickKey, reportFailure, reportSuccess, poolSize } from './key-rotation.js';
 
 let client: OpenAI | null = null;
 let lastConfigHash = '';
+let lastClientKey = '';   // which key the current client was built with
 
 function configHash(config: CrowcoderConfig): string {
-  return `${config.baseURL}:${config.apiKey}`;
+  // The client cache key depends on the CURRENT pool key, not the config
+  // apiKey, so a rotation picks a fresh client without re-checking config.
+  const poolKeys = (config.apiKeys || []).join(',');
+  return `${config.baseURL}:${config.apiKey}:${poolKeys}`;
+}
+
+/**
+ * Sync the rotation pool with the latest config. Called from getClient
+ * on every request so /config or env-var changes flow through.
+ */
+function syncPool(config: CrowcoderConfig): void {
+  setPool(config.apiKey, config.apiKeys || []);
 }
 
 export function getClient(config: CrowcoderConfig): OpenAI {
+  syncPool(config);
+  // Pick the current key from the pool (round-robin, skipping cool keys).
+  // Falls back to config.apiKey when the pool is empty or all keys are
+  // cool — the original request will fail with a clear error in that
+  // case, which is the right behavior.
+  const activeKey = pickKey() || config.apiKey;
   const hash = configHash(config);
-  if (!client || hash !== lastConfigHash) {
+  if (!client || hash !== lastConfigHash || activeKey !== lastClientKey) {
     const isAnthropic = config.baseURL.includes('anthropic.com');
 
     client = new OpenAI({
-      apiKey: config.apiKey || 'not-needed',
+      apiKey: activeKey || 'not-needed',
       baseURL: config.baseURL,
       ...(isAnthropic ? {
         defaultHeaders: {
-          'x-api-key': config.apiKey,
+          'x-api-key': activeKey,
           'anthropic-version': '2023-06-01',
         },
       } : {}),
     });
     lastConfigHash = hash;
+    lastClientKey = activeKey;
   }
   return client;
+}
+
+/**
+ * Same as getClient but explicitly reports the active key in use, so
+ * callers (streamChat) can attribute success/failure back to the
+ * specific key for rotation health-tracking.
+ */
+export function getClientWithKey(config: CrowcoderConfig): { client: OpenAI; activeKey: string } {
+  const c = getClient(config);
+  return { client: c, activeKey: lastClientKey };
 }
 
 export function resetClient(): void {
   client = null;
   lastConfigHash = '';
+  lastClientKey = '';
 }
+
+/** Re-export so callers (index.ts /keys) can introspect pool status. */
+export { reportFailure, reportSuccess, poolSize } from './key-rotation.js';
 
 export function toolsToFunctions(tools: Tool[]): OpenAI.Chat.ChatCompletionTool[] {
   return tools.map((t) => ({
@@ -57,26 +91,42 @@ export async function* streamChat(
   toolCalls?: OpenAI.Chat.ChatCompletionMessageFunctionToolCall[];
   usage?: { prompt: number; completion: number; total: number };
 }> {
-  const api = getClient(config);
+  // Capture the active key so we can attribute success/failure to it
+  // for the rotation health tracker. Multi-key users (multiple OpenRouter
+  // accounts) get automatic round-robin when a key 429s or exhausts quota.
+  const { client: api, activeKey } = getClientWithKey(config);
   const toolDefs = toolsToFunctions(tools);
 
   // Bail early if the caller already cancelled before we even started
   if (signal?.aborted) throw new Error('Aborted before stream start');
 
-  const stream = await withRetry(
-    () =>
-      api.chat.completions.create({
-        model: config.model,
-        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-        tools: toolDefs.length > 0 ? toolDefs : undefined,
-        max_tokens: config.maxTokens,
-        temperature: config.temperature,
-        stream: true,
-        // OpenAI SDK supports cancellation via signal; pass it through
-        // so the underlying fetch can be aborted on Steer.
-      }, signal ? { signal } : undefined),
-    { maxRetries: 3, baseDelay: 1000, maxDelay: 30000 },
-  );
+  let stream;
+  try {
+    stream = await withRetry(
+      () =>
+        api.chat.completions.create({
+          model: config.model,
+          messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+          tools: toolDefs.length > 0 ? toolDefs : undefined,
+          max_tokens: config.maxTokens,
+          temperature: config.temperature,
+          stream: true,
+          // OpenAI SDK supports cancellation via signal; pass it through
+          // so the underlying fetch can be aborted on Steer.
+        }, signal ? { signal } : undefined),
+      { maxRetries: 3, baseDelay: 1000, maxDelay: 30000 },
+    );
+  } catch (err) {
+    // Hand the failure to the rotation pool so subsequent calls skip
+    // this key for the cool-down window. Re-throw so the outer error
+    // handling (auto-fallback model, error UI) still fires.
+    if (activeKey && poolSize() > 1) reportFailure(activeKey, err);
+    throw err;
+  }
+  // If we get this far, the request was at least accepted — record success.
+  // (We don't wait for completion; mid-stream errors are vanishingly rare
+  // for OpenAI-compatible APIs vs upfront 4xx/5xx).
+  if (activeKey && poolSize() > 1) reportSuccess(activeKey);
 
   let currentText = '';
   const toolCallAccumulator: Map<number, {

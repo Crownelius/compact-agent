@@ -91,6 +91,8 @@ import * as mempalace from './mempalace/index.js';
 import { runCurator } from './curator.js';
 // Sandbox — OS-native isolation for bash tool (/sandbox)
 import { status as sandboxStatus } from './sandbox.js';
+// API key rotation pool (/keys)
+import { listStatus as keyPoolStatus } from './key-rotation.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
 import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
@@ -250,6 +252,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/models') + d('           — list available models for provider'));
       console.log(d('  ') + c('/fallback [model]') + d(' — set/show the model auto-retried on cryptic provider errors'));
       console.log(d('  ') + c('/provider') + d('         — show provider info'));
+      console.log(d('  ') + c('/keys [add|rm]') + d('    — multi-key rotation pool (e.g. several OpenRouter accounts)'));
       console.log(d('  ') + c('/route') + d('            — auto-route model based on next message'));
       console.log(h('\n  ── Modes ──'));
       console.log(d('  ') + c('/mode [name]') + d('      — switch mode (dev/review/tdd/research/plan/debug/architect/hermes/design)'));
@@ -1672,6 +1675,72 @@ export function handleSlashCommand(
       return { handled: true };
     }
 
+
+    // ── API key pool (multi-account rotation) ────────────────
+    //   /keys                show pool with health + stats
+    //   /keys add <key>      append to the rotation pool
+    //   /keys remove <key>   remove a specific key (or partial tail-match)
+    //   /keys clear          empty the extras pool (keeps primary apiKey)
+    case '/keys': {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      const sub = (parts[0] || '').toLowerCase();
+      if (!sub || sub === 'status' || sub === 'list') {
+        const status = keyPoolStatus();
+        if (status.length === 0) {
+          console.log(chalk.dim('  Key pool is empty. /keys add <key> to start rotation.'));
+          return { handled: true };
+        }
+        console.log(chalk.cyan(`\n  API key pool (${status.length}):`));
+        for (const k of status) {
+          const health = k.healthy
+            ? chalk.green('✓ healthy')
+            : chalk.yellow(`✗ cooling ${k.coolDownRemainingSec}s${k.lastReason ? ' (' + k.lastReason + ')' : ''}`);
+          console.log(chalk.dim(`    [${k.index}] ${k.tail}  ${health}  · ${k.successes} ok / ${k.failures} fail`));
+        }
+        console.log(chalk.dim('\n  /keys add <key>      add to pool'));
+        console.log(chalk.dim('  /keys remove <tail>  drop a key (last-4 char match)'));
+        console.log(chalk.dim('  /keys clear          empty the extras pool\n'));
+        return { handled: true };
+      }
+      if (sub === 'add') {
+        const newKey = parts.slice(1).join(' ').trim();
+        if (!newKey) { console.log(chalk.yellow('  Usage: /keys add <api-key>')); return { handled: true }; }
+        const extras = (config.apiKeys || []).slice();
+        if (extras.includes(newKey) || newKey === config.apiKey) {
+          console.log(chalk.yellow('  Key already in the pool.'));
+          return { handled: true };
+        }
+        extras.push(newKey);
+        config.apiKeys = extras;
+        saveConfig(config);
+        resetClient();
+        console.log(chalk.green(`  Key added (…${newKey.slice(-4)}). Pool size: ${1 + extras.length}.`));
+        return { handled: true };
+      }
+      if (sub === 'remove' || sub === 'rm') {
+        const target = parts[1] || '';
+        if (!target) { console.log(chalk.yellow('  Usage: /keys remove <tail-chars>')); return { handled: true }; }
+        const extras = (config.apiKeys || []).filter((k) => !k.endsWith(target) && k !== target);
+        if (extras.length === (config.apiKeys || []).length) {
+          console.log(chalk.yellow(`  No key matched "${target}".`));
+          return { handled: true };
+        }
+        config.apiKeys = extras;
+        saveConfig(config);
+        resetClient();
+        console.log(chalk.green(`  Key removed. Pool size: ${1 + extras.length}.`));
+        return { handled: true };
+      }
+      if (sub === 'clear') {
+        config.apiKeys = [];
+        saveConfig(config);
+        resetClient();
+        console.log(chalk.green('  Extras pool cleared. Primary key remains.'));
+        return { handled: true };
+      }
+      console.log(chalk.yellow(`  Unknown /keys subcommand: ${sub}. Try: status, add, remove, clear`));
+      return { handled: true };
+    }
 
     // ── Sandbox — OS-native isolation for bash tool ──────────
     //   /sandbox                show backend + current level
