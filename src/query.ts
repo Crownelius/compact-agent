@@ -196,6 +196,21 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // reasoning at all".
   let sawAnyThinking = false;
 
+  // Skill-graduation telemetry. The Hermes audit's deterministic rule
+  // for "this work was worth remembering" — the model is a bad judge of
+  // its own complexity, so the dispatcher counts and decides. Thresholds:
+  //   - 5+ tool calls in this chain   → complex task
+  //   - any tool errored then recovered → learned-from-failure
+  // Only used to inform a chain-end suggestion in hermes mode; we don't
+  // auto-create skills (which would burn an extra LLM call). We surface
+  // the opportunity with a one-line nudge so the user can /skill-create
+  // or /learn if they want.
+  const chainStats: ChainStats = {
+    toolCallCount: 0,
+    sawToolError: false,
+    sawToolRecovery: false,
+  };
+
   // Input suppression spans the entire chain: model streaming AND tool
   // execution. executeToolCalls calls inputGuard.pause()/resume() around
   // permission prompts so rl.question() can still read user input. Final
@@ -414,8 +429,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // Execute tool calls — executeToolCalls itself flips per-tool state
     // and uses inputGuard.pause()/resume() around each permission prompt
     // so rl.question() can read user input even though suppression is on
-    // for the rest of the chain.
-    const toolResults = await executeToolCalls(toolCalls, ctx, inputGuard);
+    // for the rest of the chain. chainStats is mutated by side effect so
+    // we can surface a skill-graduation hint at chain end.
+    const toolResults = await executeToolCalls(toolCalls, ctx, inputGuard, chainStats);
     ctx.messages.push(...toolResults);
   }
 
@@ -483,15 +499,58 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     console.log(theme.dim(`         Reasoning models (DeepSeek-R1, o1, Claude with extended thinking) emit them; most general-purpose models don't.`));
     console.log(theme.dim(`         Hide this hint with /thinking (toggles off).`));
   }
+
+  // ── Skill graduation hint (Hermes audit, M2 item 2) ─────────
+  // Deterministic "this work was worth remembering" trigger. The model
+  // is a bad judge of its own complexity (Hermes audit's exact wording);
+  // we count instead. Fires at most once per chain in hermes mode, and
+  // only when a clear threshold was crossed:
+  //
+  //   - 5+ tool calls   → complex multi-step task
+  //   - error+recovery  → the agent learned a workaround
+  //
+  // We don't auto-execute /skill-create (it would burn another LLM call
+  // and might extract noise); we surface the opportunity so the user can
+  // decide. Outside hermes mode, this is silent — keeps the noise floor
+  // low for regular dev/review/debug sessions.
+  if (ctx.mode === 'hermes') {
+    const complex = chainStats.toolCallCount >= 5;
+    const learnedFromFailure = chainStats.sawToolError && chainStats.sawToolRecovery;
+    if (complex || learnedFromFailure) {
+      const reason = complex && learnedFromFailure
+        ? `${chainStats.toolCallCount} tools, recovered from at least one error`
+        : complex
+          ? `${chainStats.toolCallCount} tools — complex enough that a learned pattern might save time next time`
+          : `recovered from a tool error — the working path is worth banking`;
+      console.log(theme.dim(`  [hermes] graduation candidate: ${reason}.`));
+      console.log(theme.dim(`           Run /skill-create or /learn to bank it. Skip if it was one-off.`));
+    }
+  }
   } finally {
     inputGuard.restore();
   }
+}
+
+/**
+ * Chain-scope counters threaded through executeToolCalls so runQuery can
+ * surface "this looked complex enough to extract a skill" hints at chain
+ * end. The Hermes audit's deterministic skill-graduation triggers:
+ *   - 5+ tool calls in the chain         → complex task
+ *   - a tool error followed by a success → learned-from-failure
+ * Counted as side-effects, not returned, so the existing call sites
+ * don't have to thread tuples back up.
+ */
+interface ChainStats {
+  toolCallCount: number;
+  sawToolError: boolean;
+  sawToolRecovery: boolean;
 }
 
 async function executeToolCalls(
   toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[],
   ctx: QueryContext,
   inputGuard: InputGuard,
+  chainStats?: ChainStats,
 ): Promise<Message[]> {
   const results: Message[] = [];
 
@@ -629,6 +688,19 @@ async function executeToolCalls(
       result = await tool.call(input, ctx.cwd);
       const elapsed = Date.now() - startTime;
       printToolResult(!result.isError, elapsed, result.output);
+    }
+
+    // Chain stats — bump the counter on every successful execution path
+    // we got here through (denied / blocked tool calls hit `continue`
+    // above and don't reach this point). Recovery = success-after-error
+    // within the same chain.
+    if (chainStats) {
+      chainStats.toolCallCount++;
+      if (result.isError) {
+        chainStats.sawToolError = true;
+      } else if (chainStats.sawToolError) {
+        chainStats.sawToolRecovery = true;
+      }
     }
 
     // ── Post-tool hook ────────────────────────────────────
