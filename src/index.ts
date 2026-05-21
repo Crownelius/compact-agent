@@ -93,6 +93,8 @@ import { runCurator } from './curator.js';
 import { status as sandboxStatus } from './sandbox.js';
 // API key rotation pool (/keys)
 import { listStatus as keyPoolStatus } from './key-rotation.js';
+// Agentic swarm — fan-out concurrent agents on the same task (/swarm)
+import { runSwarm, resolveAgents, formatSwarmResults } from './swarm.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
 import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
@@ -310,6 +312,7 @@ export function handleSlashCommand(
       // silent aliases for power users but are not listed here.
       console.log(h('\n  ── Orchestration ──'));
       console.log(d('  ') + c('/orchestrate <task>') + d(' — decompose into parallel sub-agents'));
+      console.log(d('  ') + c('/swarm <agents> <task>') + d(' — true parallel fan-out: N agents on same task, results merged with attribution'));
       console.log(d('  ') + c('/pr-loop') + d('          — autonomous PR review loop'));
       console.log(d('  ') + c('/multi-plan <task>') + d(' — multi-agent planning'));
       console.log(d('  ') + c('/multi-execute') + d('    — multi-agent execution'));
@@ -840,6 +843,31 @@ export function handleSlashCommand(
       mode.current = 'architect';
       const orchPrompt = buildOrchestrationPrompt(args);
       return { handled: false, injectPrompt: orchPrompt };
+
+    // ── Agentic swarm — true parallel fan-out (M3 swarm audit) ──
+    // Run N agents concurrently on the same task. Each agent gets its
+    // own ECC prompt + the task as user message; outputs are merged
+    // with attribution headers. No tools available to swarm agents —
+    // analysis only, no file edits.
+    //
+    //   /swarm <agent1,agent2,...> <task>
+    //
+    // Each agent's request uses the key rotation pool from v1.23.0,
+    // so multi-account users get true parallel throughput.
+    case '/swarm': {
+      // Match: first whitespace-free token is the agents list, rest is task
+      const m = args.match(/^(\S+)\s+([\s\S]+)$/);
+      if (!m) {
+        console.log(chalk.yellow('  Usage: /swarm <agent1,agent2,...> <task>'));
+        console.log(chalk.dim('  Example: /swarm code-architect,silent-failure-hunter,type-design-analyzer  audit the auth flow'));
+        console.log(chalk.dim('  Run /ecc-guide agents to see available agents.'));
+        return { handled: true };
+      }
+      const [, agentsList, task] = m;
+      // Use a sentinel + delimiter approach so the main REPL loop can
+      // pick up the async swarm dispatch (slash handlers are sync).
+      return { handled: false, injectPrompt: '__SWARM__' + agentsList + '|||' + task };
+    }
 
     // ── Verification & Build ─────────────────────────
     case '/verify': {
@@ -2539,6 +2567,36 @@ async function main(): Promise<void> {
           }
           console.log(theme.dim('  [dictate] ') + chalk.white(transcript));
           messages.push({ role: 'user', content: transcript });
+        } else if (result.injectPrompt.startsWith('__SWARM__')) {
+          // Swarm dispatch: __SWARM__<agentsCsv>|||<task>. Same sentinel
+          // trick as /dictate so the slash handler stays sync; the async
+          // fan-out happens here in the main REPL loop where we already
+          // have await + the live config object.
+          const payload = result.injectPrompt.slice('__SWARM__'.length);
+          const sepIdx = payload.indexOf('|||');
+          const agentsCsv = payload.slice(0, sepIdx);
+          const task = payload.slice(sepIdx + 3);
+          const slugs = agentsCsv.split(',').map((s) => s.trim()).filter(Boolean);
+          try {
+            const agents = resolveAgents(slugs);
+            console.log(chalk.cyan(`  Swarming ${agents.length} agent(s) in parallel: ${agents.map((a) => a.name).join(', ')}`));
+            console.log(chalk.dim(`  Task: ${task.length > 100 ? task.slice(0, 97) + '...' : task}`));
+            const swarmStart = Date.now();
+            const results = await runSwarm(agents, task, config);
+            const output = formatSwarmResults(results);
+            console.log(output);
+            const elapsed = ((Date.now() - swarmStart) / 1000).toFixed(1);
+            const ok = results.filter((r) => !r.error).length;
+            console.log(chalk.dim(`\n  swarm complete: ${ok}/${results.length} agent(s) succeeded in ${elapsed}s`));
+            // Push the swarm as conversational context so follow-up
+            // turns can reason about the consolidated output.
+            messages.push({ role: 'user', content: `[/swarm ${agents.map((a) => a.name).join(',')}] ${task}` });
+            messages.push({ role: 'assistant', content: output.slice(0, 8000) });
+          } catch (e) {
+            console.log(chalk.red(`  Swarm failed: ${e instanceof Error ? e.message : e}`));
+          }
+          await autoSave(session, messages);
+          continue;
         } else {
           messages.push({ role: 'user', content: result.injectPrompt });
         }
