@@ -2333,7 +2333,43 @@ async function main(): Promise<void> {
         : theme.dim(`[${formatDuration(Date.now() - sessionStartMs)}] `);
       const modeTag = mode.current !== 'dev' ? theme.dim(`[${mode.current}] `) : '';
       const promptGlyph = screenReader ? '> ' : `${sym.prompt} `;
-      input = await rl.question(sessionTag + modeTag + theme.prompt(promptGlyph));
+
+      // Queued input (Codex audit's queued_user_messages). If the user
+      // typed something during the previous chain's streaming/tool
+      // execution, that text was buffered by suppressInputDuringStream
+      // and stashed on globalThis. Drain it here:
+      //   - If it contains a newline → auto-submit immediately (the
+      //     user pressed Enter mid-stream; treat that as commit-on-end-of-turn)
+      //   - Otherwise → display a small "queued:" hint and let the user
+      //     decide whether to send. (Pre-filling rl's buffer cross-platform
+      //     is unreliable — readline.write() works on POSIX but the cursor
+      //     state on Windows ConHost gets weird. Hint + manual paste is
+      //     more predictable than trying to pre-fill.)
+      const g = globalThis as { __crowcoderQueuedInput?: string };
+      const queued = g.__crowcoderQueuedInput || '';
+      g.__crowcoderQueuedInput = undefined;
+      if (queued.includes('\n')) {
+        // First newline-terminated chunk becomes the next message.
+        // Anything after the first newline goes back into the queue
+        // for the chain after this one (rare but supportable).
+        const idx = queued.indexOf('\n');
+        const next = queued.slice(0, idx).trim();
+        const rest = queued.slice(idx + 1).trim();
+        if (rest) g.__crowcoderQueuedInput = rest;
+        if (next) {
+          console.log(theme.dim(`  (auto-submitting queued: "${next.slice(0, 80)}${next.length > 80 ? '…' : ''}")`));
+          input = next;
+        } else {
+          input = await rl.question(sessionTag + modeTag + theme.prompt(promptGlyph));
+        }
+      } else {
+        if (queued.trim()) {
+          // Hint the user that we kept their mid-stream typing; they
+          // can paste/retype at the prompt.
+          console.log(theme.dim(`  (queued during last chain: "${queued.trim().slice(0, 80)}${queued.length > 80 ? '…' : ''}")`));
+        }
+        input = await rl.question(sessionTag + modeTag + theme.prompt(promptGlyph));
+      }
     } catch {
       break;
     }

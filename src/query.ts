@@ -61,13 +61,20 @@ type TaggedListener = ((...args: unknown[]) => void) & { __crowcoderHotkey__?: b
 export interface InputGuard {
   pause(): void;
   resume(): void;
+  /** Return whatever the user typed during streaming, then clear the buffer. */
+  drainQueuedInput(): string;
   restore(): void;
 }
 
 function startInputSuppression(): InputGuard {
   const stdin = process.stdin;
   if (!stdin.isTTY) {
-    return { pause: () => { /* noop */ }, resume: () => { /* noop */ }, restore: () => { /* noop */ } };
+    return {
+      pause: () => { /* noop */ },
+      resume: () => { /* noop */ },
+      drainQueuedInput: () => '',
+      restore: () => { /* noop */ },
+    };
   }
   const wasRaw = stdin.isRaw;
 
@@ -91,13 +98,38 @@ function startInputSuppression(): InputGuard {
     detached = false;
   }
 
-  // Swallow data — Ctrl+C still exits, everything else is discarded so
-  // it can't bubble up to anything we missed.
+  // Queued-input buffer (Codex audit "queued_user_messages"). Instead of
+  // dropping typed chars during streaming, collect printable ones so we
+  // can pre-fill them into the NEXT prompt when the chain ends. The user
+  // can keep typing their next request while the current one's still
+  // working — it appears at the prompt ready to send or edit.
+  //
+  // Heuristic to avoid garbage from terminal escapes: only collect
+  // printable ASCII (0x20-0x7E) and Enter (0x0D). Drop everything else
+  // — including arrow keys, backspace, Ctrl combos — because we can't
+  // tell where a multi-byte escape starts vs ends without a full state
+  // machine. Backspace within the queued buffer is the main loss; users
+  // can clean up at the prompt anyway.
+  const queued: number[] = [];
+
   const dataHandler = (chunk: Buffer): void => {
     if (chunk[0] === 0x03) {
       try { stdin.setRawMode(false); } catch { /* noop */ }
       process.exit(0);
     }
+    if (!detached) return;          // only collect while we're suppressing
+    // Drop chunks that look like escape sequences (start with 0x1B)
+    // — those are arrow keys, function keys, etc. Already handled by
+    // the keypress emitter for tagged hotkeys; for us they're garbage.
+    if (chunk[0] === 0x1B) return;
+    for (const byte of chunk) {
+      // Printable ASCII or CR/LF
+      if ((byte >= 0x20 && byte < 0x7F) || byte === 0x0A || byte === 0x0D) {
+        queued.push(byte);
+      }
+    }
+    // Cap to avoid runaway accumulation if the user holds down a key
+    if (queued.length > 4096) queued.splice(0, queued.length - 4096);
   };
   try { stdin.setRawMode(true); } catch { /* noop */ }
   stdin.on('data', dataHandler);
@@ -109,6 +141,12 @@ function startInputSuppression(): InputGuard {
   return {
     pause: unsuppress,    // pause suppression = allow typing (for permission prompts)
     resume: suppress,     // resume suppression = block typing again
+    drainQueuedInput: (): string => {
+      const text = Buffer.from(queued).toString('utf-8');
+      queued.length = 0;
+      // Normalize CR-only or CR-LF to LF, strip trailing whitespace
+      return text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    },
     restore: () => {
       unsuppress();       // ensure listeners are back before we leave
       stdin.removeListener('data', dataHandler);
@@ -527,6 +565,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     }
   }
   } finally {
+    // Drain any queued user input typed during streaming. Stash on
+    // globalThis for the REPL loop in index.ts to pick up — it'll
+    // pre-fill the next prompt or auto-submit if the user pressed
+    // Enter mid-stream.
+    const queued = inputGuard.drainQueuedInput();
+    if (queued.trim()) {
+      (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = queued;
+    }
     inputGuard.restore();
   }
 }
