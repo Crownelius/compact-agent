@@ -74,15 +74,45 @@ export function pickKey(): string | null {
 }
 
 /**
- * Mark a key as failed. The classifier maps the error to either a
- * short cooldown (rate-limit) or a long one (quota / auth). Used by
- * api.ts's retry logic to skip dead keys without re-trying them.
+ * Mark a key as failed. The classifier distinguishes:
+ *
+ *   KEY problems (cool the key down):
+ *     - quota/credit exhausted → 1h cool
+ *     - auth rejected           → 1h cool
+ *     - rate-limited            → 60s cool
+ *
+ *   NOT key problems (don't touch the key — surface upward instead):
+ *     - 404 model-not-found     → model name wrong, no key swap helps
+ *     - 5xx server errors       → provider issue, retry-here doesn't help
+ *     - timeout / network       → may be transient, but not key-specific
+ *     - any other 4xx (bad request, content filter)
+ *
+ * The previous version defaulted unknown errors to a 60s cool, which
+ * pooled BOTH keys into "cooling" when the user typo'd a model name —
+ * a false positive that made it look like both keys were dead.
  */
 export function reportFailure(key: string, err: unknown): void {
   const state = pool.find((s) => s.key === key);
   if (!state) return;
   const msg = err instanceof Error ? err.message : String(err);
   const lower = msg.toLowerCase();
+
+  // Filter out non-key errors FIRST — these should bump the failure count
+  // (for visibility) but NOT actually cool the key.
+  const isNotKeyProblem =
+    /404|model.*not.found|no endpoints found/.test(lower) ||
+    /5\d\d|server.?error|bad.gateway|gateway.*timeout/.test(lower) ||
+    /content.?filter|safety|moderation/.test(lower) ||
+    /context.*overflow|too.many.*tokens|context.?length/.test(lower);
+
+  if (isNotKeyProblem) {
+    // Record for diagnostics, don't cool. The error surfaces to the
+    // user via printApiError; key stays available for the next call.
+    state.failures++;
+    state.lastReason = msg.slice(0, 80);
+    return;
+  }
+
   let cooldown = COOL_DOWN_MS;
   let reason = msg.slice(0, 80);
   if (/quota|insufficient|credit|payment|billing/.test(lower)) {
@@ -94,6 +124,14 @@ export function reportFailure(key: string, err: unknown): void {
   } else if (/rate.?limit|429|too.many/.test(lower)) {
     cooldown = COOL_DOWN_MS;
     reason = 'rate limited';
+  } else {
+    // Unknown error pattern — DON'T cool. Defaulting to cool was the
+    // original bug. Record the failure for diagnostics; the next
+    // request can try the same key, or the auto-fallback model logic
+    // can step in if the error truly indicates a model-side problem.
+    state.failures++;
+    state.lastReason = reason;
+    return;
   }
   state.coolUntil = Date.now() + cooldown;
   state.lastReason = reason;
