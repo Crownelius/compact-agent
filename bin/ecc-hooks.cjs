@@ -214,6 +214,152 @@ const checks = {
   },
 
   /**
+   * Quality gate — run formatter/linter against just-edited files and
+   * report failures (non-blocking warn). Detects toolchain via standard
+   * config files in cwd. PostToolUse hook, exit 0 always.
+   *
+   * Detection: prettier (.prettierrc*, package.json prettier field),
+   * eslint (eslint config), ruff (pyproject.toml ruff section or
+   * ruff.toml), golangci (.golangci.*), rubocop (.rubocop.yml).
+   *
+   * Only checks the path the hook was given — single-file scope keeps
+   * the latency bounded. Full repo lint stays on /verify or CI.
+   *
+   * Defers actually executing the linter to avoid hard-coupling to any
+   * one tool's CLI shape. Instead we print a hint with the commands the
+   * user can run. This is a "remind, don't run" hook for now; later
+   * iterations can actually invoke + parse the output.
+   */
+  'quality-gate': () => {
+    const fp = filePath();
+    if (!fp) return ok();
+    const ext = fp.split('.').pop()?.toLowerCase() || '';
+    const fs = require('fs');
+    const pathMod = require('path');
+    const findCwd = (start, name) => {
+      let dir = pathMod.dirname(start);
+      for (let i = 0; i < 10; i++) {
+        if (fs.existsSync(pathMod.join(dir, name))) return pathMod.join(dir, name);
+        const parent = pathMod.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+      return null;
+    };
+    const hints = [];
+    // JS/TS family
+    if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'].includes(ext)) {
+      if (findCwd(fp, '.eslintrc.json') || findCwd(fp, '.eslintrc.cjs')
+        || findCwd(fp, '.eslintrc.js') || findCwd(fp, 'eslint.config.js')
+        || findCwd(fp, 'eslint.config.mjs') || findCwd(fp, 'eslint.config.cjs')) {
+        hints.push(`eslint ${fp}`);
+      }
+      if (findCwd(fp, '.prettierrc') || findCwd(fp, '.prettierrc.json')
+        || findCwd(fp, '.prettierrc.js') || findCwd(fp, 'prettier.config.js')) {
+        hints.push(`prettier --check ${fp}`);
+      }
+    }
+    // Python
+    else if (ext === 'py') {
+      if (findCwd(fp, 'pyproject.toml') || findCwd(fp, 'ruff.toml') || findCwd(fp, '.ruff.toml')) {
+        hints.push(`ruff check ${fp}`);
+      }
+      if (findCwd(fp, '.flake8') || findCwd(fp, 'setup.cfg')) {
+        hints.push(`flake8 ${fp}`);
+      }
+    }
+    // Go
+    else if (ext === 'go') {
+      if (findCwd(fp, '.golangci.yml') || findCwd(fp, '.golangci.yaml') || findCwd(fp, '.golangci.toml')) {
+        hints.push(`golangci-lint run ${fp}`);
+      }
+      hints.push(`gofmt -d ${fp}`);
+    }
+    // Ruby
+    else if (ext === 'rb') {
+      if (findCwd(fp, '.rubocop.yml') || findCwd(fp, '.rubocop.yaml')) {
+        hints.push(`rubocop ${fp}`);
+      }
+    }
+    if (hints.length > 0) {
+      return warn(`Quality gate suggestion for ${fp}:\n    ${hints.join('\n    ')}`);
+    }
+    return ok();
+  },
+
+  /**
+   * Session-end format/typecheck reminder. PostToolUse for now (since
+   * compact-agent doesn't have a Stop hook event yet). Fires once per
+   * tool call but the body batches reminders rather than spam each one.
+   *
+   * Goal: surface "you should run `npm run typecheck` (or equivalent)
+   * before considering this session done" at the end of substantial
+   * work. Detects the right command via package.json scripts.
+   *
+   * Tracks per-session state at ~/.crowcoder/state/quality-hint/<id>.json
+   * so we only nudge once per session (per project).
+   */
+  'format-typecheck-hint': () => {
+    const fp = filePath();
+    if (!fp) return ok();
+    const ext = fp.split('.').pop()?.toLowerCase() || '';
+    // Only fires on substantial-edit file extensions
+    if (!['ts', 'tsx', 'py', 'go', 'rs', 'java', 'kt'].includes(ext)) return ok();
+
+    const fs = require('fs');
+    const pathMod = require('path');
+    const os = require('os');
+    const sessionId = process.env.CROWCODER_SESSION_ID || 'unknown';
+    const stateDir = pathMod.join(os.homedir(), '.crowcoder', 'state', 'quality-hint');
+    const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
+
+    // Already nudged this session — silent
+    try { if (fs.existsSync(stateFile)) return ok(); } catch { /* noop */ }
+
+    // Look up the toolchain command via the nearest package.json (TS/JS)
+    // or pyproject.toml (Python). Best-effort; no failure on missing.
+    let hint = '';
+    const findUp = (start, name) => {
+      let dir = pathMod.dirname(start);
+      for (let i = 0; i < 10; i++) {
+        if (fs.existsSync(pathMod.join(dir, name))) return pathMod.join(dir, name);
+        const parent = pathMod.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+      return null;
+    };
+
+    if (['ts', 'tsx'].includes(ext)) {
+      const pj = findUp(fp, 'package.json');
+      if (pj) {
+        try {
+          const json = JSON.parse(fs.readFileSync(pj, 'utf-8'));
+          const scripts = json.scripts || {};
+          const tc = scripts.typecheck || scripts['type-check'] || (json.devDependencies?.typescript ? 'tsc --noEmit' : '');
+          if (tc) hint = `Before wrapping up, run typecheck: \`${tc}\``;
+        } catch { /* noop */ }
+      }
+    } else if (ext === 'py') {
+      const pj = findUp(fp, 'pyproject.toml');
+      if (pj) hint = `Before wrapping up, consider \`mypy\` or \`pyright\` (per your toolchain) and \`ruff check\`.`;
+    } else if (ext === 'go') {
+      hint = `Before wrapping up, run \`go vet ./...\` and \`go test ./...\`.`;
+    } else if (ext === 'rs') {
+      hint = `Before wrapping up, run \`cargo check\` and \`cargo test\`.`;
+    }
+
+    if (!hint) return ok();
+
+    // Record + nudge once
+    try {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify({ session: sessionId, hintedAt: new Date().toISOString() }), 'utf-8');
+    } catch { /* persist failure is fine */ }
+    return warn(hint);
+  },
+
+  /**
    * Warn when a file edit/write leaves console.log() / print() statements.
    * Looks at the new_string / content payload only — doesn't read disk.
    */

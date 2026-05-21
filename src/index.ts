@@ -79,7 +79,7 @@ import { printHookControlStatus, getHookProfile } from './hook-controls.js';
 import { buildPM2Prompt, isPM2Available, listPM2Services } from './pm2-manager.js';
 // ECC (everything-claude-code) integration
 import {
-  installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable, reseedEccHooks, BUNDLE_VERSION as ECC_BUNDLE_VERSION,
+  installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable, reseedEccHooks, BUNDLE_VERSION as ECC_BUNDLE_VERSION, listEccCommands,
 } from './ecc.js';
 // Walkthrough — agent-led tour of Crowcoder (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
@@ -331,6 +331,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/prune') + d('            — delete expired instincts'));
       console.log(d('  ') + c('/skills') + d('           — list learned skills (and bundled ECC skills)'));
       console.log(d('  ') + c('/skill-show <name>') + d(' — print the full prompt text of a specific skill'));
+      console.log(d('  ') + c('/ecc-guide [section]') + d('— browse the bundled corpus (skills / agents / commands)'));
       console.log(d('  ') + c('/curate') + d('           — scan skill registry for dupes / stale items (report-only)'));
       console.log(d('  ') + c('/memory [sub]') + d('     — MemPalace: status, enable/disable, wings, rooms, ls, search <q>, get <id>, rm <id>'));
       console.log(d('  ') + c('/users') + d('           — manage users table'));
@@ -985,6 +986,81 @@ export function handleSlashCommand(
         if (items.length > 20) console.log(chalk.dim(`    … and ${items.length - 20} more`));
       }
       console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.crowcoder/skills/.\n'));
+      return { handled: true };
+    }
+
+    // /ecc-guide — navigable browser of the bundled ECC corpus. With 228
+    // skills + 60 agents + 81 commands available, users need a way to
+    // see what's there before they go fishing with /skill-show or /skills.
+    // Pure stdout — no LLM call. Sections + counts, with sample names.
+    case '/ecc-guide': {
+      const skills = listSkills();
+      const eccSkills = skills.filter((s) => s.id.startsWith('ecc-') && !s.id.startsWith('ecc-agent-'));
+      const eccAgents = skills.filter((s) => s.id.startsWith('ecc-agent-'));
+      const learned = skills.filter((s) => !s.id.startsWith('ecc-'));
+      const sub = args.trim().toLowerCase();
+
+      if (!sub) {
+        console.log(chalk.cyan('\n  ECC Guide — the bundled corpus'));
+        console.log(chalk.dim('  Use the sub-commands below to drill into a section.\n'));
+        console.log(chalk.bold(`  Skills (${eccSkills.length})`));
+        console.log(chalk.dim(`    /ecc-guide skills [category]   — list ECC skills (optionally filtered)`));
+        console.log(chalk.dim(`    /skill-show <name>             — full prompt text of any skill`));
+        const cats = new Set(eccSkills.map((s) => s.category));
+        console.log(chalk.dim(`    Categories: ${[...cats].sort().slice(0, 8).join(', ')}${cats.size > 8 ? ', …' : ''}`));
+        console.log('');
+        console.log(chalk.bold(`  Agents (${eccAgents.length})`));
+        console.log(chalk.dim(`    /ecc-guide agents              — list ECC sub-agents`));
+        console.log('');
+        console.log(chalk.bold(`  Commands (${listEccCommands().length})`));
+        console.log(chalk.dim(`    /ecc-guide commands            — list ECC commands available as /ecc-* slash`));
+        console.log('');
+        console.log(chalk.bold(`  Hooks`));
+        console.log(chalk.dim(`    /hooks                         — currently configured hooks`));
+        console.log(chalk.dim(`    /reset-hooks                   — wipe + re-seed from this install`));
+        console.log('');
+        if (learned.length > 0) {
+          console.log(chalk.bold(`  Learned skills (this user, ${learned.length})`));
+          console.log(chalk.dim(`    /skills                        — registry of skills learned via /learn`));
+          console.log(chalk.dim(`    /curate                        — scan for duplicates / stale items`));
+        }
+        console.log();
+        return { handled: true };
+      }
+
+      if (sub === 'skills' || sub.startsWith('skills ')) {
+        const catFilter = sub.startsWith('skills ') ? sub.slice('skills '.length).trim() : '';
+        let filtered = eccSkills;
+        if (catFilter) filtered = filtered.filter((s) => s.category.toLowerCase().includes(catFilter));
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+        console.log(chalk.cyan(`\n  ECC skills (${filtered.length}${catFilter ? ` matching "${catFilter}"` : ''}):`));
+        for (const s of filtered.slice(0, 100)) {
+          const desc = s.description.length > 75 ? s.description.slice(0, 72) + '…' : s.description;
+          console.log(chalk.dim(`    ${s.name.padEnd(32)} ${desc}`));
+        }
+        if (filtered.length > 100) console.log(chalk.dim(`    … and ${filtered.length - 100} more`));
+        console.log(chalk.dim(`\n  /skill-show <name> for full prompt text\n`));
+        return { handled: true };
+      }
+      if (sub === 'agents') {
+        const sorted = [...eccAgents].sort((a, b) => a.name.localeCompare(b.name));
+        console.log(chalk.cyan(`\n  ECC sub-agents (${sorted.length}):`));
+        for (const a of sorted) {
+          const desc = a.description.length > 75 ? a.description.slice(0, 72) + '…' : a.description;
+          console.log(chalk.dim(`    ${a.name.padEnd(32)} ${desc}`));
+        }
+        console.log();
+        return { handled: true };
+      }
+      if (sub === 'commands') {
+        const cmds = listEccCommands().sort();
+        console.log(chalk.cyan(`\n  ECC commands (${cmds.length}):`));
+        for (const c of cmds) console.log(chalk.dim(`    /ecc-${c}`));
+        console.log();
+        return { handled: true };
+      }
+      console.log(chalk.yellow(`  Unknown /ecc-guide section: ${sub}`));
+      console.log(chalk.dim('  Try: skills [category], agents, commands'));
       return { handled: true };
     }
 

@@ -50,15 +50,16 @@ const ECC_HOOK_TAG = '__ecc__';
 
 /**
  * Bundle version. Bumped whenever resources/ecc/ is refreshed from
- * upstream so startup logic can detect stale state and re-import.
+ * upstream OR when the seedHooks() set materially changes.
  *
  * History:
  *   '1.0.0' — initial bundle (33 skills, 16 agents, 3 commands, flat rules)
  *   '2.0.0' — refreshed from upstream 2.0.0-rc.1
  *             (228 skills, 60 agents, 75 commands, 19 language rule subdirs;
  *              adds config-protection + simplified GateGuard hooks)
+ *   '2.1.0' — adds quality-gate + format-typecheck-hint hooks (M1 leftovers)
  */
-export const BUNDLE_VERSION = '2.0.0';
+export const BUNDLE_VERSION = '2.1.0';
 
 // ── State ───────────────────────────────────────────────
 export interface EccState {
@@ -704,6 +705,45 @@ function seedHooks(): number {
       match: 'edit_file',
       command: `${nodeBin} "${hookScript}" gateguard ${ECC_HOOK_TAG}`,
       blocking: true,
+      enabled: true,
+      timeout: 5000,
+    },
+    // ── New in 1.17: quality-gate ───────────────────────
+    // Post-edit reminder of language-specific lint/format commands
+    // (eslint, prettier, ruff, golangci, rubocop). Non-blocking warn.
+    {
+      event: 'PostToolUse',
+      match: 'write_file',
+      command: `${nodeBin} "${hookScript}" quality-gate ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PostToolUse',
+      match: 'edit_file',
+      command: `${nodeBin} "${hookScript}" quality-gate ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+    // ── New in 1.17: format-typecheck-hint ───────────────
+    // Session-end-ish reminder to run typecheck (tsc / mypy / go vet
+    // / cargo check). Fires at most once per session per project,
+    // tracked at ~/.crowcoder/state/quality-hint/<sessionId>.json.
+    {
+      event: 'PostToolUse',
+      match: 'edit_file',
+      command: `${nodeBin} "${hookScript}" format-typecheck-hint ${ECC_HOOK_TAG}`,
+      blocking: false,
+      enabled: true,
+      timeout: 5000,
+    },
+    {
+      event: 'PostToolUse',
+      match: 'write_file',
+      command: `${nodeBin} "${hookScript}" format-typecheck-hint ${ECC_HOOK_TAG}`,
+      blocking: false,
       enabled: true,
       timeout: 5000,
     },
