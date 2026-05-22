@@ -25,7 +25,7 @@ First run prompts you for a provider, key, model, and permission mode. After tha
 - Parallel agent swarm: `/swarm <agent,agent,...> <task>` fans out N specialized ECC agents against the same prompt and prints attributed results.
 - Bundled [everything-claude-code](https://github.com/Crownelius/everything-claude-code): 228 skills, 60 agents, 75 workflow commands, 19 language rule bundles. Auto-installed on first launch; refresh with `/ecc-install`.
 - 9 modes (`/mode <name>`): `dev`, `review`, `tdd`, `research`, `plan`, `debug`, `architect`, `hermes`, `design`. Each rewrites the system-prompt addendum.
-- Optional voice: Whisper dictation (push-to-talk `F5`) and ElevenLabs TTS readout. Screen-reader mode for blind / low-vision users. All off by default — opt in with `/voice on`.
+- Optional voice + accessibility: Whisper dictation, ElevenLabs TTS readout, and a 19-binding F-row hotkey scheme designed for blind / low-vision users (see [Accessibility](#accessibility)). Off by default — opt in with `/voice on`.
 - Zero telemetry. The only outbound traffic is to your chosen LLM provider when you send a turn.
 
 ---
@@ -157,6 +157,27 @@ A separate execpolicy gate intercepts dangerous bash patterns (`rm -rf`, `git ..
 | Hooks | Run locally in your shell. No outbound calls. |
 
 No analytics SDKs, no crash reporting, no auto-update beacon. `rm -rf ~/.compact-agent` removes everything.
+
+---
+
+## Accessibility
+
+Built with blind / low-vision users in mind. `/accessibility screenReader on` strips ANSI colors and replaces Unicode glyphs with words so NVDA, JAWS, Narrator, Orca, and VoiceOver can read output cleanly. A 19-binding F-row hotkey scheme covers everything you'd otherwise have to scroll for:
+
+| Key | Function |
+| :--- | :--- |
+| F1–F4 | Status: what's happening · where am I · re-read full last response · re-read summary |
+| F5–F10 | Dictation + TTS playback: F5 push-to-talk · F6 pause · F7 replay · F8 skip · F9/F10 speed ± |
+| **F11 / F12** | Read current input buffer · read your previous submitted turn |
+| **Shift+F1–F4** | Queued input · key-pool health · last tool-call · toggle screen-reader |
+| **Shift+F5 / F6** | Soft-cancel current turn · panic-stop TTS (5s suppression window) |
+| **Shift+F12** | Read the hotkey list aloud (discoverability without sighted help) |
+
+Every binding prints to stdout first, then layers TTS on top only if an ElevenLabs key is configured — so users running compact-agent alongside their OS-level screen reader get the announcements without paying for TTS.
+
+Key choice rationale: bare F-keys and Shift+F-keys are the only space that's both screen-reader-safe (no Insert / CapsLock / Ctrl+Option modifier collisions with NVDA, JAWS, Narrator, Orca, or VoiceOver) and terminal-safe (no `readline` collisions). F11 and F12 specifically are browser-reserved keys that terminals don't grab.
+
+Voice setup: `/voice config` saves API keys, `/voice on` enables, `/voice test` confirms playback. ffmpeg is required for dictation but optional for TTS-only setups. Speed, voice IDs, and code-skipping behavior are all in `/voice` sub-commands.
 
 ---
 
