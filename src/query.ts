@@ -441,10 +441,16 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         const window = fullText.slice(-LOOP_WINDOW);
         let count = 0;
         let idx = 0;
+        // Step by LOOP_WINDOW (not 1) so OVERLAPPING matches don't
+        // double-count. The audit found that `idx++` made a single
+        // copy of self-similar text (markdown table separators,
+        // repeated import lines, ASCII art) appear to match 3+
+        // times when in reality the model had only emitted it twice.
+        // Non-overlapping count tracks genuine repetition only.
         while ((idx = fullText.indexOf(window, idx)) !== -1) {
           count++;
           if (count >= LOOP_THRESHOLD) break;
-          idx++;
+          idx += LOOP_WINDOW;
         }
         if (count >= LOOP_THRESHOLD) {
           loopDetected = true;
@@ -518,7 +524,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // line and then announce every subsequent token as "after the
     // waiting line", which is noisier than helpful).
     let firstTokenSeen = false;
-    const isScreenReader = ctx.config.voice?.accessibility?.screenReader === true;
+    // Note: the outer `isScreenReader` declared at the top of runQuery
+    // (line ~340) is in scope here via closure — no need for a second
+    // declaration. Previously this re-declared inside the while loop
+    // and TypeScript tolerated it as a different block scope, but it
+    // was confusing and the audit flagged it as bug-bait.
     if (!isScreenReader) {
       console.log(chalk.dim('  ⏳ waiting for model response…'));
     }
@@ -591,13 +601,21 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
 
       // ── Steer path (graceful — not an error) ──────────────
-      // If the user pressed Ctrl+G during streaming, the AbortController
-      // fired and the OpenAI SDK threw something like "Request was
-      // aborted" or our own "Aborted before stream start". Treat as a
-      // controlled end-of-turn: save partial assistant text, push the
-      // queued buffer as the next user message, continue the chain.
-      const aborted = wasSteered || /abort|cancel/i.test(msg);
-      if (wasSteered || (aborted && streamAbort.signal.aborted)) {
+      // If the user pressed Ctrl+G / Esc during streaming, the
+      // AbortController fired and the OpenAI SDK threw something like
+      // "Request was aborted". Treat as a controlled end-of-turn:
+      // save partial assistant text, push the queued buffer as the
+      // next user message, continue the chain.
+      //
+      // Distinguishing USER steer from LOOP-DETECTOR abort: both fire
+      // streamAbort.abort() but the loop detector sets
+      // `loopDetected` first. Previously this branch keyed off the
+      // SDK's error message ("abort|cancel"), which also matched
+      // legitimate provider errors ("operation cancelled by upstream")
+      // AND matched the loop-detector abort, causing the wrong path
+      // to fire. Now we key strictly off `wasSteered` — the only path
+      // that sets it is the steerHandler closure above.
+      if (wasSteered) {
         console.log(theme.warning('  ⮌ steered — taking your queued input as the next turn'));
         // Save whatever the model managed to emit before the abort
         if (fullText.trim()) {
@@ -1011,7 +1029,12 @@ async function executeToolCalls(
       event: 'PostToolUse',
       toolName,
       toolInput: input,
-      toolOutput: result.output.slice(0, 1000),
+      // Defensively coerce to string — some tool implementations may
+      // return non-string output (Buffer, object, undefined) and the
+      // raw .slice would throw, killing the chain after the tool
+      // already ran. Matches the same coercion pattern used by the
+      // __lastToolCall stash above.
+      toolOutput: String(result.output ?? '').slice(0, 1000),
       sessionId: ctx.sessionId,
       cwd: ctx.cwd,
       permissionMode: ctx.config.permissionMode,

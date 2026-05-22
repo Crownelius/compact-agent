@@ -458,9 +458,24 @@ export function handleSlashCommand(
       return { handled: true };
 
     // ── Clear ─────────────────────────────────────────
-    case '/clear':
+    case '/clear': {
+      // Also reset the global state that's keyed to the conversation
+      // so Shift+F3 / Shift+F1 / F12 don't surface stale data from
+      // before the clear. The main REPL loop replaces `messages` via
+      // `newMessages`; we just nuke the side-channel globals.
+      const g = globalThis as {
+        __crowcoderQueuedInput?: string;
+        __voiceLastFullResponse?: string | null;
+        __voiceLastChunk?: string | null;
+        __lastToolCall?: unknown;
+      };
+      g.__crowcoderQueuedInput = '';
+      g.__voiceLastFullResponse = null;
+      g.__voiceLastChunk = null;
+      g.__lastToolCall = null;
       console.log(chalk.dim('  Conversation cleared.'));
       return { handled: true, newMessages: [] };
+    }
 
     // ── Backtrack — rewind to a prior user turn (Codex audit item 4) ──
     //   /back          list recent user messages with numbers
@@ -520,14 +535,23 @@ export function handleSlashCommand(
     case '/fork':
     case '/branch': {
       const forkName = args.trim() || `fork of ${session.name}`;
-      // Save the current session under its existing ID first so the
-      // pre-fork state is recoverable via /resume.
-      saveSession({ ...session, messages: [...messages] }).catch(() => { /* noop */ });
+      // Snapshot the pre-fork state in a SEPARATE object before
+      // mutating the live `session` reference — otherwise both save
+      // calls write to whichever ID the mutation has currently set,
+      // overwriting the original branch and silently breaking the
+      // "previous session reachable via /resume" promise. (Bug found
+      // by audit; previously the spread happened AFTER `session.id`
+      // was reassigned, so both saves landed under the new ID.)
       const previousId = session.id;
-      // Mutate the active session in place: new ID + name + timestamps,
-      // same messages. The REPL keeps running against `session` so
-      // mutation is enough — no need to plumb a "swap" through the
-      // return value.
+      const previousSnapshot = {
+        ...session,
+        id: previousId,
+        messages: [...messages],
+      };
+      saveSession(previousSnapshot).catch(() => { /* noop */ });
+      // Now mutate the active session in place. The REPL keeps
+      // running against `session` so mutation is enough — no need
+      // to plumb a swap through the return value.
       session.id = generateSessionId();
       session.name = forkName;
       session.createdAt = new Date().toISOString();
@@ -2215,11 +2239,22 @@ export function handleSlashCommand(
     // user is testing the pipeline or running under a terminal that strips
     // function keys. Records up to 30s, transcribes, injects as next prompt.
     case '/dictate': {
-      const maxSec = parseInt(args, 10) || 30;
-      console.log(chalk.dim(`  /dictate — recording up to ${maxSec}s…`));
+      // Parse + clamp the duration argument.
+      //   /dictate          → 30s default
+      //   /dictate 60       → 60s, clamped to [1, 300]
+      //   /dictate 0        → 30s (user clearly wanted default or
+      //                       cancel; previously parseInt(0) || 30
+      //                       gave 30 silently)
+      //   /dictate -5       → 30s (negative is nonsense)
+      //   /dictate abc      → 30s default
+      const parsed = parseInt(args, 10);
+      const sec = Number.isFinite(parsed) && parsed > 0
+        ? Math.min(300, parsed)
+        : 30;
+      console.log(chalk.dim(`  /dictate — recording up to ${sec}s…`));
       // Return as an async-injected prompt; we resolve the recording
       // synchronously here for simplicity (REPL is blocking anyway).
-      return { handled: true, injectPrompt: '__DICTATE__' + maxSec };
+      return { handled: true, injectPrompt: '__DICTATE__' + sec };
     }
 
     // /accessibility — show or toggle the accessibility sub-block
@@ -2745,12 +2780,25 @@ async function main(): Promise<void> {
           // Second Esc within window — fire /back.
           lastEscapeMs = 0;
           // Enqueue the slash command as queued input. The REPL loop
-          // picks it up + executes /back the same way as if typed.
+          // picks it up + dispatches /back on the next iteration.
           (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = '/back\n';
           announce('Esc-Esc', 'Rewinding to previous user turn.');
-          // Nudge readline by writing an empty line so the question
-          // resolves and the main loop's queued-input drain fires.
-          try { stdin.write('\n'); } catch { /* noop */ }
+          // Resolve the pending rl.question() so the main loop
+          // actually moves on. Previously this used stdin.write('\n')
+          // which DOESN'T interrupt readline — it merely adds a
+          // newline to the input stream that readline reads as if
+          // the user typed it, leaving the REPL stuck until the user
+          // pressed Enter manually. emit('line', '') triggers the
+          // 'line' event that rl.question internally listens for,
+          // resolving the promise immediately. (Bug found by audit.)
+          try {
+            rl.emit('line', '');
+          } catch {
+            // Fallback path if rl.emit isn't accepted for some reason
+            // (e.g. on a future readline version): still nudge via
+            // stdin so the user can recover by pressing any key.
+            try { stdin.write('\n'); } catch { /* noop */ }
+          }
           return;
         }
         lastEscapeMs = now;

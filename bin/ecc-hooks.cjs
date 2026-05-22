@@ -19,10 +19,23 @@
 
 const checkName = process.argv[2] || '';
 
+// Parse the tool-input env var. Previously a parse failure silently
+// fell back to `{}`, which makes every per-file check return ok() at
+// its empty-path guard — i.e. a malformed payload was a free bypass.
+// Now: empty/unset is treated as `{}` (legitimate for events that
+// don't carry input, like SessionStart); a NON-empty payload that
+// fails to parse is treated as a security event and the hook
+// blocks. Fail closed > fail open.
+const rawToolInput = process.env.COMPACT_AGENT_TOOL_INPUT || process.env.CROWCODER_TOOL_INPUT || '';
 let toolInput = {};
-try {
-  toolInput = JSON.parse(process.env.CROWCODER_TOOL_INPUT || '{}');
-} catch { /* ignore — leave as {} */ }
+if (rawToolInput.length > 0) {
+  try {
+    toolInput = JSON.parse(rawToolInput);
+  } catch {
+    process.stderr.write('[ECC] BLOCKED: tool input env var was not valid JSON.\n');
+    process.exit(2);
+  }
+}
 
 const tool = process.env.CROWCODER_TOOL || '';
 const cwd = process.env.CROWCODER_CWD || process.cwd();
@@ -72,6 +85,19 @@ const checks = {
     }
     if (/(^|\s)--no-gpg-sign(\s|$)/.test(cmd)) {
       return block('`--no-gpg-sign` bypasses signing — ask the user first.');
+    }
+    // `git commit -n` is the short form of --no-verify. The previous
+    // regex missed it entirely. Scope the check to `git commit`
+    // specifically — `-n` in other git subcommands means different
+    // things (e.g. `git log -n 5` = limit count, NOT skip hooks).
+    if (/\bgit\s+(?:commit|merge|rebase)\b[^|;&]*\s-n(\s|$)/.test(cmd)) {
+      return block('`-n` is the short form of `--no-verify` — fix the failing hook instead.');
+    }
+    // `-c core.hooksPath=/dev/null` (or similar) disables git hooks
+    // entirely without using --no-verify. Catches the documented
+    // bypass vector even when --no-verify isn't on the command line.
+    if (/\bgit\s+-c\s+core\.hooksPath\s*=/i.test(cmd)) {
+      return block('`-c core.hooksPath=…` disables git hooks — fix the failure instead.');
     }
     return ok();
   },
@@ -207,7 +233,16 @@ const checks = {
       if (!fs.existsSync(targetPath)) return ok();
     } catch { /* if statSync fails, fall through to the normal path */ }
 
-    const sessionId = process.env.CROWCODER_SESSION_ID || 'unknown';
+    // Sanitize sessionId before joining into a path. Without this,
+    // a sessionId of e.g. "../../../.ssh/authorized_keys" would let
+    // `path.join` traverse out of the state dir, and the subsequent
+    // writeFileSync would overwrite arbitrary files with attacker-
+    // controllable JSON (the touched-set array, which can include
+    // model-controlled file paths). Allow only [A-Za-z0-9_-], length
+    // <=64. Anything else falls back to "unknown" — degraded UX
+    // (gateguard tracking won't persist), not a security breach.
+    const rawSessionId = process.env.COMPACT_AGENT_SESSION_ID || process.env.CROWCODER_SESSION_ID || '';
+    const sessionId = /^[A-Za-z0-9_-]{1,64}$/.test(rawSessionId) ? rawSessionId : 'unknown';
     const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'gateguard');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
 
