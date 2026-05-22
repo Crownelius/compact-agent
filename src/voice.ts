@@ -230,12 +230,20 @@ export async function synthesizeSpeech(
 /**
  * Convenience: synthesize + play. Returns true if played successfully.
  * Use this for short utterances (mode announcements, beeps, errors).
+ *
+ * Honors the panic-stop suppression window set by Shift+F6 — if
+ * __voiceSuppressUntilMs is in the future, every speak() call no-ops
+ * silently. F6 / F8 only abort the CURRENT chunk; panic-stop has to
+ * also prevent incidental utterances (error announcements, mode
+ * switches, audio cues) from immediately filling the silence.
  */
 export async function speak(
   text: string,
   cfg: CrowcoderConfig,
   opts: TtsRequestOptions & { signal?: AbortSignal },
 ): Promise<boolean> {
+  const suppressUntil = (globalThis as { __voiceSuppressUntilMs?: number }).__voiceSuppressUntilMs ?? 0;
+  if (suppressUntil > Date.now()) return false;
   const buf = await synthesizeSpeech(text, cfg, opts);
   if (!buf) return false;
   return await playAudioBuffer(buf, opts.signal);
@@ -427,5 +435,12 @@ export function printVoiceStatus(cfg: CrowcoderConfig): void {
   console.log(chalk.dim('      Dictation + playback:'));
   console.log(chalk.dim('        F5   dictate (toggle)   F6   pause       F7   replay last chunk'));
   console.log(chalk.dim('        F8   skip current       F9   speed +     F10  speed –'));
+  console.log(chalk.dim('      Read-back (browser-reserved keys — free in every terminal):'));
+  console.log(chalk.dim('        F11  read current input buffer    F12  read your previous turn'));
+  console.log(chalk.dim('      Shift + F-row (informational + control):'));
+  console.log(chalk.dim('        Shift+F1  queued input            Shift+F2   key-pool health'));
+  console.log(chalk.dim('        Shift+F3  last tool-call result   Shift+F4   toggle screen-reader'));
+  console.log(chalk.dim('        Shift+F5  soft-cancel turn        Shift+F6   panic-stop TTS (5s)'));
+  console.log(chalk.dim('        Shift+F12 read this hotkey list aloud'));
   console.log('');
 }

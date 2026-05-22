@@ -414,6 +414,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       wasSteered = true;
       try { streamAbort.abort(); } catch { /* noop */ }
     });
+    // Expose the per-turn abort controller on globalThis so the F-row
+    // hotkey listener (src/index.ts) can soft-cancel the current turn
+    // without going through Ctrl+C / SIGINT. Cleared in the finally
+    // block so a stale controller can't be aborted between turns.
+    (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl = streamAbort;
 
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS, streamAbort.signal)) {
@@ -675,6 +680,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = queued;
     }
     inputGuard.restore();
+    // Clear the per-turn abort controller pointer so a stale handle
+    // can't be aborted between turns by Shift+F5 (soft-cancel).
+    (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl = null;
   }
 }
 
@@ -836,6 +844,18 @@ async function executeToolCalls(
       const elapsed = Date.now() - startTime;
       printToolResult(!result.isError, elapsed, result.output);
     }
+
+    // Stash last-tool-call info so the Shift+F3 hotkey (src/index.ts) can
+    // re-announce "what did the model just do." Truncate the preview to
+    // keep TTS readouts short and avoid pinning huge buffers in memory.
+    (globalThis as { __lastToolCall?: {
+      name: string; argsPreview: string; outputPreview: string; isError: boolean;
+    } | null }).__lastToolCall = {
+      name: toolName,
+      argsPreview: formatArgs(tool, input).slice(0, 80),
+      outputPreview: String(result.output ?? '').slice(0, 160),
+      isError: !!result.isError,
+    };
 
     // Chain stats — bump the counter on every successful execution path
     // we got here through (denied / blocked tool calls hit `continue`

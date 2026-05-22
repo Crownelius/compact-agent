@@ -372,6 +372,8 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/accessibility') + d('    — toggle screen-reader mode, audio cues, destructive-confirm'));
       console.log(d('  Status hotkeys: F1 what now · F2 where am I · F3 read full · F4 read summary'));
       console.log(d('  Playback hotkeys: F5 dictate · F6 pause · F7 replay · F8 skip · F9 speed+ · F10 speed–'));
+      console.log(d('  Read hotkeys:   F11 input buffer · F12 your last turn'));
+      console.log(d('  Shift+Fn:       Shift+F1 queued · F2 key pool · F3 last tool · F4 toggle SR · F5 cancel · F6 panic · F12 hotkey list'));
       console.log(h('\n  ── Stitch (Google AI UI/UX design) ──'));
       console.log(d('  Use ') + c('/mode design') + d(' or ') + c('/design <task>') + d(' for UI work — the agent uses Stitch automatically.'));
       console.log(d('  ') + c('/stitch') + d('              — show config status'));
@@ -2251,37 +2253,222 @@ async function main(): Promise<void> {
     readlineCb.emitKeypressEvents(stdin);
 
     // Set of keys we intercept. Anything not in this set falls through to
-    // readline so normal typing isn't affected. All bare F-keys; no
-    // modifiers needed, no screen-reader conflicts.
+    // readline so normal typing isn't affected. All bare or shifted F-keys
+    // — no Insert/CapsLock/Ctrl-Option modifiers, so we never collide with
+    // NVDA, JAWS, Narrator, Orca, or VoiceOver. F11 + F12 are also browser-
+    // reserved keys (fullscreen / devtools) and therefore reliably free in
+    // every terminal that isn't masquerading as a browser.
     const INTERCEPT = new Set([
-      'f1', 'f2', 'f3', 'f4',                  // status announcements
-      'f5', 'f6', 'f7', 'f8', 'f9', 'f10',     // dictation + playback
+      'f1', 'f2', 'f3', 'f4',                  // status announcements (bare)
+      'f5', 'f6', 'f7', 'f8', 'f9', 'f10',     // dictation + playback (bare)
+      'f11', 'f12',                            // Tier 1: input + last turn (bare)
+      // Shifted F-keys carry the Tier-2 and Tier-3 a11y functions. Each
+      // is checked alongside key.shift below, so a bare F1 still routes
+      // to "status" while Shift+F1 routes to "queued input."
     ]);
 
     // Define the hotkey listener as a NAMED, TAGGED function so
     // suppressInputDuringStream() in query.ts can isolate it among stdin's
     // 'keypress' listeners. During streaming we detach readline's own
     // keypress listener (to prevent echo + line-buffer pollution) while
-    // keeping this one attached so F1–F10 keep working mid-response.
-    const hotkeyListener = function hotkeyListener(_str: string, key: { name?: string }): void {
+    // keeping this one attached so F1–F12 keep working mid-response.
+    const hotkeyListener = function hotkeyListener(_str: string, key: { name?: string; shift?: boolean }): void {
       if (!key) return;
       const name = String(key.name || '').toLowerCase();
       if (!INTERCEPT.has(name)) return;
+      const shift = !!key.shift;
 
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
 
-      // F1–F4 are STATUS hotkeys. They always work, even when voice is off
-      // and even when there's no TTS key — they print the status line to
-      // stdout regardless. TTS is only added on top when a key is present.
-      // The whole point of these keys is "tell me what's happening", which
-      // is just as useful via text + screen reader as via voice.
-      const isStatusKey = name === 'f1' || name === 'f2' || name === 'f3' || name === 'f4';
+      // Helper: print to stdout (always — picked up by the OS screen reader)
+      // and optionally layer TTS on top if a key is configured. Used by
+      // every "announce something" branch in the new tier of bindings.
+      const announce = (label: string, text: string): void => {
+        console.log(chalk.dim(`  [${label}] `) + text);
+        if (tts.apiKey) {
+          speak(text, config, { voiceId: tts.assistantVoiceId }).catch(() => { /* noop */ });
+        }
+      };
 
-      // F5–F10 are DICTATION/PLAYBACK hotkeys — they only make sense when
-      // voice features are enabled. Bail early to avoid spurious ffmpeg
-      // spawns and "TTS not configured" log lines.
+      // STATUS hotkeys always work, even when voice is off and even when
+      // there's no TTS key — they print to stdout so an OS-level screen
+      // reader still has something to announce. TTS layers on top when a
+      // key is present. Applies to:
+      //   - F1–F4    : original status / location / replay set
+      //   - F11/F12  : input buffer / last user turn (Tier 1)
+      //   - Shift+*  : every shifted F-key is information or control,
+      //                never voice-only
+      const isStatusKey =
+        name === 'f1' || name === 'f2' || name === 'f3' || name === 'f4' ||
+        name === 'f11' || name === 'f12' || shift;
+
+      // F5–F10 (bare) are DICTATION/PLAYBACK hotkeys — they only make
+      // sense when voice features are enabled. Bail early to avoid
+      // spurious ffmpeg spawns and "TTS not configured" log lines.
       if (!isStatusKey && !isVoiceEnabled(config)) return;
+
+      // ──────────────────────────────────────────────────────────────
+      // Tier 2 + 3: shifted F-keys.
+      //
+      // Dispatched BEFORE the bare F-key branches because Shift+F5
+      // shares its `name` ('f5') with the bare F5 dictation toggle —
+      // we want the shifted variant to win without each bare branch
+      // having to add a `!shift` guard.
+      //
+      //   Shift+F1   queued input          ("3 messages queued: …")
+      //   Shift+F2   key-pool health       ("3 keys healthy, 1 cooling")
+      //   Shift+F3   last tool-call        ("bash: ok, 'ls -la' → …")
+      //   Shift+F4   toggle screen-reader  (persists to config.json)
+      //   Shift+F5   soft-cancel turn      (graceful abort, partial kept)
+      //   Shift+F6   panic-stop TTS        (silences for 5s, drops queue)
+      //   Shift+F12  read hotkey list      (discoverability)
+      //
+      // Unbound shifted F-keys are no-ops and fall through (returning
+      // here keeps them out of the bare-F-key branches below).
+      // ──────────────────────────────────────────────────────────────
+      if (shift) {
+        // ── Shift+F1: queued input ─────────────────────────
+        if (name === 'f1') {
+          const g = globalThis as { __crowcoderQueuedInput?: string };
+          const q = (g.__crowcoderQueuedInput || '').trim();
+          announce('Shift+F1', q
+            ? `Queued during last chain: ${q.slice(0, 200)}`
+            : 'Nothing queued.');
+          return;
+        }
+        // ── Shift+F2: key-pool health ──────────────────────
+        if (name === 'f2') {
+          const ks = keyPoolStatus();
+          if (ks.length === 0) {
+            announce('Shift+F2', 'Key pool: 1 key (no pool configured). Use /keys add to add more.');
+            return;
+          }
+          const healthy = ks.filter((s) => s.healthy).length;
+          const cooling = ks.length - healthy;
+          const cooldownNotes = ks
+            .filter((s) => !s.healthy && s.coolDownRemainingSec)
+            .map((s) => `${s.tail} cooling ${s.coolDownRemainingSec}s`)
+            .join(', ');
+          const text = cooling > 0
+            ? `Key pool: ${healthy} healthy, ${cooling} cooling. ${cooldownNotes}.`
+            : `Key pool: ${healthy} healthy, all keys ready.`;
+          announce('Shift+F2', text);
+          return;
+        }
+        // ── Shift+F3: last tool call ───────────────────────
+        if (name === 'f3') {
+          const g = globalThis as { __lastToolCall?: {
+            name: string; argsPreview: string; outputPreview: string; isError: boolean;
+          } | null };
+          const tc = g.__lastToolCall;
+          if (!tc) {
+            announce('Shift+F3', 'No tool calls yet this session.');
+            return;
+          }
+          const status = tc.isError ? 'error' : 'ok';
+          // Output preview kept short for TTS; full output is already on
+          // stdout from the original tool-call print.
+          announce('Shift+F3',
+            `Last tool: ${tc.name}, ${status}. ${tc.argsPreview}${tc.outputPreview ? ' → ' + tc.outputPreview.slice(0, 100) : ''}`);
+          return;
+        }
+        // ── Shift+F4: toggle screen-reader mode ────────────
+        if (name === 'f4') {
+          config.voice = config.voice || {};
+          config.voice.accessibility = config.voice.accessibility || {};
+          const cur = config.voice.accessibility.screenReader === true;
+          config.voice.accessibility.screenReader = !cur;
+          saveConfig(config);
+          const text = !cur
+            ? 'Screen-reader mode ON. ANSI colors stripped. Restart recommended for full effect.'
+            : 'Screen-reader mode OFF. Colors restored on next prompt.';
+          announce('Shift+F4', text);
+          return;
+        }
+        // ── Shift+F5: soft-cancel current turn ─────────────
+        if (name === 'f5') {
+          const g = globalThis as { __turnAbortCtl?: AbortController | null };
+          if (g.__turnAbortCtl && !g.__turnAbortCtl.signal.aborted) {
+            try { g.__turnAbortCtl.abort(); } catch { /* noop */ }
+            announce('Shift+F5', 'Turn cancelled. Partial response kept.');
+          } else {
+            announce('Shift+F5', 'No turn in progress.');
+          }
+          return;
+        }
+        // ── Shift+F6: panic-stop TTS ───────────────────────
+        if (name === 'f6') {
+          // Abort the current playback (same as F6/F8) AND open a 5-second
+          // suppression window so incidental utterances (error
+          // announcements, mode switches, audio cues fired by other code
+          // paths) can't immediately fill the silence.
+          const g = globalThis as {
+            __voicePlaybackCtl?: AbortController | null;
+            __voiceSuppressUntilMs?: number;
+          };
+          if (g.__voicePlaybackCtl && !g.__voicePlaybackCtl.signal.aborted) {
+            try { g.__voicePlaybackCtl.abort(); } catch { /* noop */ }
+          }
+          g.__voiceSuppressUntilMs = Date.now() + 5000;
+          // Print only — don't speak this acknowledgement (would defeat
+          // the purpose of "shut up now").
+          console.log(chalk.dim('  [Shift+F6] TTS panic-stop — silenced for 5s.'));
+          return;
+        }
+        // ── Shift+F12: read hotkey list ────────────────────
+        if (name === 'f12') {
+          const lines = [
+            'Hotkey reference.',
+            'F1 status. F2 location. F3 read full last response. F4 read summary.',
+            'F5 dictate. F6 pause. F7 replay. F8 skip. F9 speed up. F10 slow down.',
+            'F11 read input buffer. F12 read your previous turn.',
+            'Shift+F1 queued input. Shift+F2 key pool. Shift+F3 last tool. Shift+F4 toggle screen-reader.',
+            'Shift+F5 soft-cancel turn. Shift+F6 panic-stop TTS. Shift+F12 this list.',
+          ];
+          for (const ln of lines) console.log(chalk.dim('  [Shift+F12] ') + ln);
+          if (tts.apiKey) {
+            // Speak as one continuous string so the chunker can pace it.
+            speak(lines.join(' '), config, { voiceId: tts.assistantVoiceId }).catch(() => { /* noop */ });
+          }
+          return;
+        }
+        // Any other shifted F-key: no-op (don't fall through to bare).
+        return;
+      }
+
+      // ── F11: read current input buffer (Tier 1, bare) ──
+      if (name === 'f11') {
+        // rl.line is readline's internal "what the user has typed so far
+        // on the current prompt." Empty string when the prompt is fresh
+        // or the buffer was just submitted.
+        const buf = (rl as unknown as { line?: string }).line ?? '';
+        announce('F11', buf
+          ? `Input buffer: ${buf}`
+          : 'Input buffer is empty.');
+        return;
+      }
+
+      // ── F12: read previous submitted user turn (Tier 1) ──
+      if (name === 'f12') {
+        // Walk messages newest-first looking for the most-recent user
+        // message. `messages` is the live REPL conversation array; the
+        // last user entry is the prompt the model just answered (or is
+        // answering). Skips system-injected "auto-resume" markers and
+        // tool-result envelopes (those have role 'tool', not 'user').
+        let last: string | null = null;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i];
+          if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+            last = m.content;
+            break;
+          }
+        }
+        announce('F12', last
+          ? `Your last message: ${last.slice(0, 400)}`
+          : 'No prior user message this session.');
+        return;
+      }
 
       // ── F5: push-to-talk dictation toggle ──────────────
       if (name === 'f5') {
