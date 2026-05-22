@@ -22,7 +22,7 @@ export const WebFetchTool: Tool = {
     try {
       const url = input.url as string;
       const resp = await fetch(url, {
-        headers: { 'User-Agent': 'Crowcoder-CLI/1.0' },
+        headers: { 'User-Agent': 'compact-agent/1.x (+https://github.com/Crownelius/compact-agent)' },
         signal: AbortSignal.timeout(30_000),
       });
 

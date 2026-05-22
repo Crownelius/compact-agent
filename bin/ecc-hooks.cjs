@@ -37,8 +37,13 @@ if (rawToolInput.length > 0) {
   }
 }
 
-const tool = process.env.CROWCODER_TOOL || '';
-const cwd = process.env.CROWCODER_CWD || process.cwd();
+// Both env-var names accepted. COMPACT_AGENT_* is the post-rebrand
+// primary; CROWCODER_* is the legacy alias kept for back-compat with
+// user-written wrappers that haven't migrated. The parent process
+// exports both via src/hooks.ts so either form works regardless of
+// which the user's shell or wrapper set.
+const tool = process.env.COMPACT_AGENT_TOOL || process.env.CROWCODER_TOOL || '';
+const cwd = process.env.COMPACT_AGENT_CWD || process.env.CROWCODER_CWD || process.cwd();
 
 // ── Helpers ─────────────────────────────────────────────
 function bashCommand() {
@@ -384,7 +389,11 @@ const checks = {
     const fs = require('fs');
     const pathMod = require('path');
     const os = require('os');
-    const sessionId = process.env.CROWCODER_SESSION_ID || 'unknown';
+    // Read both env-var names + sanitize, same pattern as gateguard.
+    // Previously only read the legacy CROWCODER_SESSION_ID, which broke
+    // for any wrapper that exported only the new COMPACT_AGENT_* names.
+    const rawSessionId = process.env.COMPACT_AGENT_SESSION_ID || process.env.CROWCODER_SESSION_ID || '';
+    const sessionId = /^[A-Za-z0-9_-]{1,64}$/.test(rawSessionId) ? rawSessionId : 'unknown';
     const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'quality-hint');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
 

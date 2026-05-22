@@ -297,7 +297,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/history') + d('          — message count & token estimate'));
       console.log(d('  ') + c('/export [fmt]') + d('     — export conversation (md/json/txt)'));
       console.log(d('  ') + c('/exit') + d('             — quit (alias: /quit)'));
-      console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of Crowcoder (aliases: /tour, /guide)'));
+      console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of compact-agent (aliases: /tour, /guide)'));
       console.log(d('  ') + c('!<cmd>') + d('            — run shell command directly'));
       console.log(h('\n  ── Productivity hotkeys ──'));
       console.log(d('  ') + c('Shift+Tab') + d('         — cycle permission modes (ask → auto → yolo)'));
@@ -2764,10 +2764,20 @@ async function main(): Promise<void> {
       // memory of both Claude Code and Codex CLI ("Esc-Esc to step
       // back"). When the prompt buffer has content, single Esc clears
       // the typed buffer (readline default); Esc-Esc still rewinds
-      // only when buffer was empty going in. Mid-stream Esc is handled
-      // at the byte level in query.ts dataHandler instead — by the
-      // time keypress events fire, the input is already suppressed.
+      // only when buffer was empty going in.
       if (name === 'escape') {
+        // Mid-stream Esc is handled at the byte level in query.ts
+        // dataHandler (where it triggers the steer cancel). The
+        // hotkey-listener Esc branch must explicitly bail when a
+        // turn is in progress, otherwise the user sees BOTH the
+        // steer effect AND the "press Esc again to rewind" hint
+        // print, and a second Esc enqueues /back on top of the
+        // already-cancelled turn. Audit P0.
+        const turnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
+        if (turnCtl && !turnCtl.signal.aborted) {
+          lastEscapeMs = 0;
+          return;
+        }
         const buf = (rl as unknown as { line?: string }).line ?? '';
         if (buf.trim()) {
           // Non-empty buffer: don't intercept, let readline do its

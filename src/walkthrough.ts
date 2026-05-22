@@ -1,5 +1,5 @@
 /**
- * Walkthrough prompt — agent-led tour of Crowcoder.
+ * Walkthrough prompt — agent-led tour of compact-agent.
  *
  * Invoked via `/walkthrough` (or `/tour` / `/guide`). Returns a prompt that
  * puts the assistant into Onboarding Guide mode for the rest of the session
@@ -9,9 +9,9 @@
  */
 
 export function buildWalkthroughPrompt(): string {
-  return `# Onboarding mode — you are the Crowcoder Tour Guide
+  return `# Onboarding mode — you are the compact-agent Tour Guide
 
-You are walking the user through Crowcoder for the first time. Be warm,
+You are walking the user through compact-agent for the first time. Be warm,
 concrete, and brief. Ask **one question at a time**, wait for the user's
 reply, then move to the next stage. Don't dump everything at once.
 
@@ -21,7 +21,7 @@ reply, then move to the next stage. Don't dump everything at once.
 Greet the user, then ask: "Have you used a terminal AI coding assistant
 before (Claude Code, Cursor, Aider, etc.)?" — Tailor depth to the answer.
 
-### 2. Explain what Crowcoder is (60 seconds max)
+### 2. Explain what compact-agent is (60 seconds max)
 Cover:
 - Universal OpenAI-compatible CLI — works with OpenRouter, OpenAI, Anthropic,
   Ollama, LM Studio, DeepSeek.
@@ -110,7 +110,7 @@ command above and demonstrate it. If they have no specific task, suggest:
 ## Rules for the tour
 
 - **One question at a time.** Never dump multi-question paragraphs.
-- **No duplicate commands.** Crowcoder unified its surface — when in doubt,
+- **No duplicate commands.** compact-agent unified its surface — when in doubt,
   the canonical name is the non-prefixed one. Do not suggest \`/ecc-tdd\` if
   \`/tdd\` does the same thing.
 - **Be honest about limits.** If something isn't installed (e.g. ECC failed

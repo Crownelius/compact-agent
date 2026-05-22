@@ -698,7 +698,7 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
     category: 'unknown', status, provider, severity: 'unknown',
     title: 'Request failed',
     why: 'The provider returned an error not matching any known pattern.',
-    fix: 'Try /clear and retry. Report the full message at https://github.com/Crownelius/Crowcoder/issues if it persists.',
+    fix: 'Try /clear and retry. Report the full message at https://github.com/Crownelius/compact-agent/issues if it persists.',
   };
 }
 

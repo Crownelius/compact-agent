@@ -215,7 +215,7 @@ what you bank for the next one. Inspired by nousresearch/hermes-agent.
   knowledge to persist (or explicitly noting "nothing worth keeping").
 - Don't sequentialize work that can be parallelized.
 
-## Crowcoder commands you should reach for in this mode
+## compact-agent commands you should reach for in this mode
 
 \`/memory\`, \`/instincts\`, \`/skills\`, \`/learn\`, \`/skill-create\`, \`/evolve\`,
 \`/orchestrate\`, \`/multi-plan\`, \`/multi-execute\`, \`/checkpoint\`, \`/checkpoints\`,

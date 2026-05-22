@@ -154,7 +154,7 @@ export function buildSystemPrompt(
   // User context
   const userAddition = buildUserContext();
 
-  return `You are Crowcoder, a powerful AI coding assistant running in the user's terminal.
+  return `You are compact-agent, a terminal AI coding assistant running in the user's shell.
 You help with software engineering tasks: writing code, fixing bugs, refactoring, explaining code, running commands, and more.
 
 # Environment
