@@ -266,7 +266,17 @@ function validateToolArguments(tool: Tool, input: Record<string, unknown>): { va
  * Main query loop: sends messages to the API, handles tool calls, loops until done.
  */
 export async function runQuery(ctx: QueryContext): Promise<void> {
-  const maxTurns = 50;
+  // Per-chain turn cap. Default is Infinity — the loop runs until the
+  // model stops calling tools, or the user cancels (Esc / Ctrl+G /
+  // Shift+F5 / Ctrl+C), or the stream loop detector fires. Set
+  // ctx.config.maxTurns to a finite number if you want a hard safety
+  // cap (useful for unattended sessions). A previous hard-coded 50
+  // cap was cutting off legitimate long scaffolding chains; the
+  // stream-loop detector + per-turn cost line + Esc cancel are the
+  // real defenses against runaways.
+  const maxTurns = typeof ctx.config.maxTurns === 'number' && ctx.config.maxTurns > 0
+    ? ctx.config.maxTurns
+    : Infinity;
   let turns = 0;
   // Track total wall time for this response chain (user message →
   // assistant ending without a tool call). Printed once when the loop exits.
@@ -714,8 +724,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     }
   }
 
-  if (turns >= maxTurns) {
-    console.log(theme.warning(`\n  ${sym.warn} reached max turns limit`));
+  if (Number.isFinite(maxTurns) && turns >= maxTurns) {
+    console.log(theme.warning(`\n  ${sym.warn} reached configured max turns limit (${maxTurns})`));
+    console.log(theme.dim(`     remove the cap by deleting maxTurns from ~/.compact-agent/config.json`));
   }
 
   // Chain-elapsed summary. One line per response chain (user msg → assistant

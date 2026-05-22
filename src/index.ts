@@ -186,7 +186,19 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   console.log(chalk.dim('  2. auto  — auto-approve reads, ask for destructive'));
   console.log(chalk.dim('  3. yolo  — approve everything (fastest)\n'));
   const permChoice = await rl.question(chalk.yellow('  Permission mode [1]: '));
-  const permMode = (['ask', 'auto', 'yolo'] as const)[parseInt(permChoice || '1', 10) - 1] || 'ask';
+  // Accept either the number (1/2/3) OR the name (ask/auto/yolo) — users
+  // very naturally type the word they want instead of looking at the
+  // index. A previous version only parsed parseInt and silently
+  // defaulted to 'ask' for non-numeric input, which made yolo
+  // unreachable from the wizard for anyone who typed the obvious thing.
+  const raw = (permChoice || '1').trim().toLowerCase();
+  let permMode: 'ask' | 'auto' | 'yolo';
+  if (raw === 'ask' || raw === 'auto' || raw === 'yolo') {
+    permMode = raw;
+  } else {
+    const byNumber = (['ask', 'auto', 'yolo'] as const)[parseInt(raw, 10) - 1];
+    permMode = byNumber || 'ask';
+  }
 
   // ── MemPalace memory setup ──────────────────────────────
   // Featured capability, opt-out at setup time. Explain briefly so the

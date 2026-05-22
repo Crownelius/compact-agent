@@ -28,6 +28,12 @@ export interface CrowcoderConfig {
   provider: string;        // display name: "OpenRouter", "GLM", "Ollama", etc.
   maxTokens: number;
   temperature: number;
+  // Optional per-chain tool-call iteration cap. Default behavior (when
+  // omitted or 0) is unlimited — the chain runs until the model stops
+  // calling tools, the user cancels, or the stream-loop detector fires.
+  // Set to a finite number for unattended sessions where a runaway
+  // would burn unbounded API cost.
+  maxTurns?: number;
   permissionMode: 'ask' | 'auto' | 'yolo';  // ask=prompt, auto=safe-only, yolo=all
   alwaysAllowedTools?: string[];           // per-tool persistent allowlist populated when user types "always"
   dryRun?: boolean;        // when true, show what tools WOULD execute without running them

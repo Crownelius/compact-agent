@@ -194,6 +194,19 @@ const checks = {
     const targetPath = filePath();
     if (!targetPath) return ok();
 
+    // ── Brand-new file bypass ────────────────────────────
+    // The "investigate before editing" rule only makes sense for files
+    // that already exist (someone could be depending on the current
+    // contents). A brand-new file has no existing contents to read, no
+    // current consumers to grep for, and no existing data to validate
+    // schema against — the three things the block message tells the
+    // agent to do are all no-ops. Skipping prevents the false-positive
+    // scaffolding lockup where every fresh project hits a wall on
+    // every new file.
+    try {
+      if (!fs.existsSync(targetPath)) return ok();
+    } catch { /* if statSync fails, fall through to the normal path */ }
+
     const sessionId = process.env.CROWCODER_SESSION_ID || 'unknown';
     const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'gateguard');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
