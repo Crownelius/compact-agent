@@ -21,6 +21,7 @@ import { audioCue } from './audio.js';
 import { setStatus } from './status.js';
 import { collapseCompletedTurns } from './turn-context.js';
 import * as liveQueue from './live-queue.js';
+import { emit as dbgEmit } from './debug.js';
 
 // Per-session set: once we've told the user "this model didn't emit
 // reasoning tokens" we don't repeat it on every turn. Cleared per process,
@@ -447,6 +448,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         }
         if (count >= LOOP_THRESHOLD) {
           loopDetected = true;
+          dbgEmit('info', 'stream.loop-detected', {
+            windowSize: LOOP_WINDOW,
+            occurrences: count,
+            totalChars: fullText.length,
+            tail: fullText.slice(-LOOP_WINDOW),
+          });
           process.stdout.write('\n');
           console.log(theme.error(
             `  ⚠ Stream loop detected — same ${LOOP_WINDOW}-char window has appeared ${count}+ times. Aborting.`,
@@ -493,6 +500,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // without going through Ctrl+C / SIGINT. Cleared in the finally
     // block so a stale controller can't be aborted between turns.
     (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl = streamAbort;
+
+    dbgEmit('info', 'turn.start', {
+      turn: turns,
+      model: ctx.config.model,
+      messageCount: ctx.messages.length,
+    });
 
     // Pre-token indicator — print a dim "waiting" line inside the live-
     // queue scroll region so the user sees that something IS happening
@@ -891,6 +904,10 @@ async function executeToolCalls(
       permissionMode: ctx.config.permissionMode,
     });
     if (!preHook.allowed) {
+      dbgEmit('info', 'hook.blocked', {
+        tool: toolName,
+        reason: preHook.message || 'denied',
+      });
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -952,8 +969,15 @@ async function executeToolCalls(
       };
     } else {
       const startTime = Date.now();
+      dbgEmit('debug', 'tool.start', { tool: toolName, input });
       result = await tool.call(input, ctx.cwd);
       const elapsed = Date.now() - startTime;
+      dbgEmit('info', 'tool.done', {
+        tool: toolName,
+        elapsedMs: elapsed,
+        isError: !!result.isError,
+        outputPreview: String(result.output ?? '').slice(0, 200),
+      });
       printToolResult(!result.isError, elapsed, result.output);
     }
 

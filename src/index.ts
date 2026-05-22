@@ -5,6 +5,7 @@ import { readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync, unlin
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { initDebug, emit as dbgEmit, setDebugLevel, getDebugStatus, tailDebug, type DebugLevel } from './debug.js';
 import chalk from 'chalk';
 import { loadConfig, saveConfig, configExists, getConfigDir } from './config.js';
 import { resetClient } from './api.js';
@@ -597,6 +598,72 @@ export function handleSlashCommand(
       }
       console.log(chalk.dim(`  Sending ${result.length} chars from editor…`));
       return { handled: true, injectPrompt: result };
+    }
+
+    // ── Debug — toggle instrumentation + tail event log ──
+    // Surface for the NDJSON debug stream written to
+    // ~/.compact-agent/debug/<sessionId>.jsonl. Used by reviewers
+    // driving the agent + by users diagnosing their own issues.
+    //
+    //   /debug              show current level + log path + event count
+    //   /debug on [level]   turn instrumentation on (default level: info)
+    //   /debug off          turn instrumentation off (existing log file is kept)
+    //   /debug tail [N]     print the last N events (default 20) inline
+    case '/debug': {
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      const sub = (parts[0] || '').toLowerCase();
+      if (!sub) {
+        const s = getDebugStatus();
+        console.log(chalk.dim(`  Debug level: ${s.level}`));
+        console.log(chalk.dim(`  Log file:    ${s.logPath || '(no log — level is off)'}`));
+        console.log(chalk.dim(`  Events:      ${s.eventCount} this session`));
+        console.log(chalk.dim(`  Uptime:      ${(s.uptimeMs / 1000).toFixed(1)}s`));
+        console.log('');
+        console.log(chalk.dim(`  /debug on [info|debug|trace]`));
+        console.log(chalk.dim(`  /debug off`));
+        console.log(chalk.dim(`  /debug tail [N]`));
+        return { handled: true };
+      }
+      if (sub === 'off') {
+        setDebugLevel('off');
+        console.log(chalk.green('  Debug: off'));
+        return { handled: true };
+      }
+      if (sub === 'on') {
+        const lvl = (parts[1] || 'info').toLowerCase();
+        if (lvl !== 'info' && lvl !== 'debug' && lvl !== 'trace') {
+          console.log(chalk.yellow(`  Unknown level "${lvl}". Use info, debug, or trace.`));
+          return { handled: true };
+        }
+        setDebugLevel(lvl as DebugLevel);
+        const s = getDebugStatus();
+        console.log(chalk.green(`  Debug: ${lvl} — writing to ${s.logPath}`));
+        return { handled: true };
+      }
+      if (sub === 'tail') {
+        const n = parseInt(parts[1] || '20', 10);
+        const lines = tailDebug(Number.isFinite(n) && n > 0 ? n : 20);
+        if (lines.length === 0) {
+          console.log(chalk.dim('  (no events — turn on with /debug on)'));
+          return { handled: true };
+        }
+        console.log(chalk.dim(`  Last ${lines.length} debug events:`));
+        for (const ln of lines) {
+          try {
+            const rec = JSON.parse(ln);
+            const ts = String(rec.rel || 0).padStart(6) + 'ms';
+            const lvl = (rec.lvl || '').toUpperCase().padEnd(5);
+            const ev = rec.ev || '';
+            const d = rec.data ? '  ' + JSON.stringify(rec.data).slice(0, 120) : '';
+            console.log(chalk.dim(`    ${ts}  ${lvl}  ${ev}${d}`));
+          } catch {
+            console.log(chalk.dim(`    ${ln.slice(0, 200)}`));
+          }
+        }
+        return { handled: true };
+      }
+      console.log(chalk.yellow(`  Unknown /debug subcommand "${sub}". Try: /debug, /debug on, /debug off, /debug tail`));
+      return { handled: true };
     }
 
     // ── History ───────────────────────────────────────
@@ -2308,6 +2375,20 @@ async function main(): Promise<void> {
   // Create session
   const mode = { current: 'dev' as Mode };
   const session = createSession(process.cwd(), config.model, config.provider, mode.current);
+
+  // ── Debug instrumentation ─────────────────────────────────
+  // Initialize early so subsequent emit() calls land in the right file.
+  // Reads $COMPACT_AGENT_DEBUG which bin/crowcoder.js may have set from
+  // the --debug CLI flag. Level 'off' is a no-op; non-off opens an
+  // NDJSON log at ~/.compact-agent/debug/<sessionId>.jsonl.
+  initDebug(session.id);
+  dbgEmit('info', 'session.start', {
+    cwd: process.cwd(),
+    model: config.model,
+    provider: config.provider,
+    mode: mode.current,
+    permissionMode: config.permissionMode,
+  });
   const messages: Message[] = [];
 
   // Session start hook + memory persistence
@@ -2991,6 +3072,8 @@ async function main(): Promise<void> {
 
     // Slash commands
     if (trimmed.startsWith('/')) {
+      // Truncate arg preview so debug logs don't blow up on /editor seeds etc.
+      dbgEmit('debug', 'slash.dispatch', { input: trimmed.slice(0, 200) });
       const result = handleSlashCommand(trimmed, config, messages, session, mode);
       if (result.shouldExit) break;
       if (result.newMessages !== undefined) {
