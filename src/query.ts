@@ -420,8 +420,40 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // block so a stale controller can't be aborted between turns.
     (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl = streamAbort;
 
+    // Pre-token indicator — print a dim "waiting" line inside the live-
+    // queue scroll region so the user sees that something IS happening
+    // before the first model token arrives. Without this, a slow or
+    // hung model (like openrouter/owl-alpha returning ERROR after a
+    // long timeout) leaves nothing visible between the prompt and the
+    // queue box, making the whole REPL look frozen.
+    //
+    // Skipped in screen-reader mode (NVDA / JAWS would announce the
+    // line and then announce every subsequent token as "after the
+    // waiting line", which is noisier than helpful).
+    let firstTokenSeen = false;
+    const isScreenReader = ctx.config.voice?.accessibility?.screenReader === true;
+    if (!isScreenReader) {
+      console.log(chalk.dim('  ⏳ waiting for model response…'));
+    }
+    // 30-second slow-model warning. If no token has arrived by 30s,
+    // tell the user explicitly that the model is taking longer than
+    // usual and how to bail out. Cleared as soon as ANY event arrives.
+    const slowTimer = setTimeout(() => {
+      if (!firstTokenSeen) {
+        console.log(chalk.yellow(
+          `  ⏳ model is taking longer than 30s. Shift+F5 cancels, Ctrl+C exits. Often means the model returned no tokens (try /model <other> if this hangs).`,
+        ));
+      }
+    }, 30_000);
+
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS, streamAbort.signal)) {
+        // First event of any kind — model is alive. Cancel the slow-
+        // model warning timer; subsequent events are normal streaming.
+        if (!firstTokenSeen) {
+          firstTokenSeen = true;
+          clearTimeout(slowTimer);
+        }
         if (event.type === 'thinking' && event.content) {
           sawAnyThinking = true;
           // showThinking defaults to true; only off when explicitly disabled.
@@ -463,6 +495,10 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         }
       }
     } catch (err: unknown) {
+      // Stream threw before any token arrived — clear the slow-model
+      // timer so its 30s callback doesn't fire after the error is
+      // already on stdout (would look like a false positive).
+      clearTimeout(slowTimer);
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');

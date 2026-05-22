@@ -146,6 +146,38 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   const modelInput = await rl.question(chalk.yellow(`  Model [${provider.defaultModel}]: `));
   if (modelInput.trim()) model = modelInput.trim();
 
+  // Warn on known-flaky experimental models. These are free / preview
+  // models on OpenRouter (and similar gateways) that frequently return
+  // empty responses, the literal string "ERROR", or hang past 30s. The
+  // auto-fallback in runQuery tries to recover but on a free-tier key
+  // the fallback may also be unreachable — so a user picking one of
+  // these by name ends up staring at the live-queue box wondering
+  // what's broken. Flag it now while we can still talk them out of it.
+  //
+  // Heuristic-only — we don't block. The matched substrings cover
+  // the cases that have shown up in user reports without false-positiving
+  // on legitimate model names that happen to share a prefix.
+  const flakyPatterns = [
+    'owl-alpha',          // perpetual-experimental, returns "ERROR"
+    'horizon-alpha',
+    'horizon-beta',
+    'optimus-alpha',
+    'quasar-alpha',
+  ];
+  const lowerModel = model.toLowerCase();
+  if (flakyPatterns.some((p) => lowerModel.includes(p))) {
+    console.log('');
+    console.log(chalk.yellow(`  ⚠  "${model}" is an experimental / free model that's been reported to return`));
+    console.log(chalk.yellow(`     empty or "ERROR" responses. Compact Agent's auto-fallback will try to`));
+    console.log(chalk.yellow(`     recover, but on a free-tier API key the fallback may not be reachable.`));
+    console.log(chalk.dim('     More reliable free options on OpenRouter:'));
+    console.log(chalk.dim('       meta-llama/llama-3.3-70b-instruct:free'));
+    console.log(chalk.dim('       google/gemini-2.0-flash-exp:free'));
+    console.log(chalk.dim('       deepseek/deepseek-chat:free'));
+    console.log(chalk.dim('     You can change this any time with /model <id> in the REPL.'));
+    console.log('');
+  }
+
   console.log(chalk.white('\n  Permission modes:'));
   console.log(chalk.dim('  1. ask   — prompt before writes/commands (safest)'));
   console.log(chalk.dim('  2. auto  — auto-approve reads, ask for destructive'));
