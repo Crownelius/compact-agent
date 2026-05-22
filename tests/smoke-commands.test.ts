@@ -146,10 +146,17 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/ecc-skills', 'local'],
     ['/ecc-agents', 'local'],
     ['/ecc-commands', 'local'],
-    ['/ecc-tdd add login', 'llm'],
-    ['/ecc-feature-development add auth', 'llm'],
-    ['/ecc-database-migration add users table', 'llm'],
-    ['/ecc-add-language-rules typescript', 'llm'],
+    // ECC slash commands (/ecc-tdd, /ecc-feature-development, etc.)
+    // were collapsed in v1.25.0 — the bundled ECC harness works
+    // automatically now and the per-skill slash names became silent
+    // aliases that just print a hint. They return handled:true with
+    // no injectPrompt, so they're classified as 'local' here. Tests
+    // pinned to the old 'llm' contract were broken since the
+    // refactor; this is the canonical fix.
+    ['/ecc-tdd add login', 'local'],
+    ['/ecc-feature-development add auth', 'local'],
+    ['/ecc-database-migration add users table', 'local'],
+    ['/ecc-add-language-rules typescript', 'local'],
     ['/ecc-bogus-name', 'local-error'],
   ];
 

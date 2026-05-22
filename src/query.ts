@@ -29,6 +29,38 @@ import { emit as dbgEmit } from './debug.js';
 // sessions get fresh hints.
 const _thinkingHintShownForSession = new Set<string>();
 
+/**
+ * Count how many NON-OVERLAPPING occurrences of the last `windowSize`
+ * characters of `fullText` appear in the full string. Bails as soon as
+ * `threshold` is reached so the cost is O(threshold * windowSize) in
+ * the common stuck-model case rather than O(fullText.length).
+ *
+ * Non-overlapping by stepping the search index by `windowSize` after
+ * each match. Overlapping counts cause false positives on self-similar
+ * text (markdown tables, repeated import lines, ASCII art) — the audit
+ * found that `idx++` made a single copy match 3+ times when there were
+ * only two genuine repeats.
+ *
+ * Exported so the loop-detector behavior can be unit-tested without
+ * driving the full streamChat loop.
+ */
+export function countTailRepetitions(
+  fullText: string,
+  windowSize: number,
+  threshold: number,
+): number {
+  if (fullText.length < windowSize * threshold) return 0;
+  const window = fullText.slice(-windowSize);
+  let count = 0;
+  let idx = 0;
+  while ((idx = fullText.indexOf(window, idx)) !== -1) {
+    count++;
+    if (count >= threshold) break;
+    idx += windowSize;
+  }
+  return count;
+}
+
 export interface QueryContext {
   config: CrowcoderConfig;
   messages: Message[];
@@ -438,20 +470,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       // 3+ repeats = stuck. Abort and warn.
       if (!loopDetected && fullText.length >= nextLoopCheckAt && fullText.length > LOOP_WINDOW * LOOP_THRESHOLD) {
         nextLoopCheckAt = fullText.length + 500;
-        const window = fullText.slice(-LOOP_WINDOW);
-        let count = 0;
-        let idx = 0;
-        // Step by LOOP_WINDOW (not 1) so OVERLAPPING matches don't
-        // double-count. The audit found that `idx++` made a single
-        // copy of self-similar text (markdown table separators,
-        // repeated import lines, ASCII art) appear to match 3+
-        // times when in reality the model had only emitted it twice.
-        // Non-overlapping count tracks genuine repetition only.
-        while ((idx = fullText.indexOf(window, idx)) !== -1) {
-          count++;
-          if (count >= LOOP_THRESHOLD) break;
-          idx += LOOP_WINDOW;
-        }
+        const count = countTailRepetitions(fullText, LOOP_WINDOW, LOOP_THRESHOLD);
         if (count >= LOOP_THRESHOLD) {
           loopDetected = true;
           dbgEmit('info', 'stream.loop-detected', {
