@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import * as readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync } from 'node:fs';
+import { readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync, unlinkSync as fsUnlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as pathJoin } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import chalk from 'chalk';
 import { loadConfig, saveConfig, configExists, getConfigDir } from './config.js';
 import { resetClient } from './api.js';
@@ -10,7 +13,7 @@ import { ALL_TOOLS } from './tools/index.js';
 import type { CrowcoderConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
 // New systems
-import { createSession, autoSave, listSessions, loadSession, deleteSession, type Session } from './sessions.js';
+import { createSession, autoSave, listSessions, loadSession, deleteSession, saveSession, generateSessionId, type Session } from './sessions.js';
 import { initHooksDir, runHooks, listHooks, saveHooksConfig, clearQuarantinedHooks } from './hooks.js';
 import { printUsageSummary, setBudget } from './cost-tracker.js';
 import { printSecurityWarning, scanCommand } from './security.js';
@@ -275,12 +278,20 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/palettes') + d('         — list available color palettes with preview'));
       console.log(d('  ') + c('/clear') + d('            — clear conversation'));
       console.log(d('  ') + c('/back [n]') + d('         — rewind to before the nth most-recent user turn (no arg lists turns)'));
+      console.log(d('  ') + c('/fork [name]') + d('      — branch current conversation; previous session reachable via /resume (alias: /branch)'));
+      console.log(d('  ') + c('/btw <question>') + d('   — side question, model knows not to factor into the main thread'));
+      console.log(d('  ') + c('/editor [seed]') + d('    — open $EDITOR / $VISUAL on a tempfile for long prompts (alias: /edit-prompt)'));
       console.log(d('  ') + c('/history') + d('          — message count & token estimate'));
       console.log(d('  ') + c('/export [fmt]') + d('     — export conversation (md/json/txt)'));
       console.log(d('  ') + c('/exit') + d('             — quit (alias: /quit)'));
       console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of Crowcoder (aliases: /tour, /guide)'));
       console.log(d('  ') + c('!<cmd>') + d('            — run shell command directly'));
-      console.log(d('  ') + c('Ctrl+G') + d('            — steer: cancel current turn + use what you\'ve queued as the next message'));
+      console.log(h('\n  ── Productivity hotkeys ──'));
+      console.log(d('  ') + c('Shift+Tab') + d('         — cycle permission modes (ask → auto → yolo)'));
+      console.log(d('  ') + c('Esc') + d('               — interrupt current turn (alias for Ctrl+G steer; both work)'));
+      console.log(d('  ') + c('Esc Esc') + d('           — rewind to the previous user turn (at empty prompt)'));
+      console.log(d('  ') + c('Alt+,  /  Alt+.') + d('   — temperature − / + by 0.1 (more careful / more creative)'));
+      console.log(d('  ') + c('Ctrl+G') + d('            — steer (legacy alias for Esc)'));
       console.log(h('\n  ── Model & Provider ──'));
       console.log(d('  ') + c('/model [name]') + d('     — switch or show model'));
       console.log(d('  ') + c('/models') + d('           — list available models for provider'));
@@ -484,6 +495,96 @@ export function handleSlashCommand(
       const newMessages = messages.slice(0, cutIdx);
       console.log(chalk.green(`  Rewound to before user turn ${n} (dropped ${dropped} message(s)).`));
       return { handled: true, newMessages };
+    }
+
+    // ── Fork — branch the current conversation ────────
+    // Borrowed from both Claude Code (/branch) and Codex CLI (/fork).
+    // Snapshots the current session under its existing ID (so /resume
+    // can return to this point), then re-anchors the live REPL to a
+    // FRESH session ID that starts with a copy of all current messages.
+    // From here, the two branches diverge — exploring a tangent in the
+    // fork doesn't touch the original.
+    case '/fork':
+    case '/branch': {
+      const forkName = args.trim() || `fork of ${session.name}`;
+      // Save the current session under its existing ID first so the
+      // pre-fork state is recoverable via /resume.
+      saveSession({ ...session, messages: [...messages] }).catch(() => { /* noop */ });
+      const previousId = session.id;
+      // Mutate the active session in place: new ID + name + timestamps,
+      // same messages. The REPL keeps running against `session` so
+      // mutation is enough — no need to plumb a "swap" through the
+      // return value.
+      session.id = generateSessionId();
+      session.name = forkName;
+      session.createdAt = new Date().toISOString();
+      session.updatedAt = session.createdAt;
+      saveSession({ ...session, messages: [...messages] }).catch(() => { /* noop */ });
+      console.log(chalk.green(`  Forked session.`));
+      console.log(chalk.dim(`    Previous: ${previousId}  (use /resume to return)`));
+      console.log(chalk.dim(`    Active:   ${session.id}  "${forkName}"`));
+      return { handled: true };
+    }
+
+    // ── BTW — side question without main-thread pollution ──
+    // Borrowed from Claude Code's /btw. The model sees the question
+    // with a marker so it knows the answer shouldn't influence the
+    // ongoing task; the user gets a real response but the message
+    // pair is flagged in history so /back N treats it as one
+    // "compound turn" to skip.
+    //
+    // V1 caveat: the messages DO still go into history (otherwise the
+    // model can't respond at all). The marker is the contract.
+    // Recover from a noisy /btw with /back 1.
+    case '/btw': {
+      const q = args.trim();
+      if (!q) {
+        console.log(chalk.yellow('  Usage: /btw <question>  — side question, model knows not to factor into the main thread.'));
+        return { handled: true };
+      }
+      const wrapped =
+        '[SIDE QUESTION — do NOT integrate this answer into the ongoing task. ' +
+        'Answer briefly, then return to the prior context on the next turn.] ' + q;
+      return { handled: true, injectPrompt: wrapped };
+    }
+
+    // ── Editor — open $EDITOR on a tempfile for long prompts ──
+    // Universal Unix idiom (bash's Ctrl+X Ctrl+E, vim's edit-and-resubmit).
+    // Useful when the prompt is long, multi-line, or you want syntax
+    // highlighting / paste-from-buffer that the REPL's single-line
+    // input doesn't give you. Falls back to nano if $EDITOR is unset.
+    case '/editor':
+    case '/edit-prompt': {
+      const editor = process.env.VISUAL || process.env.EDITOR ||
+        (process.platform === 'win32' ? 'notepad' : 'nano');
+      let result: string;
+      try {
+        const tmpPath = pathJoin(tmpdir(), `compact-agent-prompt-${Date.now()}.md`);
+        // Seed with current input buffer if any, plus a help comment.
+        const seed =
+          (args.trim() ? args : '') +
+          (args.trim() ? '\n\n' : '') +
+          '<!-- Write your prompt here. Save + close to send. Empty file = cancel. -->\n';
+        fsWriteFileSync(tmpPath, seed, 'utf-8');
+        const r = spawnSync(editor, [tmpPath], { stdio: 'inherit' });
+        if (r.error) {
+          console.log(chalk.yellow(`  Could not launch ${editor}: ${r.error.message}`));
+          return { handled: true };
+        }
+        result = fsReadFileSync(tmpPath, 'utf-8');
+        // Strip the help comment + any trailing whitespace
+        result = result.replace(/<!--[\s\S]*?-->/g, '').trim();
+        try { fsUnlinkSync(tmpPath); } catch { /* noop */ }
+      } catch (err) {
+        console.log(chalk.yellow(`  /editor failed: ${err instanceof Error ? err.message : err}`));
+        return { handled: true };
+      }
+      if (!result) {
+        console.log(chalk.dim('  Empty — nothing to send.'));
+        return { handled: true };
+      }
+      console.log(chalk.dim(`  Sending ${result.length} chars from editor…`));
+      return { handled: true, injectPrompt: result };
     }
 
     // ── History ───────────────────────────────────────
@@ -2294,6 +2395,9 @@ async function main(): Promise<void> {
       'f1', 'f2', 'f3', 'f4',                  // status announcements (bare)
       'f5', 'f6', 'f7', 'f8', 'f9', 'f10',     // dictation + playback (bare)
       'f11', 'f12',                            // Tier 1: input + last turn (bare)
+      'tab',                                   // Shift+Tab cycles perm modes
+      'escape',                                // Esc-Esc rewind at empty prompt
+      ',', '.',                                // Alt+, / Alt+. reasoning effort
       // Shifted F-keys carry the Tier-2 and Tier-3 a11y functions. Each
       // is checked alongside key.shift below, so a bare F1 still routes
       // to "status" while Shift+F1 routes to "queued input."
@@ -2304,11 +2408,31 @@ async function main(): Promise<void> {
     // 'keypress' listeners. During streaming we detach readline's own
     // keypress listener (to prevent echo + line-buffer pollution) while
     // keeping this one attached so F1–F12 keep working mid-response.
-    const hotkeyListener = function hotkeyListener(_str: string, key: { name?: string; shift?: boolean }): void {
+    // Esc-Esc detection — two bare Esc presses within 500ms at an empty
+    // prompt buffer triggers /back. Single Esc during streaming triggers
+    // a soft-cancel (alias for Ctrl+G steer). State lives in this closure
+    // so it persists across keypress events.
+    let lastEscapeMs = 0;
+
+    const hotkeyListener = function hotkeyListener(
+      _str: string,
+      key: { name?: string; shift?: boolean; ctrl?: boolean; meta?: boolean },
+    ): void {
       if (!key) return;
       const name = String(key.name || '').toLowerCase();
       if (!INTERCEPT.has(name)) return;
       const shift = !!key.shift;
+      const meta = !!key.meta;
+      const ctrl = !!key.ctrl;
+
+      // Early-return guards so we don't steal keys that should pass
+      // through to readline (regular typing, tab-completion, etc.):
+      //   - bare ',' or '.' is regular typing; only Alt+,/. is ours
+      //   - bare Tab is completion; only Shift+Tab is ours
+      //   - Shift+Esc / Ctrl+Esc / Alt+Esc aren't ours
+      if ((name === ',' || name === '.') && !meta) return;
+      if (name === 'tab' && !shift) return;
+      if (name === 'escape' && (shift || ctrl || meta)) return;
 
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
@@ -2333,7 +2457,10 @@ async function main(): Promise<void> {
       //                never voice-only
       const isStatusKey =
         name === 'f1' || name === 'f2' || name === 'f3' || name === 'f4' ||
-        name === 'f11' || name === 'f12' || shift;
+        name === 'f11' || name === 'f12' || shift ||
+        // Productivity bindings (Shift+Tab, Esc, Alt+,/.) work regardless
+        // of voice state — they touch config / readline, not audio.
+        name === 'tab' || name === 'escape' || name === ',' || name === '.';
 
       // F5–F10 (bare) are DICTATION/PLAYBACK hotkeys — they only make
       // sense when voice features are enabled. Bail early to avoid
@@ -2360,6 +2487,19 @@ async function main(): Promise<void> {
       // here keeps them out of the bare-F-key branches below).
       // ──────────────────────────────────────────────────────────────
       if (shift) {
+        // ── Shift+Tab: cycle permission modes ──────────────
+        // Borrowed from Claude Code, the single most-loved power-user
+        // hotkey: one keystroke flips the safety dial through the
+        // full ask → auto → yolo cycle. Replaces /perm <mode> typing.
+        if (name === 'tab') {
+          const order: CrowcoderConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
+          const cur = config.permissionMode;
+          const next = order[(order.indexOf(cur) + 1) % order.length];
+          config.permissionMode = next;
+          saveConfig(config);
+          announce('Shift+Tab', `Permission mode: ${next}.`);
+          return;
+        }
         // ── Shift+F1: queued input ─────────────────────────
         if (name === 'f1') {
           const g = globalThis as { __crowcoderQueuedInput?: string };
@@ -2466,6 +2606,62 @@ async function main(): Promise<void> {
           return;
         }
         // Any other shifted F-key: no-op (don't fall through to bare).
+        return;
+      }
+
+      // ── Esc (bare): rewind chord at empty prompt ───────
+      // Two bare Esc presses within 500ms at an empty input buffer
+      // triggers /back (rewind one user turn). Matches the muscle
+      // memory of both Claude Code and Codex CLI ("Esc-Esc to step
+      // back"). When the prompt buffer has content, single Esc clears
+      // the typed buffer (readline default); Esc-Esc still rewinds
+      // only when buffer was empty going in. Mid-stream Esc is handled
+      // at the byte level in query.ts dataHandler instead — by the
+      // time keypress events fire, the input is already suppressed.
+      if (name === 'escape') {
+        const buf = (rl as unknown as { line?: string }).line ?? '';
+        if (buf.trim()) {
+          // Non-empty buffer: don't intercept, let readline do its
+          // default (which is meta-prefix; harmless).
+          lastEscapeMs = 0;
+          return;
+        }
+        const now = Date.now();
+        if (now - lastEscapeMs < 500) {
+          // Second Esc within window — fire /back.
+          lastEscapeMs = 0;
+          // Enqueue the slash command as queued input. The REPL loop
+          // picks it up + executes /back the same way as if typed.
+          (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = '/back\n';
+          announce('Esc-Esc', 'Rewinding to previous user turn.');
+          // Nudge readline by writing an empty line so the question
+          // resolves and the main loop's queued-input drain fires.
+          try { stdin.write('\n'); } catch { /* noop */ }
+          return;
+        }
+        lastEscapeMs = now;
+        // Single Esc on an empty buffer — show a one-time hint so the
+        // chord is discoverable. Suppressed under screen-reader mode
+        // (would interrupt their reading flow on every Esc).
+        if (config.voice?.accessibility?.screenReader !== true) {
+          console.log(chalk.dim('  [Esc] press Esc again within 500ms to rewind one turn.'));
+        }
+        return;
+      }
+
+      // ── Alt+, / Alt+. : reasoning effort (temperature) ─
+      // Borrowed from Codex CLI. Lower temperature = more careful /
+      // deterministic; higher = more creative. Step ± 0.1, clamped
+      // to [0.0, 2.0]. Saved immediately so the next API call uses
+      // the new value. Persisted so the setting survives restarts.
+      if ((name === ',' || name === '.') && meta) {
+        const cur = typeof config.temperature === 'number' ? config.temperature : 0.3;
+        const step = name === ',' ? -0.1 : +0.1;
+        const next = Math.max(0, Math.min(2.0, Math.round((cur + step) * 100) / 100));
+        config.temperature = next;
+        saveConfig(config);
+        const label = name === ',' ? 'Alt+,' : 'Alt+.';
+        announce(label, `Temperature ${next.toFixed(2)} (lower = more careful, higher = more creative).`);
         return;
       }
 

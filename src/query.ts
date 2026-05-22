@@ -148,6 +148,21 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
       }
       return;
     }
+    // Esc (0x1B) → Steer trigger, but only for a BARE Esc (chunk of
+    // exactly one byte). Multi-byte chunks starting with 0x1B are ANSI
+    // escape sequences for arrow keys / function keys / Alt+letter, and
+    // arrive in raw mode as one contiguous chunk on every supported
+    // terminal (xterm, iTerm, Windows Terminal, Alacritty, Kitty). The
+    // length heuristic distinguishes them without a 50ms debounce.
+    //
+    // Esc and Ctrl+G are now aliases — Esc matches Claude Code + Codex
+    // muscle memory, Ctrl+G is kept for existing users.
+    if (chunk[0] === 0x1B && chunk.length === 1 && detached) {
+      if (steerHandler) {
+        try { steerHandler(); } catch { /* never break input on a steer error */ }
+      }
+      return;
+    }
     if (!detached) return;          // only collect while we're suppressing
     // Drop chunks that look like escape sequences (start with 0x1B)
     // — those are arrow keys, function keys, etc. Already handled by
