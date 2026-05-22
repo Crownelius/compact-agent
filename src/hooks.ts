@@ -46,6 +46,14 @@ export interface HookContext {
   toolOutput?: string;
   sessionId?: string;
   cwd: string;
+  /**
+   * Current permission mode at the time the hook fires. Passed to the
+   * hook script as $COMPACT_AGENT_PERMISSION_MODE / $CROWCODER_PERMISSION_MODE
+   * so checks like GateGuard can no-op in 'yolo' (where the user has
+   * explicitly opted in to "approve everything" and pedantic gates
+   * contradict that contract).
+   */
+  permissionMode?: string;
 }
 
 export interface HookResult {
@@ -138,6 +146,13 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       continue;
     }
 
+    // Hooks receive the active context as env vars. Both the legacy
+    // CROWCODER_* names AND the new COMPACT_AGENT_* names are exported
+    // so user-written hooks that read either form keep working. The
+    // permission mode is new — added so GateGuard (and any future
+    // mode-aware hook) can no-op in 'yolo' instead of fighting the
+    // user's explicit trust setting.
+    const perm = ctx.permissionMode || '';
     const env = {
       ...process.env,
       CROWCODER_EVENT: ctx.event,
@@ -146,6 +161,14 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       CROWCODER_TOOL_OUTPUT: ctx.toolOutput || '',
       CROWCODER_SESSION_ID: ctx.sessionId || '',
       CROWCODER_CWD: ctx.cwd,
+      CROWCODER_PERMISSION_MODE: perm,
+      COMPACT_AGENT_EVENT: ctx.event,
+      COMPACT_AGENT_TOOL: ctx.toolName || '',
+      COMPACT_AGENT_TOOL_INPUT: ctx.toolInput ? JSON.stringify(ctx.toolInput) : '',
+      COMPACT_AGENT_TOOL_OUTPUT: ctx.toolOutput || '',
+      COMPACT_AGENT_SESSION_ID: ctx.sessionId || '',
+      COMPACT_AGENT_CWD: ctx.cwd,
+      COMPACT_AGENT_PERMISSION_MODE: perm,
     };
 
     const isBlocking = hook.blocking ?? (ctx.event === 'PreToolUse');

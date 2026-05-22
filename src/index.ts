@@ -2299,7 +2299,7 @@ async function main(): Promise<void> {
   const messages: Message[] = [];
 
   // Session start hook + memory persistence
-  await runHooks({ event: 'SessionStart', sessionId: session.id, cwd: process.cwd() });
+  await runHooks({ event: 'SessionStart', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
   const memoryContext = onSessionStart(session.id, process.cwd());
   if (memoryContext) {
     messages.push({ role: 'system', content: memoryContext });
@@ -2330,7 +2330,28 @@ async function main(): Promise<void> {
     );
   } else {
     // Minimal mode: just a one-liner
-    console.log(theme.brandBold('Compact Agent v1.1.0') + theme.dim(' — A dense, feature-rich AI coding agent'));
+    console.log(theme.brandBold('Compact Agent') + theme.dim(' — terminal AI coding CLI'));
+    console.log('');
+  }
+
+  // ── Flaky-model warning at REPL launch ───────────────
+  // The setup wizard already warns when a user TYPES one of these
+  // experimental free models, but returning users whose config was
+  // saved before that check landed never see the warning. Print it
+  // every launch so they get a chance to switch via /model before
+  // they hit the "model returns nothing, REPL looks frozen" footgun.
+  const flakyPatterns = [
+    'owl-alpha', 'horizon-alpha', 'horizon-beta',
+    'optimus-alpha', 'quasar-alpha',
+  ];
+  const lowerModelAtLaunch = (config.model || '').toLowerCase();
+  if (flakyPatterns.some((p) => lowerModelAtLaunch.includes(p))) {
+    console.log(theme.warning(`  ⚠  Active model "${config.model}" is an experimental / free model known to`));
+    console.log(theme.warning(`     return empty or "ERROR" responses, or get stuck in token loops.`));
+    console.log(theme.dim(`     Switch with /model <id>. Reliable free options on OpenRouter:`));
+    console.log(theme.dim(`       /model meta-llama/llama-3.3-70b-instruct:free`));
+    console.log(theme.dim(`       /model google/gemini-2.0-flash-exp:free`));
+    console.log(theme.dim(`       /model deepseek/deepseek-chat:free`));
     console.log('');
   }
 
@@ -3071,7 +3092,7 @@ async function main(): Promise<void> {
 
   // Session stop hook + memory persistence
   onSessionEnd(session.id, messages, process.cwd());
-  await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd() });
+  await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
 
   // Final save
   await autoSave(session, messages);

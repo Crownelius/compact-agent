@@ -382,6 +382,19 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
 
     const turnStart = Date.now();
 
+    // Loop detection state: a stuck model can stream the SAME N-char
+    // window of text 50+ times in a single API call (observed in the
+    // wild with openrouter/owl-alpha emitting tool-call JSON as text).
+    // We periodically check whether the most-recent tail occurs ≥3
+    // times in the full stream; if so we abort the API call and warn
+    // the user. checkpoint values are deliberately coarse — the cost
+    // of one indexOf scan per ~500 chars of stream is negligible, the
+    // cost of letting the loop run forever is a hung terminal.
+    let nextLoopCheckAt = 800;        // first check after 800 chars
+    const LOOP_WINDOW = 200;
+    const LOOP_THRESHOLD = 3;
+    let loopDetected = false;
+
     function writeStreamText(chunk: string): void {
       // Trim leading whitespace until the first non-whitespace character so
       // the model can't produce big vertical gaps before its real reply.
@@ -407,6 +420,42 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       lastCharWasNewline = out.endsWith('\n');
       process.stdout.write(theme.primary(out));
       fullText += out;
+
+      // ── Loop detection ────────────────────────────────────
+      // Once fullText crosses each checkpoint, scan: how many times
+      // does the last LOOP_WINDOW chars appear in the full stream?
+      // 3+ repeats = stuck. Abort and warn.
+      if (!loopDetected && fullText.length >= nextLoopCheckAt && fullText.length > LOOP_WINDOW * LOOP_THRESHOLD) {
+        nextLoopCheckAt = fullText.length + 500;
+        const window = fullText.slice(-LOOP_WINDOW);
+        let count = 0;
+        let idx = 0;
+        while ((idx = fullText.indexOf(window, idx)) !== -1) {
+          count++;
+          if (count >= LOOP_THRESHOLD) break;
+          idx++;
+        }
+        if (count >= LOOP_THRESHOLD) {
+          loopDetected = true;
+          process.stdout.write('\n');
+          console.log(theme.error(
+            `  ⚠ Stream loop detected — same ${LOOP_WINDOW}-char window has appeared ${count}+ times. Aborting.`,
+          ));
+          console.log(theme.dim(
+            `    The model is stuck repeating itself. Common causes:`,
+          ));
+          console.log(theme.dim(
+            `      · model is emitting tool-call JSON as plain text (try /model <other>)`,
+          ));
+          console.log(theme.dim(
+            `      · context exhausted (try /clear and rephrase)`,
+          ));
+          console.log(theme.dim(
+            `      · experimental free model (openrouter/owl-alpha is a known offender)`,
+          ));
+          try { streamAbort.abort(); } catch { /* noop */ }
+        }
+      }
     }
 
     // (inputGuard is now lifted to runQuery scope — see above. It spans
@@ -828,6 +877,7 @@ async function executeToolCalls(
       toolInput: input,
       sessionId: ctx.sessionId,
       cwd: ctx.cwd,
+      permissionMode: ctx.config.permissionMode,
     });
     if (!preHook.allowed) {
       results.push({
@@ -929,6 +979,7 @@ async function executeToolCalls(
       toolOutput: result.output.slice(0, 1000),
       sessionId: ctx.sessionId,
       cwd: ctx.cwd,
+      permissionMode: ctx.config.permissionMode,
     });
 
     results.push({

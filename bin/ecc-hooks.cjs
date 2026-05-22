@@ -162,6 +162,32 @@ const checks = {
    * Upstream credit: github.com/zunoworks/gateguard (the underlying idea).
    */
   'gateguard': () => {
+    // ── Disable knob ─────────────────────────────────────
+    // Documented in the block message below. Accepts the new
+    // COMPACT_AGENT_GATEGUARD env var primarily, with the legacy
+    // CROWCODER_GATEGUARD kept as an alias so the previous docs +
+    // muscle memory still work.
+    const disableEnv = (
+      process.env.COMPACT_AGENT_GATEGUARD ||
+      process.env.CROWCODER_GATEGUARD ||
+      ''
+    ).trim();
+    if (/^(off|false|0|no|disabled?)$/i.test(disableEnv)) return ok();
+
+    // ── yolo bypass ──────────────────────────────────────
+    // Permission mode 'yolo' is the user's explicit "trust the agent,
+    // skip the speed bumps" contract. GateGuard's investigate-first
+    // intervention directly contradicts that — letting it fire in
+    // yolo would mean the safest setting in compact-agent is more
+    // pedantic than the most-cautious, which is backwards. Silent
+    // no-op so the user gets the unblocked flow they asked for.
+    const perm = (
+      process.env.COMPACT_AGENT_PERMISSION_MODE ||
+      process.env.CROWCODER_PERMISSION_MODE ||
+      ''
+    ).toLowerCase().trim();
+    if (perm === 'yolo') return ok();
+
     const fs = require('fs');
     const pathMod = require('path');
     const os = require('os');
@@ -209,7 +235,8 @@ const checks = {
       `(2) Grep for importers / callers / refs so the change doesn't break ` +
       `consumers. (3) If it's a schema/type, check existing data usage. ` +
       `After investigating, retry the edit — GateGuard tracks per-file and ` +
-      `will let the retry through. Set CROWCODER_GATEGUARD=off to disable.`,
+      `will let the retry through. Set COMPACT_AGENT_GATEGUARD=off to disable, ` +
+      `or use /perm yolo for a session-wide bypass.`,
     );
   },
 
