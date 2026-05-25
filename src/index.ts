@@ -3292,24 +3292,22 @@ async function main(): Promise<void> {
                 },
               );
               if (result.accepted && result.command) {
-                // Trailing space → "fill but don't submit" (Tab
-                // pathway): plant the command in rl.line so the
-                // user can type args before Enter.
-                if (result.command.endsWith(' ')) {
-                  const cmd = result.command;
-                  try {
-                    const rlAny = rl as unknown as { line: string; cursor: number; _refreshLine?: () => void };
-                    rlAny.line = cmd;
-                    rlAny.cursor = cmd.length;
-                    rlAny._refreshLine?.();
-                  } catch { /* noop */ }
-                } else {
-                  // Enter → submit immediately via the queued-input
-                  // sentinel pattern (mirrors how the space picker
-                  // submits).
-                  (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = result.command + '\n';
-                  try { rl.emit('line', ''); } catch { /* noop */ }
-                }
+                // Enter on highlighted item → submit. The
+                // queued-input sentinel pattern (used by the
+                // full-screen picker too) hands the command to the
+                // main loop's input drain, which prints the
+                // auto-submitting hint and runs it as if the user
+                // had typed it manually.
+                //
+                // Tab is now a navigation key (Down arrow alias) so
+                // there's no longer a "fill but don't submit"
+                // sentinel to special-case here. If the user wants
+                // to plant a partial command without submitting,
+                // they can Esc out of the dropdown and keep typing
+                // — Esc returns the current filter as result.filter,
+                // which the cancel branch restores to rl.line below.
+                (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = result.command + '\n';
+                try { rl.emit('line', ''); } catch { /* noop */ }
               } else {
                 // Cancelled. Restore rl.line to whatever the user
                 // had typed so they can keep editing (could be '/',

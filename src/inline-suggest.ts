@@ -260,85 +260,125 @@ export async function inlineSuggest(
       dropdownRows = 0;
     }
 
+    function moveSelection(delta: number): void {
+      const visible = visibleItems();
+      if (visible.length === 0) return;
+      selected = (selected + delta + visible.length) % visible.length;
+      render();
+    }
+
     function onData(buf: Buffer): void {
-      // Ctrl+C — cancel.
-      if (buf.length === 1 && buf[0] === 0x03) {
-        teardown();
-        resolve({ accepted: false, filter });
-        return;
-      }
-      // Esc (bare) — cancel. Multi-byte chunks starting with 0x1B
-      // are arrow keys / function keys (handled below).
-      if (buf.length === 1 && buf[0] === 0x1B) {
-        teardown();
-        resolve({ accepted: false, filter });
-        return;
-      }
-      // Enter — accept current selection (if any).
-      if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) {
-        const visible = visibleItems();
-        if (visible.length === 0) return;
-        const chosen = visible[selected];
-        teardown();
-        resolve({ accepted: true, command: chosen.command, filter });
-        return;
-      }
-      // Backspace (DEL 0x7F on POSIX, BS 0x08 on Windows).
-      if (buf.length === 1 && (buf[0] === 0x7F || buf[0] === 0x08)) {
-        if (filter.length <= 1) {
-          // Deleting the only char (typically the leading '/') —
-          // dismiss the dropdown and let the user have a blank line.
-          filter = '';
+      // Defensive wrapper — if any branch throws we don't want the
+      // dropdown to silently freeze. Restore listeners so the user
+      // can keep typing.
+      try {
+        // Ctrl+C — cancel.
+        if (buf.length === 1 && buf[0] === 0x03) {
           teardown();
           resolve({ accepted: false, filter });
           return;
         }
-        filter = filter.slice(0, -1);
-        selected = 0;
-        render();
-        return;
-      }
-      // Arrow keys: `Esc [ <code>` (3 bytes).
-      if (buf.length >= 3 && buf[0] === 0x1B && buf[1] === 0x5B) {
-        const code = buf[2];
-        if (code === 0x41) {                // Up
+        // Esc (bare) — cancel. Multi-byte chunks starting with 0x1B
+        // are arrow keys / function keys (handled below).
+        if (buf.length === 1 && buf[0] === 0x1B) {
+          teardown();
+          resolve({ accepted: false, filter });
+          return;
+        }
+        // Enter — accept current selection. CR (0x0D) and LF (0x0A)
+        // both count; some terminals deliver one, some the other.
+        if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) {
           const visible = visibleItems();
-          if (visible.length > 0) {
-            selected = (selected - 1 + visible.length) % visible.length;
+          if (visible.length === 0) return;
+          const chosen = visible[selected];
+          teardown();
+          resolve({ accepted: true, command: chosen.command, filter });
+          return;
+        }
+        // Backspace (DEL 0x7F on POSIX, BS 0x08 on Windows).
+        //
+        // Behavior: shrink the filter by one char. If the filter is
+        // already empty we dismiss; otherwise we KEEP THE DROPDOWN
+        // OPEN even when the filter shrinks to "" (so the user can
+        // see the full list when they backspace past the trigger '/'
+        // — previous behavior dismissed on filter='/' which felt
+        // jumpy when the user just wanted to clear their typing).
+        if (buf.length === 1 && (buf[0] === 0x7F || buf[0] === 0x08)) {
+          if (filter.length === 0) {
+            teardown();
+            resolve({ accepted: false, filter });
+            return;
           }
+          filter = filter.slice(0, -1);
+          selected = 0;
           render();
           return;
         }
-        if (code === 0x42) {                // Down
-          const visible = visibleItems();
-          if (visible.length > 0) {
-            selected = (selected + 1) % visible.length;
-          }
-          render();
+        // Tab — navigate to the next item (alias for Down arrow).
+        // The previous "Tab = fill but don't submit" sentinel was
+        // confusing and never matched user muscle memory; treating
+        // Tab as navigation matches what most CLI completers do and
+        // pairs naturally with Shift+Tab below.
+        if (buf.length === 1 && buf[0] === 0x09) {
+          moveSelection(1);
           return;
         }
-        // Left/Right/Home/End/PgUp/PgDn — ignore in inline mode.
-        return;
-      }
-      // Tab — accept selection but DON'T submit. Returns command with
-      // a trailing space so the caller can detect "fill but don't run".
-      if (buf.length === 1 && buf[0] === 0x09) {
-        const visible = visibleItems();
-        if (visible.length === 0) return;
-        const chosen = visible[selected];
-        teardown();
-        resolve({ accepted: true, command: chosen.command + ' ', filter });
-        return;
-      }
-      // Printable input — extend filter and re-render. This is the
-      // per-char update path: every byte the user types lands here
-      // and immediately triggers render(), which recomputes visible
-      // items from the current filter and repaints the dropdown.
-      const s = buf.toString('utf-8');
-      if (/^[\x20-\x7E]+$/.test(s)) {
-        filter += s;
-        selected = 0;
-        render();
+        // Shift+Tab — navigate to the previous item. Delivered as
+        // the CSI back-tab sequence `\x1b[Z` (3 bytes) on most
+        // modern terminals including Windows Terminal + ConHost
+        // with VT100 enabled.
+        if (buf.length === 3 && buf[0] === 0x1B && buf[1] === 0x5B && buf[2] === 0x5A) {
+          moveSelection(-1);
+          return;
+        }
+        // Arrow keys: `Esc [ <code>` (3 bytes). Up/Down navigate;
+        // Page Up / Page Down skip by 5 (also reachable via the 4-
+        // byte forms `\x1b[5~` and `\x1b[6~`).
+        if (buf.length >= 3 && buf[0] === 0x1B && buf[1] === 0x5B) {
+          const code = buf[2];
+          if (code === 0x41) { moveSelection(-1); return; }    // Up
+          if (code === 0x42) { moveSelection(1);  return; }    // Down
+          if (buf.length >= 4 && (code === 0x35 || code === 0x36) && buf[3] === 0x7E) {
+            moveSelection(code === 0x35 ? -5 : 5);              // Page Up/Down
+            return;
+          }
+          // Left/Right/Home/End and other unhandled CSI escapes:
+          // swallow them silently rather than letting their bytes
+          // fall through to the printable-char branch (which would
+          // see e.g. "[D" and start appending '[' + 'D' to the
+          // filter). Anything starting with ESC [ is some terminal
+          // sequence — definitely not user-intended filter text.
+          return;
+        }
+        // Any other bare control byte (Ctrl+A..Ctrl+Z minus the ones
+        // we explicitly handled above): silently ignore. The user
+        // expects Ctrl+letter to do SOMETHING, but we don't have a
+        // mapping for most of them in this context — better to do
+        // nothing than to dump a 0x01 into the filter.
+        if (buf.length === 1 && buf[0] < 0x20) return;
+
+        // Printable input — extend filter and re-render. Robust
+        // against mixed chunks: instead of all-or-nothing, strip
+        // ANY non-printable bytes from the chunk and append only
+        // the printable subset. This means a chunk like `[h, 0x01]`
+        // (an 'h' followed by a stray Ctrl+A) still appends the 'h'
+        // instead of dropping the whole chunk.
+        //
+        // This is the per-char update path: every printable byte
+        // lands here and triggers render() with the new filter.
+        const s = buf.toString('utf-8');
+        const printable = s.replace(/[\x00-\x1F\x7F]/g, '');
+        if (printable.length > 0) {
+          filter += printable;
+          selected = 0;
+          render();
+        }
+      } catch {
+        // Don't let a render error wedge the user in the dropdown
+        // with a dead handler. Tear down, resolve as cancelled with
+        // the current filter, and let the parent restore the prompt.
+        try { teardown(); } catch { /* noop */ }
+        resolve({ accepted: false, filter });
       }
     }
 
