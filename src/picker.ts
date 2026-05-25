@@ -56,6 +56,13 @@ export interface PickerOptions {
    * (rare).
    */
   filterable?: boolean;
+  /**
+   * Pre-fill the filter with this string before showing the picker.
+   * Use case: triggering the picker via a specific key (`/`) and
+   * wanting that character already in the filter so the user can
+   * keep typing to narrow without re-typing the trigger.
+   */
+  initialFilter?: string;
 }
 
 // ANSI control sequences. Centralized so the rendering loop stays
@@ -83,7 +90,7 @@ export async function pick<T>(
   if (items.length === 0) return null;
 
   return new Promise<T | null>((resolve) => {
-    let filter = '';
+    let filter = opts.initialFilter ?? '';
     let selected = 0;
     const wasRaw = stdin.isRaw;
     const filterable = opts.filterable !== false;

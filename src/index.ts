@@ -400,7 +400,21 @@ async function askWithDecoratedPrompt(
 }
 
 /**
- * Parse slash command respecting quoted strings
+ * Parse a slash command into (cmd, args).
+ *
+ * Args normalization: leading + trailing angle brackets are stripped
+ * automatically. The /help text uses `<arg>` as placeholder syntax
+ * (e.g. `/resume <session-id>`, `/model <name>`), and users routinely
+ * paste the placeholder literally — `/resume <abc123>` instead of
+ * `/resume abc123`. Stripping at the parser level means every
+ * command gets the same forgiving treatment without each handler
+ * having to defensively unwrap.
+ *
+ * Quotes / brackets other than `<>` are intentionally NOT stripped
+ * here. Some commands legitimately take quoted strings (e.g.
+ * `/article "How to be a vibe coder"`) — those commands should
+ * handle their own quote semantics. Only the `<>` placeholder
+ * pattern is normalized universally.
  */
 function parseSlashCommand(input: string): { cmd: string; args: string } {
   const trimmed = input.trim();
@@ -411,9 +425,16 @@ function parseSlashCommand(input: string): { cmd: string; args: string } {
   }
 
   const cmd = trimmed.slice(0, spaceIdx).toLowerCase();
-  const argsRaw = trimmed.slice(spaceIdx + 1);
+  let argsRaw = trimmed.slice(spaceIdx + 1).trim();
 
-  // Keep quoted strings intact
+  // Strip leading + trailing `<>` if they wrap the entire arg
+  // string. Keeps `<>` inside the arg untouched (e.g. paths with
+  // angle brackets in regex-style queries) — only the outermost
+  // wrap is removed.
+  if (argsRaw.startsWith('<') && argsRaw.endsWith('>') && argsRaw.length > 2) {
+    argsRaw = argsRaw.slice(1, -1).trim();
+  }
+
   return { cmd, args: argsRaw };
 }
 
@@ -2663,7 +2684,33 @@ export function handleSlashCommand(
 
 // ── Main ──────────────────────────────────────────────────
 async function main(): Promise<void> {
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  // Slash-command completer: bash-style Tab completion. Triggered
+  // only when the typed line starts with '/' so it doesn't interfere
+  // with regular prose. When the user has typed a unique prefix, Tab
+  // completes to the full command. When multiple commands share the
+  // prefix, readline's default behavior is to print the list of
+  // candidates on the next Tab press — same UX as bash/zsh.
+  //
+  // This is COMPLEMENTARY to the '/' keypress trigger that opens the
+  // alt-screen picker: that's the "I want to browse" path; this is
+  // the "I know what I'm typing, just save me keystrokes" path. The
+  // two coexist because pressing '/' fires the picker only at an
+  // empty buffer — once the user has typed beyond '/', Tab takes
+  // over via this completer.
+  const { COMMAND_CATALOG } = await import('./command-palette.js');
+  const slashCommandNames = COMMAND_CATALOG.map((c) => c.command);
+  const rl = readline.createInterface({
+    input: stdin,
+    output: stdout,
+    completer: (line: string): [string[], string] => {
+      if (!line.startsWith('/')) return [[], line];
+      const matches = slashCommandNames.filter((c) => c.startsWith(line));
+      // readline contract: return [matches, lineWeMatchedAgainst].
+      // If matches is empty, readline beeps; otherwise it completes
+      // to common prefix or lists candidates.
+      return [matches.length > 0 ? matches : slashCommandNames, line];
+    },
+  });
 
   // Initialize subsystems
   initHooksDir();
@@ -2863,6 +2910,7 @@ async function main(): Promise<void> {
       'escape',                                // Esc-Esc rewind at empty prompt
       ',', '.',                                // Alt+, / Alt+. reasoning effort
       'space',                                 // Space at empty prompt → command palette
+      '/',                                     // / at empty prompt → palette filtered to '/'
       // Shifted F-keys carry the Tier-2 and Tier-3 a11y functions. Each
       // is checked alongside key.shift below, so a bare F1 still routes
       // to "status" while Shift+F1 routes to "queued input."
@@ -2909,6 +2957,10 @@ async function main(): Promise<void> {
       // dedicated branch below; here we just defer if there's any
       // modifier (Shift+Space, Ctrl+Space, etc. aren't us).
       if (name === 'space' && (shift || ctrl || meta)) return;
+      // Slash autocomplete: '/' at empty prompt opens the picker
+      // pre-filtered to '/'. Modified variants (Ctrl+/, etc.) are
+      // not ours.
+      if (name === '/' && (shift || ctrl || meta)) return;
 
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
@@ -3093,25 +3145,31 @@ async function main(): Promise<void> {
       // message that begins with a space-separated word) the keypress
       // listener stays out of the way and lets readline handle the
       // space normally.
-      if (name === 'space') {
+      if (name === 'space' || name === '/') {
         if (pickerActive) return;
         const buf = (rl as unknown as { line?: string }).line ?? '';
-        if (buf.length > 0) return;  // mid-input — let readline insert the space
-        // Mid-stream space is suppressed by the input guard already;
+        // Space is only triggered at an empty buffer (mid-typing
+        // space should insert normally). '/' has a more permissive
+        // trigger: it fires at empty buffer OR at exactly "/"
+        // (which is the state right after the user pressed '/'
+        // and the byte landed in the buffer). Either way, only
+        // empty + single-/ states open the picker; longer buffers
+        // pass through.
+        if (name === 'space' && buf.length > 0) return;
+        if (name === '/' && buf !== '' && buf !== '/') return;
+        // Mid-stream is suppressed by the input guard already;
         // this listener still fires but we shouldn't open a picker
         // on top of a streaming turn.
         const turnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
         if (turnCtl && !turnCtl.signal.aborted) return;
+        const triggerChar = name === '/' ? '/' : ' ';
         // Open the palette. The picker is async and takes stdin into
-        // raw mode for its lifetime — we fire-and-forget here. On
-        // selection, queue the command and resolve rl.question so the
-        // main loop dispatches it.
+        // raw mode for its lifetime — we fire-and-forget here.
         pickerActive = true;
-        // The space character is already in readline's buffer at
+        // The trigger character is already in readline's buffer at
         // this point (the keypress listener is an observer, not a
         // gate). Clear it so the prompt is clean once the picker
-        // exits — without this, the selected command would be
-        // appended after the stray space.
+        // exits.
         try {
           const rlAny = rl as unknown as { line: string; _refreshLine?: () => void };
           rlAny.line = '';
@@ -3130,13 +3188,33 @@ async function main(): Promise<void> {
             const selected = await pick(items, {
               title: 'compact-agent · command palette',
               footer: 'type to filter · ↑↓ to navigate · Enter to run · Esc to cancel',
+              // '/' trigger: pre-fill filter so the user's mental
+              // model ("I typed / and now I see slash commands") is
+              // preserved. Space trigger: blank filter, browse all.
+              initialFilter: name === '/' ? '/' : undefined,
             });
             if (selected) {
               (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = selected + '\n';
+              try { rl.emit('line', ''); } catch { /* noop */ }
+            } else if (triggerChar === '/') {
+              // Cancel from '/'-triggered picker: restore the '/'
+              // to the buffer so the user can keep typing the
+              // command manually (e.g. they wanted /model claude-
+              // sonnet-4 directly, not the picker). Don't resolve
+              // rl.question — leave readline waiting for input.
+              try {
+                const rlAny = rl as unknown as { line: string; _refreshLine?: () => void };
+                rlAny.line = '/';
+                rlAny._refreshLine?.();
+              } catch { /* noop */ }
+            } else {
+              // Cancel from space-triggered picker: prompt is clean,
+              // resolve readline with empty so the loop iterates
+              // back to a fresh prompt.
+              try { rl.emit('line', ''); } catch { /* noop */ }
             }
           } finally {
             pickerActive = false;
-            try { rl.emit('line', ''); } catch { /* noop */ }
           }
         })();
         return;
