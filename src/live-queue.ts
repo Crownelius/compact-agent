@@ -67,16 +67,30 @@ export function activate(): boolean {
   if (!rows || !cols || rows < 4) return false;
 
   // Print one blank line at the cursor position to ensure we don't
-  // collide with prior content, then move cursor up. This guarantees
-  // the reserved bottom row is logically below the current output.
+  // collide with prior content (the reserved bottom row is logically
+  // below current output after this newline).
   stdout.write('\n');
 
-  // Set scroll region to rows 1..(rows-1), leaving the last row for us
+  // Set scroll region to rows 1..(rows-1), leaving the last row for
+  // the input box. The cursor stays where it currently is — inside
+  // the scroll region — and subsequent output streams from there.
+  // Once the cursor reaches row (rows-1) and another newline is
+  // written, the region scrolls upward; the box on row `rows` stays
+  // pinned.
+  //
+  // Previous behavior force-moved the cursor to row (rows-1) via
+  // moveTo() so output would START at the bottom of the scroll
+  // region. That looked fine in long sessions but left a giant
+  // visible gap immediately after a fresh start / model switch:
+  // the prompt would render high on the screen, then the cursor
+  // would jump down ~20 rows to the bottom of the viewport before
+  // the first response token arrived. Visible result: huge empty
+  // band between the user's prompt and the model's first line.
+  //
+  // Dropping the moveTo means output appears RIGHT below the prompt;
+  // as it accumulates the prompt scrolls naturally upward and the
+  // box stays at the bottom.
   stdout.write(ANSI.scrollRegion(1, rows - 1));
-
-  // Move cursor back into the scroll region (top of the last visible
-  // scroll line). This puts subsequent output one row above the box.
-  stdout.write(ANSI.moveTo(rows - 1, 1));
 
   active = { rows, cols, boxRow: rows };
 

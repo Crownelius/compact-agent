@@ -212,9 +212,14 @@ function buildTheme(p: ColorPalette): Theme {
     toolError:   chalk.hex(p.magenta),
     toolTime:    chalk.hex(p.gray),
 
-    thinkBorder: chalk.hex(p.darkGray),
-    thinkText:   chalk.hex(p.gray).italic,
-    thinkLabel:  chalk.hex(p.darkGray).italic,
+    // Thinking display uses the brand accent (same as the banner
+    // title) so the "currently happening" line reads as the most
+    // recent action. Per user spec — no animation, just static
+    // brand-cyan styling on the thinking section. Final assistant
+    // text streams in terminal default (white) for contrast.
+    thinkBorder: chalk.hex(p.cyanDim),
+    thinkText:   chalk.hex(p.cyan).italic,
+    thinkLabel:  chalk.hex(p.cyan),
 
     modeBadge: (mode: string): string => {
       const colors: Record<string, ChalkFn> = {
@@ -587,29 +592,12 @@ export async function printThinkingOpen(): Promise<void> {
   _thinkingBuffer = '';
   _thinkingStartMs = Date.now();
   _thinkingActive = true;
-
-  // Boot animation — short power-up sequence before the header
-  // settles. Three frames at 60ms total ~180ms; just enough to feel
-  // alive without delaying the first thinking token meaningfully.
-  // (Reasoning models tend to take 500ms+ before emitting; this lands
-  // inside their initial latency window.)
-  const anims = await import('./animations.js');
-  const finalLine = theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} thinking`);
-  const bootFrames = [
-    theme.thinkBorder('  ') + theme.dim(anims.POWER_UP[0]) + ' ' + theme.dim('thinking'),
-    theme.thinkBorder('  ') + theme.dim(anims.POWER_UP[1]) + ' ' + theme.thinkLabel('thinking'),
-    theme.thinkBorder('  ') + theme.thinkLabel(anims.POWER_UP[2]) + ' ' + theme.thinkLabel('thinking'),
-    finalLine,
-  ];
-  await anims.playFrames(bootFrames, 50);
-  anims.commitFrame();
-
-  // Start the live spinner now that the header is committed. It will
-  // keep ticking the glyph on the header row while printThinkingText
-  // streams content below.
-  if (anims.animationsEnabled()) {
-    _startThinkingSpinner();
-  }
+  // Static header — no boot animation, no live spinner. The whole
+  // thinking section sits in brand-cyan so the user can scan it as
+  // "currently happening" without flicker. Spec from user: "take
+  // away the thinking animation and just color the most recent
+  // action with the title color." The header settles immediately.
+  console.log(theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} thinking`));
 }
 
 export function printThinkingText(text: string): void {
@@ -646,9 +634,9 @@ export function printThinkingText(text: string): void {
  * the count + elapsed; the panel stays where it is.
  */
 export async function printThinkingClose(opts: { collapse?: boolean } = {}): Promise<void> {
-  // Stop the live header spinner FIRST so it can't tick after we
-  // start the collapse animation (a stray tick mid-collapse would
-  // repaint the expanded header on top of the collapse sequence).
+  // Spinner is no longer started on open, but call the stop helper
+  // anyway so any in-flight tick from a previous version of the
+  // module (rare during hot-reload) is cleared.
   _stopThinkingSpinner();
   process.stdout.write('\n');
   if (!_thinkingActive) return;
@@ -678,7 +666,6 @@ export async function printThinkingClose(opts: { collapse?: boolean } = {}): Pro
 
   const tokens = _approxTokens(_thinkingBuffer);
   const elapsed = _thinkingElapsed();
-  const anims = await import('./animations.js');
 
   // Bail on collapse if the panel ran taller than the terminal can
   // address — cursor-up past the top doesn't go anywhere useful and
@@ -693,27 +680,16 @@ export async function printThinkingClose(opts: { collapse?: boolean } = {}): Pro
     return;
   }
 
-  // Cursor-up + carriage-return + erase to end of screen. \r first
-  // because cursor-up preserves the current column.
+  // Static collapse — no fold-down animation. Cursor-up to the open
+  // header row, clear from there to end of screen, write the
+  // collapsed one-liner footer. Matches the "no thinking animation"
+  // spec while preserving the collapse-to-summary behavior.
   process.stdout.write(`\r\x1b[${approxRows}A\x1b[J`);
-
-  // Collapse animation: a brief "folding down" sequence before the
-  // final footer settles. Mirrors the open-side power-up. Frames go
-  // from the expanded `│` border through a halfway state down to the
-  // collapsed `▶`, then commit to the final hint-bearing footer.
-  const finalFooter =
+  console.log(
     theme.thinkBorder('  ▶ ') +
     theme.thinkLabel('thinking') +
-    theme.dim(` · ${tokens}t · ${elapsed}s · /think to expand`);
-
-  const collapseFrames = [
-    theme.thinkBorder('  │ ') + theme.dim('▽ thinking'),
-    theme.thinkBorder('  ') + theme.dim('▼ thinking'),
-    theme.thinkBorder('  ▶ ') + theme.thinkLabel('thinking'),
-    finalFooter,
-  ];
-  await anims.playFrames(collapseFrames, 45);
-  anims.commitFrame();
+    theme.dim(` · ${tokens}t · ${elapsed}s · /think to expand`)
+  );
 }
 
 function _approxTokens(text: string): number {
