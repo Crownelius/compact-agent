@@ -261,10 +261,39 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
 function printResumedHistory(messages: Message[], sessionName: string): void {
   const d = theme.dim;
   const sep = '─'.repeat(60);
+
+  // Count by role first so we can surface gaps. A session with
+  // 5 user / 0 assistant is almost certainly an artifact of older
+  // autosave bugs (Ctrl+C during streaming, steer-before-text-streamed,
+  // etc.) — make it visible to the user instead of silently leaving
+  // them confused about why "/resume" only shows their own messages.
+  const counts = { user: 0, assistant: 0, tool: 0, system: 0, empty: 0 };
+  for (const m of messages) {
+    counts[m.role]++;
+    if (m.role === 'assistant') {
+      const hasText = typeof m.content === 'string' && m.content.trim().length > 0;
+      const hasTools = m.tool_calls && m.tool_calls.length > 0;
+      if (!hasText && !hasTools) counts.empty++;
+    }
+  }
+
   console.log('');
   console.log(d(sep));
   console.log(d(`  Resumed conversation: ${sessionName}`));
+  console.log(d(`  ${messages.length} messages  ·  ${counts.user} user · ${counts.assistant} assistant · ${counts.tool} tool` +
+    (counts.system > 0 ? ` · ${counts.system} system` : '')));
+  // Flag suspicious imbalance — a healthy chain has assistant ≈ user.
+  // 0 assistant turns means the model's responses never made it to
+  // disk (older bug, fixed in v1.30+). The file is what it is; warn so
+  // the user understands they're seeing a partial replay.
+  if (counts.user > 0 && counts.assistant === 0) {
+    console.log(theme.warning(`  ⚠  No assistant turns in this session — likely lost to an older autosave bug.`));
+    console.log(d(`     Newer sessions save reliably; this one's history is partial.`));
+  } else if (counts.empty > 0) {
+    console.log(d(`  (${counts.empty} empty assistant turn${counts.empty > 1 ? 's' : ''} — likely from interrupted streams)`));
+  }
   console.log(d(sep));
+
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === 'system') continue;  // injected context, not user-facing
@@ -278,7 +307,9 @@ function printResumedHistory(messages: Message[], sessionName: string): void {
     }
     if (m.role === 'assistant') {
       const text = typeof m.content === 'string' ? m.content : '';
-      if (text.trim()) {
+      const hasText = text.trim().length > 0;
+      const hasTools = m.tool_calls && m.tool_calls.length > 0;
+      if (hasText) {
         console.log('');
         console.log(theme.primary(text));
       }
@@ -291,6 +322,14 @@ function printResumedHistory(messages: Message[], sessionName: string): void {
           const args = (tc.function.arguments || '').slice(0, 80);
           console.log(d(`  ● ${tc.function.name}(${args}${args.length >= 80 ? '…' : ''})`));
         }
+      }
+      // Empty assistant message — print a placeholder so the user
+      // sees the turn structure instead of silent skip. These come
+      // from interrupted streams (Ctrl+G / Esc / Ctrl+C) where no
+      // tokens arrived before the abort.
+      if (!hasText && !hasTools) {
+        console.log('');
+        console.log(d('  (empty assistant turn — stream interrupted before any response)'));
       }
       continue;
     }

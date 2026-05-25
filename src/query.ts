@@ -639,11 +639,20 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       // that sets it is the steerHandler closure above.
       if (wasSteered) {
         console.log(theme.warning('  ⮌ steered — taking your queued input as the next turn'));
-        // Save whatever the model managed to emit before the abort
-        if (fullText.trim()) {
-          accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + fullText + '\n[interrupted by user steer]';
-          ctx.messages.push({ role: 'assistant', content: fullText + '\n[interrupted by user steer]' });
-        }
+        // Save whatever the model managed to emit before the abort.
+        // Previously this skipped the push entirely when fullText was
+        // empty (user steered before any tokens streamed). Result:
+        // the saved session ended up with consecutive user messages
+        // and no assistant alternation — /resume printed user-only
+        // history because that's all the file contained. Now we
+        // ALWAYS push an assistant message, even if it's just a
+        // placeholder, so the conversation structure is preserved
+        // for save + restore.
+        const interruptedText = fullText.trim()
+          ? fullText + '\n[interrupted by user steer]'
+          : '[interrupted by user steer — no response generated]';
+        accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + interruptedText;
+        ctx.messages.push({ role: 'assistant', content: interruptedText });
         // Drain the queue and push as the next user turn with a marker.
         const steerText = inputGuard.drainQueuedInput().trim();
         if (steerText) {
