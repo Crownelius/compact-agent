@@ -252,8 +252,6 @@ tool call. Specifically:
   burns context.
 - **Do NOT** re-read existing files you already loaded earlier in
   the same chain — your message history still has them.
-- If you find yourself planning out loud for more than ~3 sentences
-  before the next tool call, stop. Make the call. Iterate.
 
 ## When to use Stitch
 
