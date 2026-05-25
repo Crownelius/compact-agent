@@ -358,6 +358,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     toolCallCount: 0,
     sawToolError: false,
     sawToolRecovery: false,
+    toolCallFingerprints: new Map<string, number>(),
+    toolCallLoopDetected: false,
   };
 
   // Input suppression spans the entire chain: model streaming AND tool
@@ -860,7 +862,22 @@ interface ChainStats {
   toolCallCount: number;
   sawToolError: boolean;
   sawToolRecovery: boolean;
+  /**
+   * Map<fingerprint, count> tracking how many times the model has
+   * attempted the SAME tool with the SAME args within this chain.
+   * Fingerprint = `${toolName}::${JSON.stringify(input).slice(0,1000)}`.
+   * When a fingerprint hits LOOP_THRESHOLD we abort the chain — the
+   * model is stuck retrying a call that won't succeed. Without this
+   * safety valve a malformed write_file can burn 25K+ tokens across
+   * 3+ identical retries (observed in user testing). Companion to
+   * the stream-loop detector, which catches the SAME-text case;
+   * this one catches the SAME-tool-call case.
+   */
+  toolCallFingerprints: Map<string, number>;
+  toolCallLoopDetected: boolean;
 }
+
+const TOOL_CALL_LOOP_THRESHOLD = 3;
 
 async function executeToolCalls(
   toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[],
@@ -873,6 +890,50 @@ async function executeToolCalls(
   for (const tc of toolCalls) {
     const toolName = tc.function.name;
     const tool = getToolByName(toolName);
+
+    // ── Tool-call loop detection ──────────────────────────
+    // Fingerprint = tool name + raw arguments (truncated). If the
+    // same fingerprint hits THRESHOLD attempts in this chain, the
+    // model is stuck and continuing will just burn tokens. Bail with
+    // a clear error in the tool result so the model sees what it's
+    // been doing wrong + that we've stopped accepting the retry.
+    if (chainStats) {
+      const fingerprint = `${toolName}::${String(tc.function.arguments ?? '').slice(0, 1000)}`;
+      const seen = (chainStats.toolCallFingerprints.get(fingerprint) ?? 0) + 1;
+      chainStats.toolCallFingerprints.set(fingerprint, seen);
+      if (seen >= TOOL_CALL_LOOP_THRESHOLD && !chainStats.toolCallLoopDetected) {
+        chainStats.toolCallLoopDetected = true;
+        console.log(theme.error(
+          `  ⚠ Tool-call loop detected — ${toolName} with the same arguments has been attempted ${seen} times. Aborting chain.`,
+        ));
+        console.log(theme.dim(
+          `    The model is stuck retrying a call that won't succeed. Common causes:`,
+        ));
+        console.log(theme.dim(
+          `      · same JSON parse / schema error on every retry (read the prior error carefully)`,
+        ));
+        console.log(theme.dim(
+          `      · permission denied + the user not approving (try /perm auto or yolo)`,
+        ));
+        console.log(theme.dim(
+          `      · tool is unavailable in this session (e.g. stitch — needs REPL restart after config)`,
+        ));
+        // Return a single error result for THIS call and break out
+        // of the loop. The model receives one terminal failure
+        // message instead of N identical ones.
+        results.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content:
+            `Error: tool-call loop detected — you have attempted "${toolName}" with the same ` +
+            `arguments ${seen} times in this chain. The agent is refusing to execute identical ` +
+            `retries because they won't succeed. Read the prior tool-result error carefully and ` +
+            `either (a) change the arguments substantively, (b) use a different tool to achieve ` +
+            `the goal, or (c) stop and report the issue to the user.`,
+        });
+        return results;  // abort the rest of this turn's tool calls
+      }
+    }
 
     if (!tool) {
       // Free models routinely hallucinate tool names (web_search_exa,
@@ -895,12 +956,53 @@ async function executeToolCalls(
     let input: Record<string, unknown>;
     try {
       input = JSON.parse(tc.function.arguments);
-    } catch {
-      console.log(theme.error(`  ${sym.error} Invalid tool arguments for ${toolName}`));
+    } catch (parseErr) {
+      // The model emitted malformed JSON in the tool_calls arguments
+      // field. Without a useful error the model loops with the same
+      // broken call (observed in user testing: 3 retries on a
+      // write_file with a huge HTML content burned 25K tokens). Give
+      // the model concrete diagnostics so it can self-correct on the
+      // next iteration:
+      //   1. The actual parser error (location + what went wrong)
+      //   2. A truncated preview of what it sent
+      //   3. Hints about the most common causes
+      const rawArgs = String(tc.function.arguments ?? '');
+      const errMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      const preview = rawArgs.length > 400
+        ? rawArgs.slice(0, 200) + '\n…[truncated ' + (rawArgs.length - 400) + ' chars]…\n' + rawArgs.slice(-200)
+        : rawArgs;
+      console.log(theme.error(`  ${sym.error} Invalid tool arguments for ${toolName} — could not parse as JSON`));
+      console.log(theme.dim(`    parser error: ${errMsg}`));
+      // Heuristic hints to surface the most common root causes the
+      // model usually misses on retry.
+      const hints: string[] = [];
+      if (rawArgs.length > 100_000) {
+        hints.push(
+          'argument payload is very large (' + rawArgs.length + ' chars) — for large file writes, ' +
+          'prefer apply_patch (which handles large content more reliably) over write_file with the ' +
+          'entire content as a single JSON string',
+        );
+      }
+      if (/[^\\]\n/.test(rawArgs.slice(0, 5000))) {
+        hints.push(
+          'unescaped newline in a JSON string — every literal newline inside a string value must be \\n, not a raw newline',
+        );
+      }
+      if (/,\s*[}\]]/.test(rawArgs)) {
+        hints.push('trailing comma before } or ] — strict JSON forbids this');
+      }
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: 'Error: could not parse tool arguments as JSON',
+        content:
+          `Error: could not parse tool arguments as JSON.\n` +
+          `Parser error: ${errMsg}\n` +
+          `What you sent (truncated): ${preview}\n` +
+          (hints.length > 0
+            ? `Likely causes:\n  - ${hints.join('\n  - ')}\n`
+            : '') +
+          `Do NOT retry with the same arguments. Fix the JSON issue and try again, ` +
+          `or use a different approach (e.g. split a huge write into multiple smaller writes).`,
       });
       continue;
     }
@@ -909,10 +1011,19 @@ async function executeToolCalls(
     const validation = validateToolArguments(tool, input);
     if (!validation.valid) {
       console.log(theme.error(`  ${sym.error} Invalid tool arguments for ${toolName}: ${validation.error}`));
+      // Same fail-loud philosophy as the JSON-parse path: tell the
+      // model what it actually sent + the validation rule + how to
+      // recover. Without "Do NOT retry with the same arguments" the
+      // model often retries with structurally-identical input.
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
-        content: `Error: ${validation.error}`,
+        content:
+          `Error: tool arguments failed schema validation.\n` +
+          `Validation error: ${validation.error}\n` +
+          `Tool: ${toolName}\n` +
+          `What you sent: ${JSON.stringify(input).slice(0, 400)}\n` +
+          `Do NOT retry with the same arguments. Adjust the arguments to satisfy the schema and try again.`,
       });
       continue;
     }

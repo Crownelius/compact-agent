@@ -1928,16 +1928,52 @@ export function handleSlashCommand(
       return { handled: false, injectPrompt: buildStitchPrompt(args) };
 
     case '/stitch-config': {
-      const key = args.trim();
+      // Sanitize the input. Users routinely paste keys with the
+      // angle-bracket placeholder wrappers from documentation
+      // (`<KEY>`), with surrounding quotes from a shell escape, or
+      // with whitespace from clipboard managers. Without this
+      // stripping the key gets stored literally (e.g. "<AQ.…>") and
+      // every subsequent Stitch call fails auth — a real failure
+      // mode that wasted hours in user testing.
+      let key = args.trim();
+      // Strip a paired wrap: <...>, "...", '...', `...`, [...], (...)
+      const wraps: Array<[string, string]> = [
+        ['<', '>'], ['"', '"'], ["'", "'"], ['`', '`'], ['[', ']'], ['(', ')'],
+      ];
+      for (const [open, close] of wraps) {
+        if (key.startsWith(open) && key.endsWith(close) && key.length > 2) {
+          key = key.slice(1, -1).trim();
+          break;
+        }
+      }
       if (!key) {
         console.log(chalk.yellow('  Usage: /stitch-config <api-key>'));
         console.log(chalk.dim('  Get a key from https://stitch.withgoogle.com/ → Stitch Settings → API Keys'));
+        console.log(chalk.dim('  Paste the key alone, not wrapped in angle brackets or quotes.'));
         return { handled: true };
+      }
+      // Shape sanity-check. Stitch API keys start with "AQ." per the
+      // Google API-key convention. Warn if the shape looks wrong,
+      // but still save — we don't want to false-reject a future
+      // format change.
+      if (!/^AQ\./i.test(key)) {
+        console.log(chalk.yellow('  Warning: this key doesn\'t look like a Stitch API key (expected to start with "AQ.").'));
+        console.log(chalk.dim('  Saved anyway. If Stitch calls fail with auth errors, double-check what you pasted.'));
       }
       saveStitchConfig(key);
       console.log(chalk.green(`  Stitch API key saved to ~/.compact-agent/stitch.json`));
-      console.log(chalk.dim('  The `stitch` tool is now available to the agent.'));
-      console.log(chalk.dim('  Restart the REPL for the tool to appear in /tools.'));
+      // The stitch tool is only added to ALL_TOOLS at module-load
+      // time (when src/tools/index.ts is first imported). Mid-session
+      // configuration won't make it appear until the user restarts.
+      // Make the restart requirement IMPOSSIBLE to miss — previous
+      // versions buried this in dim text and the model wasted turns
+      // hallucinating MCP endpoints when the tool was missing.
+      console.log('');
+      console.log(chalk.yellow.bold('  ⚠  RESTART REQUIRED'));
+      console.log(chalk.yellow('     The `stitch` tool is registered only at REPL launch. Type /exit'));
+      console.log(chalk.yellow('     and re-run compact-agent to make it available to the agent.'));
+      console.log(chalk.dim('     Until then, /design and Stitch-related requests will see the model'));
+      console.log(chalk.dim('     fall back to hand-coded HTML/CSS instead of using Stitch.'));
       return { handled: true };
     }
 
