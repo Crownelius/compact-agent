@@ -10,59 +10,56 @@
  * and only paints a few rows of dropdown below the cursor — the
  * surrounding chat output stays visible.
  *
- * Render strategy
- * ───────────────
- * On entry we save the current cursor position with DECSC (`\x1b7`).
- * That position is the anchor: right after the prompt glyph, before
- * the filter chars. Every render:
+ * Render strategy — RELATIVE cursor positioning only
+ * ──────────────────────────────────────────────────
+ * The first cut of this module used DECSC/DECRC (`\x1b7`/`\x1b8`) to
+ * pin an anchor at the start of the filter, then restored to it on
+ * every render. That fails on Windows PowerShell legacy ConHost as
+ * soon as the dropdown content scrolls the terminal — the saved
+ * position is stored in *visible* coordinates, so after a scroll it
+ * lands on the wrong row and renders pile up below the previous one.
  *
- *   1. Restore to anchor (DECRC `\x1b8`)
- *   2. Clear from cursor to end of screen (`\x1b[J`)
- *   3. Write the filter text (cursor advances along the prompt row)
- *   4. `\r\n` + rows of dropdown content below
- *   5. Restore to anchor again, then move right by filter.length so
- *      the cursor sits at the end of the filter (where the user
- *      expects to be typing)
+ * The fix: track our own row count and use relative cursor moves
+ * (`\x1b[<N>A` go up, `\r` col 0, `\x1b[<N>C` advance N cols). Every
+ * render writes the FULL prompt line — prompt prefix + filter — so
+ * we don't need to "skip over" the prefix to reach the filter cell.
+ * The caller hands us the prompt prefix (ANSI-styled string + the
+ * visible char count) so we can repaint it each frame.
  *
- * The single DECSC/DECRC pair is enough because the anchor never
- * moves during the lifetime of the widget. We compute the final
- * cursor position from filter.length rather than re-saving.
+ * Per-frame sequence:
+ *   1. Up `_dropdownRows` lines     → back to the filter row
+ *   2. `\r`                          → col 0 of that row
+ *   3. `\x1b[J`                      → clear from cursor to end of screen
+ *   4. promptPrefix + filter         → repaint the prompt line
+ *   5. `\r\n` + each dropdown row    → fill the rows below
+ *   6. Up `rowsDrawn` + `\r` + right (promptVisLen + filter.length)
+ *                                   → cursor settles at end of filter
  *
- * Caveats:
- *   - Long filter that wraps to a new line breaks the column math.
- *     Filters are typically < 30 chars so this is acceptable.
- *   - If the dropdown would extend past the bottom of the terminal,
- *     the screen scrolls and the saved cursor position becomes
- *     stale. We cap visible rows to MAX_ROWS to keep this rare.
+ * Steps 1–3 only refer to rows we previously printed (which are still
+ * on screen, because they came AFTER the prompt). Even if the screen
+ * scrolled between renders, relative up-moves still target our own
+ * rows correctly because they're contiguous with the cursor.
  *
  * Key handling
  * ────────────
  * While suggest is active, we detach all non-hotkey `keypress`
- * listeners so readline's line editor stops processing input (which
- * would otherwise echo chars into rl.line, navigate history on Up,
- * and emit 'line' on Enter — fighting our dropdown). We add a raw
- * `data` listener that parses bytes directly:
+ * listeners so readline's line editor stops processing input. A raw
+ * `data` listener parses bytes directly:
  *
  *   Ctrl+C / Esc          cancel
  *   Enter (CR or LF)      accept current selection
  *   Up / Down             move selection
  *   Backspace             delete last filter char; dismiss if empty
+ *   Tab                   accept without submitting (sentinel:
+ *                         trailing space on command)
  *   Printable ASCII       append to filter, reset selection to 0
- *
- * Returns `{ accepted, command?, filter }`. The caller is
- * responsible for:
- *   - On accept: stashing the chosen command in
- *     __crowcoderQueuedInput and emitting 'line' to submit
- *   - On cancel: restoring rl.line to `filter` so the user can keep
- *     typing the partial command they had
  */
 import { stdin, stdout } from 'node:process';
 import type { Interface as RLInterface } from 'node:readline';
 
 const ANSI = {
-  cursorSave: '\x1b7',
-  cursorRestore: '\x1b8',
   clearToEnd: '\x1b[J',
+  clearLine: '\x1b[K',
   reverse: '\x1b[7m',
   dim: '\x1b[2m',
   reset: '\x1b[0m',
@@ -79,10 +76,26 @@ export interface SuggestItem {
   description: string;
 }
 
+export interface InlineSuggestOptions {
+  /**
+   * The styled prompt prefix to repaint at the start of every render
+   * (includes any chalk codes). Defaults to "  ❯ " (no decorative).
+   */
+  promptPrefix?: string;
+  /**
+   * Visible character width of `promptPrefix` (i.e. its length minus
+   * any ANSI escape sequences). Used to position the cursor at the
+   * end of the filter after a render. Defaults to counting the
+   * stripped prefix when omitted.
+   */
+  promptVisibleLen?: number;
+}
+
 export interface InlineSuggestResult {
   /** True if the user picked an item (Enter); false on Esc / Ctrl+C / Backspace-to-empty. */
   accepted: boolean;
-  /** The chosen command, only set when accepted=true. */
+  /** The chosen command, only set when accepted=true. Trailing space
+   * means "fill but don't submit" (Tab pathway). */
   command?: string;
   /** The filter string at exit. Caller restores rl.line to this on
    * cancel so the user can keep typing the partial command. */
@@ -91,31 +104,37 @@ export interface InlineSuggestResult {
 
 type TaggedListener = ((...args: unknown[]) => void) & { __crowcoderHotkey__?: boolean };
 
+/** Strip ANSI SGR escape sequences for visible-width math. */
+function ansiVisibleLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
 /**
  * Show the inline suggest dropdown and resolve when the user picks
  * or cancels.
  *
- * The caller must have already cleared rl.line and refreshed the
- * prompt — the cursor should be sitting at the typing position when
- * this is called (so DECSC captures the right anchor).
+ * The caller should have cleared rl.line and refreshed the prompt
+ * before calling — we repaint the prompt line ourselves but the
+ * cursor needs to be on a stable row (not mid-scroll).
  */
 export async function inlineSuggest(
   _rl: RLInterface,
   items: SuggestItem[],
   initialFilter: string = '/',
+  opts: InlineSuggestOptions = {},
 ): Promise<InlineSuggestResult> {
   return new Promise<InlineSuggestResult>((resolve) => {
     let filter = initialFilter;
     let selected = 0;
+    // Rows of dropdown printed on the previous frame (NOT including
+    // the filter row). The next frame goes up by this many to land
+    // back on the filter row.
+    let dropdownRows = 0;
 
-    // Save the anchor — current cursor position is right after the
-    // prompt glyph, before the filter text we're about to render.
-    stdout.write(ANSI.cursorSave);
+    const promptPrefix = opts.promptPrefix ?? '  ❯ ';
+    const promptVisLen = opts.promptVisibleLen ?? ansiVisibleLen(promptPrefix);
 
     // Defensive: ensure raw mode is on and the stream is flowing.
-    // readline normally has these set already, but if the parent ever
-    // pauses stdin or flips raw mode off, our data listener wouldn't
-    // see typed bytes and the per-char update would silently break.
     const wasRaw = stdin.isRaw;
     try { stdin.setRawMode(true); } catch { /* noop */ }
     stdin.resume();
@@ -123,8 +142,7 @@ export async function inlineSuggest(
     // Detach readline's keypress listeners so the line editor doesn't
     // also process input. The hotkey listener (tagged
     // __crowcoderHotkey__) stays attached because it has its own
-    // bail for `pickerActive`; the others (readline's own internal
-    // emitter, history nav) get pulled.
+    // bail for `pickerActive`; the others get pulled.
     const allKeypress = stdin.listeners('keypress').slice() as TaggedListener[];
     const togglable = allKeypress.filter((l) => !l.__crowcoderHotkey__);
     for (const l of togglable) stdin.removeListener('keypress', l);
@@ -157,15 +175,31 @@ export async function inlineSuggest(
         Math.max(10, shown.reduce((m, it) => Math.max(m, it.command.length), 0)),
       );
       const termCols = stdout.columns || 80;
-      // Reserve: 2 (indent) + cmdCol + 2 (gutter) + descMax + safety
       const descMax = Math.max(20, termCols - cmdCol - 6);
 
-      stdout.write(ANSI.cursorRestore);   // back to anchor
-      stdout.write(ANSI.clearToEnd);      // wipe filter + dropdown from prev frame
-      stdout.write(filter);               // redraw filter on prompt row
+      // ── Reposition to the filter row ──
+      // Up by however many dropdown rows we left on screen last
+      // frame. Then \r to col 0. Then clear from cursor to end of
+      // screen — that erases the rest of the filter row AND every
+      // dropdown row below.
+      if (dropdownRows > 0) {
+        stdout.write(`\x1b[${dropdownRows}A`);
+      }
+      stdout.write('\r');
+      stdout.write(ANSI.clearToEnd);
 
+      // Repaint the prompt line: styled prefix + filter chars. We
+      // own this line now (the clear above wiped whatever was here).
+      stdout.write(promptPrefix + filter);
+
+      // Draw dropdown rows beneath. Each row gets a "\r\n" prefix
+      // so it lands on a fresh line at col 0 regardless of where the
+      // previous write left the cursor. (Bare "\n" in raw mode only
+      // moves down, not back to col 0.)
+      let rowsDrawn = 0;
       if (shown.length === 0) {
         stdout.write(`\r\n  ${ANSI.dim}(no matches — Backspace to clear, Esc to dismiss)${ANSI.reset}`);
+        rowsDrawn = 1;
       } else {
         for (let i = 0; i < shown.length; i++) {
           const it = shown[i];
@@ -178,43 +212,56 @@ export async function inlineSuggest(
           let desc = it.description;
           if (desc.length > descMax) desc = desc.slice(0, descMax - 1) + '…';
 
-          // Selected row: reverse-video the whole row for clear
-          // contrast (matches Claude Code's highlight). Unselected:
-          // command in default color, description dim — keeps the
-          // dropdown visually quiet.
           const line = isSel
             ? `${ANSI.reverse}  ${cmd}  ${desc}${ANSI.reset}`
             : `  ${cmd}  ${ANSI.dim}${desc}${ANSI.reset}`;
           stdout.write(`\r\n${line}`);
+          rowsDrawn++;
         }
         if (visible.length > shown.length) {
           stdout.write(`\r\n  ${ANSI.dim}… ${visible.length - shown.length} more · type to narrow${ANSI.reset}`);
+          rowsDrawn++;
         }
       }
 
-      // Cursor back to anchor + advance to end of filter, so the
-      // user sees the caret where they expect to be typing.
-      stdout.write(ANSI.cursorRestore);
-      if (filter.length > 0) {
-        stdout.write(`\x1b[${filter.length}C`);
+      // Cursor back to the end of the filter on the prompt row.
+      // After the last write we're at end-of-last-dropdown-row;
+      // go up `rowsDrawn` lines, \r to col 0, then advance to the
+      // visible column of end-of-filter.
+      stdout.write(`\x1b[${rowsDrawn}A\r`);
+      const endCol = promptVisLen + filter.length;
+      if (endCol > 0) {
+        stdout.write(`\x1b[${endCol}C`);
       }
+      dropdownRows = rowsDrawn;
     }
 
     function teardown(): void {
       stdin.removeListener('data', onData);
       for (const l of togglable) stdin.on('keypress', l);
-      // Restore raw-mode state. (Leaving stdin paused or in cooked
-      // mode would break readline's next prompt.)
       try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
-      // Wipe the dropdown + filter from the screen. The caller
-      // restores rl.line + redraws the prompt as needed.
-      stdout.write(ANSI.cursorRestore);
-      stdout.write(ANSI.clearToEnd);
+      // Wipe the dropdown area. We're at end-of-filter; go down +
+      // \r + clear-to-end clears everything we drew below the
+      // prompt row. Leave the filter on screen — the caller decides
+      // whether to overwrite (on accept) or restore rl.line + redraw
+      // (on cancel).
+      if (dropdownRows > 0) {
+        stdout.write('\r\n');
+        stdout.write(ANSI.clearToEnd);
+        // Cursor is now at col 0 of the row after the filter.
+        // Move back up + to end of filter so caller sees a clean
+        // single-row state.
+        stdout.write(`\x1b[1A\r`);
+        const endCol = promptVisLen + filter.length;
+        if (endCol > 0) {
+          stdout.write(`\x1b[${endCol}C`);
+        }
+      }
+      dropdownRows = 0;
     }
 
     function onData(buf: Buffer): void {
-      // Ctrl+C — cancel (treated same as Esc; the parent loop sees
-      // Ctrl+C separately if pressed mid-stream).
+      // Ctrl+C — cancel.
       if (buf.length === 1 && buf[0] === 0x03) {
         teardown();
         resolve({ accepted: false, filter });
@@ -273,16 +320,13 @@ export async function inlineSuggest(
         // Left/Right/Home/End/PgUp/PgDn — ignore in inline mode.
         return;
       }
-      // Tab — accept selection but DON'T submit. Useful when the
-      // command takes args (e.g. /model <name>) and the user wants
-      // to fill the command then add the arg.
+      // Tab — accept selection but DON'T submit. Returns command with
+      // a trailing space so the caller can detect "fill but don't run".
       if (buf.length === 1 && buf[0] === 0x09) {
         const visible = visibleItems();
         if (visible.length === 0) return;
         const chosen = visible[selected];
         teardown();
-        // We signal "accepted, but don't submit" by returning the
-        // command with a trailing space — the caller checks for that.
         resolve({ accepted: true, command: chosen.command + ' ', filter });
         return;
       }
@@ -290,9 +334,6 @@ export async function inlineSuggest(
       // per-char update path: every byte the user types lands here
       // and immediately triggers render(), which recomputes visible
       // items from the current filter and repaints the dropdown.
-      // Fast typing can deliver a multi-byte chunk in a single data
-      // event; we treat that as one render rather than one per byte
-      // (no visible difference, fewer paints).
       const s = buf.toString('utf-8');
       if (/^[\x20-\x7E]+$/.test(s)) {
         filter += s;

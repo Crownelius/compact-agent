@@ -3275,6 +3275,10 @@ async function main(): Promise<void> {
             if (isSlash) {
               // '/' → inline dropdown below the prompt.
               const { inlineSuggest } = await import('./inline-suggest.js');
+              const gp = globalThis as {
+                __crowcoderPromptStyled?: string;
+                __crowcoderPromptVisLen?: number;
+              };
               const result = await inlineSuggest(
                 rl,
                 COMMAND_CATALOG.map((c) => ({
@@ -3282,6 +3286,10 @@ async function main(): Promise<void> {
                   description: c.description,
                 })),
                 '/',
+                {
+                  promptPrefix: gp.__crowcoderPromptStyled,
+                  promptVisibleLen: gp.__crowcoderPromptVisLen,
+                },
               );
               if (result.accepted && result.command) {
                 // Trailing space → "fill but don't submit" (Tab
@@ -3670,6 +3678,17 @@ async function main(): Promise<void> {
         : theme.dim(`[${formatDuration(Date.now() - sessionStartMs)}] `);
       const modeTag = mode.current !== 'dev' ? theme.dim(`[${mode.current}] `) : '';
       const promptGlyph = screenReader ? '> ' : `${sym.prompt} `;
+      // Stash the prompt prefix for the inline-suggest dropdown (the
+      // `/` hotkey handler is in a different scope and can't otherwise
+      // see what theme.prompt() decided this iteration). The handler
+      // repaints the prompt line on every render — it needs both the
+      // styled string (to write with color) and the visible-char
+      // length (to position the cursor at end-of-filter).
+      const promptStyled = theme.prompt(promptGlyph);
+      (globalThis as { __crowcoderPromptStyled?: string; __crowcoderPromptVisLen?: number })
+        .__crowcoderPromptStyled = promptStyled;
+      (globalThis as { __crowcoderPromptStyled?: string; __crowcoderPromptVisLen?: number })
+        .__crowcoderPromptVisLen = promptGlyph.length;
 
       // Queued input (Codex audit's queued_user_messages). If the user
       // typed something during the previous chain's streaming/tool
