@@ -236,6 +236,25 @@ Stitch** (https://stitch.withgoogle.com/). The user shouldn't have to
 think about Stitch at all — they describe what they want, you handle
 the design + code integration end to end.
 
+## Critical: keep thinking short, get to action fast
+
+Stitch API calls take **minutes**. The cheapest thing you can do is
+get the call out the door quickly and let it run. The most expensive
+thing is to write thousands of tokens of pre-planning before any
+tool call. Specifically:
+
+- **Do NOT** pre-write the entire poem / page content / CSS / JS
+  inside your thinking before making any tool calls. Plan minimally
+  (a one-line outline at most), make the Stitch call, THEN flesh
+  out details while it generates.
+- **Do NOT** re-list Stitch tools mid-session. The catalog is cached;
+  re-calling \`tools/list\` returns the same thing each time and
+  burns context.
+- **Do NOT** re-read existing files you already loaded earlier in
+  the same chain — your message history still has them.
+- If you find yourself planning out loud for more than ~3 sentences
+  before the next tool call, stop. Make the call. Iterate.
+
 ## When to use Stitch
 
 Use the \`stitch\` tool **automatically** whenever the user's request

@@ -13,6 +13,21 @@
 import type { Tool, ToolResult } from './types.js';
 import { callStitchMcp, stitchConfigured } from '../stitch.js';
 
+// Per-process cache of the tools/list response. Stitch's catalog is
+// effectively static — the tool list doesn't change between calls
+// inside a single session. Without caching, the model routinely
+// re-calls tools/list 3+ times per chain to "re-discover" the schema,
+// each call returning ~100KB that floods context with duplicate
+// information. Caching saves both the API round-trip AND the
+// context tokens spent re-ingesting the same schema.
+//
+// Cache lives in module scope (per process), so it survives between
+// tool calls in the same session but doesn't leak across REPL
+// invocations. The hit-count is exposed via the result message so
+// the model gets a clear "you've already seen this" signal and
+// stops asking for it.
+let _stitchToolsListCache: { output: string; hitCount: number } | null = null;
+
 export const StitchTool: Tool = {
   name: 'stitch',
   description:
@@ -82,6 +97,23 @@ export const StitchTool: Tool = {
       };
     }
 
+    // ── tools/list cache short-circuit ────────────────────
+    // Hit the cache on every tools/list after the first. The model
+    // sometimes re-discovers the catalog 3-5+ times per session
+    // (each call dumping ~100KB of duplicate schema into context).
+    // The cached response is prefixed with a one-line hint telling
+    // the model to STOP asking — the schema doesn't change. If the
+    // hint doesn't dissuade, the per-fingerprint loop detector
+    // (still active) catches genuine pathological loops.
+    if (method === 'tools/list' && _stitchToolsListCache) {
+      _stitchToolsListCache.hitCount++;
+      const hint =
+        `// CACHED — you already called stitch tools/list earlier this session ` +
+        `(${_stitchToolsListCache.hitCount + 1}× total). The catalog doesn't change between calls. ` +
+        `Use the tools you already saw; do NOT call tools/list again.\n`;
+      return { output: hint + _stitchToolsListCache.output, isError: false };
+    }
+
     const resp = await callStitchMcp({ method, params });
     if (!resp.ok) {
       return {
@@ -98,6 +130,13 @@ export const StitchTool: Tool = {
     const output = formatted.length > MAX
       ? formatted.slice(0, MAX) + `\n…[truncated ${formatted.length - MAX} bytes]`
       : formatted;
+
+    // Cache the FIRST successful tools/list result so subsequent
+    // calls hit the short-circuit above. The hitCount starts at 0
+    // (this is the first call); next call will increment it.
+    if (method === 'tools/list' && !_stitchToolsListCache) {
+      _stitchToolsListCache = { output, hitCount: 0 };
+    }
 
     return { output, isError: false };
   },
