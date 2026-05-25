@@ -83,7 +83,8 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/perm', description: 'Permission mode (ask/auto/yolo)', category: 'Config' },
   { command: '/sandbox', description: 'OS-native bash sandbox (off/standard/strict)', category: 'Config' },
   { command: '/dry-run', description: 'Toggle dry-run mode (preview tool calls)', category: 'Config' },
-  { command: '/thinking', description: 'Toggle thinking/reasoning display', category: 'Config' },
+  { command: '/thinking', description: 'Toggle thinking/reasoning display (live + auto-collapse)', category: 'Config' },
+  { command: '/think', description: 'Re-expand the most recent collapsed thinking block', category: 'Config' },
   { command: '/cd', description: 'Change working directory', category: 'Config' },
   { command: '/hooks', description: 'List configured hooks', category: 'Config' },
 

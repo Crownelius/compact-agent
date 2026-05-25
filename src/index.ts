@@ -26,7 +26,7 @@ import { buildCommitPrompt, buildPRPrompt, printDiff, printLog, isGitRepo } from
 import { buildReviewPrompt, buildTDDPrompt, buildSecurityReviewPrompt, runAudit, printAuditReport, buildPlanPrompt, buildE2EPrompt, buildBuildFixPrompt, buildEvalPrompt, buildUpdateDocsPrompt } from './evaluation.js';
 import { printRules } from './rules.js';
 import { buildOrchestrationPrompt, runParallel, mergeResults, printOrchestrationStatus, type SubAgent } from './orchestration.js';
-import { printBanner as printThemedBanner, theme, sym, formatDuration, installScreenReaderDispatch, uninstallScreenReaderDispatch, setPalette, getPaletteId, listPalettes, isPaletteId, PALETTES } from './theme.js';
+import { printBanner as printThemedBanner, theme, sym, formatDuration, installScreenReaderDispatch, uninstallScreenReaderDispatch, setPalette, getPaletteId, listPalettes, isPaletteId, PALETTES, expandLastThinking } from './theme.js';
 import { saveExport, type ExportFormat } from './export.js';
 // New feature modules
 import { buildVerifyPrompt, saveCheckpoint, listCheckpoints, restoreCheckpoint } from './verification.js';
@@ -533,7 +533,8 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/perm-reset') + d('       — clear the per-tool always-allow list'));
       console.log(d('  ') + c('/sandbox [level]') + d('  — OS-native bash sandbox (off / standard / strict)'));
       console.log(d('  ') + c('/dry-run') + d('          — toggle dry-run mode'));
-      console.log(d('  ') + c('/thinking') + d('         — toggle thinking/reasoning display'));
+      console.log(d('  ') + c('/thinking') + d('         — toggle thinking display (live + auto-collapse)'));
+      console.log(d('  ') + c('/think') + d('            — re-expand the most recent collapsed thinking'));
       console.log(d('  ') + c('/cd <path>') + d('        — change directory'));
       console.log(d('  ') + c('/hooks') + d('            — list configured hooks'));
       console.log(d('  ') + c('/reset-hooks') + d('      — wipe hooks.json and re-seed ECC hooks for current install'));
@@ -1300,8 +1301,51 @@ export function handleSlashCommand(
       console.log(chalk.green(`  Show thinking: ${thinkingStatus}`));
       if (config.showThinking) {
         console.log(chalk.dim('  Model reasoning/chain-of-thought will be displayed when available.'));
+        console.log(chalk.dim('  Streams live in a │-bordered panel, then collapses to a one-liner.'));
+        console.log(chalk.dim('  Re-expand the most recent thinking block with /think.'));
         console.log(chalk.dim('  Works with DeepSeek, OpenRouter reasoning models, and others.'));
       }
+      return { handled: true };
+    }
+
+    case '/think': {
+      // /think (no args) → re-expand the most recent thinking block
+      //   (the one that just collapsed to a one-liner footer)
+      // /think on|off    → alias for /thinking (toggles show-thinking)
+      //
+      // Mental model: /thinking is the *setting* (display reasoning
+      // at all? yes/no), /think is the *action* (show me that
+      // reasoning again now). Both names appear in the wild — Claude
+      // Code uses /think, other CLIs use /thinking — so we support
+      // both rather than picking a winner.
+      const sub = (args || '').trim().toLowerCase();
+      if (sub === 'on' || sub === 'off') {
+        const wantOn = sub === 'on';
+        if (config.showThinking !== wantOn) {
+          config.showThinking = wantOn;
+          saveConfig(config);
+        }
+        console.log(chalk.green(`  Show thinking: ${wantOn ? chalk.yellow('ON') : chalk.green('OFF')}`));
+        return { handled: true };
+      }
+      if (sub === 'toggle' || sub === '') {
+        // Empty args → expand last thinking. If there is none yet
+        // (no model turn this session has emitted reasoning),
+        // surface a helpful hint instead of silently no-op'ing.
+        const ok = expandLastThinking();
+        if (!ok) {
+          console.log(chalk.dim('  No thinking captured yet this session.'));
+          if (config.showThinking === false) {
+            console.log(chalk.dim('  /thinking is currently OFF — run /thinking to enable.'));
+          } else {
+            console.log(chalk.dim('  The current model may not emit reasoning tokens.'));
+            console.log(chalk.dim('  Try a reasoning model: deepseek-r1, o1-mini, etc.'));
+          }
+        }
+        return { handled: true };
+      }
+      console.log(chalk.dim('  /think              — re-expand the most recent thinking'));
+      console.log(chalk.dim('  /think on | off     — enable/disable thinking display'));
       return { handled: true };
     }
 
@@ -2620,9 +2664,15 @@ export function handleSlashCommand(
         saveConfig(config);
         // Screen-reader mode is special: install/uninstall the stdout filter
         // immediately so the toggle takes effect for the very next log line.
+        // Also flip animations off when SR is on — in-place ANSI repaints
+        // (spinners + collapse transitions) read as a flood of new content
+        // events to NVDA/JAWS and drown out actual response text.
         if (field === 'screenReader') {
           if (v === 'on') installScreenReaderDispatch(applyScreenReader);
           else uninstallScreenReaderDispatch();
+          void import('./animations.js').then(({ setAnimationConfig }) => {
+            setAnimationConfig({ screenReader: v === 'on' });
+          });
         }
         console.log(chalk.green(`  ${label}: ${v.toUpperCase()}`));
       };
@@ -2767,6 +2817,21 @@ async function main(): Promise<void> {
   if (config.voice?.accessibility?.screenReader) {
     installScreenReaderDispatch(applyScreenReader);
     console.log('[notice] screen-reader mode is ON — ANSI colors are stripped for NVDA/JAWS compatibility. Turn off with: /accessibility screen-reader off');
+  }
+
+  // ── Animation config ─────────────────────────────────────
+  // Wire the global animation flag now that we know the screen-reader
+  // setting. In-place ANSI repaints (used by tool/thinking spinners and
+  // collapse/settle transitions) generate a flood of new content events
+  // for screen readers, so they're force-off in that mode. Sighted
+  // users get them by default; the CROWCODER_ANIMATIONS=0 env var still
+  // overrides for users who specifically don't want the motion.
+  {
+    const { setAnimationConfig } = await import('./animations.js');
+    setAnimationConfig({
+      enabled: process.env.CROWCODER_ANIMATIONS !== '0',
+      screenReader: config.voice?.accessibility?.screenReader === true,
+    });
   }
 
   // Create session
@@ -2949,6 +3014,14 @@ async function main(): Promise<void> {
       const seq = (key.sequence || '');
       const lookup = name || seq;
       if (!INTERCEPT.has(lookup)) return;
+      // While the command palette / inline-suggest is open it takes
+      // exclusive control of stdin via its own `data` listener. The
+      // hotkey listener must bail entirely — otherwise Esc would
+      // trigger the rewind chord, Tab/F-keys would print status
+      // overlays, and Space/'/' would try to open a second picker on
+      // top of the first. The data-level handler in the picker sees
+      // the bytes first and finishes its work; we just stand down.
+      if (pickerActive) return;
       const shift = !!key.shift;
       const meta = !!key.meta;
       const ctrl = !!key.ctrl;
@@ -3146,14 +3219,25 @@ async function main(): Promise<void> {
         return;
       }
 
-      // ── Space (bare): command palette at empty prompt ──
-      // Pressing Space when the input buffer is empty opens the
-      // command palette — an alt-screen picker showing every slash
-      // command, arrow-key navigable, type-to-filter, Enter to run.
-      // When the buffer has content (the user is typing a real
-      // message that begins with a space-separated word) the keypress
-      // listener stays out of the way and lets readline handle the
-      // space normally.
+      // ── Space (bare) / '/' (bare): command palette at empty prompt ──
+      // Two distinct UX shapes that share the same trigger guards:
+      //
+      //   Space  → full-screen browse picker (alt-screen takeover).
+      //            User explicitly asked to browse every command, so
+      //            a big sortable list with descriptions, category
+      //            hints, and a footer is exactly what they want.
+      //
+      //   '/'    → inline dropdown rendered directly below the
+      //            prompt (no alt-screen). The user is in the middle
+      //            of typing a command — they need to KEEP seeing
+      //            their chat history and the prompt context, not
+      //            have a full-screen widget yanked over them. The
+      //            dropdown narrows as they type and disappears on
+      //            Esc or Backspace-to-empty.
+      //
+      // Both branches share the trigger guards (no buffer content,
+      // no active stream) and the pickerActive interlock that
+      // prevents stacking two pickers.
       if (name === 'space' || lookup === '/') {
         if (pickerActive) return;
         const buf = (rl as unknown as { line?: string }).line ?? '';
@@ -3171,14 +3255,15 @@ async function main(): Promise<void> {
         // on top of a streaming turn.
         const turnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
         if (turnCtl && !turnCtl.signal.aborted) return;
-        const triggerChar = lookup === '/' ? '/' : ' ';
-        // Open the palette. The picker is async and takes stdin into
-        // raw mode for its lifetime — we fire-and-forget here.
+        const isSlash = lookup === '/';
+        // Take the interlock. The async branch sets pickerActive=false
+        // in a finally so any error path still releases it.
         pickerActive = true;
-        // The trigger character is already in readline's buffer at
-        // this point (the keypress listener is an observer, not a
-        // gate). Clear it so the prompt is clean once the picker
-        // exits.
+        // Clear the trigger char from readline's buffer so the prompt
+        // is clean. For '/' we'll re-render it ourselves at the
+        // inline-suggest anchor; for Space we don't need any
+        // character on the prompt because the alt-screen picker
+        // covers everything.
         try {
           const rlAny = rl as unknown as { line: string; _refreshLine?: () => void };
           rlAny.line = '';
@@ -3186,41 +3271,70 @@ async function main(): Promise<void> {
         } catch { /* noop */ }
         void (async () => {
           try {
-            const { pick } = await import('./picker.js');
             const { COMMAND_CATALOG } = await import('./command-palette.js');
-            const items = COMMAND_CATALOG.map((c) => ({
-              label: c.command,
-              hint: c.category,
-              description: c.description,
-              value: c.command,
-            }));
-            const selected = await pick(items, {
-              title: 'compact-agent · command palette',
-              footer: 'type to filter · ↑↓ to navigate · Enter to run · Esc to cancel',
-              // '/' trigger: pre-fill filter so the user's mental
-              // model ("I typed / and now I see slash commands") is
-              // preserved. Space trigger: blank filter, browse all.
-              initialFilter: lookup === '/' ? '/' : undefined,
-            });
-            if (selected) {
-              (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = selected + '\n';
-              try { rl.emit('line', ''); } catch { /* noop */ }
-            } else if (triggerChar === '/') {
-              // Cancel from '/'-triggered picker: restore the '/'
-              // to the buffer so the user can keep typing the
-              // command manually (e.g. they wanted /model claude-
-              // sonnet-4 directly, not the picker). Don't resolve
-              // rl.question — leave readline waiting for input.
-              try {
-                const rlAny = rl as unknown as { line: string; _refreshLine?: () => void };
-                rlAny.line = '/';
-                rlAny._refreshLine?.();
-              } catch { /* noop */ }
+            if (isSlash) {
+              // '/' → inline dropdown below the prompt.
+              const { inlineSuggest } = await import('./inline-suggest.js');
+              const result = await inlineSuggest(
+                rl,
+                COMMAND_CATALOG.map((c) => ({
+                  command: c.command,
+                  description: c.description,
+                })),
+                '/',
+              );
+              if (result.accepted && result.command) {
+                // Trailing space → "fill but don't submit" (Tab
+                // pathway): plant the command in rl.line so the
+                // user can type args before Enter.
+                if (result.command.endsWith(' ')) {
+                  const cmd = result.command;
+                  try {
+                    const rlAny = rl as unknown as { line: string; cursor: number; _refreshLine?: () => void };
+                    rlAny.line = cmd;
+                    rlAny.cursor = cmd.length;
+                    rlAny._refreshLine?.();
+                  } catch { /* noop */ }
+                } else {
+                  // Enter → submit immediately via the queued-input
+                  // sentinel pattern (mirrors how the space picker
+                  // submits).
+                  (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = result.command + '\n';
+                  try { rl.emit('line', ''); } catch { /* noop */ }
+                }
+              } else {
+                // Cancelled. Restore rl.line to whatever the user
+                // had typed so they can keep editing (could be '/',
+                // '/he', or '' if they backspaced all the way out).
+                try {
+                  const rlAny = rl as unknown as { line: string; cursor: number; _refreshLine?: () => void };
+                  rlAny.line = result.filter;
+                  rlAny.cursor = result.filter.length;
+                  rlAny._refreshLine?.();
+                } catch { /* noop */ }
+              }
             } else {
-              // Cancel from space-triggered picker: prompt is clean,
-              // resolve readline with empty so the loop iterates
-              // back to a fresh prompt.
-              try { rl.emit('line', ''); } catch { /* noop */ }
+              // Space → full-screen browse picker (unchanged).
+              const { pick } = await import('./picker.js');
+              const items = COMMAND_CATALOG.map((c) => ({
+                label: c.command,
+                hint: c.category,
+                description: c.description,
+                value: c.command,
+              }));
+              const selected = await pick(items, {
+                title: 'compact-agent · command palette',
+                footer: 'type to filter · ↑↓ to navigate · Enter to run · Esc to cancel',
+              });
+              if (selected) {
+                (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = selected + '\n';
+                try { rl.emit('line', ''); } catch { /* noop */ }
+              } else {
+                // Cancel from space-triggered picker: prompt is
+                // clean, resolve readline with empty so the loop
+                // iterates back to a fresh prompt.
+                try { rl.emit('line', ''); } catch { /* noop */ }
+              }
             }
           } finally {
             pickerActive = false;

@@ -578,14 +578,20 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           // showThinking defaults to true; only off when explicitly disabled.
           if (ctx.config.showThinking !== false) {
             if (!thinkingActive) {
-              printThinkingOpen();
+              // Await the boot animation before streaming the first
+              // thinking token — the animation paints in-place on the
+              // header row and the streamed text needs to land on the
+              // row below it.
+              await printThinkingOpen();
               thinkingActive = true;
             }
             printThinkingText(event.content);
           }
         } else if (event.type === 'text' && event.content) {
           if (thinkingActive) {
-            printThinkingClose();
+            // Await the collapse animation so subsequent text streams
+            // onto a fresh row beneath the settled footer.
+            await printThinkingClose();
             thinkingActive = false;
           }
           if (!hasOutput) {
@@ -1209,7 +1215,11 @@ async function executeToolCalls(
     }
 
     // ── Execute ───────────────────────────────────────────
-    printToolRun(toolName, formatArgs(tool, input));
+    // printToolRun is now async (animated boot + persistent spinner).
+    // Await before kicking off the actual tool — the boot animation
+    // is short (~150ms) and the spinner starts ticking immediately
+    // after, so the user sees motion the entire time the tool runs.
+    await printToolRun(toolName, formatArgs(tool, input));
     // Update status for F1 status hotkey — include a short arg snippet so
     // the speaker can hear "executing bash, list directory, 4 seconds
     // elapsed" instead of just "tool".
@@ -1234,7 +1244,10 @@ async function executeToolCalls(
         isError: !!result.isError,
         outputPreview: String(result.output ?? '').slice(0, 200),
       });
-      printToolResult(!result.isError, elapsed, result.output);
+      // Stops the spinner, paints the settle animation, then commits
+      // the final ✓/✗ result line. Async — must await so the next
+      // tool's run line doesn't overwrite mid-settle.
+      await printToolResult(!result.isError, elapsed, result.output);
     }
 
     // Stash last-tool-call info so the Shift+F3 hotkey (src/index.ts) can

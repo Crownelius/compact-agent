@@ -260,31 +260,76 @@ export function setPalette(id: string): boolean {
 }
 
 // ── Banner (single unified startup display) ────────────
+//
+// Layout (per the user-supplied mock):
+//
+//   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀         ← heavy top bar
+//   ◆  C O M P A C T   A G E N T                    ← brand line
+//        A dense, feature-rich AI coding agent      ← tagline
+//                                                   ← blank
+//     ────────────────────────────────────────      ← thin divider
+//     Provider  X  │  Model  Y                      ← provider/model row
+//     Mode      M  │  Perms  P                      ← mode/perms row
+//     Session   abc                                ◆ ← session row, right-aligned brand mark
+//                                                   ← blank
+//   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀         ← heavy bottom bar
+//
+// Design notes:
+//   - The ▀ char (U+2580 UPPER HALF BLOCK) renders as a solid bar at
+//     the top of the row, giving more visual weight than the previous
+//     ─ thin rule. Side-by-side it forms a "framed window" feel.
+//   - Brand line has NO leading indent — it sits flush against the
+//     top bar's left edge to read as a header rather than indented body.
+//   - Right-aligned ◆ on the Session row mirrors the brand mark on the
+//     left of the title — a visual "bookend" within the frame.
+//   - Tools list + /help hint removed: they bloated the banner without
+//     adding signal (users find tools via `/tools`, help via `/help`).
+//   - Width: 39 cells of border. Wide enough to fit the longest sane
+//     content row (Session prefix + 22-char session id + right-aligned
+//     ◆) in a standard 80-col terminal, narrow enough to look like a
+//     widget rather than spanning the whole screen.
 export function printBanner(
   provider: string,
   model: string,
   mode: string,
   permissionMode: string,
   sessionId: string,
-  toolNames: string[],
+  _toolNames: string[], // kept in signature for backward compat; intentionally unused
 ): void {
+  void _toolNames;
   const b = theme.brandBold;
   const d = theme.dim;
   const s = theme.secondary;
   const w = theme.bright;
+  const brand = theme.brand;
 
+  // Width budget: the heavy bars are 39 cells. The inner content
+  // is indented 2 cells so the right edge "feels" aligned with the
+  // bar. Compute the inner width for right-aligning the brand mark
+  // on the session row.
+  const BAR_WIDTH = 39;
+  const heavyBar = '▀'.repeat(BAR_WIDTH);
+
+  // ── render ──
   console.log('');
-  console.log(b(`  ${sym.crow}  C O M P A C T   A G E N T`));
+  console.log(brand(heavyBar));
+  console.log(b(`${sym.crow}  C O M P A C T   A G E N T`));
   console.log(d('     A dense, feature-rich AI coding agent'));
   console.log('');
-  console.log(d('  ' + sym.divider.repeat(40)));
+  console.log(d('  ' + sym.divider.repeat(BAR_WIDTH - 2)));
   console.log(s('  Provider  ') + w(provider) + s('  ') + d('│') + s('  Model  ') + w(model));
   console.log(s('  Mode      ') + theme.modeBadge(mode) + s('     ') + d('│') + s('  Perms  ') + w(permissionMode));
-  console.log(s('  Session   ') + d(sessionId.slice(0, 12)));
-  console.log(d('  ' + sym.divider.repeat(40)));
-  console.log(s('  Tools: ') + d(toolNames.join(', ')));
+  // Session row: prefix + id, then padded to the right edge with a
+  // brand-mark bookend. Strip ANSI from the prefix string for the
+  // visible-length math (chalk wraps in escape codes which inflate
+  // .length without contributing visible cells).
+  const sessText = sessionId.slice(0, 12);
+  const sessLeft = s('  Session   ') + d(sessText);
+  const sessLeftVisible = '  Session   ' + sessText;     // for length math only
+  const padding = Math.max(1, BAR_WIDTH - sessLeftVisible.length - 1);
+  console.log(sessLeft + ' '.repeat(padding) + brand(sym.crow));
   console.log('');
-  console.log(d('  Type ') + theme.command('/help') + d(' for commands  ') + d('•') + d('  Ctrl+C to exit'));
+  console.log(brand(heavyBar));
   console.log('');
 }
 
@@ -364,21 +409,61 @@ export function printKV(key: string, value: string, indent = 2): void {
 }
 
 // ── Tool Execution Display ──────────────────────────────
-// Args are condensed to a single line, truncated to 80 chars to keep the
-// vertical footprint low.
-export function printToolRun(name: string, args: string): void {
+//
+// Two-phase render: "run" paints a boot animation in-place then
+// starts a Braille spinner that keeps ticking while the tool executes;
+// "result" stops the spinner and animates a short settle into the
+// final ✓/✗ + elapsed + preview line.
+//
+// Layout footprint: ONE LINE per tool call. The run line is in-place
+// (no \n) while the tool is running; the result phase paints over the
+// SAME row and only THEN commits with a newline. Compared to the
+// previous two-line render (run on row N, result on row N+1) this
+// halves the vertical footprint and the in-place rewrite reads as
+// "the tool is morphing from running → done" rather than "two
+// distinct events".
+//
+// Module-level _toolSpinner tracks the active spinner across the
+// run→result handoff. Tools run sequentially in query.ts so single-
+// track state is fine.
+let _toolSpinner: import('./animations.js').Spinner | null = null;
+
+export async function printToolRun(name: string, args: string): Promise<void> {
   const compactArgs = args.replace(/\s+/g, ' ').trim();
   const display = compactArgs.length > 80 ? compactArgs.slice(0, 77) + '...' : compactArgs;
-  console.log(
-    theme.toolName(`  ${sym.running} ${name}`) +
-    (display ? theme.toolArgs(` ${display}`) : ''),
-  );
+  const argsSuffix = display ? theme.toolArgs(` ${display}`) : '';
+
+  // Lazy-import animations so this module stays loadable from sync
+  // contexts (CLI startup) that might not need animation infra.
+  const anims = await import('./animations.js');
+
+  // Boot animation — 3 frames of "powering up" before the persistent
+  // spinner takes over. Total ~150ms; barely perceptible but reads as
+  // intentional motion rather than a static "tool name appeared".
+  const bootFrames = [
+    `  ${theme.dim(anims.POWER_UP[0])}`,
+    `  ${theme.dim(anims.POWER_UP[1])} ${theme.toolName(name)}`,
+    `  ${theme.toolStatus(anims.POWER_UP[2])} ${theme.toolName(name)}${argsSuffix}`,
+  ];
+  await anims.playFrames(bootFrames, 50);
+
+  // Persistent spinner. {S} placeholder gets each rotating Braille
+  // frame swapped in. The line stays in-place (no \n) so the result
+  // phase can overwrite it.
+  const prefix = `  ${theme.toolStatus('{S}')} ${theme.toolName(name)}${argsSuffix}`;
+  _toolSpinner = anims.startSpinner(prefix);
 }
 
-// Result is always a single line: icon + elapsed + first non-empty line of
-// output (max 120 chars). No more multi-line previews — they bloat the
-// transcript and obscure the next action.
-export function printToolResult(success: boolean, elapsed: number, output: string): void {
+export async function printToolResult(success: boolean, elapsed: number, output: string): Promise<void> {
+  const anims = await import('./animations.js');
+
+  // Tear down the run-phase spinner. We don't commit yet — the
+  // settle animation will overwrite the line and then commit.
+  if (_toolSpinner) {
+    _toolSpinner.stop();
+    _toolSpinner = null;
+  }
+
   const icon = success ? theme.toolStatus(sym.success) : theme.toolError(sym.error);
   const time = theme.toolTime(`${(elapsed / 1000).toFixed(1)}s`);
   const firstLine = (output.split('\n').find((l) => l.trim().length > 0) || '').trim();
@@ -386,17 +471,68 @@ export function printToolResult(success: boolean, elapsed: number, output: strin
   const tail = output.length > preview.length + 10
     ? theme.dim(`  +${output.length - preview.length}b`)
     : '';
-  console.log(`  ${icon} ${time}  ${theme.dim(preview)}${tail}`);
+  const finalLine = `  ${icon} ${time}  ${theme.dim(preview)}${tail}`;
+
+  // Settle animation — a short "morphing" sequence from the spinner
+  // glyph through arc states into the final icon. Reads as "the
+  // spinner settled into a result" rather than "the spinner
+  // disappeared and a new icon appeared".
+  const arc = success ? anims.ARC_SPINNER : ['◐', '◑']; // shorter for error path
+  const settleFrames = [
+    `  ${theme.dim(arc[0])}`,
+    `  ${theme.dim(arc[1 % arc.length])}  ${theme.dim(time)}`,
+    finalLine,
+  ];
+  await anims.playFrames(settleFrames, 40);
+  anims.commitFrame();
 }
 
 // ── Thinking Display ────────────────────────────────────
-// Inline streaming with a left border, no surrounding blank lines.
-// Toggle visibility with /thinking.
-export function printThinkingOpen(): void {
-  console.log(theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} thinking`));
+// Live streaming with a left border during the thinking phase, then
+// collapses to a one-liner "tab" when the section closes. The full
+// buffered text stays available via expandLastThinking() (wired to
+// /think) so the user can re-expand any time after collapse.
+//
+// Why collapse: long reasoning traces (DeepSeek-R1, Claude extended
+// thinking, o1) can run 100+ lines per turn. Leaving them sprawled
+// in the transcript pushes the actual answer off-screen and makes
+// the conversation hard to scan. Collapsing to a single line
+// preserves the "I saw it think" affordance while keeping the
+// transcript scannable.
+//
+// Module-level state is fine here because thinking is single-track —
+// the model emits at most one thinking section at a time, and
+// printThinkingOpen/Close are called from a single async loop in
+// query.ts. If we ever stream multiple concurrent reasoning streams
+// (multi-agent swarms etc), refactor to a returned handle.
+let _thinkingBuffer = '';
+let _thinkingStartMs = 0;
+let _thinkingActive = false;
+
+export async function printThinkingOpen(): Promise<void> {
+  _thinkingBuffer = '';
+  _thinkingStartMs = Date.now();
+  _thinkingActive = true;
+
+  // Boot animation — short power-up sequence before the header
+  // settles. Three frames at 60ms total ~180ms; just enough to feel
+  // alive without delaying the first thinking token meaningfully.
+  // (Reasoning models tend to take 500ms+ before emitting; this lands
+  // inside their initial latency window.)
+  const anims = await import('./animations.js');
+  const finalLine = theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} thinking`);
+  const bootFrames = [
+    theme.thinkBorder('  ') + theme.dim(anims.POWER_UP[0]) + ' ' + theme.dim('thinking'),
+    theme.thinkBorder('  ') + theme.dim(anims.POWER_UP[1]) + ' ' + theme.thinkLabel('thinking'),
+    theme.thinkBorder('  ') + theme.thinkLabel(anims.POWER_UP[2]) + ' ' + theme.thinkLabel('thinking'),
+    finalLine,
+  ];
+  await anims.playFrames(bootFrames, 50);
+  anims.commitFrame();
 }
 
 export function printThinkingText(text: string): void {
+  _thinkingBuffer += text;
   // Add the border prefix only after newlines within the chunk — NOT at
   // the start. printThinkingOpen() already wrote the first-line prefix.
   // Adding `'  │ '` to every chunk produced "| word | word | word" output
@@ -406,8 +542,118 @@ export function printThinkingText(text: string): void {
   process.stdout.write(theme.thinkText(prefixed));
 }
 
-export function printThinkingClose(): void {
+/**
+ * Close the thinking section.
+ *
+ * By default, COLLAPSES the streamed content into a one-liner — uses
+ * ANSI cursor-up + clear-to-end-of-screen to erase the panel we just
+ * printed, then writes a compact "▶ thinking · N tokens · /think to
+ * expand" footer in its place. The full buffer is stashed on
+ * globalThis so /think can re-print it later.
+ *
+ * Pass `{ collapse: false }` to skip the collapse and leave the
+ * expanded panel on screen (used by expandLastThinking()).
+ *
+ * Safety: if the thinking output is taller than the terminal can
+ * reliably address with cursor-up (more rows than the terminal has,
+ * or terminal-width-wrapped lines we can't count precisely), we skip
+ * the collapse and just print the footer below. The user still gets
+ * the count + elapsed; the panel stays where it is.
+ */
+export async function printThinkingClose(opts: { collapse?: boolean } = {}): Promise<void> {
   process.stdout.write('\n');
+  if (!_thinkingActive) return;
+  _thinkingActive = false;
+
+  // Stash for /think to re-expand on demand. Even when we don't
+  // collapse, this lets the user re-read the thinking later via the
+  // slash command without scrolling back.
+  (globalThis as { __crowcoderLastThinking?: string }).__crowcoderLastThinking = _thinkingBuffer;
+
+  const collapse = opts.collapse !== false;
+  if (!collapse || _thinkingBuffer.length === 0) return;
+
+  // Approximate the physical row count of what we just printed.
+  // Layout: 1 row for the open header + (rows per text line) + 1 row
+  // for the close \n we just wrote. Each "text line" (segment between
+  // \n in the buffer) wraps to ceil((4 + line.length) / termCols)
+  // physical rows because the border prefix is 4 visible chars.
+  const termCols = process.stdout.columns || 80;
+  const termRows = process.stdout.rows || 24;
+  const lines = _thinkingBuffer.split('\n');
+  let approxRows = 1; // open header
+  for (const ln of lines) {
+    approxRows += Math.max(1, Math.ceil((4 + ln.length) / termCols));
+  }
+  approxRows += 1; // trailing close \n
+
+  const tokens = _approxTokens(_thinkingBuffer);
+  const elapsed = _thinkingElapsed();
+  const anims = await import('./animations.js');
+
+  // Bail on collapse if the panel ran taller than the terminal can
+  // address — cursor-up past the top doesn't go anywhere useful and
+  // we'd corrupt the surrounding output. Leave the panel as-is and
+  // just print the footer (still buffered for /think).
+  if (approxRows >= termRows - 2) {
+    console.log(
+      theme.thinkBorder('  ▶ ') +
+      theme.thinkLabel('thinking') +
+      theme.dim(` · ${tokens}t · ${elapsed}s · /think to re-read`)
+    );
+    return;
+  }
+
+  // Cursor-up + carriage-return + erase to end of screen. \r first
+  // because cursor-up preserves the current column.
+  process.stdout.write(`\r\x1b[${approxRows}A\x1b[J`);
+
+  // Collapse animation: a brief "folding down" sequence before the
+  // final footer settles. Mirrors the open-side power-up. Frames go
+  // from the expanded `│` border through a halfway state down to the
+  // collapsed `▶`, then commit to the final hint-bearing footer.
+  const finalFooter =
+    theme.thinkBorder('  ▶ ') +
+    theme.thinkLabel('thinking') +
+    theme.dim(` · ${tokens}t · ${elapsed}s · /think to expand`);
+
+  const collapseFrames = [
+    theme.thinkBorder('  │ ') + theme.dim('▽ thinking'),
+    theme.thinkBorder('  ') + theme.dim('▼ thinking'),
+    theme.thinkBorder('  ▶ ') + theme.thinkLabel('thinking'),
+    finalFooter,
+  ];
+  await anims.playFrames(collapseFrames, 45);
+  anims.commitFrame();
+}
+
+function _approxTokens(text: string): number {
+  // ~4 chars per token is the common heuristic across English-heavy
+  // tokenizers. Good enough for a one-liner footer; the actual count
+  // shows up in /usage from the API's reported usage.
+  return Math.max(1, Math.round(text.length / 4));
+}
+
+function _thinkingElapsed(): string {
+  return ((Date.now() - _thinkingStartMs) / 1000).toFixed(1);
+}
+
+/**
+ * Re-print the most recent thinking block (the one /think collapses)
+ * in expanded form. Returns false if there's no thinking buffered for
+ * this session yet — the slash command uses that to print a "no
+ * thinking captured yet" message instead.
+ */
+export function expandLastThinking(): boolean {
+  const text = (globalThis as { __crowcoderLastThinking?: string }).__crowcoderLastThinking;
+  if (!text) return false;
+  // Pass collapse: false so the printThinkingClose at the end doesn't
+  // try to ANSI-up + clear the expansion we just rendered.
+  console.log(theme.thinkBorder('  │ ') + theme.thinkLabel(`${sym.thinking} thinking (expanded · most recent)`));
+  const prefixed = text.replace(/\n(?!$)/g, '\n' + theme.thinkBorder('  │ '));
+  process.stdout.write(theme.thinkText(prefixed));
+  if (!text.endsWith('\n')) process.stdout.write('\n');
+  return true;
 }
 
 // ── Cost / telemetry line ─────────────────────────────────
