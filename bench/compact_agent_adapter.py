@@ -107,12 +107,26 @@ npm install -g compact-agent@__COMPACT_AGENT_VERSION__
 # launches straight into a working state. The wizard would block on
 # stdin otherwise — terminal-bench drives the agent via piped stdin
 # only for the task description, not for setup.
+#
+# CRITICAL: bake the API key into the config file. compact-agent's
+# configExists() check returns false when cfg.apiKey is empty (even
+# if OPENAI_API_KEY is set in the env) because the wizard-skip
+# decision is based on the saved config alone. Setting apiKey here
+# makes the file self-sufficient and bypasses the wizard.
+#
+# Heredoc is unquoted so ${OPENAI_API_KEY} and ${MODEL} expand. The
+# API key is alphanumeric + dashes so no shell-quoting hazards.
+if [ -z "${OPENAI_API_KEY:-}" ]; then
+  echo "compact-agent install failed: OPENAI_API_KEY not in env" >&2
+  exit 1
+fi
 mkdir -p "$HOME/.compact-agent"
 cat > "$HOME/.compact-agent/config.json" <<EOF
 {
   "provider": "OpenRouter (Any Model)",
   "baseURL": "https://openrouter.ai/api/v1",
   "model": "__MODEL__",
+  "apiKey": "${OPENAI_API_KEY}",
   "permissionMode": "yolo",
   "theme": "minimal",
   "showThinking": false,
