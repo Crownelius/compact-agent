@@ -239,6 +239,78 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
 }
 
 /**
+ * Pretty-print a resumed session's conversation history to stdout so
+ * the user can actually READ what was said before, not just see a
+ * "Resumed: 4 messages" line on a blank screen. The model already has
+ * the full message array in memory (that's what /resume restores) —
+ * this is purely a user-facing replay.
+ *
+ * Format choices match the live REPL's rendering as closely as
+ * possible so resumed scrollback feels continuous with new turns:
+ *
+ *   user      → "› <content>" (matches the live user-line echo)
+ *   assistant → text rendered in theme.primary color, like streaming
+ *   tool      → compact one-line card "● <tool> → <output preview>"
+ *   system    → skipped (those are auto-injected context, not user-facing)
+ *
+ * Tool outputs are truncated to 200 chars to keep the replay
+ * scannable. Users can re-run the actual tool if they need the full
+ * output. Assistant content is printed in full because that's the
+ * conversation the user wants to review.
+ */
+function printResumedHistory(messages: Message[], sessionName: string): void {
+  const d = theme.dim;
+  const sep = '─'.repeat(60);
+  console.log('');
+  console.log(d(sep));
+  console.log(d(`  Resumed conversation: ${sessionName}`));
+  console.log(d(sep));
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === 'system') continue;  // injected context, not user-facing
+    if (m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+      // Match the live REPL's user echo: "› <text>" in plain white,
+      // separated from prior content by a single blank line for
+      // scanability.
+      console.log('');
+      console.log(theme.dim('› ') + chalk.white(m.content));
+      continue;
+    }
+    if (m.role === 'assistant') {
+      const text = typeof m.content === 'string' ? m.content : '';
+      if (text.trim()) {
+        console.log('');
+        console.log(theme.primary(text));
+      }
+      // Render tool_calls that came with this assistant message as
+      // compact one-liners — full args + outputs would balloon the
+      // replay. The full data is on disk in the session JSON if the
+      // user needs to inspect it (`cat ~/.compact-agent/sessions/<id>.json`).
+      if (m.tool_calls && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          const args = (tc.function.arguments || '').slice(0, 80);
+          console.log(d(`  ● ${tc.function.name}(${args}${args.length >= 80 ? '…' : ''})`));
+        }
+      }
+      continue;
+    }
+    if (m.role === 'tool' && typeof m.content === 'string') {
+      // The tool result. Truncate aggressively because tool outputs
+      // (esp. bash) routinely run thousands of chars and would drown
+      // the user's terminal.
+      const preview = m.content.length > 200
+        ? m.content.slice(0, 200) + d(`…[+${m.content.length - 200}b]`)
+        : m.content;
+      console.log(d(`    ↳ ${preview.replace(/\n+/g, ' ').slice(0, 200)}`));
+      continue;
+    }
+  }
+  console.log('');
+  console.log(d(sep));
+  console.log('');
+}
+
+/**
  * Parse slash command respecting quoted strings
  */
 function parseSlashCommand(input: string): { cmd: string; args: string } {
@@ -947,6 +1019,16 @@ export function handleSlashCommand(
       // Persist the config update so the change survives restart.
       saveConfig(config);
 
+      // Print the full conversation history into the terminal so the
+      // user can actually SEE what was said. Previously /resume only
+      // restored messages into memory — the model had full context
+      // but the user faced a blank prompt, no idea what the prior
+      // turns were. The reprint goes BEFORE the "Resumed:" line so
+      // the user reads chronologically and the most-recent info is
+      // closest to the new prompt.
+      if (loaded.messages.length > 0) {
+        printResumedHistory(loaded.messages, loaded.name);
+      }
       console.log(chalk.green(`  Resumed: ${loaded.name} (${loaded.messages.length} messages)`));
       if (changes.length > 0) {
         console.log(chalk.yellow(`  Restored config: ${changes.join(', ')}`));
