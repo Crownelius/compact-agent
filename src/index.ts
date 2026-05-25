@@ -862,7 +862,18 @@ export function handleSlashCommand(
 
     case '/save':
       session.name = args || session.name;
-      autoSave(session, messages);
+      // Snapshot live state so the saved session captures the
+      // user's current mode + perm choices, not the values that
+      // were on the Session object at create time. Otherwise
+      // /resume restores stale config and the model behaves
+      // unexpectedly (e.g. a yolo session resumed in ask mode).
+      autoSave(session, messages, {
+        model: config.model,
+        provider: config.provider,
+        mode: mode.current,
+        permissionMode: config.permissionMode,
+        cwd: process.cwd(),
+      });
       console.log(chalk.green(`  Session saved: ${session.id} "${session.name}"`));
       return { handled: true };
 
@@ -895,7 +906,53 @@ export function handleSlashCommand(
         console.log(chalk.red(`  Session ${ref.id} resolved but its JSON is corrupt.`));
         return { handled: true };
       }
+      // ── Restore live state ─────────────────────────────────
+      // Previously /resume only returned newMessages and left the
+      // live config / mode / perm at whatever the current REPL
+      // happened to be in. That breaks the contract: a yolo
+      // session resumed in ask mode means the model needs
+      // permission for every tool call the original session ran
+      // freely. Now we mutate the live config + session + mode
+      // objects in place so the resumed state takes effect
+      // immediately. Fields absent from old (pre-v1.30.2) session
+      // files leave the current value untouched.
+      const changes: string[] = [];
+      if (loaded.model && loaded.model !== config.model) {
+        changes.push(`model ${config.model} → ${loaded.model}`);
+        config.model = loaded.model;
+      }
+      if (loaded.provider && loaded.provider !== config.provider) {
+        changes.push(`provider ${config.provider} → ${loaded.provider}`);
+        config.provider = loaded.provider;
+      }
+      if (loaded.permissionMode && loaded.permissionMode !== config.permissionMode) {
+        changes.push(`perms ${config.permissionMode} → ${loaded.permissionMode}`);
+        config.permissionMode = loaded.permissionMode;
+      }
+      // mode.current is a { current: Mode } box (shared closure
+      // ref) so mutation propagates to the hotkey listener +
+      // prompt rendering automatically.
+      if (loaded.mode && loaded.mode !== mode.current) {
+        changes.push(`mode ${mode.current} → ${loaded.mode}`);
+        mode.current = loaded.mode as Mode;
+      }
+      // Adopt the resumed session's identity so subsequent
+      // autosaves write to its file, not the current session's.
+      session.id = loaded.id;
+      session.name = loaded.name;
+      session.createdAt = loaded.createdAt;
+      session.updatedAt = loaded.updatedAt;
+      session.tokenCount = loaded.tokenCount;
+      session.turnCount = loaded.turnCount;
+      // Persist the config update so the change survives restart.
+      saveConfig(config);
+
       console.log(chalk.green(`  Resumed: ${loaded.name} (${loaded.messages.length} messages)`));
+      if (changes.length > 0) {
+        console.log(chalk.yellow(`  Restored config: ${changes.join(', ')}`));
+      } else {
+        console.log(chalk.dim('  Config unchanged (already matches the saved session).'));
+      }
       return { handled: true, newMessages: loaded.messages };
     }
 
@@ -3127,6 +3184,21 @@ async function main(): Promise<void> {
   // gives both "how long am I here" and "how long was that last response."
   const sessionStartMs = new Date(session.createdAt).getTime();
 
+  // autoSave wrapper that snapshots the live config + mode + perm
+  // into the session before writing. Without this, the saved
+  // session captures only the values the Session object was created
+  // with — every /perm, /model, /mode change made during the
+  // session is lost on /resume. Used by all in-process autosave
+  // callsites; /save in the slash-command handler passes the same
+  // snapshot inline (it doesn't have access to this closure).
+  const saveWithSnapshot = (): Promise<void> => autoSave(session, messages, {
+    model: config.model,
+    provider: config.provider,
+    mode: mode.current,
+    permissionMode: config.permissionMode,
+    cwd: process.cwd(),
+  });
+
   // Main REPL loop
   while (true) {
     let input: string;
@@ -3273,13 +3345,13 @@ async function main(): Promise<void> {
           } catch (e) {
             console.log(chalk.red(`  Swarm failed: ${e instanceof Error ? e.message : e}`));
           }
-          await autoSave(session, messages);
+          await saveWithSnapshot();
           continue;
         } else {
           messages.push({ role: 'user', content: result.injectPrompt });
         }
         await runQuery({ config, messages, cwd: process.cwd(), rl, sessionId: session.id, mode: mode.current });
-        await autoSave(session, messages);
+        await saveWithSnapshot();
         continue;
       }
       if (result.handled) continue;
@@ -3310,7 +3382,7 @@ async function main(): Promise<void> {
     });
 
     // Auto-save session
-    await autoSave(session, messages);
+    await saveWithSnapshot();
 
     // Strategic compaction check
     const compactionHint = shouldSuggestCompaction(messages, 0);
@@ -3324,7 +3396,7 @@ async function main(): Promise<void> {
   await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
 
   // Final save
-  await autoSave(session, messages);
+  await saveWithSnapshot();
   console.log(chalk.dim(`\nSession saved: ${session.id}`));
   console.log(chalk.dim('Goodbye!\n'));
   rl.close();

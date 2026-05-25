@@ -52,6 +52,13 @@ export interface Session {
   tokenCount: number;
   turnCount: number;
   mode: string;
+  /**
+   * Permission mode active when the session was last saved. Optional
+   * for back-compat — pre-v1.30.2 session files don't have this field.
+   * Restored by /resume so a yolo session resumes in yolo, not in
+   * whatever mode the current REPL happens to be in.
+   */
+  permissionMode?: 'ask' | 'auto' | 'yolo';
 }
 
 function ensureDir(): void {
@@ -198,7 +205,38 @@ export function createSession(cwd: string, model: string, provider: string, mode
   };
 }
 
-export async function autoSave(session: Session, messages: Message[]): Promise<void> {
+/**
+ * Optional snapshot of the live state that should be written into the
+ * session file alongside messages. Without this, the saved session
+ * captures only the values that happened to be on the Session object
+ * at create time — mode/perm switches mid-session never make it to
+ * disk, and /resume restores stale values.
+ */
+export interface AutoSaveSnapshot {
+  model?: string;
+  provider?: string;
+  mode?: string;
+  permissionMode?: 'ask' | 'auto' | 'yolo';
+  cwd?: string;
+}
+
+export async function autoSave(
+  session: Session,
+  messages: Message[],
+  snapshot?: AutoSaveSnapshot,
+): Promise<void> {
   session.messages = messages;
+  // Pull live state forward if the caller passed it. This is what
+  // makes /resume actually restore a yolo session as yolo, an
+  // architect-mode session as architect, etc. Defensively skip any
+  // fields the caller didn't provide so old callsites that don't
+  // pass the snapshot still work (just won't see drift captured).
+  if (snapshot) {
+    if (snapshot.model) session.model = snapshot.model;
+    if (snapshot.provider) session.provider = snapshot.provider;
+    if (snapshot.mode) session.mode = snapshot.mode;
+    if (snapshot.permissionMode) session.permissionMode = snapshot.permissionMode;
+    if (snapshot.cwd) session.cwd = snapshot.cwd;
+  }
   await saveSession(session);
 }
