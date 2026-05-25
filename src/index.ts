@@ -3703,15 +3703,29 @@ async function main(): Promise<void> {
       const queued = g.__crowcoderQueuedInput || '';
       g.__crowcoderQueuedInput = undefined;
       if (queued.includes('\n')) {
-        // First newline-terminated chunk becomes the next message.
-        // Anything after the first newline goes back into the queue
-        // for the chain after this one (rare but supportable).
-        const idx = queued.indexOf('\n');
-        const next = queued.slice(0, idx).trim();
-        const rest = queued.slice(idx + 1).trim();
-        if (rest) g.__crowcoderQueuedInput = rest;
+        // Auto-submit the ENTIRE queued buffer as a single message —
+        // preserving its internal newlines verbatim so a multi-line
+        // paste arrives at the model as the intended single multi-
+        // line input.
+        //
+        // Previous behavior split on the first newline and re-queued
+        // the remainder, on the theory that the user might have
+        // committed two separate messages with two separate Enter
+        // presses during streaming. In practice that case is rare,
+        // while the catastrophic case — pasting multi-line content
+        // during streaming — was extremely common. The split-and-re-
+        // queue path turned a paste of N lines into N separate user
+        // turns, where each turn drained one line, queued the rest,
+        // and looped indefinitely until the buffer was empty.
+        //
+        // Sanitize the auto-submit hint by collapsing internal
+        // newlines to spaces so the one-line console.log preview
+        // doesn't get split across multiple rows.
+        const next = queued.trim();
         if (next) {
-          console.log(theme.dim(`  (auto-submitting queued: "${next.slice(0, 80)}${next.length > 80 ? '…' : ''}")`));
+          const previewSrc = next.replace(/\s+/g, ' ');
+          const preview = previewSrc.slice(0, 80) + (previewSrc.length > 80 ? '…' : '');
+          console.log(theme.dim(`  (auto-submitting queued: "${preview}")`));
           input = next;
         } else {
           input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph);
