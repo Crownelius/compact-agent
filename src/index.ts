@@ -2935,11 +2935,20 @@ async function main(): Promise<void> {
 
     const hotkeyListener = function hotkeyListener(
       _str: string,
-      key: { name?: string; shift?: boolean; ctrl?: boolean; meta?: boolean },
+      key: { name?: string; sequence?: string; shift?: boolean; ctrl?: boolean; meta?: boolean },
     ): void {
       if (!key) return;
-      const name = String(key.name || '').toLowerCase();
-      if (!INTERCEPT.has(name)) return;
+      // Node's readline emitter sets `key.name` for named keys (tab,
+      // space, escape, f1-f12, letters, etc.) but leaves it
+      // UNDEFINED for many printable ASCII chars including '/', ',',
+      // and '.'. For those keys only `key.sequence` is reliable.
+      // Look up against both — name preferred, sequence as fallback —
+      // so '/' (initial Node REPL parse delivers no name, just
+      // sequence) and the Alt+,/. handlers actually fire.
+      const name = (key.name || '').toLowerCase();
+      const seq = (key.sequence || '');
+      const lookup = name || seq;
+      if (!INTERCEPT.has(lookup)) return;
       const shift = !!key.shift;
       const meta = !!key.meta;
       const ctrl = !!key.ctrl;
@@ -2949,7 +2958,7 @@ async function main(): Promise<void> {
       //   - bare ',' or '.' is regular typing; only Alt+,/. is ours
       //   - bare Tab is completion; only Shift+Tab is ours
       //   - Shift+Esc / Ctrl+Esc / Alt+Esc aren't ours
-      if ((name === ',' || name === '.') && !meta) return;
+      if ((lookup === ',' || lookup === '.') && !meta) return;
       if (name === 'tab' && !shift) return;
       if (name === 'escape' && (shift || ctrl || meta)) return;
       // Space is ours ONLY when the input buffer is empty and we're
@@ -2960,7 +2969,7 @@ async function main(): Promise<void> {
       // Slash autocomplete: '/' at empty prompt opens the picker
       // pre-filtered to '/'. Modified variants (Ctrl+/, etc.) are
       // not ours.
-      if (name === '/' && (shift || ctrl || meta)) return;
+      if (lookup === '/' && (shift || ctrl || meta)) return;
 
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
@@ -2988,7 +2997,7 @@ async function main(): Promise<void> {
         name === 'f11' || name === 'f12' || shift ||
         // Productivity bindings (Shift+Tab, Esc, Alt+,/.) work regardless
         // of voice state — they touch config / readline, not audio.
-        name === 'tab' || name === 'escape' || name === ',' || name === '.';
+        name === 'tab' || name === 'escape' || lookup === ',' || lookup === '.' || lookup === '/';
 
       // F5–F10 (bare) are DICTATION/PLAYBACK hotkeys — they only make
       // sense when voice features are enabled. Bail early to avoid
@@ -3145,7 +3154,7 @@ async function main(): Promise<void> {
       // message that begins with a space-separated word) the keypress
       // listener stays out of the way and lets readline handle the
       // space normally.
-      if (name === 'space' || name === '/') {
+      if (name === 'space' || lookup === '/') {
         if (pickerActive) return;
         const buf = (rl as unknown as { line?: string }).line ?? '';
         // Space is only triggered at an empty buffer (mid-typing
@@ -3156,13 +3165,13 @@ async function main(): Promise<void> {
         // empty + single-/ states open the picker; longer buffers
         // pass through.
         if (name === 'space' && buf.length > 0) return;
-        if (name === '/' && buf !== '' && buf !== '/') return;
+        if (lookup === '/' && buf !== '' && buf !== '/') return;
         // Mid-stream is suppressed by the input guard already;
         // this listener still fires but we shouldn't open a picker
         // on top of a streaming turn.
         const turnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
         if (turnCtl && !turnCtl.signal.aborted) return;
-        const triggerChar = name === '/' ? '/' : ' ';
+        const triggerChar = lookup === '/' ? '/' : ' ';
         // Open the palette. The picker is async and takes stdin into
         // raw mode for its lifetime — we fire-and-forget here.
         pickerActive = true;
@@ -3191,7 +3200,7 @@ async function main(): Promise<void> {
               // '/' trigger: pre-fill filter so the user's mental
               // model ("I typed / and now I see slash commands") is
               // preserved. Space trigger: blank filter, browse all.
-              initialFilter: name === '/' ? '/' : undefined,
+              initialFilter: lookup === '/' ? '/' : undefined,
             });
             if (selected) {
               (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = selected + '\n';
@@ -3288,13 +3297,13 @@ async function main(): Promise<void> {
       // deterministic; higher = more creative. Step ± 0.1, clamped
       // to [0.0, 2.0]. Saved immediately so the next API call uses
       // the new value. Persisted so the setting survives restarts.
-      if ((name === ',' || name === '.') && meta) {
+      if ((lookup === ',' || lookup === '.') && meta) {
         const cur = typeof config.temperature === 'number' ? config.temperature : 0.3;
-        const step = name === ',' ? -0.1 : +0.1;
+        const step = lookup === ',' ? -0.1 : +0.1;
         const next = Math.max(0, Math.min(2.0, Math.round((cur + step) * 100) / 100));
         config.temperature = next;
         saveConfig(config);
-        const label = name === ',' ? 'Alt+,' : 'Alt+.';
+        const label = lookup === ',' ? 'Alt+,' : 'Alt+.';
         announce(label, `Temperature ${next.toFixed(2)} (lower = more careful, higher = more creative).`);
         return;
       }
