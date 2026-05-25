@@ -152,12 +152,25 @@ export async function inlineSuggest(
       // (since that's the trigger) but the commands also start with
       // '/', so the slash is implicit and we want to match on the
       // letters that come after.
-      const f = filter.replace(/^\//, '').toLowerCase();
+      let f = filter.replace(/^\//, '').toLowerCase();
+      // If the filter contains a space, the user is typing ARGS for a
+      // command (e.g. "/perm auto"). Match only on the first word so
+      // the dropdown still highlights /perm — without this slice,
+      // typing space dropped the match count to zero and made the
+      // dropdown look broken. Enter then submits the FULL filter with
+      // args attached (see the Enter handler below).
+      const spaceIdx = f.indexOf(' ');
+      const hasArgs = spaceIdx >= 0;
+      if (hasArgs) f = f.slice(0, spaceIdx);
       if (!f) return items.slice();
-      return items.filter((it) =>
-        it.command.toLowerCase().includes(f) ||
-        it.description.toLowerCase().includes(f),
-      );
+      return items.filter((it) => {
+        const cmdMatch = it.command.toLowerCase().includes(f);
+        // Description matching is only useful when the user is still
+        // searching — once they've typed past the command name into
+        // args, description matches would surface irrelevant items.
+        const descMatch = !hasArgs && it.description.toLowerCase().includes(f);
+        return cmdMatch || descMatch;
+      });
     }
 
     function render(): void {
@@ -198,7 +211,14 @@ export async function inlineSuggest(
       // moves down, not back to col 0.)
       let rowsDrawn = 0;
       if (shown.length === 0) {
-        stdout.write(`\r\n  ${ANSI.dim}(no matches — Backspace to clear, Esc to dismiss)${ANSI.reset}`);
+        // Hint the args path: if the filter starts with `/` and has
+        // letters after it, Enter still submits as-is so the user
+        // can type `/customcmd args` even if customcmd isn't in our
+        // local catalog.
+        const hint = filter.length > 1 && filter.startsWith('/')
+          ? '(no match — Enter submits as-is, Backspace narrows, Esc cancels)'
+          : '(no matches — Backspace to clear, Esc to dismiss)';
+        stdout.write(`\r\n  ${ANSI.dim}${hint}${ANSI.reset}`);
         rowsDrawn = 1;
       } else {
         for (let i = 0; i < shown.length; i++) {
@@ -285,14 +305,39 @@ export async function inlineSuggest(
           resolve({ accepted: false, filter });
           return;
         }
-        // Enter — accept current selection. CR (0x0D) and LF (0x0A)
-        // both count; some terminals deliver one, some the other.
+        // Enter — accept and submit.
+        //
+        // Three submission paths:
+        //   1. Filter contains a space → user typed "/cmd args".
+        //      Submit the FULL filter so handleSlashCommand sees the
+        //      command AND its arguments (e.g. "/perm auto" sets the
+        //      perm mode, "/think on" toggles). This is the path that
+        //      was broken before — typing a space yielded zero
+        //      matches and Enter did nothing, so users got stuck.
+        //   2. No space, dropdown has a match → submit the selected
+        //      item's command verbatim.
+        //   3. No space, dropdown has no match, but the user typed
+        //      something past "/" → submit the raw filter and let
+        //      handleSlashCommand say "unknown command". Better than
+        //      silently swallowing the Enter.
         if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) {
-          const visible = visibleItems();
-          if (visible.length === 0) return;
-          const chosen = visible[selected];
+          let toSubmit: string;
+          if (filter.includes(' ')) {
+            toSubmit = filter;
+          } else {
+            const visible = visibleItems();
+            if (visible.length > 0) {
+              toSubmit = visible[selected].command;
+            } else if (filter.length > 1) {
+              toSubmit = filter;
+            } else {
+              // Filter is "/" alone or empty — nothing to submit. Stay
+              // open so the user can keep typing.
+              return;
+            }
+          }
           teardown();
-          resolve({ accepted: true, command: chosen.command, filter });
+          resolve({ accepted: true, command: toSubmit, filter });
           return;
         }
         // Backspace (DEL 0x7F on POSIX, BS 0x08 on Windows).
