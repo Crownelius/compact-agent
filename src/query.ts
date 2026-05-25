@@ -359,6 +359,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     sawToolError: false,
     sawToolRecovery: false,
     toolCallErrorCounts: new Map<string, number>(),
+    toolParseFailureStreaks: new Map<string, number>(),
     toolCallLoopDetected: false,
   };
 
@@ -881,6 +882,24 @@ interface ChainStats {
    * stuck retrying a broken call hits the safety valve.
    */
   toolCallErrorCounts: Map<string, number>;
+  /**
+   * Map<toolName, consecutiveParseFailureCount>. The per-fingerprint
+   * detector above misses one important pattern: the model
+   * regenerating a huge payload (e.g. 27KB of HTML inside a
+   * write_file call) where every attempt FAILS JSON.parse at a
+   * slightly different byte position. Different positions →
+   * different args → different fingerprints → the
+   * fingerprint-based detector never trips. Real-world repro:
+   * write_file failed 4× consecutively with `Unterminated string`
+   * at positions 27137, 27727, 27922, 27119 — same root cause,
+   * different surface signal.
+   *
+   * This counter ignores args entirely. Same tool, 3 consecutive
+   * JSON-parse failures → abort with a directive to switch
+   * tools (e.g. apply_patch for huge content). Reset on any
+   * successful execution of the same tool.
+   */
+  toolParseFailureStreaks: Map<string, number>;
   toolCallLoopDetected: boolean;
 }
 
@@ -1031,6 +1050,55 @@ async function executeToolCalls(
           `or use a different approach (e.g. split a huge write into multiple smaller writes).`,
       });
       bumpFingerprintError();
+
+      // ── Per-tool parse-failure streak detector ────────────
+      // The per-fingerprint detector misses the case where args
+      // differ slightly each retry (e.g. 27KB of HTML regenerated
+      // with cosmetic variation between attempts, but every
+      // attempt fails JSON.parse at a slightly different byte
+      // position). Track streaks per TOOL NAME — if the same
+      // tool fails to JSON-parse N times in a row, the issue
+      // is the SHAPE of what the model is sending, not the
+      // specific args; halt with a stronger directive.
+      if (chainStats) {
+        const streak = (chainStats.toolParseFailureStreaks.get(toolName) ?? 0) + 1;
+        chainStats.toolParseFailureStreaks.set(toolName, streak);
+        if (streak >= TOOL_CALL_LOOP_THRESHOLD && !chainStats.toolCallLoopDetected) {
+          chainStats.toolCallLoopDetected = true;
+          console.log(theme.error(
+            `  ⚠ Parse-failure streak — ${toolName} has failed JSON.parse ${streak} times in a row. Aborting chain.`,
+          ));
+          console.log(theme.dim(
+            `    The model keeps generating malformed JSON for this tool. Likely causes:`,
+          ));
+          console.log(theme.dim(
+            `      · payload too large for a single tool call (use apply_patch for big file writes,`,
+          ));
+          console.log(theme.dim(
+            `        split into multiple smaller calls, or write via bash heredoc instead)`,
+          ));
+          console.log(theme.dim(
+            `      · content with unescaped quotes / newlines / backslashes that break JSON encoding`,
+          ));
+          // Override the last error result with a stronger
+          // terminal message that the model will read in the next
+          // turn. Don't push an additional result — keep the
+          // tool_call_id chain intact.
+          results[results.length - 1] = {
+            role: 'tool',
+            tool_call_id: tc.id,
+            content:
+              `Error: parse-failure streak detected — your last ${streak} attempts at "${toolName}" ` +
+              `have ALL failed JSON.parse (each with a slightly different byte position). The agent ` +
+              `is refusing further attempts. DO NOT regenerate this tool call. Either:\n` +
+              `  1. Use apply_patch instead (handles large file content via a different envelope)\n` +
+              `  2. Split the work into multiple smaller calls (e.g. write the file in chunks via bash echo + >>)\n` +
+              `  3. Stop and report the issue to the user`,
+          };
+          return results;  // abort the rest of this turn's tool calls
+        }
+      }
+
       continue;
     }
 
@@ -1183,6 +1251,10 @@ async function executeToolCalls(
       bumpFingerprintError();
     } else {
       clearFingerprintError();
+      // A successful exec for this tool also breaks its
+      // parse-failure streak. The model recovered from whatever
+      // was generating malformed JSON.
+      if (chainStats) chainStats.toolParseFailureStreaks.set(toolName, 0);
     }
 
     // Chain stats — bump the counter on every successful execution path
