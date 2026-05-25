@@ -15,19 +15,31 @@ harness so you can benchmark it against the 89-task v2 dataset.
 ## Setup
 
 ```bash
-# from this directory
-uv venv
-source .venv/bin/activate    # .venv\Scripts\activate on Windows
+# from the bench/ directory
+uv venv --python 3.12         # terminal-bench requires Python >= 3.12
+source .venv/bin/activate     # .venv\Scripts\activate on Windows
 uv pip install terminal-bench
+```
+
+Then export your API key in the same shell:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-v1-...        # bash / zsh
+$env:OPENROUTER_API_KEY = "sk-or-v1-..."      # PowerShell
 ```
 
 ## Run a smoke test (one task)
 
 ```bash
-uv run tb run \
+tb run \
     --agent-import-path compact_agent_adapter:CompactAgent \
     --task-id hello-world
 ```
+
+The adapter has been verified to load cleanly against `terminal-bench`
+0.2.18+ — install script, run commands, and env dict all render
+correctly (see `compact_agent_adapter.py` if you want to print the
+rendered shell yourself).
 
 This pulls the `hello-world` task, builds its Docker container,
 installs Node 20 + `compact-agent@1.33.5` inside, and runs the agent

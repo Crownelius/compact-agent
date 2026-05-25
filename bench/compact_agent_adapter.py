@@ -42,13 +42,17 @@ import os
 import textwrap
 from pathlib import Path
 
-# IMPORTANT: this import path corresponds to terminal-bench >= 2.0 layout.
-# If you're on an older terminal-bench, the class moved between versions —
-# check `from terminal_bench.agents import AbstractInstalledAgent` first.
-try:
-    from terminal_bench.agents.installed_agents import AbstractInstalledAgent  # type: ignore
-except ImportError:  # pragma: no cover
-    from terminal_bench.agents import AbstractInstalledAgent  # type: ignore
+# Correct import paths for terminal-bench 0.2.x. The class lives in
+# `terminal_bench.agents.installed_agents.abstract_installed_agent` —
+# note the trailing `.abstract_installed_agent` submodule, NOT the
+# `installed_agents` package itself. TerminalCommand is the type
+# `_run_agent_commands` must return (was: plain list of strings in
+# pre-release notes; reality: pydantic model with per-command
+# timeout knobs).
+from terminal_bench.agents.installed_agents.abstract_installed_agent import (
+    AbstractInstalledAgent,
+    TerminalCommand,
+)
 
 
 # Pinned to a known-working compact-agent release. Bump as new versions
@@ -145,37 +149,46 @@ class CompactAgent(AbstractInstalledAgent):
             self._install_script_path.chmod(0o755)
         return self._install_script_path
 
-    def _run_agent_commands(self, task_description: str) -> list[str]:
+    def _run_agent_commands(self, task_description: str) -> list[TerminalCommand]:
         """Return the shell commands the harness will run inside the
         container to actually invoke the agent on this task.
 
-        We:
-          1. Write the task description to /tmp/tb_task.txt — bypasses
+        Two commands:
+
+          1. Write the task description to /tmp/tb_task.txt. Bypasses
              every shell-quoting concern (single quotes, embedded
-             backticks, multi-line code snippets, $foo substitutions).
-          2. Invoke `compact-agent --prompt-file /tmp/tb_task.txt --perm yolo`
-             which reads the prompt verbatim, runs one runQuery chain
-             with permission gates auto-approved, exits 0 on success
+             backticks, multi-line code snippets, $foo substitutions)
+             by using a single-quoted heredoc.
+          2. Invoke `compact-agent --prompt-file /tmp/tb_task.txt --perm yolo`.
+             Reads the prompt verbatim, runs one runQuery chain with
+             permission gates auto-approved (yolo), exits 0 on success
              or 1 on chain failure.
 
-        compact-agent reads the prompt as one user message, then loops
-        through tool calls autonomously until the model stops calling
-        tools (or hits the 10-error loop detector). No human-in-the-
-        loop needed.
+        The agent's tool-use loop runs autonomously until the model
+        stops calling tools (or hits the 10-error loop detector). No
+        human-in-the-loop needed.
+
+        max_timeout_sec is bumped to 30 minutes per command because
+        some terminal-bench tasks require long-running compilation /
+        test runs that legitimately take > 3 minutes.
         """
-        # Heredoc writes the task verbatim; the 'EOF' is quoted so the
-        # shell doesn't expand $VAR / `cmd` inside the task text. The
-        # 'set -e' guards against partial writes — if the heredoc fails
-        # for any reason we bail before running the agent on a stale
-        # or empty file.
+        # Single-quoted heredoc — shell does NOT expand $VAR or `cmd`
+        # inside the task text. Newlines in task_description pass
+        # through verbatim into the file.
+        write_task = (
+            'set -e\n'
+            'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"\n'
+            "cat > /tmp/tb_task.txt <<'__TB_TASK_EOF__'\n"
+            + task_description
+            + "\n__TB_TASK_EOF__\n"
+        )
         return [
-            textwrap.dedent("""
-                set -e
-                export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-                cat > /tmp/tb_task.txt <<'__TB_TASK_EOF__'
-                """).strip()
-            + "\n" + task_description + "\n__TB_TASK_EOF__\n"
-            + "compact-agent --prompt-file /tmp/tb_task.txt --perm yolo"
+            TerminalCommand(command=write_task, max_timeout_sec=10.0, block=True),
+            TerminalCommand(
+                command="compact-agent --prompt-file /tmp/tb_task.txt --perm yolo",
+                max_timeout_sec=1800.0,  # 30 minutes per task
+                block=True,
+            ),
         ]
 
     @property
