@@ -71,11 +71,14 @@ describe('gateguard hook', () => {
       expect(r.exitCode).toBe(0);
     });
 
-    it('does NOT bypass when permission mode is anything else', () => {
-      // Run on an EXISTING file (not the new-file bypass) so we know
-      // we'd see a block if yolo wasn't the gating factor.
+    it('does NOT bypass when permission mode is anything else (strict mode)', () => {
+      // Run on an EXISTING file (not the new-file bypass) AND request
+      // strict block mode so we know we'd see a block if yolo wasn't
+      // the gating factor. Warn mode (the new default) wouldn't block
+      // — that case has its own test below.
       const r = runHook('gateguard', {
         COMPACT_AGENT_PERMISSION_MODE: 'ask',
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
         COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
       });
@@ -96,9 +99,10 @@ describe('gateguard hook', () => {
       });
     }
 
-    it('does NOT bypass on garbage env values', () => {
+    it('does NOT bypass on garbage env values (strict mode)', () => {
       const r = runHook('gateguard', {
         COMPACT_AGENT_GATEGUARD: 'maybe',
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
         COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
       });
@@ -106,18 +110,76 @@ describe('gateguard hook', () => {
     });
   });
 
+  describe('mode selection (v1.29.1)', () => {
+    it('default mode emits a warning hint and allows the edit', () => {
+      const r = runHook('gateguard', {
+        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+      });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toContain('[ECC hint] first edit to');
+    });
+
+    it('block mode keeps the legacy block-first behavior', () => {
+      const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
+        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+      });
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain('First Edit/Write');
+    });
+
+    it('off mode is fully silent', () => {
+      const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'off',
+        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+      });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe('');
+    });
+
+    it('warn mode does not re-emit on second edit to same file', () => {
+      const sessionId = `test-warn-${Date.now()}`;
+      const r1 = runHook('gateguard', {
+        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        COMPACT_AGENT_SESSION_ID: sessionId,
+      });
+      const r2 = runHook('gateguard', {
+        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        COMPACT_AGENT_SESSION_ID: sessionId,
+      });
+      expect(r1.stderr).toContain('[ECC hint]');
+      expect(r2.stderr).toBe('');  // already seen; no re-warn
+      expect(r1.exitCode).toBe(0);
+      expect(r2.exitCode).toBe(0);
+    });
+  });
+
   describe('non-existent file bypass (v1.27.2)', () => {
-    it('returns ok() for a file that does not exist', () => {
+    it('returns ok() for a file that does not exist (warn mode)', () => {
       const r = runHook('gateguard', {
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: nonExistentFile }),
         COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(0);
+      expect(r.stderr).toBe('');  // no hint either, brand-new file is fully silent
       expect(existsSync(nonExistentFile)).toBe(false);
     });
 
-    it('blocks first edit to an EXISTING file', () => {
+    it('returns ok() for a file that does not exist (block mode)', () => {
       const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
+        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: nonExistentFile }),
+        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+      });
+      expect(r.exitCode).toBe(0);
+    });
+
+    it('blocks first edit to an EXISTING file (strict mode only)', () => {
+      const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
         COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
       });
@@ -134,14 +196,17 @@ describe('gateguard hook', () => {
 
     it('falls back to "unknown" on a path-traversal sessionId', () => {
       // Use a UNIQUE existing file so the per-file lock for "unknown"
-      // can't have been set by an earlier test run.
+      // can't have been set by an earlier test run. Use BLOCK mode so
+      // we can assert exit code 2 (in warn mode the security still
+      // applies but the surface signal is just an exit-0 hint).
       const uniqueFile = join(tmpDir, `unique-${Date.now()}.ts`);
       writeFileSync(uniqueFile, 'x');
       const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: uniqueFile }),
         COMPACT_AGENT_SESSION_ID: '../../../escape',
       });
-      // Should block (it's an existing file, no yolo, no disable) AND
+      // Should block (block mode, existing file, no yolo) AND
       // should not have written outside the state dir.
       expect(r.exitCode).toBe(2);
       // The escape path must not have been created
@@ -157,6 +222,7 @@ describe('gateguard hook', () => {
 
     it('accepts valid sessionIds (alphanumeric + dash + underscore, <=64)', () => {
       const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
         COMPACT_AGENT_SESSION_ID: 'abc-123_DEF',
       });
@@ -166,6 +232,7 @@ describe('gateguard hook', () => {
 
     it('rejects shell-injection-style sessionIds', () => {
       const r = runHook('gateguard', {
+        COMPACT_AGENT_GATEGUARD_MODE: 'block',
         COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
         COMPACT_AGENT_SESSION_ID: 'foo;rm -rf /',
       });

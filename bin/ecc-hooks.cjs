@@ -178,15 +178,35 @@ const checks = {
   },
 
   /**
-   * Simplified GateGuard — force investigation before first Edit/Write per
-   * file in this session. Upstream's full implementation (878 LOC) tracks
-   * elaborate session state, destructive-bash detection, and quote-aware
-   * SQL pattern matching. We port the highest-leverage mechanism: a
-   * per-session per-file flag that demands investigation on first touch.
+   * GateGuard — surface "first Edit/Write to this file" as a hint or a
+   * block, depending on COMPACT_AGENT_GATEGUARD_MODE.
    *
-   * State lives at ~/.compact-agent/state/gateguard/<sessionId>.json — a
-   * JSON array of paths already touched. After the first touch of a file,
-   * subsequent Edit/Write calls pass through normally.
+   * Modes:
+   *   warn  (default) — print the investigation hint, allow the edit.
+   *                     The agent reads the hint as conversational
+   *                     context but isn't forced to retry. Zero
+   *                     round-trip cost on the happy path.
+   *   block           — the original behavior: block once per file,
+   *                     allow on retry. Use this when you actively
+   *                     want to force the agent to re-investigate
+   *                     every existing file before its first edit.
+   *   off             — silent no-op.
+   *
+   * Why warn is the new default (changed in v1.29.1):
+   *   - The block-first-allow-on-retry pattern wasted a round-trip on
+   *     every first edit to every existing file.
+   *   - The investigation hint is just as useful when delivered as a
+   *     warning the agent observes — it doesn't need a forced retry
+   *     to be acted on.
+   *   - User reports across three sessions showed agents always
+   *     succeeded on retry, so the block was friction without
+   *     proportional safety benefit.
+   *   - Strict users who actually want block-first can opt back in
+   *     via COMPACT_AGENT_GATEGUARD_MODE=block.
+   *
+   * State lives at ~/.compact-agent/state/gateguard/<sessionId>.json
+   * even in warn mode — tracking per-file means we only emit the hint
+   * once per file per session (don't nag).
    *
    * Auto-cleanup: state files older than 24h are deleted on next run.
    *
@@ -194,16 +214,25 @@ const checks = {
    */
   'gateguard': () => {
     // ── Disable knob ─────────────────────────────────────
-    // Documented in the block message below. Accepts the new
+    // Documented in the hint/block message below. Accepts the
     // COMPACT_AGENT_GATEGUARD env var primarily, with the legacy
-    // CROWCODER_GATEGUARD kept as an alias so the previous docs +
-    // muscle memory still work.
+    // CROWCODER_GATEGUARD as alias.
     const disableEnv = (
       process.env.COMPACT_AGENT_GATEGUARD ||
       process.env.CROWCODER_GATEGUARD ||
       ''
     ).trim();
     if (/^(off|false|0|no|disabled?)$/i.test(disableEnv)) return ok();
+
+    // ── Mode selection ───────────────────────────────────
+    // Pick warn (new default) vs block (legacy strict) vs off.
+    const modeEnv = (
+      process.env.COMPACT_AGENT_GATEGUARD_MODE ||
+      process.env.CROWCODER_GATEGUARD_MODE ||
+      'warn'
+    ).toLowerCase().trim();
+    if (modeEnv === 'off') return ok();
+    const strict = modeEnv === 'block' || modeEnv === 'strict';
 
     // ── yolo bypass ──────────────────────────────────────
     // Permission mode 'yolo' is the user's explicit "trust the agent,
@@ -273,24 +302,34 @@ const checks = {
       }
     } catch { /* corrupt state: treat as empty */ }
 
-    if (touched.has(targetPath)) return ok();   // already investigated this session
+    if (touched.has(targetPath)) return ok();   // already seen this file this session
 
-    // First touch — record + block with investigation instruction.
+    // First touch — record. In strict (block) mode we block here; in
+    // warn (default) mode we print the hint as a one-line warning and
+    // exit ok() so the edit proceeds. Persist either way so the next
+    // edit to the same file doesn't re-emit the hint.
     touched.add(targetPath);
     try {
       fs.mkdirSync(stateDir, { recursive: true });
       fs.writeFileSync(stateFile, JSON.stringify([...touched]), 'utf-8');
-    } catch { /* if we can't persist, still block this one time */ }
+    } catch { /* if we can't persist, still emit the hint this one time */ }
 
-    return block(
-      `First Edit/Write to ${targetPath} this session. Before proceeding, ` +
-      `investigate: (1) Read the file to understand its current contents. ` +
-      `(2) Grep for importers / callers / refs so the change doesn't break ` +
-      `consumers. (3) If it's a schema/type, check existing data usage. ` +
-      `After investigating, retry the edit — GateGuard tracks per-file and ` +
-      `will let the retry through. Set COMPACT_AGENT_GATEGUARD=off to disable, ` +
-      `or use /perm yolo for a session-wide bypass.`,
+    if (strict) {
+      return block(
+        `First Edit/Write to ${targetPath} this session. Before proceeding, ` +
+        `investigate: (1) Read the file. (2) Grep for importers. ` +
+        `(3) If schema/type, check existing data. After investigating, ` +
+        `retry the edit. Set COMPACT_AGENT_GATEGUARD_MODE=warn to switch ` +
+        `to non-blocking hints, or =off to disable. /perm yolo also bypasses.`,
+      );
+    }
+    // Warn mode (default): one-line hint, exit 0 so the edit proceeds.
+    process.stderr.write(
+      `[ECC hint] first edit to ${targetPath} this session — make sure ` +
+      `you've read it + checked for callers. (set ` +
+      `COMPACT_AGENT_GATEGUARD_MODE=block to enforce, =off to silence)\n`,
     );
+    return ok();
   },
 
   /**
