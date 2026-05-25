@@ -877,9 +877,20 @@ export function handleSlashCommand(
           resetClient();
           console.log(chalk.green(`  Model: ${config.model} (custom)`));
         }
-      } else {
-        console.log(chalk.dim(`  Current: ${config.model}`));
+        return { handled: true };
       }
+      // No args. On OpenRouter, the user wants the interactive
+      // picker (catalog + pricing). On other providers we don't
+      // have an equivalent catalog endpoint, so keep the legacy
+      // "show current" behavior.
+      if (/openrouter/i.test(config.provider)) {
+        // The picker is async; handleSlashCommand is sync. Use the
+        // sentinel-injectPrompt pattern that /dictate + /swarm
+        // already use to defer async work to the main REPL loop.
+        return { handled: true, injectPrompt: '__PICK_MODEL__' };
+      }
+      console.log(chalk.dim(`  Current: ${config.model}`));
+      console.log(chalk.dim('  (interactive picker is OpenRouter-only — pass a model name explicitly with /model <id>)'));
       return { handled: true };
 
     case '/models':
@@ -2851,10 +2862,17 @@ async function main(): Promise<void> {
       'tab',                                   // Shift+Tab cycles perm modes
       'escape',                                // Esc-Esc rewind at empty prompt
       ',', '.',                                // Alt+, / Alt+. reasoning effort
+      'space',                                 // Space at empty prompt → command palette
       // Shifted F-keys carry the Tier-2 and Tier-3 a11y functions. Each
       // is checked alongside key.shift below, so a bare F1 still routes
       // to "status" while Shift+F1 routes to "queued input."
     ]);
+    // Re-entry guard for the picker. The keypress listener can fire
+    // again while the picker is still in alt-screen mode (the user
+    // pressed something the picker handled but we still saw the
+    // 'keypress' event), so we need to make sure we don't open a
+    // second picker on top of the first.
+    let pickerActive = false;
 
     // Define the hotkey listener as a NAMED, TAGGED function so
     // suppressInputDuringStream() in query.ts can isolate it among stdin's
@@ -2886,6 +2904,11 @@ async function main(): Promise<void> {
       if ((name === ',' || name === '.') && !meta) return;
       if (name === 'tab' && !shift) return;
       if (name === 'escape' && (shift || ctrl || meta)) return;
+      // Space is ours ONLY when the input buffer is empty and we're
+      // at a prompt (not mid-streaming). The check happens in the
+      // dedicated branch below; here we just defer if there's any
+      // modifier (Shift+Space, Ctrl+Space, etc. aren't us).
+      if (name === 'space' && (shift || ctrl || meta)) return;
 
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
@@ -3059,6 +3082,63 @@ async function main(): Promise<void> {
           return;
         }
         // Any other shifted F-key: no-op (don't fall through to bare).
+        return;
+      }
+
+      // ── Space (bare): command palette at empty prompt ──
+      // Pressing Space when the input buffer is empty opens the
+      // command palette — an alt-screen picker showing every slash
+      // command, arrow-key navigable, type-to-filter, Enter to run.
+      // When the buffer has content (the user is typing a real
+      // message that begins with a space-separated word) the keypress
+      // listener stays out of the way and lets readline handle the
+      // space normally.
+      if (name === 'space') {
+        if (pickerActive) return;
+        const buf = (rl as unknown as { line?: string }).line ?? '';
+        if (buf.length > 0) return;  // mid-input — let readline insert the space
+        // Mid-stream space is suppressed by the input guard already;
+        // this listener still fires but we shouldn't open a picker
+        // on top of a streaming turn.
+        const turnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
+        if (turnCtl && !turnCtl.signal.aborted) return;
+        // Open the palette. The picker is async and takes stdin into
+        // raw mode for its lifetime — we fire-and-forget here. On
+        // selection, queue the command and resolve rl.question so the
+        // main loop dispatches it.
+        pickerActive = true;
+        // The space character is already in readline's buffer at
+        // this point (the keypress listener is an observer, not a
+        // gate). Clear it so the prompt is clean once the picker
+        // exits — without this, the selected command would be
+        // appended after the stray space.
+        try {
+          const rlAny = rl as unknown as { line: string; _refreshLine?: () => void };
+          rlAny.line = '';
+          rlAny._refreshLine?.();
+        } catch { /* noop */ }
+        void (async () => {
+          try {
+            const { pick } = await import('./picker.js');
+            const { COMMAND_CATALOG } = await import('./command-palette.js');
+            const items = COMMAND_CATALOG.map((c) => ({
+              label: c.command,
+              hint: c.category,
+              description: c.description,
+              value: c.command,
+            }));
+            const selected = await pick(items, {
+              title: 'compact-agent · command palette',
+              footer: 'type to filter · ↑↓ to navigate · Enter to run · Esc to cancel',
+            });
+            if (selected) {
+              (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = selected + '\n';
+            }
+          } finally {
+            pickerActive = false;
+            try { rl.emit('line', ''); } catch { /* noop */ }
+          }
+        })();
         return;
       }
 
@@ -3488,6 +3568,40 @@ async function main(): Promise<void> {
           }
           console.log(theme.dim('  [dictate] ') + chalk.white(transcript));
           messages.push({ role: 'user', content: transcript });
+        } else if (result.injectPrompt === '__PICK_MODEL__') {
+          // OpenRouter model picker — same sentinel-into-the-REPL
+          // pattern as /dictate + /swarm because handleSlashCommand
+          // is sync but fetching the catalog + showing the picker
+          // is async. Selection sets config.model + saves; no
+          // injectPrompt cascades into runQuery.
+          const { pick } = await import('./picker.js');
+          const { fetchOpenRouterModels, formatPricing } = await import('./openrouter-models.js');
+          console.log(chalk.dim('  Fetching OpenRouter catalog…'));
+          const models = await fetchOpenRouterModels();
+          if (models.length === 0) {
+            console.log(chalk.yellow('  Could not fetch model catalog (network error or rate limit).'));
+            console.log(chalk.dim('  Use /model <id> with a known model name, or check your connection.'));
+            continue;
+          }
+          const items = models.map((m) => ({
+            label: m.id,
+            hint: formatPricing(m),
+            description: m.name !== m.id ? m.name : undefined,
+            value: m.id,
+          }));
+          const selected = await pick(items, {
+            title: `compact-agent · OpenRouter models  (current: ${config.model})`,
+            footer: 'type to filter · ↑↓ to navigate · Enter to pick · Esc to cancel · free models float to the top',
+          });
+          if (selected) {
+            config.model = selected;
+            saveConfig(config);
+            resetClient();
+            console.log(chalk.green(`  Model: ${config.model}`));
+          } else {
+            console.log(chalk.dim('  Cancelled — model unchanged.'));
+          }
+          continue;
         } else if (result.injectPrompt.startsWith('__SWARM__')) {
           // Swarm dispatch: __SWARM__<agentsCsv>|||<task>. Same sentinel
           // trick as /dictate so the slash handler stays sync; the async
