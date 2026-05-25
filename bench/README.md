@@ -1,7 +1,13 @@
-# compact-agent × Terminal-Bench v2
+# compact-agent × Terminal-Bench
 
 Adapter that plugs compact-agent into the [Terminal-Bench](https://www.tbench.ai/)
-harness so you can benchmark it against the 89-task v2 dataset.
+harness for end-to-end benchmarking.
+
+**Status**: ✅ verified passing on `hello-world` (100% accuracy, 2m43s
+agent time, 0 failures) as of 2026-05-25 with compact-agent 1.33.7 +
+terminal-bench 0.2.18 on Windows 11 + Docker Desktop. The full v0.1.1
+dataset (~80 tasks) is runnable; the bigger task batches need a few
+hours of wall clock.
 
 ## What you need on the host
 
@@ -34,6 +40,20 @@ Some terminal-bench codepaths still read `OPENAI_API_KEY` directly:
 export OPENAI_API_KEY="$OPENROUTER_API_KEY"
 ```
 
+**Windows-only: also set `PYTHONUTF8=1`.** terminal-bench writes agent
+output (which contains arrow chars `→`, `▶`, Braille spinner glyphs,
+etc.) to disk using the host's default encoding. Python 3 on Windows
+defaults to cp1252 which doesn't cover most of compact-agent's UI
+glyphs — without UTF-8 mode, the harness crashes with
+`UnicodeEncodeError` after the agent has actually completed:
+
+```bash
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+```
+
+On Linux/Mac this is the default — no action needed.
+
 ## Get the dataset (Windows workaround)
 
 terminal-bench's built-in `--dataset name==version` flow has a path
@@ -61,19 +81,30 @@ Bench Core task layout.
 tb run \
     --dataset-path tb-repo/tasks \
     --agent-import-path compact_agent_adapter:CompactAgent \
-    --task-id hello-world
+    --task-id hello-world \
+    --global-agent-timeout-sec 1200
 ```
+
+`--global-agent-timeout-sec 1200` (20 min) overrides the per-task
+default of 360s. The first invocation in a fresh container has to
+`apt-get install nodejs` + `npm i -g compact-agent` before the agent
+can run; that install alone eats 1–2 minutes, leaving the 360s task
+budget too tight for anything but trivial work. 1200s gives breathing
+room for both install and agent reasoning. Bump to `1800` (30 min)
+for hard tasks.
 
 ## Run the full v0.1.1 dataset
 
 ```bash
 tb run \
     --dataset-path tb-repo/tasks \
-    --agent-import-path compact_agent_adapter:CompactAgent
+    --agent-import-path compact_agent_adapter:CompactAgent \
+    --global-agent-timeout-sec 1800
 ```
 
 ~80 tasks × variable runtime. Expect 1.5–7 hours wall clock depending
-on Docker concurrency + model latency.
+on Docker concurrency + model latency. Use `--n-tasks 5` to subset
+the first few tasks for a faster sanity check.
 
 ## Docker on Windows: known issues
 
