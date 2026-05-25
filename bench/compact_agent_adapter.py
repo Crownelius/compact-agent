@@ -82,10 +82,22 @@ INSTALL_SCRIPT = """\
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Node 20 (compact-agent's engines field requires >=18)
+# The t-bench base images (e.g. ghcr.io/laude-institute/t-bench/python-3-13)
+# are intentionally minimal — no curl, no gnupg, no node. Install the
+# prerequisites first, THEN the NodeSource setup script, THEN node, THEN
+# compact-agent. Each layer guards against the previous already being
+# installed so re-running the script is idempotent.
+if ! command -v curl >/dev/null 2>&1; then
+  apt-get update -y
+  apt-get install -y --no-install-recommends curl ca-certificates gnupg
+fi
+
+# Node 20 (compact-agent's engines field requires >=18). The setup_20.x
+# script writes /etc/apt/sources.list.d/nodesource.list + key, then
+# apt-get install -y nodejs pulls a single deb that includes npm.
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -dv -f2 | cut -d. -f1)" -lt 18 ]; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get install -y nodejs
+  apt-get install -y --no-install-recommends nodejs
 fi
 
 # Install compact-agent globally so it's on PATH.
