@@ -124,7 +124,17 @@ EOF
 # API key gets forwarded via OPENAI_API_KEY env (set by the harness from
 # the host). compact-agent reads OPENAI_API_KEY at startup when the
 # baseURL config field is set.
-echo "compact-agent install complete: $(compact-agent --version 2>&1 || echo 'no --version flag')"
+#
+# Sanity-check that the binary is on PATH — DO NOT actually exec
+# compact-agent here. compact-agent has no --version flag; invoking
+# it with any non-recognized argument falls through to REPL mode,
+# which blocks forever on stdin in a headless container.
+if command -v compact-agent >/dev/null 2>&1; then
+  echo "compact-agent install complete: $(command -v compact-agent)"
+else
+  echo "compact-agent install failed: not on PATH"
+  exit 1
+fi
 """
 
 
