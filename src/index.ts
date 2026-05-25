@@ -14,7 +14,7 @@ import { ALL_TOOLS } from './tools/index.js';
 import type { CrowcoderConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
 // New systems
-import { createSession, autoSave, listSessions, loadSession, deleteSession, saveSession, generateSessionId, type Session } from './sessions.js';
+import { createSession, autoSave, listSessions, loadSession, deleteSession, saveSession, generateSessionId, resolveSessionRef, type Session } from './sessions.js';
 import { initHooksDir, runHooks, listHooks, saveHooksConfig, clearQuarantinedHooks } from './hooks.js';
 import { printUsageSummary, setBudget } from './cost-tracker.js';
 import { printSecurityWarning, scanCommand } from './security.js';
@@ -842,13 +842,20 @@ export function handleSlashCommand(
         console.log(chalk.dim('  No saved sessions.'));
       } else {
         console.log(chalk.cyan(`\n  Saved Sessions (${sessions.length}):`));
+        // Show the FULL ID. Previously we truncated to 12 chars for
+        // visual density, but users copy-paste the displayed string
+        // into /resume and the truncated form doesn't match the
+        // actual filename — every paste failed. Width-aware padding
+        // keeps the table aligned across rows of differing ID
+        // lengths.
+        const maxIdLen = Math.max(...sessions.map((s) => s.id.length));
         for (const s of sessions.slice(0, 20)) {
           console.log(
-            chalk.white(`  ${s.id.slice(0, 12).padEnd(14)}`) +
+            chalk.white(`  ${s.id.padEnd(maxIdLen + 2)}`) +
             chalk.dim(`${s.name.padEnd(30)} ${s.turnCount} turns  ${s.model}  ${s.updatedAt.slice(0, 10)}`),
           );
         }
-        console.log();
+        console.log(chalk.dim(`\n  Use /resume <id>, /resume <prefix>, or /resume last to restore one.`));
       }
       return { handled: true };
     }
@@ -860,26 +867,59 @@ export function handleSlashCommand(
       return { handled: true };
 
     case '/resume': {
-      if (!args) {
-        console.log(chalk.yellow('  Usage: /resume <session-id>'));
+      if (!args.trim()) {
+        console.log(chalk.yellow('  Usage: /resume <session-id> | <prefix> | last'));
+        console.log(chalk.dim('  /sessions lists what\'s saved.'));
         return { handled: true };
       }
-      const loaded = loadSession(args);
+      // resolveSessionRef accepts exact ID, prefix match (like git),
+      // "last"/"latest" shortcut, and strips angle/quote wrappers
+      // (users pasting /resume <id> from the help text). This
+      // replaces the exact-only lookup that broke for everyone
+      // who copy-pasted from /sessions's previously-truncated
+      // display.
+      const ref = resolveSessionRef(args);
+      if ('error' in ref) {
+        console.log(chalk.red(`  ${ref.error}`));
+        if (ref.candidates && ref.candidates.length > 0) {
+          console.log(chalk.dim('  Matching candidates:'));
+          for (const c of ref.candidates.slice(0, 8)) console.log(chalk.dim(`    ${c}`));
+        }
+        return { handled: true };
+      }
+      const loaded = loadSession(ref.id);
       if (!loaded) {
-        console.log(chalk.red(`  Session not found: ${args}`));
+        // Resolver said the file exists but loadSession returned
+        // null — corrupt JSON. Surface clearly rather than silently
+        // looking like a not-found.
+        console.log(chalk.red(`  Session ${ref.id} resolved but its JSON is corrupt.`));
         return { handled: true };
       }
       console.log(chalk.green(`  Resumed: ${loaded.name} (${loaded.messages.length} messages)`));
       return { handled: true, newMessages: loaded.messages };
     }
 
-    case '/delete':
-      if (args && deleteSession(args)) {
-        console.log(chalk.green(`  Deleted session: ${args}`));
+    case '/delete': {
+      if (!args.trim()) {
+        console.log(chalk.yellow('  Usage: /delete <session-id> | <prefix> | last'));
+        return { handled: true };
+      }
+      const ref = resolveSessionRef(args);
+      if ('error' in ref) {
+        console.log(chalk.yellow(`  ${ref.error}`));
+        if (ref.candidates && ref.candidates.length > 0) {
+          console.log(chalk.dim('  Matching candidates:'));
+          for (const c of ref.candidates.slice(0, 8)) console.log(chalk.dim(`    ${c}`));
+        }
+        return { handled: true };
+      }
+      if (deleteSession(ref.id)) {
+        console.log(chalk.green(`  Deleted session: ${ref.id}`));
       } else {
-        console.log(chalk.yellow(`  Session not found: ${args}`));
+        console.log(chalk.yellow(`  Could not delete session: ${ref.id}`));
       }
       return { handled: true };
+    }
 
     // ── Git ───────────────────────────────────────────
     case '/commit': {

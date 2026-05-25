@@ -17,11 +17,24 @@ import type { CrowcoderConfig } from './types.js';
 export const CONFIG_DIR_NAME = '.compact-agent';
 export const LEGACY_CONFIG_DIR_NAME = '.crowcoder';
 
-const CONFIG_DIR =
-  process.env.COMPACT_AGENT_HOME ||
-  process.env.CROWCODER_HOME ||
-  join(homedir(), CONFIG_DIR_NAME);
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+// Resolve the config dir LAZILY (every call) instead of caching at
+// module-load time. The cached form prevented tests + sandboxed runs
+// from overriding via COMPACT_AGENT_HOME after the first import: the
+// first module to load would freeze the path at the user's real
+// home, and all subsequent overrides were ignored. The resolution
+// is cheap (env lookup + one join) so calling per access has no
+// observable cost on the hot path.
+function resolveConfigDir(): string {
+  return (
+    process.env.COMPACT_AGENT_HOME ||
+    process.env.CROWCODER_HOME ||
+    join(homedir(), CONFIG_DIR_NAME)
+  );
+}
+
+function resolveConfigFile(): string {
+  return join(resolveConfigDir(), 'config.json');
+}
 
 // Tracks whether we've already attempted the legacy-dir migration this
 // process. Migration is idempotent (existsSync guard) but we still cache
@@ -174,27 +187,27 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
 };
 
 export function getConfigDir(): string {
-  return CONFIG_DIR;
+  return resolveConfigDir();
 }
 
 /**
- * Same as CONFIG_DIR but exported as a function so callers in other
- * modules don't have to import the private const + re-derive the env
- * fallback chain. Use this anywhere you previously wrote
- * `join(homedir(), '.crowcoder')`.
+ * Same as getConfigDir() but exported under a clearer name for
+ * other modules that want the home-dir state root. Used by
+ * sessions, debug log, gateguard state, etc.
  */
 export function getHomeStateDir(): string {
-  return CONFIG_DIR;
+  return resolveConfigDir();
 }
 
 export function loadConfig(): CrowcoderConfig {
   // Try to migrate legacy ~/.crowcoder → ~/.compact-agent before reading.
   migrateLegacyHomeDir();
-  if (!existsSync(CONFIG_FILE)) {
+  const configFile = resolveConfigFile();
+  if (!existsSync(configFile)) {
     return { ...DEFAULT_CONFIG };
   }
   try {
-    const raw = readFileSync(CONFIG_FILE, 'utf-8');
+    const raw = readFileSync(configFile, 'utf-8');
     const loaded = JSON.parse(raw);
     const config = { ...DEFAULT_CONFIG, ...loaded };
     validateConfig(config);
@@ -248,8 +261,8 @@ function validateConfig(config: CrowcoderConfig): void {
 }
 
 export function saveConfig(config: CrowcoderConfig): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  mkdirSync(resolveConfigDir(), { recursive: true });
+  writeFileSync(resolveConfigFile(), JSON.stringify(config, null, 2), 'utf-8');
 }
 
 export function configExists(): boolean {
