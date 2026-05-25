@@ -28,18 +28,93 @@ export OPENROUTER_API_KEY=sk-or-v1-...        # bash / zsh
 $env:OPENROUTER_API_KEY = "sk-or-v1-..."      # PowerShell
 ```
 
+Some terminal-bench codepaths still read `OPENAI_API_KEY` directly:
+
+```bash
+export OPENAI_API_KEY="$OPENROUTER_API_KEY"
+```
+
+## Get the dataset (Windows workaround)
+
+terminal-bench's built-in `--dataset name==version` flow has a path
+bug on Windows: it clones the dataset repo into a Windows tempdir,
+then looks for `<tempdir>/tasks/` — which doesn't exist on the
+default `main` branch of the upstream repo (the tasks live on a
+separate `dataset/terminal-bench-core/v0.1.x` branch).
+
+Workaround: clone the dataset branch manually and pass `--dataset-path`:
+
+```bash
+git clone --depth 1 https://github.com/laude-institute/terminal-bench tb-repo
+cd tb-repo
+git fetch origin dataset/terminal-bench-core/v0.1.x
+git checkout 91e10457b5410f16c44364da1a34cb6de8c488a5  # v0.1.1 pin
+cd ..
+```
+
+Now `tb-repo/tasks/hello-world/` exists with the canonical Terminal-
+Bench Core task layout.
+
 ## Run a smoke test (one task)
 
 ```bash
 tb run \
+    --dataset-path tb-repo/tasks \
     --agent-import-path compact_agent_adapter:CompactAgent \
     --task-id hello-world
 ```
 
-The adapter has been verified to load cleanly against `terminal-bench`
-0.2.18+ — install script, run commands, and env dict all render
-correctly (see `compact_agent_adapter.py` if you want to print the
-rendered shell yourself).
+## Run the full v0.1.1 dataset
+
+```bash
+tb run \
+    --dataset-path tb-repo/tasks \
+    --agent-import-path compact_agent_adapter:CompactAgent
+```
+
+~80 tasks × variable runtime. Expect 1.5–7 hours wall clock depending
+on Docker concurrency + model latency.
+
+## Docker on Windows: known issues
+
+Two things to confirm before invoking `tb run`:
+
+1. **Docker Desktop is running** — `docker version` should return both
+   client AND server version. If only the client responds, start
+   Docker Desktop from the Start menu and wait for the whale icon to
+   stop animating.
+
+2. **Docker context** — `docker context ls` should show `desktop-linux *`
+   (with an asterisk) as the active context. If it shows `default *`,
+   run:
+
+   ```powershell
+   docker context use desktop-linux
+   ```
+
+If `tb run` errors with `Error while fetching server API version:
+(2, 'CreateFile', 'The system cannot find the file specified.')`,
+that's the Python docker SDK failing to connect to the Windows named
+pipe. Restart Docker Desktop, confirm `docker version` returns both
+versions, then re-run.
+
+**Recommended for serious benchmark runs:** use WSL2 instead of
+PowerShell. The harness was developed on Linux and the Python docker
+client's npipe code path on Windows has assorted compatibility
+issues. From a WSL2 Ubuntu shell:
+
+```bash
+sudo apt install docker.io   # or use Docker Desktop's WSL2 integration
+cd /mnt/c/Users/.../Crowcoder/bench
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install terminal-bench
+git clone --depth 1 https://github.com/laude-institute/terminal-bench tb-repo
+# ...same checkout commands...
+export OPENROUTER_API_KEY=sk-or-v1-...
+export OPENAI_API_KEY="$OPENROUTER_API_KEY"
+tb run --dataset-path tb-repo/tasks --agent-import-path compact_agent_adapter:CompactAgent --task-id hello-world
+```
 
 This pulls the `hello-world` task, builds its Docker container,
 installs Node 20 + `compact-agent@1.33.5` inside, and runs the agent
