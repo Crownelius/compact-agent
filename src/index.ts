@@ -2794,12 +2794,34 @@ async function main(): Promise<void> {
     } catch { /* never block startup on this */ }
   }
 
-  // Load or create config
+  // Load or create config.
+  //
+  // Non-interactive mode (COMPACT_AGENT_NON_INTERACTIVE=1) requires a
+  // pre-existing config — the setup wizard would block on stdin
+  // forever in a piped/headless environment. We bail with a clear
+  // error if no config is on disk, so the caller knows to run the
+  // wizard interactively first (`compact-agent` with no args).
+  const nonInteractive = process.env.COMPACT_AGENT_NON_INTERACTIVE === '1';
   let config: CrowcoderConfig;
   if (!configExists()) {
+    if (nonInteractive) {
+      process.stderr.write(
+        '[compact-agent] non-interactive mode requires a pre-existing config at ~/.compact-agent/config.json.\n' +
+        'Run `compact-agent` once interactively to walk through the setup wizard, OR write the config manually.\n'
+      );
+      process.exit(2);
+    }
     config = await setupWizard(rl);
   } else {
     config = loadConfig();
+  }
+
+  // Per-invocation permission override (--perm flag). Doesn't touch
+  // saved config — purely a runtime knob so harness runs can force
+  // yolo without mutating the user's interactive permission setting.
+  const permOverride = process.env.COMPACT_AGENT_PERM_OVERRIDE;
+  if (permOverride === 'ask' || permOverride === 'auto' || permOverride === 'yolo') {
+    config.permissionMode = permOverride;
   }
 
   // Apply the user's chosen color palette before anything paints. setPalette
@@ -2860,9 +2882,13 @@ async function main(): Promise<void> {
     messages.push({ role: 'system', content: memoryContext });
   }
 
-  // Show startup display based on theme setting
+  // Show startup display based on theme setting. Skipped entirely in
+  // non-interactive mode — banners are noise when a harness is parsing
+  // our stdout.
   const themeMode = config.theme || 'full';
-  if (themeMode === 'full') {
+  if (nonInteractive) {
+    // intentionally no output
+  } else if (themeMode === 'full') {
     // Full mode: banner. ASCII splash removed per user request — both `full`
     // and `compact` themes now render the same banner block.
     printThemedBanner(
@@ -2956,7 +2982,12 @@ async function main(): Promise<void> {
   // (the promises variant doesn't expose it). Some platforms / terminals
   // don't deliver every F-key — failure here is a silent no-op; users can
   // fall back to /dictate and /voice slash commands.
+  //
+  // Skipped in non-interactive mode — there's no user at the keyboard,
+  // and listening to keypress would consume bytes from the harness's
+  // piped stdin that may or may not look like F-keys.
   try {
+    if (nonInteractive) throw new Error('skip:nonInteractive');
     const readlineCb = await import('node:readline');
     const { describeStatus, describeLocation } = await import('./status.js');
     readlineCb.emitKeypressEvents(stdin);
@@ -3656,6 +3687,51 @@ async function main(): Promise<void> {
     permissionMode: config.permissionMode,
     cwd: process.cwd(),
   });
+
+  // ── Non-interactive single-chain mode ─────────────────
+  //
+  // Triggered by `--prompt <text>` / `--prompt-file <path>` (parsed in
+  // bin/crowcoder.js and stashed on COMPACT_AGENT_PROMPT). We push the
+  // prompt as one user message, run a single runQuery to completion,
+  // and exit. No REPL, no banner, no hotkey listener, no live queue.
+  //
+  // This is the entrypoint that lets external harnesses (Terminal-Bench,
+  // CI scripts, etc.) drive compact-agent with a single task and read
+  // its output cleanly. Stdin is left untouched — readline never
+  // attaches — so piped stdin won't confuse anything.
+  if (process.env.COMPACT_AGENT_NON_INTERACTIVE === '1') {
+    const promptText = process.env.COMPACT_AGENT_PROMPT;
+    if (!promptText || !promptText.trim()) {
+      process.stderr.write('[compact-agent] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
+      process.exit(2);
+    }
+    messages.push({ role: 'user', content: promptText.trim() });
+    try {
+      await runQuery({
+        config,
+        messages,
+        cwd: process.cwd(),
+        rl,
+        sessionId: session.id,
+        mode: mode.current,
+      });
+      // Run any session-stop hooks the user registered.
+      try {
+        await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
+      } catch { /* never fail an otherwise-successful run on hook errors */ }
+      // Close readline so the Node process can exit cleanly. Without
+      // this, the readline interface keeps the event loop alive until
+      // the user types something (which they can't, since stdin is
+      // piped from a harness).
+      try { rl.close(); } catch { /* noop */ }
+      process.exit(0);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[compact-agent] chain failed: ${msg}\n`);
+      try { rl.close(); } catch { /* noop */ }
+      process.exit(1);
+    }
+  }
 
   // Main REPL loop
   while (true) {

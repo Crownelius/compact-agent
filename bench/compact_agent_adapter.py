@@ -54,7 +54,10 @@ except ImportError:  # pragma: no cover
 # Pinned to a known-working compact-agent release. Bump as new versions
 # ship; the bench results depend on the exact agent build, so we want
 # this reproducible.
-COMPACT_AGENT_VERSION = "1.33.5"
+#
+# 1.33.7 is the first release with --prompt-file non-interactive mode,
+# which is what the adapter relies on to drive the agent without a TTY.
+COMPACT_AGENT_VERSION = "1.33.7"
 
 # Default model. owl-alpha is free on OpenRouter and tends to be fast
 # enough for benchmark turnaround. Swap to claude-sonnet-4 or
@@ -146,27 +149,33 @@ class CompactAgent(AbstractInstalledAgent):
         """Return the shell commands the harness will run inside the
         container to actually invoke the agent on this task.
 
-        The harness expects compact-agent to:
-          1. Receive the task description on stdin
-          2. Run autonomously until it considers the task done
-          3. Exit cleanly (any exit code is fine; harness scores by the
-             post-run state of the workspace, not by the agent's exit)
+        We:
+          1. Write the task description to /tmp/tb_task.txt — bypasses
+             every shell-quoting concern (single quotes, embedded
+             backticks, multi-line code snippets, $foo substitutions).
+          2. Invoke `compact-agent --prompt-file /tmp/tb_task.txt --perm yolo`
+             which reads the prompt verbatim, runs one runQuery chain
+             with permission gates auto-approved, exits 0 on success
+             or 1 on chain failure.
 
-        compact-agent's `compact-agent --prompt <text>` mode runs a
-        single non-interactive chain and exits. If that flag doesn't
-        exist in the installed version, fall back to piping via stdin
-        with `echo "..." | compact-agent`.
+        compact-agent reads the prompt as one user message, then loops
+        through tool calls autonomously until the model stops calling
+        tools (or hits the 10-error loop detector). No human-in-the-
+        loop needed.
         """
-        # Escape single quotes in the task description for safe shell
-        # passing. Multi-line tasks are common (TB v2 task descriptions
-        # can include code snippets) so we use a heredoc.
+        # Heredoc writes the task verbatim; the 'EOF' is quoted so the
+        # shell doesn't expand $VAR / `cmd` inside the task text. The
+        # 'set -e' guards against partial writes — if the heredoc fails
+        # for any reason we bail before running the agent on a stale
+        # or empty file.
         return [
-            textwrap.dedent(f"""
-                export PATH="$HOME/.npm-global/bin:$PATH"
-                cat <<'__TB_TASK_EOF__' | compact-agent --non-interactive --perm yolo
-                {task_description}
-                __TB_TASK_EOF__
-            """).strip()
+            textwrap.dedent("""
+                set -e
+                export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+                cat > /tmp/tb_task.txt <<'__TB_TASK_EOF__'
+                """).strip()
+            + "\n" + task_description + "\n__TB_TASK_EOF__\n"
+            + "compact-agent --prompt-file /tmp/tb_task.txt --perm yolo"
         ]
 
     @property

@@ -73,34 +73,37 @@ The adapter (`compact_agent_adapter.py`) is a 130-line Python module that:
    doesn't matter; what matters is whether the files / commands / state
    match what the task wanted.
 
-## Status: scaffold only — requires `--prompt` flag in compact-agent
+## How --prompt mode works (under the hood)
 
-**The adapter is not yet runnable end-to-end.** Compact-agent v1.33.x
-only has a REPL — there's no `--prompt <text>` one-shot mode, and
-piping the task description on stdin trips the interactive setup
-wizard / readline-only input path. The adapter is set up for the
-day a non-interactive entrypoint lands; the install + container
-wiring is already correct.
+Compact-agent v1.33.7+ ships these CLI flags for harness drivers:
 
-**To finish this:**
+| Flag                       | Effect                                                      |
+| -------------------------- | ----------------------------------------------------------- |
+| `--prompt "<text>"`        | Run one chain with this prompt, then exit                   |
+| `--prompt-file <path>`     | Same, but read the prompt from a file (multi-line safe)     |
+| `--non-interactive`        | Skip wizard / banner / hotkey listener (implied by --prompt)|
+| `--perm ask\|auto\|yolo`   | Per-invocation permission mode (doesn't mutate saved config)|
 
-1. In `compact-agent`'s `bin/crowcoder.js`, parse a `--prompt <text>`
-   flag (or `--prompt-file <path>`). On match, set a sentinel env
-   var that `src/index.ts` reads on startup.
-2. In `src/index.ts`, if the sentinel is set:
-   - skip the setup wizard (require config to already exist)
-   - skip the banner
-   - push the prompt as one user message
-   - run a single chain to completion
-   - exit with code 0 (success) or 1 (chain errored)
-3. Wire `--perm yolo` so permission prompts don't block.
-4. Once shipped, change the adapter's `_run_agent_commands` to:
-   ```python
-   return [f"compact-agent --prompt {shlex.quote(task_description)} --perm yolo"]
-   ```
+When `--prompt-file` is set, compact-agent:
 
-ETA: ~2 hours of focused work + a test pass. Not in scope for this
-adapter PR; tracking as a TODO in the project.
+1. Refuses to start if `~/.compact-agent/config.json` is missing
+   (a wizard would block forever in a piped/headless environment).
+2. Skips the banner and the keypress hotkey listener.
+3. Pushes the prompt text as one user message.
+4. Runs a single `runQuery` chain — agentic tool-use loop until the
+   model stops calling tools, or the 10-error loop detector fires.
+5. Exits 0 on success, 1 on chain error.
+
+The adapter writes the task description to `/tmp/tb_task.txt` inside
+the container, then invokes:
+
+```
+compact-agent --prompt-file /tmp/tb_task.txt --perm yolo
+```
+
+`--perm yolo` is what makes the agent actually agentic in a benchmark:
+without it, every tool call would block on a permission prompt that
+the harness can't answer.
 
 ## Other caveats
 
