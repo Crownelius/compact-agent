@@ -145,7 +145,11 @@ class CompactAgent(AbstractInstalledAgent):
                 .replace("__COMPACT_AGENT_VERSION__", self._version)
                 .replace("__MODEL__", self._model)
             )
-            self._install_script_path.write_text(content)
+            # Force LF line endings — bash inside the Linux container
+            # chokes on Windows CRLF (`bash: $'\r': command not found`).
+            # write_text with newline='' bypasses the universal-newlines
+            # translation that converts \n -> \r\n on Windows hosts.
+            self._install_script_path.write_text(content, newline="")
             self._install_script_path.chmod(0o755)
         return self._install_script_path
 
@@ -153,34 +157,43 @@ class CompactAgent(AbstractInstalledAgent):
         """Return the shell commands the harness will run inside the
         container to actually invoke the agent on this task.
 
-        Two commands:
+        Two single-line commands (multi-line ones break — see below):
 
-          1. Write the task description to /tmp/tb_task.txt. Bypasses
-             every shell-quoting concern (single quotes, embedded
-             backticks, multi-line code snippets, $foo substitutions)
-             by using a single-quoted heredoc.
+          1. Decode a base64-encoded task description into
+             /tmp/tb_task.txt. Base64 because every other approach
+             clashed with the harness's command-injection mechanism:
+               - Heredocs broke because terminal-bench appends
+                 `; tmux wait -S done` to the LAST line of the command
+                 it sends, turning `__TB_TASK_EOF__` into
+                 `__TB_TASK_EOF__; tmux wait -S done` — no longer a
+                 valid heredoc marker, so the shell hung in heredoc
+                 mode forever.
+               - Single-quoted echoes broke when the task description
+                 contained an apostrophe (very common in natural-
+                 language instructions).
+               - $'...' bash strings broke on backslash escapes.
+             Base64 is opaque, single-line, and survives the
+             harness's mangling.
+
           2. Invoke `compact-agent --prompt-file /tmp/tb_task.txt --perm yolo`.
              Reads the prompt verbatim, runs one runQuery chain with
              permission gates auto-approved (yolo), exits 0 on success
              or 1 on chain failure.
 
-        The agent's tool-use loop runs autonomously until the model
-        stops calling tools (or hits the 10-error loop detector). No
-        human-in-the-loop needed.
-
         max_timeout_sec is bumped to 30 minutes per command because
         some terminal-bench tasks require long-running compilation /
         test runs that legitimately take > 3 minutes.
         """
-        # Single-quoted heredoc — shell does NOT expand $VAR or `cmd`
-        # inside the task text. Newlines in task_description pass
-        # through verbatim into the file.
+        import base64
+
+        # Single-line base64 round-trip. The whole task description —
+        # apostrophes, quotes, newlines, backticks, dollar signs —
+        # passes through unchanged. The trailing newline ensures
+        # compact-agent reads a clean prompt.
+        b64 = base64.b64encode(task_description.encode("utf-8")).decode("ascii")
         write_task = (
-            'set -e\n'
-            'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"\n'
-            "cat > /tmp/tb_task.txt <<'__TB_TASK_EOF__'\n"
-            + task_description
-            + "\n__TB_TASK_EOF__\n"
+            'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH" && '
+            f"echo {b64} | base64 -d > /tmp/tb_task.txt"
         )
         return [
             TerminalCommand(command=write_task, max_timeout_sec=10.0, block=True),
