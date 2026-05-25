@@ -358,7 +358,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     toolCallCount: 0,
     sawToolError: false,
     sawToolRecovery: false,
-    toolCallFingerprints: new Map<string, number>(),
+    toolCallErrorCounts: new Map<string, number>(),
     toolCallLoopDetected: false,
   };
 
@@ -863,17 +863,24 @@ interface ChainStats {
   sawToolError: boolean;
   sawToolRecovery: boolean;
   /**
-   * Map<fingerprint, count> tracking how many times the model has
-   * attempted the SAME tool with the SAME args within this chain.
-   * Fingerprint = `${toolName}::${JSON.stringify(input).slice(0,1000)}`.
-   * When a fingerprint hits LOOP_THRESHOLD we abort the chain — the
-   * model is stuck retrying a call that won't succeed. Without this
-   * safety valve a malformed write_file can burn 25K+ tokens across
-   * 3+ identical retries (observed in user testing). Companion to
-   * the stream-loop detector, which catches the SAME-text case;
-   * this one catches the SAME-tool-call case.
+   * Map<fingerprint, consecutiveErrorCount>. Tracks how many times
+   * a model has attempted the SAME tool with the SAME args AND
+   * the call failed each time. Fingerprint is
+   * `${toolName}::${JSON.stringify(input).slice(0,1000)}`.
+   *
+   * Reset to 0 when the same fingerprint produces a SUCCESS — the
+   * model recovered. Incremented when the SAME fingerprint produces
+   * an error consecutively.
+   *
+   * Counting errors-only fixes the false-positive that triggered in
+   * the wild on legitimate `tools/list`-style schema discovery
+   * calls: the model called Stitch's tools/list 3× to (re-)read
+   * the API surface; none failed but the old "total attempt"
+   * counter still aborted the chain. With error-tracking only,
+   * read-only exploration is unaffected; only a model genuinely
+   * stuck retrying a broken call hits the safety valve.
    */
-  toolCallFingerprints: Map<string, number>;
+  toolCallErrorCounts: Map<string, number>;
   toolCallLoopDetected: boolean;
 }
 
@@ -891,23 +898,29 @@ async function executeToolCalls(
     const toolName = tc.function.name;
     const tool = getToolByName(toolName);
 
-    // ── Tool-call loop detection ──────────────────────────
-    // Fingerprint = tool name + raw arguments (truncated). If the
-    // same fingerprint hits THRESHOLD attempts in this chain, the
-    // model is stuck and continuing will just burn tokens. Bail with
-    // a clear error in the tool result so the model sees what it's
-    // been doing wrong + that we've stopped accepting the retry.
-    if (chainStats) {
-      const fingerprint = `${toolName}::${String(tc.function.arguments ?? '').slice(0, 1000)}`;
-      const seen = (chainStats.toolCallFingerprints.get(fingerprint) ?? 0) + 1;
-      chainStats.toolCallFingerprints.set(fingerprint, seen);
-      if (seen >= TOOL_CALL_LOOP_THRESHOLD && !chainStats.toolCallLoopDetected) {
+    // ── Tool-call loop detection (error-only count) ──────
+    // Fingerprint = tool name + raw arguments (truncated). The
+    // counter tracks CONSECUTIVE ERRORS for the same fingerprint,
+    // NOT total attempts — schema-discovery calls like `tools/list`
+    // are routinely called 2-3+ times in a chain and shouldn't
+    // trip the safety valve. We pre-check here; the post-execution
+    // increment/reset happens further down (after we know whether
+    // the call errored or succeeded).
+    //
+    // The fingerprint variable is hoisted so the post-exec hook
+    // below can update the right map entry without recomputing.
+    const tcFingerprint = chainStats
+      ? `${toolName}::${String(tc.function.arguments ?? '').slice(0, 1000)}`
+      : null;
+    if (chainStats && tcFingerprint) {
+      const errorCount = chainStats.toolCallErrorCounts.get(tcFingerprint) ?? 0;
+      if (errorCount >= TOOL_CALL_LOOP_THRESHOLD && !chainStats.toolCallLoopDetected) {
         chainStats.toolCallLoopDetected = true;
         console.log(theme.error(
-          `  ⚠ Tool-call loop detected — ${toolName} with the same arguments has been attempted ${seen} times. Aborting chain.`,
+          `  ⚠ Tool-call loop detected — ${toolName} with the same arguments has failed ${errorCount} times in a row. Aborting chain.`,
         ));
         console.log(theme.dim(
-          `    The model is stuck retrying a call that won't succeed. Common causes:`,
+          `    The model is stuck retrying a call that keeps failing. Common causes:`,
         ));
         console.log(theme.dim(
           `      · same JSON parse / schema error on every retry (read the prior error carefully)`,
@@ -918,22 +931,34 @@ async function executeToolCalls(
         console.log(theme.dim(
           `      · tool is unavailable in this session (e.g. stitch — needs REPL restart after config)`,
         ));
-        // Return a single error result for THIS call and break out
-        // of the loop. The model receives one terminal failure
-        // message instead of N identical ones.
         results.push({
           role: 'tool',
           tool_call_id: tc.id,
           content:
-            `Error: tool-call loop detected — you have attempted "${toolName}" with the same ` +
-            `arguments ${seen} times in this chain. The agent is refusing to execute identical ` +
-            `retries because they won't succeed. Read the prior tool-result error carefully and ` +
-            `either (a) change the arguments substantively, (b) use a different tool to achieve ` +
-            `the goal, or (c) stop and report the issue to the user.`,
+            `Error: tool-call loop detected — your last ${errorCount} attempts at "${toolName}" ` +
+            `with these arguments have ALL failed. The agent is refusing further identical ` +
+            `retries. Read the prior tool-result error carefully and either (a) change the ` +
+            `arguments substantively, (b) use a different tool to achieve the goal, or ` +
+            `(c) stop and report the issue to the user.`,
         });
         return results;  // abort the rest of this turn's tool calls
       }
     }
+
+    // Helpers for the error-count tracker. Called on each error
+    // path below (bumps the count for this fingerprint) and after
+    // a successful execution (resets to 0 — model recovered).
+    const bumpFingerprintError = (): void => {
+      if (chainStats && tcFingerprint) {
+        const cur = chainStats.toolCallErrorCounts.get(tcFingerprint) ?? 0;
+        chainStats.toolCallErrorCounts.set(tcFingerprint, cur + 1);
+      }
+    };
+    const clearFingerprintError = (): void => {
+      if (chainStats && tcFingerprint) {
+        chainStats.toolCallErrorCounts.set(tcFingerprint, 0);
+      }
+    };
 
     if (!tool) {
       // Free models routinely hallucinate tool names (web_search_exa,
@@ -950,6 +975,7 @@ async function executeToolCalls(
           `need a capability not in this list, work around it using the tools that exist ` +
           `(e.g. use web_search for discovery, web_fetch for a known URL, bash for shell-only operations).`,
       });
+      bumpFingerprintError();
       continue;
     }
 
@@ -1004,6 +1030,7 @@ async function executeToolCalls(
           `Do NOT retry with the same arguments. Fix the JSON issue and try again, ` +
           `or use a different approach (e.g. split a huge write into multiple smaller writes).`,
       });
+      bumpFingerprintError();
       continue;
     }
 
@@ -1025,6 +1052,7 @@ async function executeToolCalls(
           `What you sent: ${JSON.stringify(input).slice(0, 400)}\n` +
           `Do NOT retry with the same arguments. Adjust the arguments to satisfy the schema and try again.`,
       });
+      bumpFingerprintError();
       continue;
     }
 
@@ -1039,6 +1067,7 @@ async function executeToolCalls(
         tool_call_id: tc.id,
         content: `BLOCKED by security scanner: ${secResult.threats.join('; ')}`,
       });
+      bumpFingerprintError();
       continue;
     }
 
@@ -1061,6 +1090,7 @@ async function executeToolCalls(
         tool_call_id: tc.id,
         content: `Blocked by hook: ${preHook.message || 'denied'}`,
       });
+      bumpFingerprintError();
       continue;
     }
 
@@ -1097,6 +1127,7 @@ async function executeToolCalls(
         tool_call_id: tc.id,
         content: 'Permission denied by user.',
       });
+      bumpFingerprintError();
       continue;
     }
 
@@ -1140,6 +1171,19 @@ async function executeToolCalls(
       outputPreview: String(result.output ?? '').slice(0, 160),
       isError: !!result.isError,
     };
+
+    // Loop-detector fingerprint bookkeeping for the EXECUTED path.
+    // The tool actually ran; whether it succeeded or returned an
+    // error result, we know more than at the pre-checks above.
+    // Successful exec → reset error count (the model can repeat
+    // legitimate calls like tools/list without tripping the loop).
+    // Tool returned an error result → bump (counts as another
+    // failure for this fingerprint).
+    if (result.isError) {
+      bumpFingerprintError();
+    } else {
+      clearFingerprintError();
+    }
 
     // Chain stats — bump the counter on every successful execution path
     // we got here through (denied / blocked tool calls hit `continue`
