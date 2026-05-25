@@ -551,8 +551,16 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // declaration. Previously this re-declared inside the while loop
     // and TypeScript tolerated it as a different block scope, but it
     // was confusing and the audit flagged it as bug-bait.
+    //
+    // Live spinner on the "waiting for model response…" line — ticks
+    // every ~90ms until the first event arrives. {S} placeholder is
+    // swapped for the Braille frame each tick. In screen-reader mode
+    // we skip the line entirely (the previous behavior); in non-TTY
+    // mode startSpinner falls back to painting a static placeholder.
+    let waitingSpinner: import('./animations.js').Spinner | null = null;
     if (!isScreenReader) {
-      console.log(chalk.dim('  ⏳ waiting for model response…'));
+      const { startSpinner } = await import('./animations.js');
+      waitingSpinner = startSpinner(`  {S} ${chalk.dim('waiting for model response…')}`);
     }
     // 30-second slow-model warning. If no token has arrived by 30s,
     // tell the user explicitly that the model is taking longer than
@@ -572,6 +580,15 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
           clearTimeout(slowTimer);
+          // Tear down the live "waiting…" spinner so the next print
+          // (thinking header, response text, or tool call) lands on
+          // a fresh line. Clear the spinner row first — stop() leaves
+          // the last frame on screen.
+          if (waitingSpinner) {
+            waitingSpinner.stop();
+            process.stdout.write('\r\x1b[K');
+            waitingSpinner = null;
+          }
         }
         if (event.type === 'thinking' && event.content) {
           sawAnyThinking = true;
@@ -624,6 +641,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       // timer so its 30s callback doesn't fire after the error is
       // already on stdout (would look like a false positive).
       clearTimeout(slowTimer);
+      // Tear down the waiting spinner if it's still ticking — error
+      // print below shouldn't trail an animated row.
+      if (waitingSpinner) {
+        waitingSpinner.stop();
+        process.stdout.write('\r\x1b[K');
+        waitingSpinner = null;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');

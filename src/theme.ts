@@ -509,6 +509,80 @@ let _thinkingBuffer = '';
 let _thinkingStartMs = 0;
 let _thinkingActive = false;
 
+// Live spinner state. While thinking text streams below the header,
+// a setInterval ticks every ~90ms and repaints the glyph on the
+// header row by:
+//   1. Saving the cursor (mid-stream position somewhere below)
+//   2. Cursor-up by _thinkingRowsBelow lines + \r to col 0
+//   3. Writing the header line with the next Braille frame
+//   4. Restoring cursor to the streaming position
+//
+// _thinkingRowsBelow is incremented in printThinkingText proportional
+// to newlines added — that's the offset from header row to current
+// stream cursor. When the header scrolls out of the addressable area
+// (rows-below >= termRows - 3) the spinner stops itself: cursor-up
+// past the visible top doesn't land anywhere useful, and we'd waste
+// CPU repainting offscreen.
+let _thinkingSpinnerInterval: NodeJS.Timeout | null = null;
+let _thinkingRowsBelow = 0;
+let _thinkingSpinnerFrame = 0;
+const _THINKING_SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+function _tickThinkingSpinner(): void {
+  const frame = _THINKING_SPIN[_thinkingSpinnerFrame % _THINKING_SPIN.length];
+  _thinkingSpinnerFrame++;
+  const headerLine =
+    theme.thinkBorder('  │ ') + theme.thinkLabel(`${frame} thinking`);
+
+  if (_thinkingRowsBelow === 0) {
+    // Still on the header row (no text streamed yet) — just \r and
+    // repaint. No cursor save/restore needed.
+    process.stdout.write('\r' + headerLine);
+    return;
+  }
+
+  const termRows = process.stdout.rows || 24;
+  if (_thinkingRowsBelow > termRows - 3) {
+    // Header scrolled out of the addressable area — stop ticking.
+    if (_thinkingSpinnerInterval) {
+      clearInterval(_thinkingSpinnerInterval);
+      _thinkingSpinnerInterval = null;
+    }
+    return;
+  }
+
+  // Save current cursor, jump up to header row, repaint, restore.
+  // Using DECSC/DECRC here is safe-ish because no scroll happens
+  // between save and restore (no writes that push content past the
+  // viewport bottom) — just one set of writes targeting an earlier
+  // row in the visible buffer.
+  process.stdout.write('\x1b7');
+  process.stdout.write(`\x1b[${_thinkingRowsBelow}A\r`);
+  process.stdout.write(headerLine);
+  process.stdout.write('\x1b8');
+}
+
+function _startThinkingSpinner(): void {
+  if (_thinkingSpinnerInterval) return;
+  _thinkingRowsBelow = 0;
+  _thinkingSpinnerFrame = 0;
+  // Only spin in a TTY where ANSI codes work. In CI / piped output we
+  // leave the header static — the spinner ticks would just emit
+  // garbage control sequences.
+  if (!process.stdout.isTTY) return;
+  _thinkingSpinnerInterval = setInterval(_tickThinkingSpinner, 90);
+  if (typeof _thinkingSpinnerInterval.unref === 'function') {
+    _thinkingSpinnerInterval.unref();
+  }
+}
+
+function _stopThinkingSpinner(): void {
+  if (_thinkingSpinnerInterval) {
+    clearInterval(_thinkingSpinnerInterval);
+    _thinkingSpinnerInterval = null;
+  }
+}
+
 export async function printThinkingOpen(): Promise<void> {
   _thinkingBuffer = '';
   _thinkingStartMs = Date.now();
@@ -529,6 +603,13 @@ export async function printThinkingOpen(): Promise<void> {
   ];
   await anims.playFrames(bootFrames, 50);
   anims.commitFrame();
+
+  // Start the live spinner now that the header is committed. It will
+  // keep ticking the glyph on the header row while printThinkingText
+  // streams content below.
+  if (anims.animationsEnabled()) {
+    _startThinkingSpinner();
+  }
 }
 
 export function printThinkingText(text: string): void {
@@ -540,6 +621,10 @@ export function printThinkingText(text: string): void {
   // arrived as its own writeStream call and each got a fresh prefix.
   const prefixed = text.replace(/\n(?!$)/g, '\n' + theme.thinkBorder('  │ '));
   process.stdout.write(theme.thinkText(prefixed));
+  // Track newline count so the spinner can address the header row
+  // via cursor-up from the current stream position.
+  const newlines = (text.match(/\n/g) || []).length;
+  _thinkingRowsBelow += newlines;
 }
 
 /**
@@ -561,6 +646,10 @@ export function printThinkingText(text: string): void {
  * the count + elapsed; the panel stays where it is.
  */
 export async function printThinkingClose(opts: { collapse?: boolean } = {}): Promise<void> {
+  // Stop the live header spinner FIRST so it can't tick after we
+  // start the collapse animation (a stray tick mid-collapse would
+  // repaint the expanded header on top of the collapse sequence).
+  _stopThinkingSpinner();
   process.stdout.write('\n');
   if (!_thinkingActive) return;
   _thinkingActive = false;
