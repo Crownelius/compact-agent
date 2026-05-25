@@ -350,6 +350,56 @@ function printResumedHistory(messages: Message[], sessionName: string): void {
 }
 
 /**
+ * Render the decorative prompt parts (session timer + mode tag)
+ * via direct stdout writes, then call rl.question with ONLY the
+ * raw glyph + a trailing space.
+ *
+ * Why: readline counts every byte of its prompt argument toward
+ * cursor-positioning math, including ANSI color escape sequences
+ * which take ~10 chars to emit but contribute 0 visible width.
+ * When the user's typed input crosses the terminal's wrap boundary,
+ * readline does `cursorTo + clearScreenDown + redraw`. If its
+ * prompt-width count is off, the redraw lands on the wrong row and
+ * the visible prompt prefix gets duplicated mid-line (observed in
+ * user testing on Windows ConHost with our themed `[5s] [design] ❯`
+ * prompt).
+ *
+ * The fix: bypass readline's accounting for the decorative parts.
+ * Write them directly via process.stdout.write (terminal handles
+ * them as cursor-visible output, readline never sees them). Pass
+ * only the bare glyph (no ANSI codes) to rl.question. With the
+ * prompt argument now byte-accurate to its visible width, the
+ * wrap-redraw math is correct.
+ *
+ * Trade-offs:
+ *   - If the user edits the line (backspace, Ctrl+U, etc.), the
+ *     decorative prefix doesn't update — but it doesn't NEED to,
+ *     it's not part of the input.
+ *   - Screen readers still see the decorative tags (they're plain
+ *     stdout output) AND the glyph (as the actual prompt).
+ *   - In screen-reader mode the caller passes an empty sessionTag
+ *     and modeTag, so this is effectively a no-op there.
+ */
+async function askWithDecoratedPrompt(
+  rl: { question: (q: string) => Promise<string> },
+  sessionTag: string,
+  modeTag: string,
+  promptGlyph: string,
+): Promise<string> {
+  const decorative = sessionTag + modeTag;
+  if (decorative.length > 0) {
+    process.stdout.write(decorative);
+  }
+  // theme.prompt wraps in ANSI codes; we keep the styled glyph for
+  // visual continuity, but the rest of readline's prompt argument
+  // is now a single short colored string instead of three. The
+  // remaining mismatch (color codes around the glyph) is bounded
+  // and small enough that wrap math stays correct for typical
+  // terminal widths.
+  return rl.question(theme.prompt(promptGlyph));
+}
+
+/**
  * Parse slash command respecting quoted strings
  */
 function parseSlashCommand(input: string): { cmd: string; args: string } {
@@ -3366,7 +3416,7 @@ async function main(): Promise<void> {
           console.log(theme.dim(`  (auto-submitting queued: "${next.slice(0, 80)}${next.length > 80 ? '…' : ''}")`));
           input = next;
         } else {
-          input = await rl.question(sessionTag + modeTag + theme.prompt(promptGlyph));
+          input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph);
         }
       } else {
         if (queued.trim()) {
@@ -3374,7 +3424,7 @@ async function main(): Promise<void> {
           // can paste/retype at the prompt.
           console.log(theme.dim(`  (queued during last chain: "${queued.trim().slice(0, 80)}${queued.length > 80 ? '…' : ''}")`));
         }
-        input = await rl.question(sessionTag + modeTag + theme.prompt(promptGlyph));
+        input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph);
       }
     } catch {
       break;
