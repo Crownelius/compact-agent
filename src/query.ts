@@ -259,6 +259,106 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
 /**
  * Validate tool arguments against the tool's JSON schema
  */
+/**
+ * F4 — Tool-call dedup fingerprint.
+ *
+ * Normalizes the raw JSON arguments before hashing so trivially-
+ * different forms collapse to the same key:
+ *
+ *   - parsed + JSON.stringify with sorted keys (so {"a":1,"b":2} and
+ *     {"b":2,"a":1} hash the same)
+ *   - common path arguments (file_path, path, cwd, dir) normalized to
+ *     forward-slashes and lowercased (catches `read /app/x.py` vs
+ *     `read /APP/X.PY` vs `read \\app\\x.py`)
+ *   - whitespace runs in `command` collapsed (catches `ls  -la` vs `ls -la`)
+ *
+ * Errors during parse fall through to a literal-string fingerprint —
+ * worse than nothing? No: even a literal hash of the raw arg string
+ * catches the most common case (model emits identical JSON twice).
+ */
+export function dedupFingerprint(toolName: string, rawArgs: string): string {
+  let normalized: string;
+  try {
+    const parsed = JSON.parse(rawArgs ?? '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      // Normalize commonly-pathy fields
+      for (const k of ['file_path', 'path', 'cwd', 'dir', 'directory']) {
+        if (typeof obj[k] === 'string') {
+          obj[k] = (obj[k] as string).replace(/\\/g, '/').toLowerCase();
+        }
+      }
+      // Collapse whitespace in shell commands so `ls -la` and `ls  -la` match
+      if (typeof obj.command === 'string') {
+        obj.command = (obj.command as string).replace(/\s+/g, ' ').trim();
+      }
+      // Sorted-key serialization
+      const keys = Object.keys(obj).sort();
+      normalized = JSON.stringify(obj, keys);
+    } else {
+      normalized = JSON.stringify(parsed);
+    }
+  } catch {
+    normalized = String(rawArgs ?? '');
+  }
+  return `${toolName}::${normalized}`;
+}
+
+/**
+ * F4 — Rewrite stale duplicate tool-result messages in place.
+ *
+ * Called once per tool-execution batch. For each call whose
+ * fingerprint we've seen before in this chain, find the previous
+ * tool-result message and replace its `content` with a 1-line stub
+ * pointing at the newer message. The new result stays untouched so
+ * the model's next turn reads complete, fresh data.
+ *
+ * NOT called for the FIRST occurrence of a fingerprint — only when
+ * a repeat fires. So a one-time `read` of a file is never touched.
+ *
+ * The map is keyed by fingerprint → array-index of the tool result
+ * in ctx.messages. We update the index to the newest occurrence after
+ * each rewrite, so the NEXT repeat collapses the second one (not the
+ * first, which is already stubbed).
+ */
+export function dedupRepeatedToolCalls(
+  messages: Message[],
+  toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[],
+  toolResults: Message[],
+  dedupMap: Map<string, number>,
+): void {
+  // Build a quick lookup from tool_call_id → freshly-appended message index.
+  // toolResults are the LAST toolResults.length entries of messages.
+  const newResultIndexById = new Map<string, number>();
+  const firstNewIdx = messages.length - toolResults.length;
+  for (let i = 0; i < toolResults.length; i++) {
+    const m = toolResults[i] as Message & { tool_call_id?: string };
+    if (m.tool_call_id) newResultIndexById.set(m.tool_call_id, firstNewIdx + i);
+  }
+
+  for (const tc of toolCalls) {
+    const fp = dedupFingerprint(tc.function.name, tc.function.arguments);
+    const newIdx = newResultIndexById.get(tc.id);
+    if (newIdx === undefined) continue;
+    const priorIdx = dedupMap.get(fp);
+    if (priorIdx !== undefined && priorIdx !== newIdx) {
+      const prior = messages[priorIdx];
+      if (prior && prior.role === 'tool' && typeof prior.content === 'string') {
+        const wasBytes = prior.content.length;
+        // Keep the prior message structurally valid for the API
+        // (role + tool_call_id stay; only content shrinks).
+        prior.content =
+          `[deduped — same ${tc.function.name} call was re-issued; ` +
+          `see the fresh result later in this conversation. ` +
+          `Original was ${wasBytes} bytes.]`;
+      }
+    }
+    // Point the fingerprint at the NEWEST occurrence so future
+    // repeats collapse the second one, not the (already-stubbed) first.
+    dedupMap.set(fp, newIdx);
+  }
+}
+
 function validateToolArguments(tool: Tool, input: Record<string, unknown>): { valid: boolean; error?: string } {
   const schema = tool.parameters as unknown as Record<string, unknown>;
   const required = (schema.required as string[]) || [];
@@ -362,6 +462,48 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     toolParseFailureStreaks: new Map<string, number>(),
     toolCallLoopDetected: false,
   };
+
+  // ── F4: Tool-call dedup map (chain-scope) ──
+  //
+  // Hash of (tool_name, normalized_args) → message-index where that
+  // tool call's *result* lives in ctx.messages. When the same
+  // fingerprint fires a second time, we rewrite the OLDER tool-result
+  // message in place to a 1-line stub pointing at the newer one. The
+  // new result is preserved so the model can read the live data; only
+  // the stale duplicate gets collapsed.
+  //
+  // Why this matters: terminal-bench tasks routinely re-read the same
+  // files / re-grep for the same patterns / re-list the same directory
+  // 3-5 times across a chain. Each verbatim re-read costs 1-30K tokens
+  // of context. After the rewrite, ctx token cost on the repeated read
+  // drops from N to ~20.
+  //
+  // Different from the existing toolCallErrorCounts loop detector —
+  // that one counts CONSECUTIVE ERRORS and aborts. This one runs on
+  // SUCCESSFUL repeats and just rewrites stale messages. They compose.
+  const toolCallDedupMap = new Map<string, number>();
+
+  // ── F5: Self-critique gate (one per chain) ──
+  //
+  // Before the agent emits a final assistant turn (no tool calls),
+  // we inject ONE user message asking it to verify completion against
+  // concrete evidence. The model gets another turn to either prove
+  // it's done or notice missing work and continue.
+  //
+  // Capped at once per chain so the model can't get stuck in a
+  // self-doubt loop. Off by default in REPL mode (the human is
+  // already there to ask follow-ups); ON in non-interactive mode
+  // (`--prompt` / harness-driven runs) where we have no human to
+  // course-correct.
+  //
+  // Catches the failure mode observed on terminal-bench:
+  // `incompatible-python-fasttext` declared "nothing to fix" without
+  // running the actual test; `fix-git` declared "everything merged"
+  // with wrong git state; `aimo-airline-departures` gave d=79 without
+  // verifying against the test (correct: 129).
+  let didSelfCritique = false;
+  const selfCritiqueEnabled = process.env.COMPACT_AGENT_NON_INTERACTIVE === '1'
+    && process.env.COMPACT_AGENT_SELF_CRITIQUE !== '0';
 
   // Input suppression spans the entire chain: model streaming AND tool
   // execution. executeToolCalls calls inputGuard.pause()/resume() around
@@ -769,8 +911,35 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // between tool calls — speaking each one is noisy and slow.
     if (fullText) accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + fullText;
 
-    // If no tool calls, we're done
-    if (!toolCalls || toolCalls.length === 0) break;
+    // If no tool calls, the model is signaling it's done. F5 (self-
+    // critique gate) intercepts here in non-interactive mode: we
+    // inject ONE user message asking the model to verify completion
+    // and continue the loop. The model now has to either prove its
+    // claim with concrete evidence or do the missing work.
+    if (!toolCalls || toolCalls.length === 0) {
+      if (selfCritiqueEnabled && !didSelfCritique) {
+        didSelfCritique = true;
+        ctx.messages.push({
+          role: 'user',
+          content:
+            'Before finalizing your response: have you actually accomplished what was asked?\n\n' +
+            'Verify against CONCRETE EVIDENCE, not your own confidence. For each requirement in the original task:\n' +
+            '  1. Cite the specific evidence — file paths you created, command outputs, test results, etc.\n' +
+            '  2. If you ran tests, paste the relevant lines of the test output here.\n' +
+            '  3. If any requirement is unverified or you skipped a step, say so and continue the work.\n\n' +
+            'Do not declare success based on what you believe should be true. If the task asked you to FIX something, ' +
+            'demonstrate the fix works (run the failing command, show it succeeds). If it asked you to CREATE a file, ' +
+            'list it and show its contents. If unsure, run the verification.\n\n' +
+            'If everything is genuinely complete with evidence, briefly summarize what was done. ' +
+            'Otherwise, continue working.',
+        });
+        // Re-enter the loop — the model will respond either with
+        // more tool calls (the gate caught a real omission) or with
+        // a verified final answer (the gate confirmed real completion).
+        continue;
+      }
+      break;
+    }
 
     // Execute tool calls — executeToolCalls itself flips per-tool state
     // and uses inputGuard.pause()/resume() around each permission prompt
@@ -779,6 +948,19 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // we can surface a skill-graduation hint at chain end.
     const toolResults = await executeToolCalls(toolCalls, ctx, inputGuard, chainStats);
     ctx.messages.push(...toolResults);
+
+    // ── F4: Dedup repeat tool calls ──
+    //
+    // After each fresh batch of tool results lands in ctx.messages,
+    // hash each call's (toolName, normalizedArgs) fingerprint. If
+    // we've seen this fingerprint before in this chain, rewrite the
+    // PRIOR tool-result message in place to a 1-line stub. The new
+    // result stays full-fidelity so the model can read it.
+    //
+    // We rewrite the older one (not the newer) so the model's most
+    // recent attention sees a fresh, complete result — but the
+    // accumulated history doesn't carry redundant copies.
+    dedupRepeatedToolCalls(ctx.messages, toolCalls, toolResults, toolCallDedupMap);
   }
 
   // Chain ended; back to idle so F1 reports the correct state.
