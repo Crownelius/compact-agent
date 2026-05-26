@@ -276,6 +276,241 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
  * worse than nothing? No: even a literal hash of the raw arg string
  * catches the most common case (model emits identical JSON twice).
  */
+/**
+ * StateAct — task-state block injected fresh each turn.
+ *
+ * Source: arxiv 2410.02810 ("StateAct: Enhancing LLM Base Agents via
+ * Self-prompting and State-tracking"). Reports +10% over ReAct on
+ * ALFWorld, +30% on TextCraft, +7% on WebShop. Zero added LLM calls.
+ *
+ * Mechanism: before each assistant turn, prepend a short structured
+ * block summarizing (a) the ORIGINAL GOAL — re-injected as a
+ * reminder, since long chains can drift away from the initial task,
+ * and (b) RECENT ACTIONS — a compressed view of what tool calls
+ * have been made so far. The model gets a fresh recap every turn
+ * regardless of context drift.
+ *
+ * Directly attacks the failure mode observed on `run-pdp11-code`
+ * (375K context, model wrote `gen_load.py` twice with identical
+ * content because the earlier write had drifted out of attention).
+ *
+ * Implementation choices:
+ *   - State block is a `system` role message inserted AFTER the main
+ *     system prompt (so the latter stays cacheable) but BEFORE the
+ *     message history. The model interprets it as ambient context.
+ *   - Action list shows only the last N actions to keep the block
+ *     short. Older actions are summarized in the conversation
+ *     history itself (and increasingly masked by F2 observation
+ *     masking).
+ *   - The block is regenerated EVERY turn from current messages.
+ *     Not persisted; it's purely a derived view.
+ *   - Skipped on very short chains (< 3 messages) where there's
+ *     nothing to recap.
+ *   - Opt-out via COMPACT_AGENT_STATE_BLOCK=0.
+ */
+const STATE_BLOCK_RECENT_ACTIONS = 8;
+const STATE_BLOCK_GOAL_MAX_CHARS = 400;
+
+export function buildStateBlock(messages: Message[]): string | null {
+  if (process.env.COMPACT_AGENT_STATE_BLOCK === '0') return null;
+  if (messages.length < 3) return null;
+
+  // GOAL = the first user-role message. This is the original task
+  // instruction from the harness or human. Re-inject it so the model
+  // can't drift even when the user message has scrolled far up.
+  const firstUser = messages.find((m) => m.role === 'user');
+  if (!firstUser || typeof firstUser.content !== 'string') return null;
+  const goal = firstUser.content.replace(/\s+/g, ' ').trim().slice(0, STATE_BLOCK_GOAL_MAX_CHARS);
+  if (!goal) return null;
+
+  // RECENT ACTIONS = each tool_call the assistant has emitted so
+  // far, flattened. We don't include results (those are in the
+  // message history); we just track WHAT was attempted. The model
+  // uses this to avoid redoing completed work.
+  type Action = { tool: string; argsPreview: string };
+  const actions: Action[] = [];
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    const calls = (m as Message & { tool_calls?: Array<{ function: { name: string; arguments: string } }> }).tool_calls;
+    if (!calls) continue;
+    for (const tc of calls) {
+      const argsRaw = String(tc.function.arguments ?? '');
+      const compact = argsRaw.replace(/\s+/g, ' ').slice(0, 80);
+      actions.push({ tool: tc.function.name, argsPreview: compact });
+    }
+  }
+  if (actions.length === 0) return null;
+
+  const recent = actions.slice(-STATE_BLOCK_RECENT_ACTIONS);
+  const olderCount = actions.length - recent.length;
+
+  const lines: string[] = [
+    '<task_state>',
+    `Original goal: ${goal}${goal.length >= STATE_BLOCK_GOAL_MAX_CHARS ? '…' : ''}`,
+    `Actions completed: ${actions.length}`,
+  ];
+  if (olderCount > 0) {
+    lines.push(`Recent ${recent.length} (${olderCount} earlier omitted):`);
+  } else {
+    lines.push(`Actions:`);
+  }
+  recent.forEach((a, i) => {
+    lines.push(`  ${i + 1}. ${a.tool}(${a.argsPreview}${a.argsPreview.length >= 80 ? '…' : ''})`);
+  });
+  lines.push('');
+  lines.push('Stay focused on the goal. Do not re-issue actions you have already completed — refer to their results in the conversation above.');
+  lines.push('</task_state>');
+  return lines.join('\n');
+}
+
+/**
+ * F2 — Observation Window Masking.
+ *
+ * Source: arxiv 2508.21433 ("The Complexity Trap: Simple Observation
+ * Masking Is as Efficient as LLM Summarization for Agent Context
+ * Management"). Cuts token cost ~50% on long agent loops while
+ * matching or beating LLM-summarization solve rates — at ZERO extra
+ * inference cost.
+ *
+ * Strategy: keep the last MASKING_WINDOW tool-result messages in
+ * full. For older tool-results, replace `content` with a short stub
+ * indicating what was there. The stub preserves `role` and
+ * `tool_call_id` so the OpenAI message-schema invariants are not
+ * violated.
+ *
+ * We DO NOT mask:
+ *   - assistant turns (the reasoning chain stays intact)
+ *   - user turns (task instruction + DeCRIM critique prompts)
+ *   - system messages (priming + mode)
+ *
+ * Only `role === 'tool'` messages are masked, because the paper's
+ * empirical finding is that ~84% of token cost is tool observations
+ * and the model rarely needs the old verbatim output to make the
+ * next decision — it needs the current state. The reasoning trace
+ * across assistant turns carries the necessary memory.
+ *
+ * Tunable: MASKING_WINDOW = 12 (last 12 tool-results stay verbatim).
+ * Conservative for our model class — the paper's Qwen3-32B run
+ * regressed -11.8% with overly aggressive masking, while Gemini-Flash
+ * gained +8.5%. Deepseek-v4-flash is in that capability band, so we
+ * pick a generous window. Override with COMPACT_AGENT_MASK_WINDOW.
+ *
+ * Threshold: we only bother masking when the total estimated payload
+ * exceeds ~60K characters (rough proxy for ~15K tokens). Below that,
+ * masking adds noise without saving anything material.
+ */
+const MASKING_WINDOW_DEFAULT = 12;
+const MASKING_TRIGGER_BYTES = 60_000;
+
+export function maskOldToolResults(messages: Message[]): Message[] {
+  const totalBytes = estimateMessageBytes(messages);
+  if (totalBytes < MASKING_TRIGGER_BYTES) return messages;
+
+  const window = Math.max(
+    1,
+    parseInt(process.env.COMPACT_AGENT_MASK_WINDOW ?? '', 10) || MASKING_WINDOW_DEFAULT,
+  );
+
+  // Find indices of tool-result messages (newest first).
+  const toolIdxs: number[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'tool') {
+      toolIdxs.push(i);
+    }
+  }
+
+  // Keep the most-recent `window` tool results untouched; mask the rest.
+  const toMask = new Set(toolIdxs.slice(window));
+  if (toMask.size === 0) return messages;
+
+  // Build a new array. Original messages are not mutated.
+  return messages.map((m, i) => {
+    if (!toMask.has(i)) return m;
+    const original = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    const stub = `[older tool output omitted — ${original.length} chars; re-run the tool if you need the content]`;
+    return { ...m, content: stub };
+  });
+}
+
+function estimateMessageBytes(messages: Message[]): number {
+  let total = 0;
+  for (const m of messages) {
+    if (typeof m.content === 'string') {
+      total += m.content.length;
+    } else if (m.content) {
+      try {
+        total += JSON.stringify(m.content).length;
+      } catch {
+        /* noop */
+      }
+    }
+  }
+  return total;
+}
+
+/**
+ * F5+ DeCRIM 3-stage critique prompts.
+ *
+ * Each prompt is designed to do exactly one job, in sequence:
+ *
+ *   decompose — Forces the model to extract requirements from the
+ *               ORIGINAL task before judging its own work. This is
+ *               the leverage point: the model can't bypass an
+ *               implicit requirement if it has to name it.
+ *
+ *   critique  — Per-item PASS/FAIL with concrete evidence required.
+ *               Asking for evidence ("file path", "command output",
+ *               "test result") is much harder to fake than the
+ *               generic "have you accomplished what was asked?".
+ *
+ *   refine    — Only the FAIL items get redone, plus any items
+ *               whose PASS evidence the model now thinks was weak.
+ *               If everything is solid, the model exits naturally.
+ *
+ * The phrasing deliberately includes "be honest" / "the user prefers
+ * honest failures over confident lies" — research on prompted self-
+ * criticism shows this kind of social-cost signaling reduces the
+ * self-confirmation bias that otherwise dominates weak-model
+ * critique. (Reflexion-style "just reflect on your work" prompts
+ * have been shown to degrade weak models — generic self-questioning
+ * without concrete structure produces overconfident revisions.)
+ */
+export function critiquePromptFor(stage: 'decompose' | 'critique' | 'refine'): string {
+  if (stage === 'decompose') {
+    return (
+      'Before you finalize: re-read the ORIGINAL task description (the very first user message in this conversation).\n\n' +
+      'List every concrete verifiable requirement it contains, as a numbered Markdown list. For each item:\n' +
+      '  - Quote the exact words from the task that express the requirement, where possible.\n' +
+      '  - Note how a third party could verify the requirement is met (which file would they check? which command would they run? what output would they look for?).\n\n' +
+      'Be exhaustive. Include format requirements, file names, output structure, and any "should also" clauses. ' +
+      'Do not paraphrase — quote. Do not add requirements the task did not state. ' +
+      'This list is just for grounding; you will judge each item in the next step.'
+    );
+  }
+  if (stage === 'critique') {
+    return (
+      'Now judge each item from your checklist: did you actually satisfy it?\n\n' +
+      'Format your answer as:\n' +
+      '  1. [requirement quote] → PASS | FAIL\n' +
+      '     evidence: [specific file path you created, command output you observed, test that passed, etc.]\n\n' +
+      'Rules:\n' +
+      '  - Mark PASS only if you have concrete evidence right now (a file on disk, an output you can paste).\n' +
+      '  - "I implemented it" is NOT evidence. "I ran `ls /app/x.txt` and the file exists, with content `Hello`" IS evidence.\n' +
+      '  - "It should work" is NOT evidence. "I ran the failing command and it now exits 0" IS evidence.\n' +
+      '  - If you skipped a step, mark FAIL.\n' +
+      '  - If you are uncertain, mark FAIL.\n\n' +
+      'Be honest. The user prefers an honest "I left these 2 items undone" over a confident "all done" that fails the test. ' +
+      'A FAIL here is fixable in the next step; a falsely-claimed PASS is not.'
+    );
+  }
+  return (
+    'For each FAIL item above, do the work to make it pass. Use the tools available.\n\n' +
+    'Also revisit any PASS items where, on reflection, your evidence was weak — re-verify those.\n\n' +
+    'If after the work all items are now genuinely PASS with concrete evidence, briefly summarize what you did and stop. ' +
+    'Otherwise, keep working until every item is honestly PASS.'
+  );
+}
+
 export function dedupFingerprint(toolName: string, rawArgs: string): string {
   let normalized: string;
   try {
@@ -483,25 +718,45 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // SUCCESSFUL repeats and just rewrites stale messages. They compose.
   const toolCallDedupMap = new Map<string, number>();
 
-  // ── F5: Self-critique gate (one per chain) ──
+  // ── F5+: DeCRIM 3-stage self-critique gate ──
   //
-  // Before the agent emits a final assistant turn (no tool calls),
-  // we inject ONE user message asking it to verify completion against
-  // concrete evidence. The model gets another turn to either prove
-  // it's done or notice missing work and continue.
+  // Replaces v1.34.0's single-shot critique with a three-stage
+  // decompose-critique-refine pipeline (arxiv 2410.06458). Each
+  // stage fires when the model tries to emit a no-tool-call "done"
+  // turn — we inject a stage-specific prompt and let the loop
+  // continue. The model can do further tool work inside any stage;
+  // we only advance to the next stage when it next tries to declare
+  // done.
   //
-  // Capped at once per chain so the model can't get stuck in a
-  // self-doubt loop. Off by default in REPL mode (the human is
-  // already there to ask follow-ups); ON in non-interactive mode
-  // (`--prompt` / harness-driven runs) where we have no human to
-  // course-correct.
+  // The three stages:
+  //   1. DECOMPOSE — list every concrete verifiable requirement
+  //      from the original task as a numbered checklist
+  //   2. CRITIQUE  — mark PASS or FAIL per item with concrete
+  //      evidence (file path, command output, test result)
+  //   3. REFINE    — for each FAIL, do the missing work; if all
+  //      genuinely PASS, summarize and stop
   //
-  // Catches the failure mode observed on terminal-bench:
-  // `incompatible-python-fasttext` declared "nothing to fix" without
-  // running the actual test; `fix-git` declared "everything merged"
-  // with wrong git state; `aimo-airline-departures` gave d=79 without
-  // verifying against the test (correct: 129).
-  let didSelfCritique = false;
+  // DeCRIM showed +7-8 points on IFEval and RealInstruct with
+  // Mistral-7B as the prompted model. Our model class is similar.
+  //
+  // Why three stages instead of one: the original v1.34.0 single
+  // prompt asked the model to "verify against concrete evidence" —
+  // generic. A model already confident it's done will just confirm
+  // itself. The DeCRIM split forces the model to FIRST enumerate
+  // requirements separately from its own work, THEN judge each one
+  // independently. The decomposition step is the leverage point —
+  // it surfaces requirements the model implicitly skipped.
+  //
+  // Capped at one full pass per chain. Once all 3 stages have fired,
+  // the gate is exhausted and the next "no tool calls" turn breaks
+  // out of the loop normally.
+  //
+  // Off by default in REPL (the human is there to push back); ON
+  // in non-interactive mode (`--prompt` / harness-driven runs)
+  // where there's nobody to course-correct.
+  type CritiqueStage = 'decompose' | 'critique' | 'refine';
+  const CRITIQUE_STAGES: CritiqueStage[] = ['decompose', 'critique', 'refine'];
+  let critiqueStageIdx = 0;
   const selfCritiqueEnabled = process.env.COMPACT_AGENT_NON_INTERACTIVE === '1'
     && process.env.COMPACT_AGENT_SELF_CRITIQUE !== '0';
 
@@ -553,11 +808,25 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     const lastUserMsg = ctx.messages.filter((m) => m.role === 'user').pop();
     const userQuery = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : undefined;
 
-    // Build full messages array with system prompt
+    // Build full messages array with system prompt.
+    // F2 — Observation window masking: before sending to the model,
+    // if our message history is large, mask older tool_result
+    // contents with a short stub. Only the last MASKING_WINDOW tool
+    // results stay verbatim. Stub keeps role + tool_call_id intact
+    // so the API stays valid; only the content shrinks.
     const systemPrompt = buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery);
+    const visibleMessages = maskOldToolResults(ctx.messages);
+    // StateAct: inject a fresh task-state block as a system message
+    // between the main system prompt and the conversation history.
+    // The main system prompt stays first (cacheable); the state block
+    // sits right after so the model sees it as ambient context for
+    // the upcoming turn. Skipped on short chains or via env-var
+    // override.
+    const stateBlock = buildStateBlock(visibleMessages);
     const apiMessages: Message[] = [
       { role: 'system', content: systemPrompt },
-      ...ctx.messages,
+      ...(stateBlock ? [{ role: 'system' as const, content: stateBlock }] : []),
+      ...visibleMessages,
     ];
 
     let fullText = '';
@@ -911,31 +1180,23 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // between tool calls — speaking each one is noisy and slow.
     if (fullText) accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + fullText;
 
-    // If no tool calls, the model is signaling it's done. F5 (self-
-    // critique gate) intercepts here in non-interactive mode: we
-    // inject ONE user message asking the model to verify completion
-    // and continue the loop. The model now has to either prove its
-    // claim with concrete evidence or do the missing work.
+    // F5+ DeCRIM 3-stage self-critique gate.
+    //
+    // When the model emits a no-tool-call turn ("I'm done"), we
+    // walk through three sequential stages. Each stage injects a
+    // user message; the model responds, possibly with more tool
+    // calls. When it next tries to declare done, we advance to the
+    // next stage. After all 3 stages fire, the gate is exhausted
+    // and the next no-tool-call turn lets the chain end normally.
     if (!toolCalls || toolCalls.length === 0) {
-      if (selfCritiqueEnabled && !didSelfCritique) {
-        didSelfCritique = true;
+      if (selfCritiqueEnabled && critiqueStageIdx < CRITIQUE_STAGES.length) {
+        const stage = CRITIQUE_STAGES[critiqueStageIdx];
+        critiqueStageIdx++;
         ctx.messages.push({
           role: 'user',
-          content:
-            'Before finalizing your response: have you actually accomplished what was asked?\n\n' +
-            'Verify against CONCRETE EVIDENCE, not your own confidence. For each requirement in the original task:\n' +
-            '  1. Cite the specific evidence — file paths you created, command outputs, test results, etc.\n' +
-            '  2. If you ran tests, paste the relevant lines of the test output here.\n' +
-            '  3. If any requirement is unverified or you skipped a step, say so and continue the work.\n\n' +
-            'Do not declare success based on what you believe should be true. If the task asked you to FIX something, ' +
-            'demonstrate the fix works (run the failing command, show it succeeds). If it asked you to CREATE a file, ' +
-            'list it and show its contents. If unsure, run the verification.\n\n' +
-            'If everything is genuinely complete with evidence, briefly summarize what was done. ' +
-            'Otherwise, continue working.',
+          content: critiquePromptFor(stage),
         });
-        // Re-enter the loop — the model will respond either with
-        // more tool calls (the gate caught a real omission) or with
-        // a verified final answer (the gate confirmed real completion).
+        // Re-enter the loop — the model responds to the stage prompt.
         continue;
       }
       break;

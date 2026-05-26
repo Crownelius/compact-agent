@@ -3705,6 +3705,34 @@ async function main(): Promise<void> {
       process.stderr.write('[compact-agent] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
       process.exit(2);
     }
+    // ── F9: Empty-engagement guard (non-interactive nudge) ──
+    //
+    // Some failures in the 2026-05-25 baseline run came from the
+    // model emitting a single no-tool-call response and exiting —
+    // never actually attempting the work. polyglot-c-py, solana-data,
+    // and vim-terminal-task all showed this pattern. The model
+    // interpreted some aspect of the spec as "I can't do this" (e.g.
+    // "use vim" suggesting interactive editing) and bailed.
+    //
+    // In non-interactive mode there's no human to push back, so we
+    // prepend a system message that explicitly frames the contract:
+    // the agent must DO the work, with tools. Responses without tool
+    // calls are interpreted as "I'm done" — and F5+ DeCRIM will
+    // then walk the agent through verification.
+    //
+    // This is system-prompt-level and doesn't repeat per-turn (that
+    // would bloat context). It's a one-shot priming injection.
+    messages.push({
+      role: 'system',
+      content:
+        'You are running in NON-INTERACTIVE mode: no human will answer follow-up questions. ' +
+        'You must DO the work using the available tools (bash, write, edit, read, glob, grep, etc.) — ' +
+        'not describe what would need to be done. ' +
+        'If the task mentions a specific tool you do not have direct access to (e.g. "use vim"), ' +
+        'achieve the equivalent effect with the tools you do have. ' +
+        'If you lack information, USE A TOOL to investigate; do not ask the user. ' +
+        'A response with no tool calls is interpreted as "I am done" and triggers final verification.',
+    });
     messages.push({ role: 'user', content: promptText.trim() });
     try {
       await runQuery({
