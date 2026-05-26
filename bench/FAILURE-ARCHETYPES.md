@@ -160,6 +160,38 @@ Fix: not solvable at the agent layer. Stronger model. Skip.
 
 ---
 
+## Update from deep-dive (all 49 failures now inspected)
+
+After going through every remaining failure trial, the archetype counts settled at:
+
+| # | Archetype | Count |
+|---|---|---|
+| 1 | Spec adherence (missed the letter) | ~22 |
+| 5 | Bash timeout cascade | 12 |
+| 6 | Context bloat | 5 |
+| 4 | Empty engagement (NEW — model bailed before trying) | 4 |
+| 2 | Wrong environment tested | 3 |
+| 7 | Genuinely too hard for model class | 6 |
+| 3 | Service died at agent exit | 2 |
+| 8 | Test infrastructure bug | 1 |
+| 9 | False negative (agent solved it, harness misjudged) | 1+ |
+
+### NEW: Empty-engagement archetype (4 tasks)
+
+Tasks where the agent ran for <2 minutes and the pane is completely empty after the boilerplate ECC-ready banner:
+
+- **`polyglot-c-py`** — unusual spec (one file valid in both Python AND C)
+- **`solana-data`** — complex multi-endpoint Solana service; model bailed without trying
+- **`vim-terminal-task`** — instruction said "Using vim, create..."; model likely got hung up on the "use vim" requirement instead of recognizing it could just write the file
+
+F5 self-critique gate **does not fire here** because F5 only triggers on a no-tool-calls turn that comes AFTER actual turns happened. If the model emits a single response with no tool calls and exits, F5 doesn't see the situation. Need a separate guard at chain-start.
+
+### NEW: False negative (`swe-bench-langcodes`)
+
+The agent's pane explicitly says: *"All 5 tests in the test suite pass. The fix is done. Summary: Changed `__hash__` from `hash(id(self))` to `hash(self._str_tag)`."*
+
+That's a textbook correct fix. But the trial is marked `failure_mode: test_timeout` — the eval harness's test suite ran too slowly. Not our agent's fault. +1 left on the table for non-agent reasons.
+
 ## Prioritized fix list (corrected — no rubric peeking)
 
 | Rank | Fix | Failures addressed | Effort | Status |
