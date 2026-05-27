@@ -30,6 +30,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('tbench')).toBe('terminal-bench');
     expect(normalizeBenchmarkProfile('contextbench')).toBe('swe-context');
     expect(normalizeBenchmarkProfile('swechain')).toBe('swe-chain');
+    expect(normalizeBenchmarkProfile('swe-cycle')).toBe('swe-cycle');
+    expect(normalizeBenchmarkProfile('full-cycle')).toBe('swe-cycle');
+    expect(normalizeBenchmarkProfile('swe-judge')).toBe('swe-cycle');
     expect(normalizeBenchmarkProfile('ci-repair-bench')).toBe('ci-repair');
     expect(normalizeBenchmarkProfile('swe-ci')).toBe('swe-ci');
     expect(normalizeBenchmarkProfile('swecibench')).toBe('swe-ci');
@@ -62,6 +65,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('swe-chain upgrade package graph')).toEqual({
       profile: 'swe-chain',
       task: 'upgrade package graph',
+    });
+    expect(splitBenchmarkArgs('swe-cycle solve full lifecycle issue')).toEqual({
+      profile: 'swe-cycle',
+      task: 'solve full lifecycle issue',
     });
     expect(splitBenchmarkArgs('ci-repair fix failing github actions')).toEqual({
       profile: 'ci-repair',
@@ -165,6 +172,15 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('package manager and lockfile');
     expect(prompt).toContain('release-note breaking changes');
     expect(prompt).toContain('subsequent chain steps');
+  });
+
+  it('builds SWE-Cycle prompts around full issue-resolution lifecycle', () => {
+    const prompt = buildBenchmarkPrompt('solve FullCycle bare repository issue', '/workspace', 'swe-cycle');
+    expect(prompt).toContain('SWE-Cycle / SWE-Judge full issue-resolution lifecycle');
+    expect(prompt).toContain('environment reconstruction');
+    expect(prompt).toContain('verification-test generation');
+    expect(prompt).toContain('run_script');
+    expect(prompt).toContain('static+dynamic verifier');
   });
 
   it('builds CI-Repair prompts around workflow reconstruction', () => {

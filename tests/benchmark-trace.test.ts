@@ -358,6 +358,11 @@ describe('benchmark trace artifacts', () => {
         benchmarkName: 'SWE-Chain',
       },
       {
+        prompt: '/benchmark swe-cycle solve FullCycle bare repository issue',
+        benchmark: 'swecycle',
+        benchmarkName: 'SWE-Cycle',
+      },
+      {
         prompt: '/benchmark ci-repair fix failing workflow',
         benchmark: 'cirepairbench',
         benchmarkName: 'CI-Repair-Bench',
@@ -5704,7 +5709,7 @@ describe('benchmark trace artifacts', () => {
     expect(quality.longHorizonRisk).toBe(true);
     expect(quality.longHorizonSignalCount).toBe(4);
     expect(quality.processDefects.map((d) => d.code)).toContain('long_horizon_coverage_risk');
-    expect(quality.warnings.join('\n')).toContain('WebDevBench/SWE-CI completion may be under-evidenced');
+    expect(quality.warnings.join('\n')).toContain('WebDevBench/SWE-Cycle/SWE-CI completion may be under-evidenced');
     expect(buildBenchmarkCompletionReminder(events)).toContain('WebDevBench canaries');
     expect(buildBenchmarkCompletionReminder(events)).toContain('frontend-backend/security/CI-loop verifier');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('long_horizon_risk=yes long_horizon_signals=4');
@@ -5882,6 +5887,128 @@ describe('benchmark trace artifacts', () => {
     const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
     expect(reasons).not.toContain('missing_sweci_evolution_checklist');
     expect(reasons).not.toContain('missing_sweci_ci_loop_validation');
+    expect(reasons).not.toContain('missing_broad_integration_validation');
+  });
+
+  it('flags SWE-Cycle lifecycle setup, test generation, and judge gaps', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: SWE-Cycle FullCycle bare repository issue-resolution task.',
+          '- task.json: environment_setup_commit abc, run_script ./run_script.sh, parsing_script parse.py, selected_test_files_to_run ["tests/test_bug.py"].',
+          '- TASK.md: Complete environment reconstruction, CodeImpl, TestGen, and SWE-Judge static and dynamic judging.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.py' },
+        output: 'def value(): return "old"',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.py', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'pytest tests/test_bug.py' },
+        output: '1 passed',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
+    expect(reasons).toContain('missing_swecycle_phase_checklist');
+    expect(reasons).toContain('missing_swecycle_environment_validation');
+    expect(reasons).toContain('missing_swecycle_test_generation_evidence');
+    expect(reasons).toContain('missing_swecycle_judge_validation');
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.longHorizonRisk).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toContain('long_horizon_coverage_risk');
+    expect(quality.warnings.join('\n')).toContain('SWE-Cycle/SWE-CI completion may be under-evidenced');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('SWE-Cycle lifecycle phases');
+  });
+
+  it('accepts SWE-Cycle setup, generated tests, and lifecycle judge evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: SWE-Cycle FullCycle issue-resolution task with TestGen.',
+          '- task.json: environment_setup_commit abc, selected_test_files_to_run ["tests/test_bug.py"].',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [{ content: 'Complete SWE-Cycle setup, CodeImpl, TestGen, and judge phases.', status: 'completed' }],
+        },
+        output: 'Todo list updated (1 item):\n- [x] Complete SWE-Cycle setup, CodeImpl, TestGen, and judge phases.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'python -m pytest --collect-only' },
+        output: 'collected 8 items',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.py', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'write_file',
+        input: { file_path: 'tests/test_bug.py', content: 'def test_bug(): assert True\n' },
+        output: 'written',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'python scripts/swe_judge.py --phase FullCycle' },
+        output: 'static judge ok\ndynamic judge ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
+    expect(reasons).not.toContain('missing_swecycle_phase_checklist');
+    expect(reasons).not.toContain('missing_swecycle_environment_validation');
+    expect(reasons).not.toContain('missing_swecycle_test_generation_evidence');
+    expect(reasons).not.toContain('missing_swecycle_judge_validation');
     expect(reasons).not.toContain('missing_broad_integration_validation');
   });
 

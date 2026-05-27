@@ -31,6 +31,7 @@ describe('HAL adapter packaging', () => {
     expect(adapter).toContain('return "roadmapbench"');
     expect(adapter).toContain('return "saasbench"');
     expect(adapter).toContain('return "swe-bench-mobile"');
+    expect(adapter).toContain('return "swe-cycle"');
     expect(adapter).toContain('return "swe-ci"');
     expect(adapter).toContain('return "webdevbench"');
     expect(adapter).toContain('return "appworld"');

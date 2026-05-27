@@ -466,6 +466,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward policy constraints, customer intent, tool results, and pending confirmations before selecting the next action."
     if profile == "webdevbench":
         return "Carry forward canary requirements, frontend/backend state, integration evidence, and production/security gaps before selecting the next action."
+    if profile == "swe-cycle":
+        return "Carry forward lifecycle phase, bare-repo environment setup state, implementation requirements, generated/selected tests, judge commands, and unresolved phase gaps before selecting the next action."
     if profile == "swe-ci":
         return "Carry forward current/target commits, test gaps, inferred requirements, touched files, verifier deltas, and unresolved regressions before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
@@ -900,6 +902,15 @@ def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[fl
             return 5, "WebDevBench prior: verify full-stack, production, or security evidence"
         if re.search(r"\b(create|update|modify|deploy|submit|send)\b", text):
             return 3, "WebDevBench prior: app creation/modification action"
+    elif profile == "swe-cycle":
+        if re.search(r"\b(fullcycle|envsetup|codeimpl|testgen|phase|requirements?|issue|read|inspect|list|search|get|query|run_script|parsing_script|selected_test_files_to_run|environment_setup_commit|before_repo_set_cmd|image_name)\b", text):
+            return 6, "SWE-Cycle prior: identify lifecycle phase, harness fields, and issue requirements"
+        if re.search(r"\b(setup|install|bootstrap|dependencies|env|environment|import|collect|discover|build)\b", text):
+            return 6, "SWE-Cycle prior: reconstruct bare-repo environment before code/test edits"
+        if re.search(r"\b(testgen|test|tests|pytest|jest|vitest|selected|judge|swe[-_ ]?judge|static|dynamic|verify|check)\b", text):
+            return 5, "SWE-Cycle prior: generate/validate tests and preserve judge evidence"
+        if re.search(r"\b(codeimpl|modify|patch|edit|update|change|implement|repair)\b", text):
+            return 3, "SWE-Cycle prior: implementation action after lifecycle context is established"
     elif profile == "swe-ci":
         if re.search(r"\b(current|target|commit|sha|history|log|diff|status|read|inspect|list|search|get|query)\b", text):
             return 6, "SWE-CI prior: establish current/target commits, test gaps, and repo evolution context"

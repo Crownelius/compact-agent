@@ -257,6 +257,7 @@ export type BenchmarkProfile =
   | 'terminal-bench'
   | 'swe-context'
   | 'swe-chain'
+  | 'swe-cycle'
   | 'swe-ci'
   | 'ci-repair'
   | 'wildclaw'
@@ -289,6 +290,15 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'swe-chain-bench': 'swe-chain',
   chain: 'swe-chain',
   upgrade: 'swe-chain',
+  swecycle: 'swe-cycle',
+  'swe-cycle': 'swe-cycle',
+  swe_cycle: 'swe-cycle',
+  swecyclebench: 'swe-cycle',
+  'swe-cycle-bench': 'swe-cycle',
+  fullcycle: 'swe-cycle',
+  'full-cycle': 'swe-cycle',
+  swejudge: 'swe-cycle',
+  'swe-judge': 'swe-cycle',
   sweci: 'swe-ci',
   'swe-ci': 'swe-ci',
   swe_ci: 'swe-ci',
@@ -422,6 +432,13 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Prefer incremental, reversible changes; avoid broad version jumps without evidence, and keep package manifests plus lockfiles consistent.
 - Run install/build/test in small loops. Inspect dependency errors before patching source, and preserve compatibility shims when downstream code still expects the old API.
 - Record the upgrade path and verifier evidence so subsequent chain steps can reuse the compatibility facts safely.`;
+    case 'swe-cycle':
+      return `Profile: SWE-Cycle / SWE-Judge full issue-resolution lifecycle
+- Treat the task as a complete lifecycle problem unless current evidence proves it is an isolated subtask: environment reconstruction, code implementation, verification-test generation, and static/dynamic judging all need explicit evidence.
+- Identify the exposed phase names and harness fields first: FullCycle, EnvSetup, CodeImpl, TestGen, run_script, parsing_script, selected_test_files_to_run, environment_setup_commit, before_repo_set_cmd, and image_name.
+- In bare repositories, reconstruct the environment before code edits: install dependencies, confirm imports/test discovery, and preserve exact setup commands plus failures.
+- For implementation, patch production code against inferred issue requirements. For TestGen/FullCycle, add or update meaningful verifier tests without hardcoding visible cases or touching hidden/oracle assets.
+- Finish only after post-edit validation covers the relevant lifecycle phase: narrow test, generated/selected tests when applicable, and a broad or SWE-Judge/static+dynamic verifier when available.`;
     case 'swe-ci':
       return `Profile: SWE-CI style CI-loop codebase maintenance
 - Treat the task as long-term repository evolution across current and target commits, not a one-shot CI repair.
@@ -525,6 +542,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task drops you into a sandbox with a verifier/test script, follow the Terminal-Bench profile.
 - If related prior cases or memory are part of the challenge, follow the SWE-ContextBench profile.
 - If the task is a chained dependency, release, package, or API upgrade, follow the SWE-Chain profile.
+- If the task mentions SWE-Cycle, SWE-Judge, FullCycle, EnvSetup, CodeImpl, TestGen, run_script, parsing_script, selected_test_files_to_run, environment_setup_commit, before_repo_set_cmd, or bare-repo issue resolution, follow the SWE-Cycle profile.
 - If the task mentions SWE-CI, current/target commits, test gaps, maintainability over repository evolution, or the run_tests -> define_requirements -> modify_code loop, follow the SWE-CI profile.
 - If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
 - If the task mentions WildClawBench, native-runtime agent work, OpenClaw, multimodal/social/search/safety categories, or long-horizon harness comparison, follow the WildClawBench profile.
@@ -562,7 +580,7 @@ Use this workflow as the default benchmark strategy:
    - For risky or multi-file edits, inspect git state first and keep changes reviewable so failed paths can be reverted without losing unrelated user work.
    - Prefer one coherent root-cause patch over broad speculative rewrites.
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
-   - For long-horizon roadmap, SaaS, mobile, WebDevBench, or SWE-CI tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, CI-loop requirements, and production-readiness gaps stay visible.
+   - For long-horizon roadmap, SaaS, mobile, WebDevBench, SWE-Cycle, or SWE-CI tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, lifecycle phases, CI-loop requirements, and production-readiness gaps stay visible.
    - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.
@@ -611,7 +629,7 @@ ${preflightSnapshot}
    - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
    - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
-   - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench/SWE-CI work, identify roadmap milestones, validation nodes, canary requirements, current/target commit boundaries, test gaps, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
+   - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench/SWE-Cycle/SWE-CI work, identify roadmap milestones, validation nodes, canary requirements, lifecycle phases, current/target commit boundaries, test gaps, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
    - For AppWorld/BrowseComp+/tau2 work, identify available actions, required source/policy evidence, finish action, and state-observation loop before taking environment actions.
    - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
 
@@ -642,7 +660,7 @@ ${preflightSnapshot}
    - For installs, model loads, training, builds, emulators, or broad test suites that can legitimately exceed the default shell timeout, call bash with \`timeoutMs\` (up to 1800000). Do not retry the exact same timed-out command without changing the timeout or strategy.
    - For services, servers, watchers, and daemons, call bash with \`background:true\`, then inspect the returned log path before assuming readiness.
    - Then run the broad verifier or build/test command available in the task.
-   - For roadmap/SaaS/mobile/WebDevBench tasks, prefer at least one broad integration, platform, migration, e2e, frontend-backend, production-readiness, security, or full build/test verifier after the final edit.
+   - For roadmap/SaaS/mobile/WebDevBench/SWE-Cycle tasks, prefer at least one broad integration, platform, migration, e2e, frontend-backend, production-readiness, security, lifecycle judge, or full build/test verifier after the final edit.
    - For AppWorld/tau2 tasks, verify the latest observation or tool response reflects the intended state; for BrowseComp+, cross-check final claims against opened source evidence.
    - If a verifier fails, diagnose from output and iterate. Do not final-answer on unverified edits.
 

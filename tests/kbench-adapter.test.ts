@@ -37,6 +37,7 @@ describe('KBench adapter packaging', () => {
     const runner = readFileSync(runnerPath, 'utf-8');
     expect(runner).toContain('VENTIPUS_BASH_TIMEOUT_MS');
     expect(runner).toContain("'swe-chain'");
+    expect(runner).toContain("'swe-cycle'");
     expect(runner).toContain("'swe-ci'");
     expect(runner).toContain("'ci-repair'");
     expect(runner).toContain("'wildclaw'");

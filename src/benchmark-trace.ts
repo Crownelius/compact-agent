@@ -749,6 +749,10 @@ export interface BenchmarkLongHorizonSignal {
     | 'missing_roadmap_checklist'
     | 'incomplete_roadmap_after_validation'
     | 'missing_broad_integration_validation'
+    | 'missing_swecycle_phase_checklist'
+    | 'missing_swecycle_environment_validation'
+    | 'missing_swecycle_test_generation_evidence'
+    | 'missing_swecycle_judge_validation'
     | 'missing_sweci_evolution_checklist'
     | 'missing_sweci_ci_loop_validation'
     | 'missing_mobile_platform_validation'
@@ -2041,6 +2045,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\bswe[-_ ]?bench[-_ ]?mobile\b|\bmobile\s+bench\b|\bxcode\b|\bswift\b/i.test(text)) return 'swebenchmobile';
   if (/\bswe[-_ ]?web[-_ ]?dev[-_ ]?bench\b|\bweb[-_ ]?dev[-_ ]?bench\b|\bvibe\s+coding\b|\bvirtual\s+software\s+agenc(?:y|ies)\b|\bcanary\s+requirements?\b|\bfrontend[-_\s]?backend\s+decoupling\b/i.test(text)) return 'swewebdevbench';
   if (/\bswe[-_ ]?chain\b/i.test(text)) return 'swechain';
+  if (/\bswe[-_ ]?cycle\b|\bswe[-_ ]?judge\b|\bfullcycle\b/i.test(text)) return 'swecycle';
   if (/\bswe[-_ ]?ci\b/i.test(text)) return 'sweci';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
@@ -2060,6 +2065,7 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'terminalbench' || cleaned === 'tb' || cleaned === 'tb2') return 'terminalbench';
   if (cleaned === 'swecontext') return 'swecontext';
   if (cleaned === 'swechain' || cleaned === 'chain' || cleaned === 'upgrade') return 'swechain';
+  if (cleaned === 'swecycle' || cleaned === 'swecyclebench' || cleaned === 'fullcycle' || cleaned === 'swejudge') return 'swecycle';
   if (cleaned === 'sweci' || cleaned === 'swecibench') return 'sweci';
   if (cleaned === 'cirepair' || cleaned === 'cirepairbench' || cleaned === 'ci') return 'cirepairbench';
   if (cleaned === 'wildclaw' || cleaned === 'wildclawbench' || cleaned === 'wcbench') return 'wildclawbench';
@@ -2089,6 +2095,7 @@ function formatBenchmarkName(slug: string): string {
     roadmapbench: 'RoadmapBench',
     saasbench: 'SaaSBench',
     specbench: 'SpecBench',
+    swecycle: 'SWE-Cycle',
     sweci: 'SWE-CI',
     swebench: 'SWE-bench',
     swebenchmobile: 'SWE-Bench Mobile',
@@ -2852,7 +2859,7 @@ export function buildBenchmarkTrajectoryQuality(
       .slice(0, 3)
       .map((signal) => `${signal.reason}#${signal.seq} ${signal.target}`)
       .join('; ');
-    warnings.push(`long-horizon coverage risk: roadmap/SaaS/mobile/WebDevBench/SWE-CI completion may be under-evidenced: ${examples}. Finish the milestone/canary/evolution checklist and run broad integration/platform/frontend-backend/security/CI-loop validation before finalizing.`);
+    warnings.push(`long-horizon coverage risk: roadmap/SaaS/mobile/WebDevBench/SWE-Cycle/SWE-CI completion may be under-evidenced: ${examples}. Finish the milestone/canary/lifecycle/evolution checklist and run broad integration/platform/frontend-backend/security/lifecycle-judge/CI-loop validation before finalizing.`);
   }
   if (editTargetEvidence.unlocalized.length > 0 && localizationBeforeFirstEdit !== false && !editAfterNoEditContract) {
     const targets = editTargetEvidence.unlocalized
@@ -3861,6 +3868,8 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       signal.reason === 'missing_broad_integration_validation'
       || signal.reason === 'missing_mobile_platform_validation'
       || signal.reason === 'missing_saas_integration_validation'
+      || signal.reason === 'missing_swecycle_environment_validation'
+      || signal.reason === 'missing_swecycle_judge_validation'
       || signal.reason === 'missing_sweci_ci_loop_validation'
       || signal.reason === 'missing_frontend_backend_validation'
       || signal.reason === 'missing_security_production_validation');
@@ -3869,7 +3878,7 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       hasMissingValidation ? 'validation' : 'requirement_fidelity',
       hasIncomplete || hasMissingValidation ? 'high' : 'medium',
       input.longHorizonSignals[0]?.seq ?? null,
-      'The trajectory may be under-evidenced for a long-horizon roadmap, SaaS, mobile, WebDevBench, or SWE-CI task.',
+      'The trajectory may be under-evidenced for a long-horizon roadmap, SaaS, mobile, WebDevBench, SWE-Cycle, or SWE-CI task.',
       input.longHorizonSignals
         .slice(0, 5)
         .map((signal) => `${signal.reason}#${signal.seq}:${signal.target}`)
@@ -5808,7 +5817,15 @@ export function buildBenchmarkLongHorizonSignals(
     ?? firstSeq(events, (event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
     ?? 0;
 
-  if (firstEditSeq != null && context.sweci && taskContractChecklistAfterContext !== true) {
+  if (firstEditSeq != null && context.swecycle && taskContractChecklistAfterContext !== true) {
+    signals.push({
+      seq: firstEditSeq,
+      tool: 'todo_write',
+      target: 'SWE-Cycle lifecycle phase checklist',
+      reason: 'missing_swecycle_phase_checklist',
+      evidence: `SWE-Cycle lifecycle context detected but no post-context phase checklist was recorded before edit #${firstEditSeq}; first_context_seq=${firstContextSeq}`,
+    });
+  } else if (firstEditSeq != null && context.sweci && taskContractChecklistAfterContext !== true) {
     signals.push({
       seq: firstEditSeq,
       tool: 'todo_write',
@@ -5846,6 +5863,39 @@ export function buildBenchmarkLongHorizonSignals(
     });
   }
 
+  const hasPassingSweCycleEnvironmentValidation = events.some((event) =>
+    event.status === 'ok'
+    && event.seq >= firstContextSeq
+    && (firstEditSeq == null || event.seq < firstEditSeq)
+    && isSweCycleEnvironmentValidationEvent(event));
+  if (context.swecycleNeedsEnvironment
+    && firstEditSeq != null
+    && !hasPassingSweCycleEnvironmentValidation) {
+    signals.push({
+      seq: firstEditSeq,
+      tool: 'bash',
+      target: 'SWE-Cycle environment reconstruction',
+      reason: 'missing_swecycle_environment_validation',
+      evidence: `SWE-Cycle bare-repo/full-cycle context detected but no passing setup/import/test-discovery validation was recorded before edit #${firstEditSeq}`,
+    });
+  }
+
+  const hasSweCycleTestGenerationEvidence = events.some((event) =>
+    isEditEvent(event)
+    && event.seq >= firstContextSeq
+    && editedTargetsForEvent(event).some(isLikelyGeneratedTestTarget));
+  if (context.swecycleNeedsTestGeneration
+    && firstPassingPostEdit
+    && !hasSweCycleTestGenerationEvidence) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: 'SWE-Cycle verification-test generation',
+      reason: 'missing_swecycle_test_generation_evidence',
+      evidence: 'SWE-Cycle FullCycle/TestGen context detected, but no test-file edit evidence was recorded before visible validation passed',
+    });
+  }
+
   const hasPassingLongHorizonValidation = firstEditSeq == null
     ? false
     : events.some((event) => event.seq > firstEditSeq && event.status === 'ok' && isLongHorizonValidationEvent(event));
@@ -5861,6 +5911,22 @@ export function buildBenchmarkLongHorizonSignals(
       target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
       reason: 'missing_broad_integration_validation',
       evidence: 'long-horizon task has a passing visible verifier but no broad, CI, repeated, integration, migration, or platform validation after editing',
+    });
+  }
+
+  const hasPassingSweCycleJudgeValidation = events.some((event) =>
+    event.status === 'ok'
+    && (firstEditSeq == null || event.seq > firstEditSeq)
+    && isSweCycleLifecycleValidationEvent(event));
+  if (context.swecycle
+    && firstPassingPostEdit
+    && !hasPassingSweCycleJudgeValidation) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'missing_swecycle_judge_validation',
+      evidence: 'SWE-Cycle context detected, but no passing post-edit lifecycle judge, selected/generated test, static/dynamic check, or broad verifier was recorded',
     });
   }
 
@@ -6031,7 +6097,16 @@ function hasSpecComplianceContext(events: BenchmarkTraceEvent[], messages: Messa
 function getLongHorizonContext(
   events: BenchmarkTraceEvent[],
   messages: Message[] = [],
-): { detected: boolean; mobile: boolean; saas: boolean; webdev: boolean; sweci: boolean } {
+): {
+  detected: boolean;
+  mobile: boolean;
+  saas: boolean;
+  webdev: boolean;
+  swecycle: boolean;
+  swecycleNeedsEnvironment: boolean;
+  swecycleNeedsTestGeneration: boolean;
+  sweci: boolean;
+} {
   const messageTextBlock = messages.map(messageText).join('\n');
   const eventTextBlock = events
     .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
@@ -6041,18 +6116,54 @@ function getLongHorizonContext(
   const mobile = /\b(?:swe[-_\s]?bench[-_\s]?mobile|mobile\s+bench|ios|iphone|ipad|xcode|swift|objective[-_\s]?c|figma|prd|simulator|emulator|android)\b/i.test(text);
   const saas = /\b(?:saasbench|saas[-_\s]?bench|enterprise\s+saas|multi[-_\s]?component\s+(?:saas|app|system)|validation\s+nodes?|tenant|tenancy|migrations?|cross[-_\s]?service|e2e\s+workflow)\b/i.test(text);
   const webdev = /\b(?:swe[-_\s]?web[-_\s]?dev[-_\s]?bench|web[-_\s]?dev[-_\s]?bench|vibe\s+coding|virtual\s+software\s+agenc(?:y|ies)|app\s+creation\s+request|app\s+modification\s+request|canary\s+requirements?|frontend[-_\s]?backend\s+decoupling|production[-_\s]?readiness|business[-_\s]?readiness|full[-_\s]?stack\s+(?:application|app|web\s+app))\b/i.test(text);
+  const swecycleExplicit = /\b(?:swe[-_\s]?cycle|swe[-_\s]?judge|fullcycle|envsetup|codeimpl|testgen)\b/i.test(text);
+  const swecycleFields = /\b(?:environment_setup_commit|run_script|parsing_script|before_repo_set_cmd|selected_test_files_to_run|image_name)\b/i.test(text);
+  const swecycleLifecycle = /\b(?:complete\s+issue[-_\s]?resolution\s+cycle|bare\s+repository|verification[-_\s]?test\s+generation|static\s+and\s+dynamic\s+judg(?:e|ing)|dynamic\s+judg(?:e|ing))\b/i.test(text);
+  const swecycle = swecycleExplicit || swecycleFields || swecycleLifecycle;
+  const swecycleNeedsEnvironment = swecycle && /\b(?:fullcycle|envsetup|bare\s+repository|environment\s+(?:setup|reconstruction)|environment_setup_commit|before_repo_set_cmd|image_name|run_script)\b/i.test(text);
+  const swecycleNeedsTestGeneration = swecycle && /\b(?:fullcycle|testgen|test\s+generation|verification[-_\s]?test|selected_test_files_to_run|generated\s+tests?)\b/i.test(text);
   const sweci = /\b(?:swe[-_\s]?ci|continuous\s+integration\s+loop|ci[-_\s]?loop|run_tests|define_requirements|modify_code|test\s+gap|current_sha|target_sha|current\s+commit|target\s+commit|codebase\s+maintenance|maintainability|repository\s+evolution)\b/i.test(text);
   const roadmap = /\b(?:roadmapbench|roadmap[-_\s]?bench|long[-_\s]?horizon|version[-_\s]?upgrade|multi[-_\s]?target|roadmap\s+(?:task|instruction|milestone)|target\s+version|source\s+version|release[-_\s]?level|acceptance\s+nodes?)\b/i.test(text);
-  return { detected: roadmap || saas || mobile || webdev || sweci, mobile, saas, webdev, sweci };
+  return {
+    detected: roadmap || saas || mobile || webdev || swecycle || sweci,
+    mobile,
+    saas,
+    webdev,
+    swecycle,
+    swecycleNeedsEnvironment,
+    swecycleNeedsTestGeneration,
+    sweci,
+  };
 }
 
 function isLongHorizonValidationEvent(event: BenchmarkTraceEvent): boolean {
-  return isSweCiLoopValidationEvent(event)
+  return isSweCycleLifecycleValidationEvent(event)
+    || isSweCiLoopValidationEvent(event)
     || isMobilePlatformValidationEvent(event)
     || isSaasIntegrationValidationEvent(event)
     || isWebDevFullStackValidationEvent(event)
     || isWebDevSecurityProductionValidationEvent(event)
     || isBroadVerificationEvent(event);
+}
+
+function isSweCycleEnvironmentValidationEvent(event: BenchmarkTraceEvent): boolean {
+  if (event.tool !== 'bash' || event.status !== 'ok') return false;
+  const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
+  return /\b(?:npm\s+(?:ci|install|i)|pnpm\s+(?:install|i)|yarn\s+(?:install|--immutable|--frozen-lockfile)|bun\s+install|pip(?:3)?\s+install|python(?:3)?\s+-m\s+pip\s+install|uv\s+(?:sync|pip\s+(?:install|sync)|venv)|poetry\s+install|conda\s+(?:env\s+)?(?:create|install)|make\s+(?:setup|bootstrap|deps|dependencies|install)|(?:\.\/)?setup\.(?:sh|bash)|pytest\s+--collect-only|python(?:3)?\s+-m\s+pytest\s+--collect-only|python(?:3)?\s+-c\s+["']?import|node\s+-e\s+["']?require|npm\s+(?:run\s+)?build|mvn\s+(?:dependency:resolve|test\s+-DskipTests)|gradle\s+(?:dependencies|buildEnvironment)|go\s+(?:mod\s+download|test\s+\.\/\.\.\.)|cargo\s+(?:fetch|check))\b/i.test(command);
+}
+
+function isSweCycleLifecycleValidationEvent(event: BenchmarkTraceEvent): boolean {
+  if (!event.verification || event.tool !== 'bash') return false;
+  if (isBroadVerificationEvent(event)) return true;
+  const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
+  return /\b(?:swe[-_]?cycle|swe[-_]?judge|fullcycle|codeimpl|testgen|run_script|parsing_script|selected_test_files_to_run|static\s+check|dynamic\s+judge|judge(?:\.py|\.sh)?)\b/i.test(command);
+}
+
+function isLikelyGeneratedTestTarget(target: string): boolean {
+  const normalized = normalizeTracePath(target);
+  return /(^|\/)(?:tests?|test|spec|__tests__)(\/|$)/i.test(normalized)
+    || /(?:^|[._-])(?:test|spec)\.[a-z0-9]+$/i.test(normalized)
+    || /\.(?:test|spec)\.[a-z0-9]+$/i.test(normalized);
 }
 
 function isSweCiLoopValidationEvent(event: BenchmarkTraceEvent): boolean {
@@ -6419,7 +6530,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-CI completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line to each non-trivial edit and verify it after the edit, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, SWE-Cycle lifecycle phases, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-Cycle/SWE-CI completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line to each non-trivial edit and verify it after the edit, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, lifecycle judge, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-Cycle/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
@@ -6641,7 +6752,7 @@ function summarizeTarget(tool: string, input: Record<string, unknown>): string {
 function isVerificationTool(tool: string, input: Record<string, unknown>): boolean {
   if (tool !== 'bash') return false;
   const command = String(input.command ?? '');
-  return /\b((?:npm|pnpm|yarn)\s+(?:run\s+)?(test|build|lint|check|typecheck|audit|security|scan|test:e2e|e2e|test:integration|integration|test:api|api-test)|bun\s+(test|run)|vitest|jest|pytest|ruff|mypy|tsc|playwright\s+test|cypress\s+run|semgrep|bandit|trivy|snyk|gitleaks|lighthouse|k6\s+run|autocannon|cargo\s+(test|build|check)|go\s+test|dotnet\s+test|gradle\s+test|gradlew\s+test|mvn\s+test|mvnw\s+test|make\s+(test|check|verify)|tb\s+run|harbor\s+run)\b/i
+  return /\b((?:npm|pnpm|yarn)\s+(?:run\s+)?(test|build|lint|check|typecheck|audit|security|scan|test:e2e|e2e|test:integration|integration|test:api|api-test)|bun\s+(test|run)|vitest|jest|pytest|ruff|mypy|tsc|playwright\s+test|cypress\s+run|semgrep|bandit|trivy|snyk|gitleaks|lighthouse|k6\s+run|autocannon|cargo\s+(test|build|check)|go\s+test|dotnet\s+test|gradle\s+test|gradlew\s+test|mvn\s+test|mvnw\s+test|make\s+(test|check|verify)|swe[-_]?cycle|swe[-_]?judge|tb\s+run|harbor\s+run)\b/i
     .test(command)
     || /(?:^|[\s;&|])\.\/(?:gradlew|mvnw)\s+test\b/i.test(command);
 }

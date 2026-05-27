@@ -167,6 +167,23 @@ def _profile_for_task(task: dict[str, Any]) -> str:
     ):
         return "roadmapbench"
     if (
+        "swe-cycle" in task_text
+        or "swecycle" in task_text
+        or "swe cycle" in task_text
+        or "swe-judge" in task_text
+        or "swejudge" in task_text
+        or "fullcycle" in task_text
+        or "codeimpl" in task_text
+        or "testgen" in task_text
+        or "run_script" in task_text
+        or "parsing_script" in task_text
+        or "selected_test_files_to_run" in task_text
+        or "environment_setup_commit" in task_text
+        or "before_repo_set_cmd" in task_text
+        or "bare repository" in task_text
+    ):
+        return "swe-cycle"
+    if (
         "swe-ci" in task_text
         or "sweci" in task_text
         or "swe ci" in task_text
@@ -277,6 +294,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         lines.append("This is a tau2/Tau-Bench-style policy workflow. Follow the domain policy, use only available action schemas, and verify tool observations before completing.")
     elif profile == "webdevbench":
         lines.append("This is a SWE-WebDevBench-style full-stack app-agency task. Preserve canary business requirements, verify frontend-backend coupling, and collect production/security evidence when feasible.")
+    elif profile == "swe-cycle":
+        lines.append("This is a SWE-Cycle/SWE-Judge-style issue-resolution lifecycle task. Track environment setup, code implementation, verification-test generation when required, and post-edit static/dynamic judge evidence.")
     elif profile == "swe-ci":
         lines.append("This is a SWE-CI-style repository evolution task. Track current/target commits, test gaps, requirement derivation, and CI-loop validation across run_tests -> define_requirements -> modify_code.")
     elif _is_usaco_task(task):
