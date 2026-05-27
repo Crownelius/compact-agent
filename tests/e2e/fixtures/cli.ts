@@ -284,6 +284,10 @@ export class VentipusCLI {
     const permIndex = ['ask', 'auto', 'yolo'].indexOf(permissionMode);
     this._proc.stdin.write(`${permIndex + 1}\n`);
 
+    // Keep the setup path explicit now that MemPalace is a first-run choice.
+    await this.waitForOutput(/MemPalace memory|Enable MemPalace/i, { timeout: 5_000 });
+    this._proc.stdin.write('1\n');
+
     // Wait for config saved confirmation
     await this.waitForOutput(/Config saved/i, { timeout: 5_000 });
 

@@ -367,33 +367,43 @@ export function printBanner(
   const w = theme.bright;
   const brand = theme.brand;
 
-  // Width budget: the heavy bars are 39 cells. The inner content
-  // is indented 2 cells so the right edge "feels" aligned with the
-  // bar. Compute the inner width for right-aligning the brand mark
-  // on the session row.
-  const BAR_WIDTH = 39;
+  const termCols = Math.max(56, process.stdout.columns || 80);
+  const BAR_WIDTH = Math.min(74, Math.max(54, termCols - 8));
+  const inner = BAR_WIDTH - 4;
+  const leftPad = ' '.repeat(Math.max(0, Math.floor((termCols - BAR_WIDTH) / 2)));
   const heavyBar = '▀'.repeat(BAR_WIDTH);
+  const divider = sym.divider.repeat(inner);
 
-  // ── render ──
+  const clean = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, '');
+  const clip = (text: string, width: number): string => {
+    const plain = clean(text);
+    if (plain.length <= width) return plain;
+    return width <= 1 ? plain.slice(0, width) : plain.slice(0, width - 1) + '…';
+  };
+  const center = (text: string, width: number): string => {
+    const plain = clip(text, width);
+    const pad = Math.max(0, width - plain.length);
+    return ' '.repeat(Math.floor(pad / 2)) + plain + ' '.repeat(Math.ceil(pad / 2));
+  };
+  const row = (text: string): string => leftPad + '  ' + text;
+  const meta = (label: string, value: string, width: number): string => `${label} ${clip(value, width)}`;
+
+  const halfWidth = Math.floor((inner - 3) / 2);
+  const providerCell = meta('Provider', provider, Math.max(12, halfWidth - 9)).padEnd(halfWidth);
+  const modelCell = meta('Model', model, Math.max(12, inner - halfWidth - 11));
+  const modeCell = meta('Mode', mode.toUpperCase(), Math.max(8, halfWidth - 5)).padEnd(halfWidth);
+  const permCell = meta('Perms', permissionMode, Math.max(8, inner - halfWidth - 11));
+  const sessionText = `Session ${clip(sessionId, Math.max(10, inner - 10))}`;
+
   console.log('');
-  console.log(brand(heavyBar));
-  console.log(b(`${sym.mark}  V E N T I P U S`));
-  console.log(d('     Multimodel terminal AI workbench'));
-  console.log('');
-  console.log(d('  ' + sym.divider.repeat(BAR_WIDTH - 2)));
-  console.log(s('  Provider  ') + w(provider) + s('  ') + d('│') + s('  Model  ') + w(model));
-  console.log(s('  Mode      ') + theme.modeBadge(mode) + s('     ') + d('│') + s('  Perms  ') + w(permissionMode));
-  // Session row: prefix + id, then padded to the right edge with a
-  // brand-mark bookend. Strip ANSI from the prefix string for the
-  // visible-length math (chalk wraps in escape codes which inflate
-  // .length without contributing visible cells).
-  const sessText = sessionId.slice(0, 12);
-  const sessLeft = s('  Session   ') + d(sessText);
-  const sessLeftVisible = '  Session   ' + sessText;     // for length math only
-  const padding = Math.max(1, BAR_WIDTH - sessLeftVisible.length - 1);
-  console.log(sessLeft + ' '.repeat(padding) + brand(sym.mark));
-  console.log('');
-  console.log(brand(heavyBar));
+  console.log(leftPad + brand(heavyBar));
+  console.log(leftPad + b(center(`${sym.mark}   V E N T I P U S   ${sym.mark}`, BAR_WIDTH)));
+  console.log(leftPad + d(center('Multimodel terminal AI workbench', BAR_WIDTH)));
+  console.log(row(d(divider)));
+  console.log(row(s(providerCell) + d(' │ ') + w(modelCell)));
+  console.log(row(s(modeCell) + d(' │ ') + w(permCell)));
+  console.log(row(d(sessionText.padEnd(inner - 2)) + brand(sym.mark)));
+  console.log(leftPad + brand(heavyBar));
   console.log('');
 }
 

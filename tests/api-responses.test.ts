@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { messagesToResponsesInput, shouldRequestChatStreamUsage, toolsToResponsesTools } from '../src/api.js';
+import {
+  buildCodexResponsesRequest,
+  messagesToResponsesInput,
+  messagesToResponsesInstructions,
+  shouldRequestChatStreamUsage,
+  toolsToResponsesTools,
+} from '../src/api.js';
 import type { Message } from '../src/types.js';
 import type { Tool } from '../src/tools/types.js';
 
@@ -20,8 +26,8 @@ describe('Responses API conversion', () => {
       { role: 'tool', tool_call_id: 'call_123', content: 'file contents' },
     ];
 
+    expect(messagesToResponsesInstructions(messages)).toBe('Be concise.');
     expect(messagesToResponsesInput(messages)).toEqual([
-      { type: 'message', role: 'system', content: 'Be concise.' },
       { type: 'message', role: 'user', content: 'Read the file.' },
       {
         type: 'function_call',
@@ -35,6 +41,34 @@ describe('Responses API conversion', () => {
         output: 'file contents',
       },
     ]);
+  });
+
+  it('builds a Codex OAuth payload without unsupported public Responses params', () => {
+    const messages: Message[] = [
+      { role: 'system', content: 'Use short answers.' },
+      { role: 'user', content: 'Say hi.' },
+    ];
+    const payload = buildCodexResponsesRequest({
+      apiKey: '',
+      baseURL: 'https://chatgpt.com/backend-api/codex',
+      model: 'gpt-5.5',
+      provider: 'OpenAI Codex (OAuth)',
+      maxTokens: 4096,
+      temperature: 0.3,
+      permissionMode: 'ask',
+    }, messages, []);
+
+    expect(payload).toMatchObject({
+      model: 'gpt-5.5',
+      instructions: 'Use short answers.',
+      input: [{ type: 'message', role: 'user', content: 'Say hi.' }],
+      stream: true,
+      store: false,
+      parallel_tool_calls: true,
+    });
+    expect(payload).not.toHaveProperty('temperature');
+    expect(payload).not.toHaveProperty('max_output_tokens');
+    expect(payload).not.toHaveProperty('max_completion_tokens');
   });
 
   it('emits Responses API function tools with non-strict schemas', () => {

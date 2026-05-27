@@ -41,7 +41,7 @@ export class LoginPage {
   async selectProviderByKey(key: string): Promise<string> {
     const providerKeys = [
       'anthropic', 'openai', 'openai-codex', 'openrouter', 'google',
-      'deepseek', 'ollama', 'lmstudio', 'glm', 'custom',
+      'deepseek', 'ollama', 'lmstudio', 'glm', 'nvidia', 'custom',
     ];
     const idx = providerKeys.indexOf(key.toLowerCase());
     if (idx === -1) throw new Error(`Unknown provider key: ${key}`);
@@ -110,6 +110,8 @@ export class LoginPage {
     await this.cli.waitForOutput(/Permission mode|ask.*auto.*yolo/i, { timeout: 5_000 });
     const before = this.cli.stdout.length;
     this.cli.process.stdin.write(`${index}\n`);
+    await this.cli.waitForOutput(/MemPalace memory|Enable MemPalace/i, { timeout: 5_000 });
+    this.cli.process.stdin.write('1\n');
     await this.cli.waitForOutput(/Config saved/i, { timeout: 5_000 });
     return this.cli.stdoutSince(before);
   }
@@ -152,7 +154,7 @@ export class LoginPage {
     // Step 2: API key (if required by the provider)
     const providerKeys = [
       'anthropic', 'openai', 'openai-codex', 'openrouter', 'google',
-      'deepseek', 'ollama', 'lmstudio', 'glm', 'custom',
+      'deepseek', 'ollama', 'lmstudio', 'glm', 'nvidia', 'custom',
     ];
     const selectedKey = providerKeys[pIdx - 1];
     const requiresKey = !['openai-codex', 'ollama', 'lmstudio'].includes(selectedKey);
@@ -230,7 +232,7 @@ export class LoginPage {
     if (!key) return 3; // default to openrouter (index 3)
     const providerKeys = [
       'anthropic', 'openai', 'openai-codex', 'openrouter', 'google',
-      'deepseek', 'ollama', 'lmstudio', 'glm', 'custom',
+      'deepseek', 'ollama', 'lmstudio', 'glm', 'nvidia', 'custom',
     ];
     const idx = providerKeys.indexOf(key.toLowerCase());
     return idx >= 0 ? idx : 2;

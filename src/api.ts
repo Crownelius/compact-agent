@@ -131,6 +131,8 @@ export function messagesToResponsesInput(messages: Message[]): Array<Record<stri
   const input: Array<Record<string, unknown>> = [];
 
   for (const m of messages) {
+    if (m.role === 'system') continue;
+
     if (m.role === 'tool') {
       if (m.tool_call_id) {
         input.push({
@@ -164,6 +166,35 @@ export function messagesToResponsesInput(messages: Message[]): Array<Record<stri
   }
 
   return input;
+}
+
+export function messagesToResponsesInstructions(messages: Message[]): string {
+  const instructions = messages
+    .filter((m) => m.role === 'system' && m.content?.trim())
+    .map((m) => m.content!.trim())
+    .join('\n\n');
+  return instructions || 'You are Ventipus, a concise terminal coding assistant.';
+}
+
+export function buildCodexResponsesRequest(
+  config: VentipusConfig,
+  messages: Message[],
+  tools: Tool[],
+): Record<string, unknown> {
+  const toolDefs = toolsToResponsesTools(tools);
+
+  // The ChatGPT Codex OAuth backend is Responses-like, but stricter than
+  // api.openai.com: it requires `instructions` and currently rejects common
+  // public Responses parameters such as temperature and max_output_tokens.
+  return {
+    model: config.model,
+    instructions: messagesToResponsesInstructions(messages),
+    input: messagesToResponsesInput(messages),
+    tools: toolDefs.length > 0 ? toolDefs : undefined,
+    stream: true,
+    store: false,
+    parallel_tool_calls: true,
+  };
 }
 
 export function shouldRequestChatStreamUsage(
@@ -321,7 +352,6 @@ async function* streamResponsesChat(
   signal?: AbortSignal,
 ): AsyncGenerator<StreamChatEvent> {
   const { client: api } = getClientWithKey(config);
-  const toolDefs = toolsToResponsesTools(tools);
 
   if (signal?.aborted) throw new Error('Aborted before stream start');
 
@@ -329,16 +359,10 @@ async function* streamResponsesChat(
   try {
     stream = await withRetry(
       () =>
-        api.responses.create({
-          model: config.model as never,
-          input: messagesToResponsesInput(messages) as never,
-          tools: toolDefs.length > 0 ? toolDefs as never : undefined,
-          max_output_tokens: config.maxTokens,
-          temperature: config.temperature,
-          stream: true,
-          store: false,
-          parallel_tool_calls: true,
-        }, signal ? { signal } : undefined),
+        api.responses.create(
+          buildCodexResponsesRequest(config, messages, tools) as never,
+          signal ? { signal } : undefined,
+        ) as never,
       { maxRetries: 3, baseDelay: 1000, maxDelay: 30000 },
     );
   } catch (err) {
@@ -366,7 +390,7 @@ async function* streamResponsesChat(
     return acc;
   };
 
-  for await (const event of stream as AsyncIterable<Record<string, unknown>>) {
+  for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) {
     switch (event.type) {
       case 'response.output_text.delta': {
         const delta = typeof event.delta === 'string' ? event.delta : '';

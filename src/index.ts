@@ -162,24 +162,34 @@ function applyModelSelection(
 }
 
 // ── Setup Wizard ──────────────────────────────────────────
-async function setupWizard(rl: readline.Interface): Promise<VentipusConfig> {
+async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfig): Promise<VentipusConfig> {
   console.log(chalk.bold.cyan('\n  Ventipus — First-time Setup\n'));
-  console.log(chalk.white('  Choose a provider:\n'));
-
   const providerKeys = Object.keys(PROVIDERS);
-  providerKeys.forEach((key, i) => {
+  const normalizeProvider = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const currentProviderKey = normalizeProvider(currentConfig?.provider ?? '');
+  const currentProviderIndex = providerKeys.findIndex((key) => {
     const p = PROVIDERS[key];
-    console.log(chalk.white(`  ${i + 1}. ${p.name}`) + chalk.dim(` (${p.baseURL || 'you provide'})`));
+    return normalizeProvider(key) === currentProviderKey || normalizeProvider(p.name) === currentProviderKey;
   });
-
-  const choice = await rl.question(chalk.yellow('\n  Provider [1]: '));
-  const idx = parseInt(choice || '1', 10) - 1;
-  const providerKey = providerKeys[Math.max(0, Math.min(idx, providerKeys.length - 1))];
+  const defaultProviderIndex = currentProviderIndex >= 0 ? currentProviderIndex : 0;
+  const providerKey = await selectConfigChoice(rl, 'Choose a provider', providerKeys.map((key) => {
+    const p = PROVIDERS[key];
+    return {
+      label: p.name,
+      detail: p.baseURL || 'you provide',
+      value: key,
+    };
+  }), {
+    defaultIndex: defaultProviderIndex,
+    fallbackPrompt: `\n  Provider [${defaultProviderIndex + 1}]: `,
+  });
   const provider = PROVIDERS[providerKey];
 
   let baseURL = provider.baseURL;
   if (providerKey === 'custom') {
-    baseURL = await rl.question(chalk.yellow('  Base URL: '));
+    const currentBaseURL = currentConfig?.baseURL?.trim();
+    baseURL = await rl.question(chalk.yellow(`  Base URL${currentBaseURL ? ` [${currentBaseURL}]` : ''}: `));
+    if (!baseURL.trim() && currentBaseURL) baseURL = currentBaseURL;
   }
 
   let apiKey = '';
@@ -204,8 +214,9 @@ async function setupWizard(rl: readline.Interface): Promise<VentipusConfig> {
     }
   }
 
-  let model = provider.defaultModel;
-  const modelInput = await rl.question(chalk.yellow(`  Model [${provider.defaultModel}]: `));
+  const sameProvider = normalizeProvider(currentConfig?.provider ?? '') === normalizeProvider(provider.name);
+  let model = sameProvider && currentConfig?.model ? currentConfig.model : provider.defaultModel;
+  const modelInput = await rl.question(chalk.yellow(`  Model [${model}]: `));
   if (modelInput.trim()) model = modelInput.trim();
 
   // Warn on known-flaky experimental models. These are free / preview
@@ -245,24 +256,24 @@ async function setupWizard(rl: readline.Interface): Promise<VentipusConfig> {
     console.log('');
   }
 
-  console.log(chalk.white('\n  Permission modes:'));
-  console.log(chalk.dim('  1. ask   — prompt before writes/commands (safest)'));
-  console.log(chalk.dim('  2. auto  — auto-approve reads, ask for destructive'));
-  console.log(chalk.dim('  3. yolo  — approve everything (fastest)\n'));
-  const permChoice = await rl.question(chalk.yellow('  Permission mode [1]: '));
-  // Accept either the number (1/2/3) OR the name (ask/auto/yolo) — users
-  // very naturally type the word they want instead of looking at the
-  // index. A previous version only parsed parseInt and silently
-  // defaulted to 'ask' for non-numeric input, which made yolo
-  // unreachable from the wizard for anyone who typed the obvious thing.
-  const raw = (permChoice || '1').trim().toLowerCase();
-  let permMode: 'ask' | 'auto' | 'yolo';
-  if (raw === 'ask' || raw === 'auto' || raw === 'yolo') {
-    permMode = raw;
-  } else {
-    const byNumber = (['ask', 'auto', 'yolo'] as const)[parseInt(raw, 10) - 1];
-    permMode = byNumber || 'ask';
-  }
+  const permissionChoices: ConfigChoice<'ask' | 'auto' | 'yolo'>[] = [
+    { label: 'ask', detail: 'prompt before writes/commands (safest)', value: 'ask' },
+    { label: 'auto', detail: 'auto-approve reads, ask for destructive', value: 'auto' },
+    { label: 'yolo', detail: 'approve everything (fastest)', value: 'yolo' },
+  ];
+  const currentPermIndex = permissionChoices.findIndex((choice) => choice.value === (currentConfig?.permissionMode ?? 'ask'));
+  const defaultPermIndex = currentPermIndex >= 0 ? currentPermIndex : 0;
+  const permMode = await selectConfigChoice(rl, 'Permission mode', permissionChoices, {
+    defaultIndex: defaultPermIndex,
+    fallbackPrompt: `  Permission mode [${defaultPermIndex + 1}]: `,
+    parseFallback: (answer, defaultIndex) => {
+      const raw = (answer || String(defaultIndex + 1)).trim().toLowerCase();
+      const byName = permissionChoices.find((choice) => choice.value === raw);
+      if (byName) return byName.value;
+      const byNumber = permissionChoices[Number.parseInt(raw, 10) - 1];
+      return byNumber?.value;
+    },
+  });
 
   // ── MemPalace memory setup ──────────────────────────────
   // Featured capability, opt-out at setup time. Explain briefly so the
@@ -272,8 +283,24 @@ async function setupWizard(rl: readline.Interface): Promise<VentipusConfig> {
   console.log(chalk.dim('  Two stores: global (~/.ventipus/memory) for cross-project facts, project (.ventipus/memory'));
   console.log(chalk.dim('  in each repo) for codebase-specific knowledge. Searchable via /memory or by the agent itself.'));
   console.log(chalk.dim('  Zero external dependencies; storage is local JSON files. Can be toggled anytime via /memory disable.'));
-  const memoryChoice = await rl.question(chalk.yellow('  Enable MemPalace memory? [Y/n]: '));
-  const memoryEnabled = !(memoryChoice.trim().toLowerCase().startsWith('n'));
+  const memoryDefaultIndex = currentConfig?.memory?.enabled === false ? 1 : 0;
+  const memoryEnabled = await selectConfigChoice(rl, 'Enable MemPalace memory', [
+    { label: 'Enable', detail: 'local global + project memory stores', value: true },
+    { label: 'Disable', detail: 'can be re-enabled later with /memory enable', value: false },
+  ], {
+    defaultIndex: memoryDefaultIndex,
+    fallbackPrompt: `  Enable MemPalace memory? [${memoryDefaultIndex === 0 ? 'Y/n' : 'y/N'}]: `,
+    parseFallback: (answer, defaultIndex) => {
+      const raw = answer.trim().toLowerCase();
+      if (!raw) return defaultIndex === 0;
+      if (raw.startsWith('n')) return false;
+      if (raw.startsWith('y')) return true;
+      const byNumber = Number.parseInt(raw, 10);
+      if (byNumber === 1) return true;
+      if (byNumber === 2) return false;
+      return undefined;
+    },
+  });
 
   const config: VentipusConfig = {
     apiKey,
@@ -476,6 +503,137 @@ function setReadlineBuffer(
   const rlAny = rl as unknown as { line: string; cursor: number };
   rlAny.line = line;
   rlAny.cursor = line.length;
+}
+
+interface ConfigChoice<T> {
+  label: string;
+  detail?: string;
+  value: T;
+}
+
+type TaggedKeypressListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
+
+async function selectConfigChoice<T>(
+  rl: readline.Interface,
+  title: string,
+  choices: ConfigChoice<T>[],
+  options: {
+    defaultIndex?: number;
+    fallbackPrompt?: string;
+    parseFallback?: (answer: string, defaultIndex: number) => T | undefined;
+  } = {},
+): Promise<T> {
+  const defaultIndex = Math.max(0, Math.min(options.defaultIndex ?? 0, choices.length - 1));
+
+  if (!stdin.isTTY || !stdout.isTTY) {
+    console.log(chalk.white(`\n  ${title}:\n`));
+    choices.forEach((choice, i) => {
+      console.log(chalk.white(`  ${i + 1}. ${choice.label}`) + (choice.detail ? chalk.dim(` (${choice.detail})`) : ''));
+    });
+    const answer = await rl.question(chalk.yellow(options.fallbackPrompt ?? `\n  Choice [${defaultIndex + 1}]: `));
+    const parsed = options.parseFallback?.(answer, defaultIndex);
+    if (parsed !== undefined) return parsed;
+    const idx = Number.parseInt(answer || String(defaultIndex + 1), 10) - 1;
+    return choices[Math.max(0, Math.min(idx, choices.length - 1))].value;
+  }
+
+  return new Promise<T>((resolve) => {
+    let selected = defaultIndex;
+    let typed = '';
+    let renderedRows = 0;
+    const wasRaw = stdin.isRaw;
+    const keypressListeners = stdin.listeners('keypress').slice() as TaggedKeypressListener[];
+    const detached = keypressListeners.filter((listener) => !listener.__ventipusHotkey__);
+
+    function clearRendered(): void {
+      for (let i = 0; i < renderedRows; i++) {
+        stdout.write('\x1b[1A\r\x1b[2K');
+      }
+      renderedRows = 0;
+    }
+
+    function line(text = ''): void {
+      stdout.write(`${text}\n`);
+      renderedRows++;
+    }
+
+    function render(): void {
+      clearRendered();
+      line(chalk.white(`  ${title}`));
+      line('');
+      choices.forEach((choice, i) => {
+        const marker = i === selected ? chalk.inverse(' > ') : '   ';
+        const index = chalk.dim(`${i + 1}.`.padStart(3));
+        const detail = choice.detail ? chalk.dim(`  ${choice.detail}`) : '';
+        const label = i === selected ? chalk.bold(choice.label) : choice.label;
+        line(`${marker} ${index} ${label}${detail}`);
+      });
+      line('');
+      const typedHint = typed ? ` number: ${typed}` : ` default: ${defaultIndex + 1}`;
+      line(chalk.dim(`  Up/Down choose, Enter select, 1-${choices.length} jump, Esc keeps default;${typedHint}`));
+    }
+
+    function cleanup(): void {
+      stdin.removeListener('data', onData);
+      for (const listener of detached) stdin.on('keypress', listener);
+      try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
+      clearRendered();
+    }
+
+    function done(value: T): void {
+      cleanup();
+      const selectedChoice = choices.find((choice) => choice.value === value);
+      stdout.write(chalk.dim(`  ${title}: `) + chalk.white(selectedChoice?.label ?? String(value)) + '\n');
+      resolve(value);
+    }
+
+    function onData(buf: Buffer): void {
+      if (buf.length === 1 && buf[0] === 0x03) {
+        cleanup();
+        process.exit(130);
+      }
+      if (buf.length === 1 && buf[0] === 0x1B) {
+        done(choices[defaultIndex].value);
+        return;
+      }
+      if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) {
+        if (typed) {
+          const idx = Number.parseInt(typed, 10) - 1;
+          done(choices[Math.max(0, Math.min(idx, choices.length - 1))].value);
+          return;
+        }
+        done(choices[selected].value);
+        return;
+      }
+      if (buf.length === 1 && (buf[0] === 0x7F || buf[0] === 0x08)) {
+        typed = typed.slice(0, -1);
+        render();
+        return;
+      }
+      if (buf.length >= 3 && buf[0] === 0x1B && buf[1] === 0x5B) {
+        const code = buf[2];
+        if (code === 0x41) selected = (selected - 1 + choices.length) % choices.length;
+        else if (code === 0x42) selected = (selected + 1) % choices.length;
+        else if (code === 0x48) selected = 0;
+        else if (code === 0x46) selected = choices.length - 1;
+        render();
+        return;
+      }
+      const text = buf.toString('utf8').replace(/[^\x20-\x7E]/g, '');
+      if (/^\d+$/.test(text)) {
+        typed = (typed + text).slice(0, 2);
+        const idx = Number.parseInt(typed, 10) - 1;
+        if (idx >= 0 && idx < choices.length) selected = idx;
+        render();
+      }
+    }
+
+    for (const listener of detached) stdin.removeListener('keypress', listener);
+    try { stdin.setRawMode(true); } catch { /* noop */ }
+    stdin.resume();
+    stdin.on('data', onData);
+    render();
+  });
 }
 
 /**
@@ -3549,8 +3707,12 @@ async function main(): Promise<void> {
               },
             );
             if (result.accepted && result.command) {
-              (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = result.command + '\n';
-              try { rl.emit('line', ''); } catch { /* noop */ }
+              try {
+                setReadlineBuffer(rl, '');
+                const prefix = gp.__ventipusPromptStyled ?? theme.prompt(`${sym.prompt} `);
+                stdout.write('\r\x1b[2K' + prefix + result.command + '\n');
+              } catch { /* noop */ }
+              try { rl.emit('line', result.command); } catch { /* noop */ }
             } else {
               try {
                 setReadlineBuffer(rl, result.filter);
@@ -4071,7 +4233,7 @@ async function main(): Promise<void> {
         messages.push(...result.newMessages);
       }
       if (trimmed.startsWith('/config') && !result?.shouldExit) {
-        config = await setupWizard(rl);
+        config = await setupWizard(rl, config);
         resetClient();
         printThemedBanner(
           config.provider,
