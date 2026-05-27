@@ -514,6 +514,19 @@ describe('benchmark_context tool', () => {
             reason: 'local read/search/list inspection did not match any edited source target',
           }],
         },
+        runEfficiency: {
+          toolCallCount: 8,
+          usageCallCount: 2,
+          totalTokens: 1200,
+          estimatedCostUsd: 0,
+          successfulVerificationCount: 1,
+          processScore: 95,
+          processDefectCount: 0,
+          warningCount: 0,
+          invalidToolActionCount: 0,
+          invalidToolActionPercent: 0,
+          costEfficiencyRisk: false,
+        },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
         warnings: [],
@@ -533,6 +546,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,predictions:#5 src/app.ts -> ok: formatting total should satisfy billing assertion');
     expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,latest:ok,commands:npm test|npm run build');
     expect(result.output).toContain('context=inspects:4,hits:1,misses:3,utilization:25.00%,risk:true,unused:read_file#2 src/unrelated.ts');
+    expect(result.output).toContain('efficiency=tools:8,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
   }, 15_000);
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {

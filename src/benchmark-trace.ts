@@ -53,6 +53,7 @@ export interface BenchmarkExperienceCard {
   decisionObservability: BenchmarkExperienceDecisionObservability;
   validationReliability: BenchmarkExperienceValidationReliability;
   contextUtilization: BenchmarkExperienceContextUtilization;
+  runEfficiency: BenchmarkExperienceRunEfficiency;
   verificationCommands: string[];
   changedFiles: string[];
   warnings: string[];
@@ -114,6 +115,20 @@ export interface BenchmarkExperienceContextUtilization {
   utilizationPercent: number | null;
   risk: boolean;
   missEvents: BenchmarkContextUtilizationEvent[];
+}
+
+export interface BenchmarkExperienceRunEfficiency {
+  toolCallCount: number;
+  usageCallCount: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  successfulVerificationCount: number;
+  processScore: number;
+  processDefectCount: number;
+  warningCount: number;
+  invalidToolActionCount: number;
+  invalidToolActionPercent: number;
+  costEfficiencyRisk: boolean;
 }
 
 export interface BenchmarkTraceArtifact {
@@ -798,6 +813,7 @@ export function buildBenchmarkExperienceCard(input: {
     decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
     validationReliability: buildBenchmarkExperienceValidationReliability(input.events, input.trajectoryQuality),
     contextUtilization: buildBenchmarkExperienceContextUtilization(input.trajectoryQuality),
+    runEfficiency: buildBenchmarkExperienceRunEfficiency(input.trajectoryQuality),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
       .slice(0, 12),
@@ -807,6 +823,24 @@ export function buildBenchmarkExperienceCard(input: {
     warnings: input.trajectoryQuality.warnings
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceRunEfficiency(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceRunEfficiency {
+  return {
+    toolCallCount: quality.toolCallCount,
+    usageCallCount: quality.usageCallCount,
+    totalTokens: quality.usageTotalTokens,
+    estimatedCostUsd: Number(quality.usageEstimatedCostUsd.toFixed(6)),
+    successfulVerificationCount: quality.successfulVerificationCount,
+    processScore: quality.processScore,
+    processDefectCount: quality.processDefects.length,
+    warningCount: quality.warnings.length,
+    invalidToolActionCount: quality.invalidToolActionCount,
+    invalidToolActionPercent: quality.invalidToolActionPercent,
+    costEfficiencyRisk: quality.costEfficiencyRisk,
   };
 }
 

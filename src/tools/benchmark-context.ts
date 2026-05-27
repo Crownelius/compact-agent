@@ -625,6 +625,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorDecision = summarizePriorDecisionObservability(summary);
     const priorReliability = summarizePriorValidationReliability(summary, quality);
     const priorContext = summarizePriorContextUtilization(summary, quality);
+    const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -676,6 +677,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorDecision,
         priorReliability,
         priorContext,
+        priorEfficiency,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
       continue;
@@ -702,6 +704,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorDecision,
       priorReliability,
       priorContext,
+      priorEfficiency,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
     ].filter(Boolean).join('; ');
@@ -1094,6 +1097,60 @@ function summarizePriorContextUtilization(
     percent == null ? null : `utilization:${percent.toFixed(2)}%`,
     risk === undefined ? null : `risk:${String(risk)}`,
     misses.length ? `unused:${misses.join(' | ')}` : null,
+  ].filter(Boolean).join(',');
+}
+
+function summarizePriorRunEfficiency(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+  usage: Record<string, unknown>,
+): string | null {
+  const card = objectRecord(summary.experienceCard);
+  const efficiency = objectRecord(card.runEfficiency);
+  const toolCallCount = finiteNumber(efficiency.toolCallCount) ?? finiteNumber(quality.toolCallCount);
+  const usageCallCount = finiteNumber(efficiency.usageCallCount) ?? finiteNumber(quality.usageCallCount) ?? finiteNumber(usage.callCount);
+  const totalTokens = finiteNumber(efficiency.totalTokens) ?? finiteNumber(quality.usageTotalTokens) ?? finiteNumber(usage.totalTokens);
+  const estimatedCostUsd = finiteNumber(efficiency.estimatedCostUsd) ?? finiteNumber(quality.usageEstimatedCostUsd) ?? finiteNumber(usage.estimatedCostUsd);
+  const successfulVerificationCount = finiteNumber(efficiency.successfulVerificationCount) ?? finiteNumber(quality.successfulVerificationCount);
+  const processScore = finiteNumber(efficiency.processScore) ?? finiteNumber(quality.processScore);
+  const processDefectCount = finiteNumber(efficiency.processDefectCount)
+    ?? (Array.isArray(quality.processDefects) ? quality.processDefects.length : null);
+  const warningCount = finiteNumber(efficiency.warningCount)
+    ?? (Array.isArray(quality.warnings) ? quality.warnings.length : null);
+  const invalidToolActionCount = finiteNumber(efficiency.invalidToolActionCount) ?? finiteNumber(quality.invalidToolActionCount);
+  const invalidToolActionPercent = finiteNumber(efficiency.invalidToolActionPercent) ?? finiteNumber(quality.invalidToolActionPercent);
+  const costEfficiencyRisk = typeof efficiency.costEfficiencyRisk === 'boolean'
+    ? efficiency.costEfficiencyRisk
+    : (typeof quality.costEfficiencyRisk === 'boolean' ? quality.costEfficiencyRisk : undefined);
+
+  if (
+    toolCallCount == null
+    && usageCallCount == null
+    && totalTokens == null
+    && estimatedCostUsd == null
+    && successfulVerificationCount == null
+    && processScore == null
+    && processDefectCount == null
+    && warningCount == null
+    && invalidToolActionCount == null
+    && invalidToolActionPercent == null
+    && costEfficiencyRisk === undefined
+  ) {
+    return null;
+  }
+
+  return [
+    `efficiency=tools:${toolCallCount ?? 0}`,
+    `usage_calls:${usageCallCount ?? 0}`,
+    totalTokens == null ? null : `tokens:${totalTokens}`,
+    estimatedCostUsd == null ? null : `cost:$${estimatedCostUsd.toFixed(4)}`,
+    costEfficiencyRisk === undefined ? null : `cost_risk:${String(costEfficiencyRisk)}`,
+    `invalid:${invalidToolActionCount ?? 0}`,
+    invalidToolActionPercent == null ? null : `invalid_pct:${invalidToolActionPercent.toFixed(2)}`,
+    `success_verifiers:${successfulVerificationCount ?? 0}`,
+    processScore == null ? null : `process_score:${processScore}`,
+    processDefectCount == null ? null : `process_defects:${processDefectCount}`,
+    warningCount == null ? null : `warnings:${warningCount}`,
   ].filter(Boolean).join(',');
 }
 

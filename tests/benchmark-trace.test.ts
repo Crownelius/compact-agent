@@ -468,6 +468,19 @@ describe('benchmark trace artifacts', () => {
       risk: false,
       missEvents: [],
     });
+    expect(summary.experienceCard.runEfficiency).toMatchObject({
+      toolCallCount: 7,
+      usageCallCount: 0,
+      totalTokens: 0,
+      estimatedCostUsd: 0,
+      successfulVerificationCount: 1,
+      invalidToolActionCount: 0,
+      invalidToolActionPercent: 0,
+      costEfficiencyRisk: false,
+    });
+    expect(summary.experienceCard.runEfficiency.processScore).toBe(summary.trajectoryQuality.processScore);
+    expect(summary.experienceCard.runEfficiency.processDefectCount).toBe(summary.trajectoryQuality.processDefects.length);
+    expect(summary.experienceCard.runEfficiency.warningCount).toBe(summary.trajectoryQuality.warnings.length);
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
   });
 
