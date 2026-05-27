@@ -485,6 +485,40 @@ describe('research_sources tool', () => {
     expect(urls.some((url) => url.includes('/api/datasets'))).toBe(false);
   });
 
+  it('keeps partial Hugging Face hits when one HF endpoint fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('huggingface.co/api/models')) {
+        return new Response('temporary model endpoint failure', { status: 503 });
+      }
+      if (url.includes('huggingface.co/api/datasets')) {
+        return Response.json([{ id: 'org/agent-dataset', downloads: 12 }]);
+      }
+      if (url.includes('huggingface.co/api/daily_papers')) {
+        return Response.json([{
+          paper: {
+            id: '2605.00001',
+            title: 'Coding Agent Verification',
+            summary: 'Paper about coding agent verification.',
+            ai_keywords: ['coding', 'agent'],
+          },
+        }]);
+      }
+      return new Response('', { status: 404 });
+    }));
+
+    const result = await ResearchSourcesTool.call({
+      query: 'coding agent verification',
+      source: 'huggingface',
+      kind: 'all',
+      limit: 2,
+    }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('HF dataset: org/agent-dataset');
+    expect(result.output).toContain('HF paper: Coding Agent Verification');
+    expect(result.output).not.toContain('temporary model endpoint failure');
+  });
+
   it('prints recency coverage notes when recent_days is requested', () => {
     const notes = _internal.buildCoverageNotes(['arxiv', 'github', 'huggingface'], 'all', 'all', 'datasets', 90);
 

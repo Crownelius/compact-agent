@@ -514,7 +514,14 @@ async function searchHuggingFace(query: string, limit: number, kind: HuggingFace
   if (kind === 'papers' || kind === 'all') {
     calls.push(searchHuggingFacePapers(query, limit, recentDays, headers));
   }
-  const results = await Promise.all(calls);
+  const settled = await Promise.allSettled(calls);
+  const results = settled
+    .filter((result): result is PromiseFulfilledResult<SourceHit[]> => result.status === 'fulfilled')
+    .map((result) => result.value);
+  if (results.length === 0) {
+    const error = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (error) throw error.reason;
+  }
   const multiplier = kind === 'all' ? 3 : kind === 'both' ? 2 : 1;
   return results.flat().slice(0, limit * multiplier);
 }

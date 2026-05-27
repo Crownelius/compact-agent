@@ -111,6 +111,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/checkpoints', 'local'],
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
+    ['/sources coding agent verification --limit 1 --source arxiv', 'local'],
     ['/source-research coding agent verification', 'llm'],
     ['/bench terminal-bench complete sandbox verifier', 'llm'],
     // Language reviews
@@ -256,5 +257,23 @@ describe('Non-interactive slash dispatch', () => {
   it('leaves ordinary non-interactive prompts unchanged', () => {
     const res = resolveNonInteractivePrompt('fix the parser', config, [], session, { current: 'dev' as const });
     expect(res).toEqual({ kind: 'query', prompt: 'fix the parser' });
+  });
+
+  it('routes /sources as a local non-interactive source scan', () => {
+    const res = resolveNonInteractivePrompt(
+      '/sources "coding agent" --source arxiv --recent 30 --limit 2',
+      config,
+      [],
+      session,
+      { current: 'dev' as const },
+    );
+
+    expect(res.kind).toBe('sources');
+    expect((res as { input: Record<string, unknown> }).input).toMatchObject({
+      query: 'coding agent',
+      source: 'arxiv',
+      recent_days: 30,
+      limit: 2,
+    });
   });
 });

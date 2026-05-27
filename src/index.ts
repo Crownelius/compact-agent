@@ -18,6 +18,13 @@ import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from './openai-
 import { fallbackModelForKnownFlakyTurn, isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import { buildHarnessComponentsReport } from './tools/harness-components.js';
+import { ResearchSourcesTool } from './tools/research-sources.js';
+import {
+  decodeSourcesSentinel,
+  encodeSourcesSentinel,
+  formatSourceCommandUsage,
+  parseSourceCommandArgs,
+} from './source-command.js';
 import type { VentipusConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
 // New systems
@@ -799,6 +806,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoint [label]') + d(' — save git state checkpoint'));
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
+      console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
       console.log(d('  ') + c('/source-research') + d('   — arXiv/GitHub/HF/Kaggle research brief'));
       console.log(d('  ') + c('/docs-lookup <query>') + d(' — search docs for answers'));
       // /review already auto-uses ECC's high-quality language-agnostic prompt;
@@ -2453,6 +2461,17 @@ export function handleSlashCommand(
       return { handled: false, injectPrompt: buildDocsLookupPrompt(args, process.cwd()) };
     }
 
+    case '/sources':
+    case '/source-scan': {
+      const parsed = parseSourceCommandArgs(args);
+      if (parsed.error || !parsed.input) {
+        console.log(chalk.yellow(parsed.error ? `  /sources: ${parsed.error}` : '  /sources: invalid arguments'));
+        console.log(chalk.dim(formatSourceCommandUsage()));
+        return { handled: true };
+      }
+      return { handled: true, injectPrompt: encodeSourcesSentinel(parsed.input) };
+    }
+
     case '/source-research':
     case '/research-sources': {
       if (!args) {
@@ -3115,6 +3134,7 @@ export type NonInteractivePromptResolution =
   | { kind: 'query'; prompt: string }
   | { kind: 'handled' }
   | { kind: 'exit' }
+  | { kind: 'sources'; input: Record<string, unknown> }
   | { kind: 'error'; message: string };
 
 export function resolveNonInteractivePrompt(
@@ -3136,6 +3156,11 @@ export function resolveNonInteractivePrompt(
   if (result.newMessages?.length) messages.push(...result.newMessages);
   if (result.shouldExit) return { kind: 'exit' };
   if (!result.injectPrompt) return { kind: 'handled' };
+  if (result.injectPrompt.startsWith('__SOURCES__')) {
+    const input = decodeSourcesSentinel(result.injectPrompt);
+    if (!input) return { kind: 'error', message: 'could not parse /sources arguments.' };
+    return { kind: 'sources', input };
+  }
   if (result.injectPrompt.startsWith('__')) {
     const command = trimmed.split(/\s+/, 1)[0];
     return {
@@ -4151,6 +4176,16 @@ async function main(): Promise<void> {
       process.stderr.write(`[ventipus] ${resolvedPrompt.message}\n`);
       process.exit(2);
     }
+    if (resolvedPrompt.kind === 'sources') {
+      const result = await ResearchSourcesTool.call(resolvedPrompt.input, process.cwd());
+      console.log(result.output);
+      try {
+        await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
+      } catch { /* never fail a local command on hook errors */ }
+      try { rl.close(); } catch { /* noop */ }
+      process.exitCode = result.isError ? 1 : 0;
+      return;
+    }
     if (resolvedPrompt.kind === 'exit' || resolvedPrompt.kind === 'handled') {
       try {
         await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
@@ -4377,6 +4412,16 @@ async function main(): Promise<void> {
         } else if (result.injectPrompt === '__OPENAI_OAUTH_SMOKE__') {
           const smoke = await runOpenAICodexSmokeTest(config);
           console.log(formatOpenAICodexSmokeResult(smoke));
+          continue;
+        } else if (result.injectPrompt.startsWith('__SOURCES__')) {
+          const sourceInput = decodeSourcesSentinel(result.injectPrompt);
+          if (!sourceInput) {
+            console.log(chalk.yellow('  /sources: could not parse source query arguments.'));
+            continue;
+          }
+          console.log(chalk.dim('  Searching arXiv, GitHub, Hugging Face, and Kaggle sources...'));
+          const sourceResult = await ResearchSourcesTool.call(sourceInput, process.cwd());
+          console.log(sourceResult.output);
           continue;
         } else if (result.injectPrompt.startsWith('__SWARM__')) {
           // Swarm dispatch: __SWARM__<agentsCsv>|||<task>. Same sentinel

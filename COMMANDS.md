@@ -151,6 +151,7 @@ The legacy per-language slash commands (`/ts-review`, `/py-review`, `/go-review`
 | Command | What it does |
 |---|---|
 | `/search-first <task>` | Forces research-before-code mode: web/grep/glob first, then edit. |
+| `/sources <query> [flags]` | Direct source scan without a model call. Defaults to all sources, GitHub all, Hugging Face all, Kaggle both, recent 90 days, limit 5. Flags: `--source`, `--github`, `--hf`, `--kaggle`, `--recent`, `--limit`. |
 | `/docs-lookup <query>` | Search docs (project + web) for a concept or API. |
 
 ### 2.11 Tools & config (REPL state)
