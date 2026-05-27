@@ -286,6 +286,12 @@ export interface BenchmarkTrajectoryQuality {
   editTargetCount: number;
   localizedEditTargetCount: number;
   unlocalizedEditTargetEvents: BenchmarkUnlocalizedEditEvent[];
+  contextUtilizationInspectCount: number;
+  contextUtilizationHitCount: number;
+  contextUtilizationMissCount: number;
+  contextUtilizationPercent: number | null;
+  contextUtilizationRisk: boolean;
+  contextUtilizationMissEvents: BenchmarkContextUtilizationEvent[];
   broadEditContractDetected: boolean;
   largeEditSurfaceTargetCount: number;
   largeEditSurfaceTargets: string[];
@@ -423,6 +429,13 @@ export interface BenchmarkUnlocalizedEditEvent {
   reason: string;
 }
 
+export interface BenchmarkContextUtilizationEvent {
+  seq: number;
+  tool: string;
+  target: string;
+  reason: string;
+}
+
 export interface BenchmarkRedundantToolCallEvent {
   seq: number;
   tool: string;
@@ -515,6 +528,8 @@ const FINAL_ANSWER_NO_REMAINING_WORK_RE =
 const FINAL_ANSWER_BLOCKED_RE =
   /\b(?:(?:i(?:'m| am)?|we(?:'re| are)?)\s+blocked|blocked\s+(?:by|on|because)|(?:cannot|can't|unable\s+to)\s+proceed|waiting\s+for\s+(?:you|user|input|permissions?|credentials?|access)|need(?:ed|s)?\s+(?:more\s+)?(?:user\s+)?(?:input|permissions?|credentials?|access)\s+to\s+(?:continue|proceed|finish|complete))\b/i;
 const LARGE_EDIT_SURFACE_THRESHOLD = 6;
+const CONTEXT_UTILIZATION_MIN_INSPECTIONS = 6;
+const CONTEXT_UTILIZATION_MIN_PERCENT = 35;
 
 export function redactTraceText(value: unknown): string {
   let text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
@@ -1074,6 +1089,7 @@ export function buildBenchmarkTrajectoryQuality(
   const noEditContractDetected = firstNoEditContractSeq != null;
   const editAfterNoEditContract = noEditContractDetected && firstEditSeq != null && firstEditSeq > firstNoEditContractSeq;
   const editTargetEvidence = buildBenchmarkEditTargetEvidence(events);
+  const contextUtilization = buildBenchmarkContextUtilization(events, editTargetEvidence.targets);
   const broadEditContractDetected = hasBroadEditContract(events);
   const editSurface = buildBenchmarkEditSurface(events);
   const redundantToolCallEvents = buildBenchmarkRedundantToolCallEvents(events);
@@ -1448,6 +1464,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`edited target(s) lacked prior file-level localization evidence: ${targets}. Read or search the target file before patching benchmark code.`);
   }
+  if (contextUtilization.risk) {
+    const misses = contextUtilization.missEvents
+      .slice(0, 3)
+      .map((event) => `${event.tool}#${event.seq} ${event.target}`)
+      .join('; ');
+    warnings.push(`low context utilization: ${contextUtilization.hitCount}/${contextUtilization.inspectCount} local read/search/list inspections matched edited targets (${contextUtilization.percent?.toFixed(2) ?? 'n/a'}%). Narrow broad exploration to candidate files/tests before spending more turns${misses ? `; unused examples: ${misses}` : ''}.`);
+  }
   if (largeEditSurfaceRequiresReview) {
     const targets = editSurface.targets.slice(0, 6).join(', ');
     warnings.push(`large edit surface without an explicit broad-change task contract: ${editSurface.targets.length} source/config target(s) changed (${targets}). Reduce the patch scope or justify why the task requires this many files.`);
@@ -1562,6 +1585,12 @@ export function buildBenchmarkTrajectoryQuality(
     noEditContractDetected,
     editAfterNoEditContract,
     unlocalizedEditTargetEvents: editTargetEvidence.unlocalized,
+    contextUtilizationInspectCount: contextUtilization.inspectCount,
+    contextUtilizationHitCount: contextUtilization.hitCount,
+    contextUtilizationMissCount: contextUtilization.missCount,
+    contextUtilizationPercent: contextUtilization.percent,
+    contextUtilizationRisk: contextUtilization.risk,
+    contextUtilizationMissEvents: contextUtilization.missEvents,
     broadEditContractDetected,
     largeEditSurfaceTargetCount: editSurface.targets.length,
     largeEditSurfaceTargets: editSurface.targets,
@@ -1606,6 +1635,7 @@ export function buildBenchmarkTrajectoryQuality(
     testHarnessEditEvents,
     leakageRiskEvents,
     invalidToolActionEvents,
+    firstInspectSeq,
     firstEditSeq,
     lastEditSeq,
     firstTaskContractSeq,
@@ -1670,6 +1700,12 @@ export function buildBenchmarkTrajectoryQuality(
     editTargetCount: editTargetEvidence.total,
     localizedEditTargetCount: editTargetEvidence.localized,
     unlocalizedEditTargetEvents: editTargetEvidence.unlocalized,
+    contextUtilizationInspectCount: contextUtilization.inspectCount,
+    contextUtilizationHitCount: contextUtilization.hitCount,
+    contextUtilizationMissCount: contextUtilization.missCount,
+    contextUtilizationPercent: contextUtilization.percent,
+    contextUtilizationRisk: contextUtilization.risk,
+    contextUtilizationMissEvents: contextUtilization.missEvents,
     broadEditContractDetected,
     largeEditSurfaceTargetCount: editSurface.targets.length,
     largeEditSurfaceTargets: editSurface.targets,
@@ -1733,7 +1769,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -1859,6 +1895,12 @@ interface BenchmarkProcessDefectInput {
   noEditContractDetected: boolean;
   editAfterNoEditContract: boolean;
   unlocalizedEditTargetEvents: BenchmarkUnlocalizedEditEvent[];
+  contextUtilizationInspectCount: number;
+  contextUtilizationHitCount: number;
+  contextUtilizationMissCount: number;
+  contextUtilizationPercent: number | null;
+  contextUtilizationRisk: boolean;
+  contextUtilizationMissEvents: BenchmarkContextUtilizationEvent[];
   broadEditContractDetected: boolean;
   largeEditSurfaceTargetCount: number;
   largeEditSurfaceTargets: string[];
@@ -1903,6 +1945,7 @@ interface BenchmarkProcessDefectInput {
   testHarnessEditEvents: BenchmarkTestHarnessEditEvent[];
   leakageRiskEvents: BenchmarkLeakageRiskEvent[];
   invalidToolActionEvents: BenchmarkInvalidToolActionEvent[];
+  firstInspectSeq: number | null;
   firstEditSeq: number | null;
   lastEditSeq: number | null;
   firstTaskContractSeq: number | null;
@@ -2186,6 +2229,16 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       input.unlocalizedEditTargetEvents[0]?.seq ?? null,
       'One or more edited source targets lacked prior file-level read/search evidence.',
       input.unlocalizedEditTargetEvents.slice(0, 3).map((event) => `${event.tool}#${event.seq}:${event.target}`).join('; '),
+    );
+  }
+  if (input.contextUtilizationRisk) {
+    add(
+      'low_context_utilization',
+      'localization',
+      'low',
+      input.contextUtilizationMissEvents[0]?.seq ?? input.firstInspectSeq,
+      'Many local read/search/list inspections did not match the files eventually edited.',
+      `utilized=${input.contextUtilizationHitCount}/${input.contextUtilizationInspectCount}, percent=${input.contextUtilizationPercent?.toFixed(2) ?? 'n/a'}, misses=${input.contextUtilizationMissCount}, examples=${input.contextUtilizationMissEvents.slice(0, 3).map((event) => `${event.tool}#${event.seq}:${event.target}`).join('; ')}`,
     );
   }
   if (input.largeEditSurfaceRequiresReview) {
@@ -3265,8 +3318,10 @@ function buildBenchmarkEditTargetEvidence(events: BenchmarkTraceEvent[]): {
   total: number;
   localized: number;
   unlocalized: BenchmarkUnlocalizedEditEvent[];
+  targets: string[];
 } {
   const localizedTargets = new Set<string>();
+  const targetMap = new Map<string, string>();
   let total = 0;
   let localized = 0;
   const unlocalized: BenchmarkUnlocalizedEditEvent[] = [];
@@ -3277,6 +3332,7 @@ function buildBenchmarkEditTargetEvidence(events: BenchmarkTraceEvent[]): {
         total++;
         const normalized = normalizeTracePath(target);
         if (!normalized) continue;
+        targetMap.set(normalized, truncate(redactTraceText(target), 240));
         if (isLocalizedTarget(normalized, localizedTargets)) {
           localized++;
         } else {
@@ -3292,7 +3348,110 @@ function buildBenchmarkEditTargetEvidence(events: BenchmarkTraceEvent[]): {
     collectLocalizationEvidence(event, localizedTargets);
   }
 
-  return { total, localized, unlocalized: unlocalized.slice(0, 20) };
+  return {
+    total,
+    localized,
+    unlocalized: unlocalized.slice(0, 20),
+    targets: Array.from(targetMap.values()).slice(0, 100),
+  };
+}
+
+function buildBenchmarkContextUtilization(
+  events: BenchmarkTraceEvent[],
+  editTargets: string[],
+): {
+  inspectCount: number;
+  hitCount: number;
+  missCount: number;
+  percent: number | null;
+  risk: boolean;
+  missEvents: BenchmarkContextUtilizationEvent[];
+} {
+  const normalizedTargets = new Set(editTargets.map(normalizeTracePath).filter(Boolean));
+  const inspected = [...events]
+    .sort((a, b) => a.seq - b.seq)
+    .filter(isLocalContextInspectionEvent);
+  let hitCount = 0;
+  const missEvents: BenchmarkContextUtilizationEvent[] = [];
+
+  for (const event of inspected) {
+    if (localContextInspectionMatchesEditTarget(event, normalizedTargets)) {
+      hitCount++;
+    } else {
+      missEvents.push({
+        seq: event.seq,
+        tool: event.tool,
+        target: truncate(redactTraceText(event.target || summarizeReplayInputTarget(event.inputPreview) || event.tool), 180),
+        reason: 'local read/search/list inspection did not match any edited source target',
+      });
+    }
+  }
+
+  const inspectCount = inspected.length;
+  const missCount = inspectCount - hitCount;
+  const percent = inspectCount === 0 ? null : Number(((hitCount / inspectCount) * 100).toFixed(2));
+  const risk = normalizedTargets.size > 0
+    && inspectCount >= CONTEXT_UTILIZATION_MIN_INSPECTIONS
+    && percent !== null
+    && percent < CONTEXT_UTILIZATION_MIN_PERCENT;
+
+  return {
+    inspectCount,
+    hitCount,
+    missCount,
+    percent,
+    risk,
+    missEvents: missEvents.slice(0, 20),
+  };
+}
+
+function isLocalContextInspectionEvent(event: BenchmarkTraceEvent): boolean {
+  return event.status === 'ok' && ['read_file', 'grep', 'glob', 'list_dir'].includes(event.tool);
+}
+
+function localContextInspectionMatchesEditTarget(
+  event: BenchmarkTraceEvent,
+  normalizedTargets: Set<string>,
+): boolean {
+  if (normalizedTargets.size === 0) return false;
+
+  const evidenceTargets = new Set<string>();
+  for (const ref of localContextInspectionFileReferences(event)) {
+    const normalized = normalizeTracePath(ref);
+    if (normalized) evidenceTargets.add(normalized);
+  }
+  for (const target of normalizedTargets) {
+    if (isLocalizedTarget(target, evidenceTargets)) return true;
+  }
+
+  for (const directory of localContextInspectionDirectories(event)) {
+    const normalizedDirectory = normalizeTracePath(directory).replace(/\/+$/, '');
+    if (!normalizedDirectory || normalizedDirectory === '.') continue;
+    for (const target of normalizedTargets) {
+      if (target.startsWith(`${normalizedDirectory}/`)) return true;
+    }
+  }
+  return false;
+}
+
+function localContextInspectionFileReferences(event: BenchmarkTraceEvent): string[] {
+  const input = parseEventInputPreview(event.inputPreview);
+  if (event.tool === 'read_file') {
+    return stringsFromUnknown(input.file_path ?? input.path ?? event.target);
+  }
+  if (event.tool === 'grep' || event.tool === 'glob') {
+    return extractFileReferences(`${event.target}\n${event.outputPreview}`);
+  }
+  if (event.tool === 'list_dir') {
+    return extractFileReferences(`${event.target}\n${event.outputPreview}`);
+  }
+  return [];
+}
+
+function localContextInspectionDirectories(event: BenchmarkTraceEvent): string[] {
+  if (event.tool !== 'list_dir') return [];
+  const input = parseEventInputPreview(event.inputPreview);
+  return stringsFromUnknown(input.path ?? event.target);
 }
 
 function localizationRequiredEditTargets(event: BenchmarkTraceEvent): string[] {
@@ -3595,6 +3754,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('task contract checklist still has incomplete')
     || warning.includes('no-edit/no-op task contract')
     || warning.includes('edited target(s) lacked prior file-level localization evidence')
+    || warning.includes('low context utilization')
     || warning.includes('large edit surface')
     || warning.includes('redundant tool calls')
     || warning.includes('redundant verifier reruns')
@@ -3614,7 +3774,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, localize the relevant files/functions, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
@@ -4016,6 +4176,10 @@ function yn(value: boolean): string {
 function tri(value: boolean | null): string {
   if (value === null) return 'n/a';
   return value ? 'yes' : 'no';
+}
+
+function formatPercent(value: number | null): string {
+  return value === null ? 'n/a' : `${value.toFixed(2)}%`;
 }
 
 function statusLabel(value: 'ok' | 'error' | null): string {

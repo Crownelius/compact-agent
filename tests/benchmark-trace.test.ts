@@ -197,6 +197,12 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.editTargetCount).toBe(0);
     expect(summary.trajectoryQuality.localizedEditTargetCount).toBe(0);
     expect(summary.trajectoryQuality.unlocalizedEditTargetEvents).toEqual([]);
+    expect(summary.trajectoryQuality.contextUtilizationInspectCount).toBe(0);
+    expect(summary.trajectoryQuality.contextUtilizationHitCount).toBe(0);
+    expect(summary.trajectoryQuality.contextUtilizationMissCount).toBe(0);
+    expect(summary.trajectoryQuality.contextUtilizationPercent).toBeNull();
+    expect(summary.trajectoryQuality.contextUtilizationRisk).toBe(false);
+    expect(summary.trajectoryQuality.contextUtilizationMissEvents).toEqual([]);
     expect(summary.trajectoryQuality.redundantToolCallCount).toBe(0);
     expect(summary.trajectoryQuality.redundantToolCallEvents).toEqual([]);
     expect(summary.trajectoryQuality.redundantVerifierCount).toBe(0);
@@ -3411,6 +3417,128 @@ describe('benchmark trace artifacts', () => {
     expect(quality.warnings.join('\n')).toContain('edited target(s) lacked prior file-level localization evidence');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('edit_targets=1 localized=0 unlocalized=1');
     expect(buildBenchmarkCompletionReminder(events)).toContain('Read or search the target file');
+  });
+
+  it('flags low local context utilization when broad exploration barely matches edited targets', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/unrelated-a.ts' },
+        output: 'export const unused = true;',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'grep',
+        input: { pattern: 'billing', path: 'src' },
+        output: 'src/unrelated-b.ts:10:billing helper',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'glob',
+        input: { pattern: '**/*.md' },
+        output: 'README.md',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'list_dir',
+        input: { path: 'scripts' },
+        output: 'build.js\nrelease.js',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'read_file',
+        input: { file_path: 'src/parser.ts' },
+        output: 'export function parse(input: string) { return input; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'grep',
+        input: { pattern: 'parse', path: 'src' },
+        output: 'src/parser.ts:1:export function parse(input: string) { return input; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 10,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 11,
+        tool: 'bash',
+        input: { command: 'git diff -- src/parser.ts' },
+        output: 'diff --git a/src/parser.ts b/src/parser.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 12,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.editTargetCount).toBe(1);
+    expect(quality.localizedEditTargetCount).toBe(1);
+    expect(quality.unlocalizedEditTargetEvents).toEqual([]);
+    expect(quality.contextUtilizationInspectCount).toBe(6);
+    expect(quality.contextUtilizationHitCount).toBe(2);
+    expect(quality.contextUtilizationMissCount).toBe(4);
+    expect(quality.contextUtilizationPercent).toBe(33.33);
+    expect(quality.contextUtilizationRisk).toBe(true);
+    expect(quality.contextUtilizationMissEvents.map((event) => event.seq)).toEqual([2, 3, 4, 5]);
+    expect(quality.processDefects.map((defect) => defect.code)).toEqual(['low_context_utilization']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'localization',
+      severity: 'low',
+      seq: 2,
+    });
+    expect(quality.processScore).toBe(95);
+    expect(quality.warnings.join('\n')).toContain('low context utilization');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('context_utilization=33.33% context_hits=2/6 context_misses=4 context_risk=yes');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('narrow broad context gathering');
   });
 
   it('flags large source edit surfaces without a broad-change task contract', () => {
