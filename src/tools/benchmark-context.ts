@@ -288,13 +288,14 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '2. Convert task instruction excerpts and task contract signals into a short todo checklist; preserve exact paths, filenames, formats, ports, and wording from the task.',
       '3. Restate the success oracle and non-goals; call out any missing or ambiguous acceptance criteria before assuming them.',
       '4. Create a localization dossier: candidate files/functions, evidence, reproduction command, and ruled-out distractors.',
-      '5. Verify with the project-native runtime/toolchain, not an arbitrary interpreter or package manager.',
-      '6. Run the environment reconstruction plan before treating missing dependency/toolchain/build-artifact failures as code failures.',
-      '7. Run the narrowest likely verifier before broad verification when feasible.',
-      '8. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
-      '9. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
-      '10. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
-      '11. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
+      '5. Before each non-trivial edit, write a one-line `Prediction:` naming the expected verifier or behavior change, then compare it to the next verifier result.',
+      '6. Verify with the project-native runtime/toolchain, not an arbitrary interpreter or package manager.',
+      '7. Run the environment reconstruction plan before treating missing dependency/toolchain/build-artifact failures as code failures.',
+      '8. Run the narrowest likely verifier before broad verification when feasible.',
+      '9. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
+      '10. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
+      '11. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
+      '12. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
     ];
 
     return { output: lines.filter((line, i, arr) => line || arr[i - 1] !== '').join('\n'), isError: false };
@@ -318,6 +319,7 @@ function summarizeBenchmarkMethodHints(
     'dependency traversal: follow imports/call-sites/stack traces depth-first only while they remain issue-relevant; stop before context bloat.',
     'reproduce first: run the narrowest visible failing test/verifier before patching when feasible.',
     'validation ladder: after patching, rerun the narrow verifier, then the broad harness/build/test command.',
+    'decision observability: before each non-trivial edit, write `Prediction: <change> should make <verifier/behavior> pass`; verify the next outcome against that prediction.',
     'checkpoint discipline: inspect git state before risky edits; keep changes small enough to revert failed paths without touching unrelated user work.',
     'contamination guard: local task files and verifier output beat memory, prior benchmark patterns, or external popularity signals.',
   ];
@@ -620,6 +622,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const contractOverlap = summarizeTaskContractOverlap(priorTaskContractSignals, currentContractSet);
     const priorDependency = summarizePriorDependencyUpgrade(summary, quality);
     const priorEnvironment = summarizePriorEnvironmentReconstruction(summary, quality);
+    const priorDecision = summarizePriorDecisionObservability(summary);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -668,6 +671,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
         priorEnvironment.text,
         priorDependency.text,
+        priorDecision,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
       continue;
@@ -691,6 +695,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       contractText,
       priorEnvironment.text,
       priorDependency.text,
+      priorDecision,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
     ].filter(Boolean).join('; ');
@@ -965,6 +970,35 @@ function summarizePriorTaskContractUse(summary: Record<string, unknown>, quality
     ? taskContract.checklistComplete
     : quality.taskContractChecklistComplete;
   return `contract=signals:${signals},checklist_after_context:${String(afterContext)},complete:${String(complete)}`;
+}
+
+function summarizePriorDecisionObservability(summary: Record<string, unknown>): string | null {
+  const card = objectRecord(summary.experienceCard);
+  const decision = objectRecord(card.decisionObservability);
+  const editCount = finiteNumber(decision.editCount);
+  const predictedEditCount = finiteNumber(decision.predictedEditCount);
+  const verifiedPredictionCount = finiteNumber(decision.verifiedPredictionCount);
+  const rawPredictions = Array.isArray(decision.editPredictions) ? decision.editPredictions : [];
+  if ((editCount ?? 0) <= 0 && (predictedEditCount ?? 0) <= 0 && rawPredictions.length === 0) return null;
+
+  const predictions = rawPredictions
+    .slice(0, 2)
+    .flatMap((raw) => {
+      const prediction = objectRecord(raw);
+      const editSeq = finiteNumber(prediction.editSeq);
+      const target = typeof prediction.target === 'string' ? prediction.target.trim() : '';
+      const text = typeof prediction.prediction === 'string' ? prediction.prediction.trim() : '';
+      const status = typeof prediction.nextVerifierStatus === 'string' ? prediction.nextVerifierStatus.trim() : '';
+      if (!text) return [];
+      return [`#${editSeq ?? '?'} ${target || 'edit'} -> ${status || 'unverified'}: ${text}`];
+    })
+    .map((prediction) => truncateContractSignal(redactTraceText(prediction), 180));
+  return [
+    `decision=edits:${editCount ?? 0}`,
+    `predicted:${predictedEditCount ?? 0}`,
+    `verified:${verifiedPredictionCount ?? 0}`,
+    predictions.length ? `predictions:${predictions.join(' | ')}` : null,
+  ].filter(Boolean).join(',');
 }
 
 function summarizePriorEnvironmentReconstruction(

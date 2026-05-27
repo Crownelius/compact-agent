@@ -324,6 +324,8 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('Benchmark Method Hints');
     expect(result.output).toContain('planner -> navigator -> editor -> executor');
     expect(result.output).toContain('localization dossier');
+    expect(result.output).toContain('decision observability');
+    expect(result.output).toContain('Prediction: <change> should make <verifier/behavior> pass');
     expect(result.output).toContain('task instruction excerpts and full instruction files');
     expect(result.output).toContain('source research trigger');
     expect(result.output).toContain('source research digest');
@@ -348,6 +350,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('unsupported final verification claim');
     expect(result.output).toContain('Do not copy these prior patterns without fresh current-task evidence');
     expect(result.output).toContain('Convert task instruction excerpts and task contract signals into a short todo checklist');
+    expect(result.output).toContain('Before each non-trivial edit, write a one-line `Prediction:`');
     expect(result.output).toContain('reuse only the method-level lesson');
     expect(result.output).toContain('replay only the relevant read/search/verifier steps');
     expect(result.output).toContain('avoid any prior patterns listed as warnings');
@@ -470,6 +473,20 @@ describe('benchmark_context tool', () => {
           firstSetupAfterManifestEditSeq: 6,
           firstValidationAfterManifestEditSeq: 7,
         },
+        decisionObservability: {
+          editCount: 1,
+          predictedEditCount: 1,
+          verifiedPredictionCount: 1,
+          editPredictions: [{
+            editSeq: 5,
+            tool: 'edit_file',
+            target: 'src/app.ts',
+            prediction: 'formatting total should satisfy billing assertion',
+            nextVerifierSeq: 6,
+            nextVerifierStatus: 'ok',
+            nextVerifierCommand: 'npm test',
+          }],
+        },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
         warnings: [],
@@ -486,7 +503,8 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('contract=signals:2,checklist_after_context:true,complete:true');
     expect(result.output).toContain('environment=setup_failures:1,unresolved:0,setup:1,setup_ok:1,commands:npm ci,failures:javascript dependency or build artifact missing');
     expect(result.output).toContain('dependency=manifests:1,lockfiles:1,setup:true,setup_ok:true,validation:true,validation_ok:true,targets:node:package.json|node:package-lock.json');
-  });
+    expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,predictions:#5 src/app.ts -> ok: formatting total should satisfy billing assertion');
+  }, 15_000);
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {
     const root = makeRoot();

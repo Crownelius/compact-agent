@@ -382,7 +382,7 @@ describe('benchmark trace artifacts', () => {
     ];
     const messages: Message[] = [{
       role: 'assistant',
-      content: null,
+      content: 'Prediction: changing src/app.ts should make npm test pass.',
       tool_calls: [{
         id: 'tc-edit',
         type: 'function',
@@ -431,6 +431,20 @@ describe('benchmark trace artifacts', () => {
         'TASK.md: Do not change public route names.',
       ],
       incompleteItems: [],
+    });
+    expect(summary.experienceCard.decisionObservability).toMatchObject({
+      editCount: 1,
+      predictedEditCount: 1,
+      verifiedPredictionCount: 1,
+      editPredictions: [{
+        editSeq: 4,
+        tool: 'edit_file',
+        target: 'src/app.ts',
+        prediction: 'changing src/app.ts should make npm test pass.',
+        nextVerifierSeq: 5,
+        nextVerifierStatus: 'ok',
+        nextVerifierCommand: 'npm test',
+      }],
     });
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
   });

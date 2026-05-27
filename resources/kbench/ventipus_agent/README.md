@@ -38,7 +38,8 @@ process-defect scoring, and trajectory-quality fields are copied to
 `benchmarkResult.traceSummary` for harness-side scoring. `benchmarkResult.usage`
 also aliases the native usage block for cost-aware leaderboards. Native verifier
 trace previews preserve both head and tail output so final test summaries survive
-noisy install/build logs.
+noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
+decision-observability predictions for edits and their next verifier outcomes.
 
 Inside benchmark mode, the read-only `benchmark_context` preflight also surfaces
 CI workflow run commands plus setup actions, env key names, service containers,

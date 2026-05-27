@@ -50,6 +50,7 @@ export interface BenchmarkExperienceCard {
   taskContract: BenchmarkExperienceTaskContract;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
+  decisionObservability: BenchmarkExperienceDecisionObservability;
   verificationCommands: string[];
   changedFiles: string[];
   warnings: string[];
@@ -70,6 +71,23 @@ export interface BenchmarkExperienceTaskContract {
   checklistComplete: boolean | null;
   incompleteCount: number;
   incompleteItems: BenchmarkTodoIncompleteItem[];
+}
+
+export interface BenchmarkExperienceDecisionObservability {
+  editCount: number;
+  predictedEditCount: number;
+  verifiedPredictionCount: number;
+  editPredictions: BenchmarkExperienceEditPrediction[];
+}
+
+export interface BenchmarkExperienceEditPrediction {
+  editSeq: number;
+  tool: string;
+  target: string;
+  prediction: string;
+  nextVerifierSeq: number | null;
+  nextVerifierStatus: 'ok' | 'error' | null;
+  nextVerifierCommand: string | null;
 }
 
 export interface BenchmarkTraceArtifact {
@@ -691,6 +709,7 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
   const trajectoryQuality = buildBenchmarkTrajectoryQuality(events, usage);
   const experienceCard = buildBenchmarkExperienceCard({
     events,
+    messages: input.messages,
     changedFiles,
     verificationCommands,
     verificationEvidence,
@@ -727,6 +746,7 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
 
 export function buildBenchmarkExperienceCard(input: {
   events: BenchmarkTraceEvent[];
+  messages: Message[];
   changedFiles: string[];
   verificationCommands: string[];
   verificationEvidence: BenchmarkVerificationEvidence;
@@ -749,6 +769,7 @@ export function buildBenchmarkExperienceCard(input: {
     taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
+    decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
       .slice(0, 12),
@@ -759,6 +780,88 @@ export function buildBenchmarkExperienceCard(input: {
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
   };
+}
+
+function buildBenchmarkExperienceDecisionObservability(
+  messages: Message[],
+  events: BenchmarkTraceEvent[],
+): BenchmarkExperienceDecisionObservability {
+  const editEvents = [...events].filter(isEditEvent).sort((a, b) => a.seq - b.seq);
+  const assistantEditCalls = extractAssistantEditDecisionCalls(messages);
+  const editPredictions: BenchmarkExperienceEditPrediction[] = [];
+
+  for (let index = 0; index < editEvents.length; index++) {
+    const event = editEvents[index];
+    const decision = assistantEditCalls[index];
+    const prediction = extractExplicitEditPrediction(decision?.content ?? '');
+    if (!prediction) continue;
+    const nextVerifier = [...events]
+      .filter((candidate) => candidate.seq > event.seq && candidate.verification)
+      .sort((a, b) => a.seq - b.seq)[0] ?? null;
+    editPredictions.push({
+      editSeq: event.seq,
+      tool: truncate(redactTraceText(event.tool), 80),
+      target: truncate(redactTraceText(decision?.target || event.target || 'unknown'), 160),
+      prediction,
+      nextVerifierSeq: nextVerifier?.seq ?? null,
+      nextVerifierStatus: nextVerifier?.status ?? null,
+      nextVerifierCommand: nextVerifier ? truncate(redactTraceText(verifierCommandForEvent(nextVerifier)), 180) : null,
+    });
+  }
+
+  return {
+    editCount: editEvents.length,
+    predictedEditCount: editPredictions.length,
+    verifiedPredictionCount: editPredictions.filter((prediction) => prediction.nextVerifierStatus === 'ok').length,
+    editPredictions: editPredictions.slice(0, 12),
+  };
+}
+
+function extractAssistantEditDecisionCalls(messages: Message[]): Array<{ content: string; tool: string; target: string }> {
+  const out: Array<{ content: string; tool: string; target: string }> = [];
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !message.tool_calls) continue;
+    const content = typeof message.content === 'string' ? message.content : '';
+    for (const call of message.tool_calls) {
+      const tool = call.function?.name ?? '';
+      if (!isEditToolName(tool)) continue;
+      const args = parseJsonObject(call.function?.arguments ?? '');
+      out.push({
+        content,
+        tool,
+        target: summarizeTarget(tool, args),
+      });
+    }
+  }
+  return out;
+}
+
+function isEditToolName(tool: string): boolean {
+  return ['write_file', 'edit_file', 'apply_patch'].includes(tool);
+}
+
+function parseJsonObject(text: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function extractExplicitEditPrediction(content: string): string | null {
+  const text = content.replace(/\r/g, '').trim();
+  if (!text) return null;
+  const tagged = text.match(/<prediction>\s*([\s\S]*?)\s*<\/prediction>/i)?.[1]?.trim();
+  if (tagged) return truncate(redactTraceText(tagged.replace(/\s+/g, ' ')), 220);
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    const match = /^(?:[-*]\s*)?(?:prediction|hypothesis|expected outcome|verification prediction)\s*[:\-]\s*(.+)$/i.exec(line);
+    if (match?.[1]) return truncate(redactTraceText(match[1].replace(/\s+/g, ' ').trim()), 220);
+  }
+  return null;
 }
 
 function buildBenchmarkExperienceEnvironmentReconstruction(
