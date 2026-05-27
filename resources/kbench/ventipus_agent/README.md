@@ -32,6 +32,7 @@ environment setup/reconstruction signals for missing dependencies, toolchains,
 or build artifacts, dependency manifest/lockfile setup-validation signals,
 HarnessAudit-style harness-safety signals for protected-resource access, external information transfer, destructive operations, and oracle access,
 candidate-file dossier signals for broad pre-edit inspection without a compact dossier,
+root-cause hypothesis signals for repair edits after failed verifiers without an explicit diagnosis,
 trajectory-cleanup signals for base64/data-URI blobs, high-entropy encoded output, duplicate output, and excessive truncation,
 skill-view fit/timing signals, per-target edit localization signals, large edit-surface
 signals, scratch/probe artifact signals, redundant tool-call signals,
@@ -46,7 +47,7 @@ and trajectory-quality fields are copied to
 also aliases the native usage block for cost-aware leaderboards. Native verifier
 trace previews preserve both head and tail output so final test summaries survive
 noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
-task-alignment/spec-compliance/reward-hack/harness-safety/long-horizon/proactivity risk blocks, component-observability edit classification for AHE-style surface attribution, including SWE-WebDevBench canary/frontend-backend/security validation signals, SWE-Cycle lifecycle/setup/test-generation/judge validation signals, SWE-CI evolution/checklist/CI-loop validation signals, and Pi-Bench context-contract/hidden-intent/clarification/privacy/completion evidence, decision-observability predictions for edits and validation-reliability evidence
+task-alignment/spec-compliance/reward-hack/harness-safety/long-horizon/proactivity risk blocks, component-observability edit classification for AHE-style surface attribution, including SWE-WebDevBench canary/frontend-backend/security validation signals, SWE-Cycle lifecycle/setup/test-generation/judge validation signals, SWE-CI evolution/checklist/CI-loop validation signals, and Pi-Bench context-contract/hidden-intent/clarification/privacy/completion evidence, root-cause hypothesis state for failed-verifier repair edits, decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
 context-utilization precision/miss evidence, candidate-dossier status, and
 trajectory-cleanup summaries for retrieval-aware scoring and avoiding noisy prior
@@ -81,6 +82,9 @@ missing-dossier, or pre-edit context-bloat runs are warnings rather than replay
 hints.
 AHE-style cleanup evidence participates in reuse too: prior runs with encoded blobs,
 duplicate observations, or excessive truncation are surfaced as warnings instead of
+replay hints.
+AHE-style diagnosis evidence participates in reuse too: prior runs that repaired after
+failed verifiers without a root-cause hypothesis are surfaced as warnings instead of
 replay hints.
 Interactive type-ahead is preserved across active-turn cancellation and
 permission interruptions, so user drafts return to the prompt instead of being

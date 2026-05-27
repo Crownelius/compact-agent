@@ -677,6 +677,60 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('signals:base64_blob read_file#4 tmp/screenshot.txt | duplicate_output read_file#6 src/app.ts repeat_of:#5');
   }, 15_000);
 
+  it('routes missing root-cause prior runs to prior-experience warnings', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-27-root-cause-prior');
+    mkdirSync(priorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    writeFileSync(join(root, 'TASK.md'), '- Must trim parser input.\n');
+    writeFileSync(join(root, 'src', 'parser.ts'), 'export const parse = (input: string) => input;\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T09:45:00.000Z',
+      verificationCommands: ['npm test -- parser'],
+      changedFiles: ['src/parser.ts'],
+      usage: {
+        totalTokens: 1800,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 90,
+        successfulVerificationCount: 1,
+        processDefects: [
+          { code: 'missing_root_cause_hypothesis' },
+        ],
+        rootCauseHypothesisRecorded: false,
+        rootCauseHypothesisRisk: true,
+        rootCauseHypothesisSignalCount: 1,
+      },
+      experienceCard: {
+        rootCauseHypothesis: {
+          recorded: false,
+          risk: true,
+          signalCount: 1,
+          signals: [{
+            seq: 4,
+            editSeq: 4,
+            failedVerificationSeq: 3,
+            reason: 'missing_root_cause_before_repair_edit',
+            evidence: 'failed verifier #3 npm test -- parser was followed by edit_file#4 src/parser.ts without a diagnosis',
+          }],
+        },
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('avoid prior run: 2026-05-27T09:45:00.000Z');
+    expect(result.output).toContain('reason=defects=missing_root_cause_hypothesis|root_cause_missing=1');
+    expect(result.output).toContain('root_cause=recorded:false,risk:true,signals:1');
+    expect(result.output).toContain('evidence:missing_root_cause_before_repair_edit fail#3 edit#4');
+  }, 15_000);
+
   it('routes context-bloated prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     const traceDir = join(root, '.ventipus', 'benchmark-runs');

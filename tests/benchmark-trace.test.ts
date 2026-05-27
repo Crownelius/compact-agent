@@ -24,6 +24,7 @@ import {
   buildBenchmarkRewardHackSignals,
   buildBenchmarkRedundantVerifierEvents,
   buildBenchmarkRedundantToolCallEvents,
+  buildBenchmarkRootCauseHypothesisSignals,
   buildBenchmarkScratchArtifactEvents,
   buildBenchmarkSkillViewEvents,
   buildBenchmarkSpecComplianceSignals,
@@ -283,6 +284,10 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.candidateDossierRisk).toBe(false);
     expect(summary.trajectoryQuality.candidateDossierSignalCount).toBe(0);
     expect(summary.trajectoryQuality.candidateDossierSignals).toEqual([]);
+    expect(summary.trajectoryQuality.rootCauseHypothesisRecorded).toBe(false);
+    expect(summary.trajectoryQuality.rootCauseHypothesisRisk).toBe(false);
+    expect(summary.trajectoryQuality.rootCauseHypothesisSignalCount).toBe(0);
+    expect(summary.trajectoryQuality.rootCauseHypothesisSignals).toEqual([]);
     expect(summary.trajectoryQuality.trajectoryCleanupRisk).toBe(false);
     expect(summary.trajectoryQuality.trajectoryCleanupEventCount).toBe(0);
     expect(summary.trajectoryQuality.trajectoryCleanupNoisyOutputCount).toBe(0);
@@ -354,6 +359,12 @@ describe('benchmark trace artifacts', () => {
         signals: [],
       },
       candidateDossier: {
+        recorded: false,
+        risk: false,
+        signalCount: 0,
+        signals: [],
+      },
+      rootCauseHypothesis: {
         recorded: false,
         risk: false,
         signalCount: 0,
@@ -675,7 +686,11 @@ describe('benchmark trace artifacts', () => {
     ];
     const messages: Message[] = [{
       role: 'assistant',
-      content: 'Prediction: changing src/app.ts should make npm test pass.\nAt-risk regression: public route names could change while formatting billing totals.',
+      content: [
+        'Root cause: src/app.ts formats billing totals with a raw decimal because npm test fails with AssertionError expecting 12.30.',
+        'Prediction: changing src/app.ts should make npm test pass.',
+        'At-risk regression: public route names could change while formatting billing totals.',
+      ].join('\n'),
       tool_calls: [{
         id: 'tc-edit',
         type: 'function',
@@ -741,6 +756,12 @@ describe('benchmark trace artifacts', () => {
         nextVerifierStatus: 'ok',
         nextVerifierCommand: 'npm test',
       }],
+    });
+    expect(summary.experienceCard.rootCauseHypothesis).toMatchObject({
+      recorded: true,
+      risk: false,
+      signalCount: 0,
+      signals: [],
     });
     expect(summary.changeEvaluation).toMatchObject({
       status: 'confirmed',
@@ -5232,6 +5253,136 @@ describe('benchmark trace artifacts', () => {
       noisyOutputCount: 1,
       duplicateOutputCount: 1,
     });
+  });
+
+  it('requires a root-cause hypothesis before repair edits after conclusive failed verifiers', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix parser trimming',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/parser.ts' },
+        output: 'export function parse(input) { return input; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'FAIL src/parser.test.ts\nAssertionError: expected " x " to equal "x"\nat src/parser.ts:1:1',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' },
+        output: 'Updated src/parser.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'assistant',
+      content: [
+        'Prediction: updating src/parser.ts should make npm test -- parser pass.',
+        'At-risk regression: tokenizer whitespace behavior could change.',
+      ].join('\n'),
+      tool_calls: [{
+        id: 'tc1',
+        type: 'function',
+        function: {
+          name: 'edit_file',
+          arguments: JSON.stringify({ file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' }),
+        },
+      }],
+    }];
+
+    const signals = buildBenchmarkRootCauseHypothesisSignals(events, messages);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      seq: 4,
+      editSeq: 4,
+      failedVerificationSeq: 3,
+      reason: 'missing_root_cause_before_repair_edit',
+    });
+
+    const quality = buildBenchmarkTrajectoryQuality(events, buildBenchmarkUsageSummary([]), messages);
+    expect(quality.rootCauseHypothesisRecorded).toBe(false);
+    expect(quality.rootCauseHypothesisRisk).toBe(true);
+    expect(quality.rootCauseHypothesisSignalCount).toBe(1);
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('missing_root_cause_hypothesis');
+    expect(quality.warnings.join('\n')).toContain('root-cause hypothesis risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('root_cause=no root_cause_risk=yes root_cause_signals=1');
+    expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('Root cause:/Diagnosis:/Hypothesis: line');
+  });
+
+  it('accepts a pre-repair root-cause hypothesis tied to failed-verifier evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix parser trimming',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'FAIL src/parser.test.ts\nAssertionError: expected " x " to equal "x"\nat src/parser.ts:1:1',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' },
+        output: 'Updated src/parser.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'assistant',
+      content: [
+        'Root cause: src/parser.ts returns raw input because npm test -- parser fails with AssertionError at src/parser.ts.',
+        'Prediction: trimming in src/parser.ts should make npm test -- parser pass.',
+        'At-risk regression: tokenizer whitespace behavior could change.',
+      ].join('\n'),
+      tool_calls: [{
+        id: 'tc1',
+        type: 'function',
+        function: {
+          name: 'edit_file',
+          arguments: JSON.stringify({ file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' }),
+        },
+      }],
+    }];
+
+    const quality = buildBenchmarkTrajectoryQuality(events, buildBenchmarkUsageSummary([]), messages);
+    expect(quality.rootCauseHypothesisRecorded).toBe(true);
+    expect(quality.rootCauseHypothesisRisk).toBe(false);
+    expect(quality.rootCauseHypothesisSignalCount).toBe(0);
+    expect(quality.processDefects.map((defect) => defect.code)).not.toContain('missing_root_cause_hypothesis');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('root_cause=yes root_cause_risk=no root_cause_signals=0');
   });
 
   it('accepts a pre-edit candidate-file dossier recorded in assistant reasoning', () => {
