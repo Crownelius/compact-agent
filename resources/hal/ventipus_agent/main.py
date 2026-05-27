@@ -197,6 +197,18 @@ def _profile_for_task(task: dict[str, Any]) -> str:
     ):
         return "swe-ci"
     if (
+        "swe-prbench" in task_text
+        or "swe prbench" in task_text
+        or "swe-pr" in task_text
+        or "prbench" in task_text
+        or "pull request review" in task_text
+        or "code review quality" in task_text
+        or "human_review_comments" in task_text
+        or "diff_patch" in task_text
+        or "type2_contextual" in task_text
+    ):
+        return "swe-prbench"
+    if (
         "saasbench" in task_text
         or "saas-bench" in task_text
         or "enterprise saas" in task_text
@@ -298,6 +310,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         lines.append("This is a SWE-Cycle/SWE-Judge-style issue-resolution lifecycle task. Track environment setup, code implementation, verification-test generation when required, and post-edit static/dynamic judge evidence.")
     elif profile == "swe-ci":
         lines.append("This is a SWE-CI-style repository evolution task. Track current/target commits, test gaps, requirement derivation, and CI-loop validation across run_tests -> define_requirements -> modify_code.")
+    elif profile == "swe-prbench":
+        lines.append("This is a SWE-PRBench-style pull request review task. Inspect PR metadata and diff first, expand context only for concrete suspected issues, and return severity-rated review findings with file/line evidence instead of patching unless explicitly requested.")
     elif _is_usaco_task(task):
         lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
     else:

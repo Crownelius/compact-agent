@@ -37,6 +37,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('swe-ci')).toBe('swe-ci');
     expect(normalizeBenchmarkProfile('swecibench')).toBe('swe-ci');
     expect(normalizeBenchmarkProfile('swe-ci-bench')).toBe('swe-ci');
+    expect(normalizeBenchmarkProfile('swe-prbench')).toBe('swe-prbench');
+    expect(normalizeBenchmarkProfile('prbench')).toBe('swe-prbench');
+    expect(normalizeBenchmarkProfile('pull-request-review')).toBe('swe-prbench');
     expect(normalizeBenchmarkProfile('wildclawbench')).toBe('wildclaw');
     expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
     expect(normalizeBenchmarkProfile('spec-bench')).toBe('specbench');
@@ -77,6 +80,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('swe-ci maintain ci loop')).toEqual({
       profile: 'swe-ci',
       task: 'maintain ci loop',
+    });
+    expect(splitBenchmarkArgs('swe-prbench review pull request feedback')).toEqual({
+      profile: 'swe-prbench',
+      task: 'review pull request feedback',
     });
     expect(splitBenchmarkArgs('wildclaw solve BrowseComp task')).toEqual({
       profile: 'wildclaw',
@@ -198,6 +205,18 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('define_requirements');
     expect(prompt).toContain('modify_code');
     expect(prompt).toContain('current/target commit');
+  });
+
+  it('builds SWE-PRBench prompts around diff-first review quality', () => {
+    const prompt = buildBenchmarkPrompt('review pull request for missed human feedback', '/workspace', 'swe-prbench');
+    expect(prompt).toContain('SWE-PRBench / pull request review quality task');
+    expect(prompt).toContain('code review, not patch generation');
+    expect(prompt).toContain('diff-first');
+    expect(prompt).toContain('Type1_Direct');
+    expect(prompt).toContain('Type2_Contextual');
+    expect(prompt).toContain('severity-rated review findings');
+    expect(prompt).toContain('hidden human feedback');
+    expect(prompt).toContain('Do not inspect gold patches');
   });
 
   it('builds WildClawBench prompts around native-runtime agent contracts', () => {

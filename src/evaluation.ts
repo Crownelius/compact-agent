@@ -259,6 +259,7 @@ export type BenchmarkProfile =
   | 'swe-chain'
   | 'swe-cycle'
   | 'swe-ci'
+  | 'swe-prbench'
   | 'ci-repair'
   | 'wildclaw'
   | 'arc-agi'
@@ -304,6 +305,19 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   swe_ci: 'swe-ci',
   swecibench: 'swe-ci',
   'swe-ci-bench': 'swe-ci',
+  swepr: 'swe-prbench',
+  'swe-pr': 'swe-prbench',
+  sweprbench: 'swe-prbench',
+  'swe-prbench': 'swe-prbench',
+  'swe-pr-bench': 'swe-prbench',
+  prbench: 'swe-prbench',
+  'pr-bench': 'swe-prbench',
+  prreview: 'swe-prbench',
+  'pr-review': 'swe-prbench',
+  pullrequestreview: 'swe-prbench',
+  'pull-request-review': 'swe-prbench',
+  codereviewbench: 'swe-prbench',
+  'code-review-bench': 'swe-prbench',
   cirepair: 'ci-repair',
   'ci-repair': 'ci-repair',
   ci_repair: 'ci-repair',
@@ -446,6 +460,14 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Inspect current/target commit metadata, task metadata, git history, and CI/test commands before editing; preserve maintainability and future evolution, not just the current visible pass.
 - Prefer incremental, requirement-backed patches. Avoid broad rewrites, test-specific hacks, or changes that make later iterations harder.
 - After each edit, run the relevant test/CI loop command again and track whether pass counts improved, regressed, or stayed flat before claiming completion.`;
+    case 'swe-prbench':
+      return `Profile: SWE-PRBench / pull request review quality task
+- Treat the task as code review, not patch generation. The deliverable is severity-rated review findings grounded in changed diff/file evidence unless the prompt explicitly asks for edits.
+- Start diff-first: inspect PR title/description, changed files, and the patch/diff before expanding to surrounding code. Avoid loading broad full-repo context unless a concrete finding requires it.
+- Use a compact finding ledger with issue type when possible: Type1_Direct diff-local issues, Type2_Contextual issues requiring nearby API/state/test context, and Type3_Latent_Candidate risks that need follow-up evidence.
+- For each finding, cite the exact file/line or diff hunk, describe impact, confidence, and the minimal reproduction or verifier that would confirm it. Prefer a few high-signal findings over broad style commentary.
+- Do not read oracle/gold review comments, hidden human feedback, expected findings, or benchmark result files before writing your review.
+- Cross-check suspected issues against current source/tests before finalizing, but do not let unrelated context dilute the review. If no actionable issue is supported, say that explicitly and note residual evidence gaps.`;
     case 'ci-repair':
       return `Profile: CI-Repair style repository workflow validation
 - Treat the task as repository-level CI repair or patch validation unless current evidence says otherwise.
@@ -544,6 +566,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task is a chained dependency, release, package, or API upgrade, follow the SWE-Chain profile.
 - If the task mentions SWE-Cycle, SWE-Judge, FullCycle, EnvSetup, CodeImpl, TestGen, run_script, parsing_script, selected_test_files_to_run, environment_setup_commit, before_repo_set_cmd, or bare-repo issue resolution, follow the SWE-Cycle profile.
 - If the task mentions SWE-CI, current/target commits, test gaps, maintainability over repository evolution, or the run_tests -> define_requirements -> modify_code loop, follow the SWE-CI profile.
+- If the task mentions SWE-PRBench, PRBench, pull request review, code review quality, human review comments, changed files plus diff_patch, or Type1/Type2/Type3 review issue classes, follow the SWE-PRBench profile.
 - If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
 - If the task mentions WildClawBench, native-runtime agent work, OpenClaw, multimodal/social/search/safety categories, or long-horizon harness comparison, follow the WildClawBench profile.
 - If the task mentions ARC Prize, ARC-AGI, Kaggle ARC, grid abstractions, or no-instructions turn-based environments, follow the ARC-AGI profile.
@@ -581,6 +604,7 @@ Use this workflow as the default benchmark strategy:
    - Prefer one coherent root-cause patch over broad speculative rewrites.
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
    - For long-horizon roadmap, SaaS, mobile, WebDevBench, SWE-Cycle, or SWE-CI tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, lifecycle phases, CI-loop requirements, and production-readiness gaps stay visible.
+   - For SWE-PRBench or PR-review tasks, keep a diff-first finding ledger and resist broad context expansion unless a specific suspected issue needs nearby source, tests, or API contract evidence.
    - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.

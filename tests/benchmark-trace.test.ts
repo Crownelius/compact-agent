@@ -373,6 +373,11 @@ describe('benchmark trace artifacts', () => {
         benchmarkName: 'SWE-CI',
       },
       {
+        prompt: '/benchmark swe-prbench review pull request feedback',
+        benchmark: 'sweprbench',
+        benchmarkName: 'SWE-PRBench',
+      },
+      {
         prompt: '/benchmark wildclaw solve BrowseComp task',
         benchmark: 'wildclawbench',
         benchmarkName: 'WildClawBench',

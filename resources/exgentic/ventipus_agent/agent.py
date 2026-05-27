@@ -438,6 +438,8 @@ def _profile_for_exgentic(task: Any, context: Any, action_docs: list[dict[str, A
         return "swe-cycle"
     if any(token in text for token in ("swe-ci", "sweci", "swe ci", "run_tests", "define_requirements", "modify_code", "test gap", "current_sha", "target_sha", "ci-loop", "continuous integration loop")):
         return "swe-ci"
+    if any(token in text for token in ("swe-prbench", "swe prbench", "swe-pr", "prbench", "pull request review", "code review quality", "human_review_comments", "diff_patch", "type2_contextual")):
+        return "swe-prbench"
     if any(token in text for token in ("saasbench", "saas-bench", "enterprise saas", "tenant", "migration")):
         return "saasbench"
     if any(token in text for token in ("roadmapbench", "roadmap-bench", "long-horizon", "version upgrade")):
@@ -462,6 +464,8 @@ def _profile_guidance(profile: str) -> str:
         return "SWE-Cycle discipline: carry lifecycle phase, environment setup state, implementation requirements, generated/selected tests, and static/dynamic judge evidence through each action."
     if profile == "swe-ci":
         return "SWE-CI discipline: carry current/target commits, test gaps, inferred requirements, code changes, and CI-loop validation deltas through each action."
+    if profile == "swe-prbench":
+        return "SWE-PRBench discipline: review diff first, expand only to evidence-needed context, and produce severity-rated findings with file/line evidence rather than patching unless explicitly requested."
     if profile == "saasbench":
         return "SaaS discipline: preserve tenant, auth, migration, and cross-component workflow integrity."
     if profile == "roadmapbench":

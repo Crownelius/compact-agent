@@ -470,6 +470,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward lifecycle phase, bare-repo environment setup state, implementation requirements, generated/selected tests, judge commands, and unresolved phase gaps before selecting the next action."
     if profile == "swe-ci":
         return "Carry forward current/target commits, test gaps, inferred requirements, touched files, verifier deltas, and unresolved regressions before selecting the next action."
+    if profile == "swe-prbench":
+        return "Carry forward PR title/description, changed files, diff hunks, suspected findings, evidence gaps, and context-expansion reasons before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
 
 
@@ -920,6 +922,15 @@ def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[fl
             return 5, "SWE-CI prior: derive requirements from CI/test gaps before modifying code"
         if re.search(r"\b(modify[_ -]?code|patch|edit|update|change|implement|repair)\b", text):
             return 3, "SWE-CI prior: incremental requirement-backed code modification"
+    elif profile == "swe-prbench":
+        if re.search(r"\b(pr|pull|request|diff|patch|hunk|changed|files?|review|comment|read|inspect|list|search|get|query)\b", text):
+            return 6, "SWE-PRBench prior: inspect PR metadata and changed diff before broad context"
+        if re.search(r"\b(test|verify|repro|run|check|typecheck|lint|unit)\b", text):
+            return 4, "SWE-PRBench prior: verify suspected review findings when feasible"
+        if re.search(r"\b(finish|message|answer|respond|final|review)\b", text):
+            return 3, "SWE-PRBench prior: deliver severity-rated review findings once evidence is sufficient"
+        if re.search(r"\b(edit|patch|modify|update|write|apply)\b", text):
+            return -3, "SWE-PRBench prior: defer code edits unless the review task explicitly asks for patches"
     else:
         if re.search(r"\b(observe|read|search|list|get|lookup|inspect|query)\b", text):
             return 4, "generic prior: inspect available state before irreversible actions"
