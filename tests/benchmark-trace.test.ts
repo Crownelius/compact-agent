@@ -539,7 +539,7 @@ describe('benchmark trace artifacts', () => {
     ];
     const messages: Message[] = [{
       role: 'assistant',
-      content: 'Prediction: changing src/app.ts should make npm test pass.',
+      content: 'Prediction: changing src/app.ts should make npm test pass.\nAt-risk regression: public route names could change while formatting billing totals.',
       tool_calls: [{
         id: 'tc-edit',
         type: 'function',
@@ -593,11 +593,14 @@ describe('benchmark trace artifacts', () => {
       editCount: 1,
       predictedEditCount: 1,
       verifiedPredictionCount: 1,
+      regressionForecastCount: 1,
+      missingRegressionForecastCount: 0,
       editPredictions: [{
         editSeq: 4,
         tool: 'edit_file',
         target: 'src/app.ts',
         prediction: 'changing src/app.ts should make npm test pass.',
+        predictedRegression: 'public route names could change while formatting billing totals.',
         nextVerifierSeq: 5,
         nextVerifierStatus: 'ok',
         nextVerifierCommand: 'npm test',
@@ -608,6 +611,8 @@ describe('benchmark trace artifacts', () => {
       accepted: true,
       editCount: 1,
       predictedEditCount: 1,
+      regressionForecastCount: 1,
+      missingRegressionForecastCount: 0,
       unpredictedEditCount: 0,
       confirmedPredictionCount: 1,
       contradictedPredictionCount: 0,
@@ -617,6 +622,7 @@ describe('benchmark trace artifacts', () => {
       predictions: [{
         editSeq: 4,
         target: 'src/app.ts',
+        predictedRegression: 'public route names could change while formatting billing totals.',
         verdict: 'confirmed',
         evidence: 'next verifier #5 passed: npm test',
       }],
@@ -662,6 +668,100 @@ describe('benchmark trace artifacts', () => {
     expect(summary.experienceCard.runEfficiency.processDefectCount).toBe(summary.trajectoryQuality.processDefects.length);
     expect(summary.experienceCard.runEfficiency.warningCount).toBe(summary.trajectoryQuality.warnings.length);
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
+  });
+
+  it('flags AHE regression-foresight gaps in otherwise predicted edits', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const value = 1;',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 failed, 1 total',
+        isError: true,
+        elapsedMs: 20,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: '1', new_string: '2' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 20,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'assistant',
+      content: 'Prediction: changing src/app.ts should make npm test pass.',
+      tool_calls: [{
+        id: 'tc-edit',
+        type: 'function',
+        function: {
+          name: 'edit_file',
+          arguments: JSON.stringify({ file_path: 'src/app.ts', old_string: '1', new_string: '2' }),
+        },
+      }],
+    }];
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-regression-forecast',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages,
+      events,
+    });
+
+    expect(summary.changeEvaluation).toMatchObject({
+      status: 'missing_regression_forecasts',
+      accepted: false,
+      editCount: 1,
+      predictedEditCount: 1,
+      regressionForecastCount: 0,
+      missingRegressionForecastCount: 1,
+      confirmedPredictionCount: 1,
+      predictions: [{
+        editSeq: 4,
+        prediction: 'changing src/app.ts should make npm test pass.',
+        predictedRegression: null,
+        verdict: 'confirmed',
+      }],
+    });
+    expect(summary.trajectoryQuality).toMatchObject({
+      predictedEditCount: 1,
+      regressionForecastCount: 0,
+      missingRegressionForecastCount: 1,
+      regressionForesightRisk: true,
+    });
+    expect(summary.trajectoryQuality.processDefects.map((defect) => defect.code)).toContain('missing_regression_forecast');
+    expect(summary.trajectoryQuality.warnings.join('\n')).toContain('regression-foresight risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('missing_regression_forecasts=1');
+    expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('At-risk regression');
   });
 
   it('writes AHE-style change evaluation for unpredicted benchmark edits', () => {

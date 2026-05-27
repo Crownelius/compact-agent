@@ -1004,6 +1004,10 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
   const editCount = finiteNumber(decision.editCount);
   const predictedEditCount = finiteNumber(decision.predictedEditCount);
   const verifiedPredictionCount = finiteNumber(decision.verifiedPredictionCount);
+  const regressionForecastCount = finiteNumber(decision.regressionForecastCount)
+    ?? finiteNumber(changeEvaluation.regressionForecastCount);
+  const missingRegressionForecastCount = finiteNumber(decision.missingRegressionForecastCount)
+    ?? finiteNumber(changeEvaluation.missingRegressionForecastCount);
   const status = typeof changeEvaluation.status === 'string' ? changeEvaluation.status.trim() : '';
   const accepted = typeof changeEvaluation.accepted === 'boolean' || changeEvaluation.accepted === null
     ? changeEvaluation.accepted
@@ -1027,15 +1031,19 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
       const editSeq = finiteNumber(prediction.editSeq);
       const target = typeof prediction.target === 'string' ? prediction.target.trim() : '';
       const text = typeof prediction.prediction === 'string' ? prediction.prediction.trim() : '';
+      const regression = typeof prediction.predictedRegression === 'string' ? prediction.predictedRegression.trim() : '';
       const status = typeof prediction.nextVerifierStatus === 'string' ? prediction.nextVerifierStatus.trim() : '';
       if (!text) return [];
-      return [`#${editSeq ?? '?'} ${target || 'edit'} -> ${status || 'unverified'}: ${text}`];
+      const regressionSuffix = regression ? `; regression:${regression}` : '';
+      return [`#${editSeq ?? '?'} ${target || 'edit'} -> ${status || 'unverified'}: ${text}${regressionSuffix}`];
     })
     .map((prediction) => truncateContractSignal(redactTraceText(prediction), 180));
   return [
     `decision=edits:${editCount ?? 0}`,
     `predicted:${predictedEditCount ?? 0}`,
     `verified:${verifiedPredictionCount ?? 0}`,
+    regressionForecastCount != null ? `regression_forecasts:${regressionForecastCount}` : null,
+    missingRegressionForecastCount != null ? `missing_regression_forecasts:${missingRegressionForecastCount}` : null,
     status ? `change_status:${status}` : null,
     accepted !== undefined ? `accepted:${String(accepted)}` : null,
     unpredictedEditCount != null ? `unpredicted:${unpredictedEditCount}` : null,
@@ -1545,7 +1553,7 @@ function classifyPriorExperienceHarm(input: {
   if (successfulVerificationCount === 0) reasons.push('no successful verifier');
   if (input.processScore != null && input.processScore < 70) reasons.push(`low process score ${input.processScore}`);
   const harmfulDefects = input.defectCodes.filter((code) =>
-    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest)/.test(code),
+    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_regression_forecast)/.test(code),
   );
   if (harmfulDefects.length > 0) reasons.push(`defects=${harmfulDefects.slice(0, 4).join('|')}`);
   if (input.finalAnswerEvidence.claimsIncomplete === true || input.finalAnswerEvidence.claimsBlocked === true) {

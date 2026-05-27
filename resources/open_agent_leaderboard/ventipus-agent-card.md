@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.33
+version: 1.35.34
 developers:
   - Crownelius
 license: MIT
@@ -53,6 +53,8 @@ Ventipus includes MemPalace-backed project and global memory. In benchmark mode,
 Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, reward-hack, and long-horizon roadmap/SaaS/mobile/WebDevBench/SWE-Cycle/SWE-CI coverage risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence plus pre-edit context-bloat evidence, evidence-grounding signals for stale/no-effect edit retries without a current-state refresh, AHE publish-state mutation signals for post-pass edits or state-changing commands without revalidation, run-efficiency action/usage/cost/time evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact and an AHE-style change-evaluation artifact for edit prediction verdicts, unpredicted edits, and post-edit regression-cycle attribution.
 
 ## Models
+
+For AHE-style decision observability, Ventipus now records explicit regression foresight. Non-trivial benchmark edits should include both `Prediction:` and `At-risk regression:` lines; missing forecasts appear in change evaluation, trajectory quality, process defects, and completion reminders.
 
 Ventipus is model-agnostic across OpenAI-compatible providers. Common configurations include OpenRouter, OpenAI, NVIDIA, Ollama, LM Studio, and DeepSeek-compatible endpoints. The model and provider are selected by CLI flags or environment configuration.
 
