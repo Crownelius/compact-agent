@@ -29,6 +29,7 @@ import {
   buildBenchmarkSpecComplianceSignals,
   buildBenchmarkTaskAlignmentSignals,
   buildBenchmarkTestHarnessEditEvents,
+  buildBenchmarkTrajectoryCleanupEvents,
   buildBenchmarkUnlocalizedEditEvents,
   buildBenchmarkTraceSummary,
   buildBenchmarkTrajectoryQuality,
@@ -282,6 +283,11 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.candidateDossierRisk).toBe(false);
     expect(summary.trajectoryQuality.candidateDossierSignalCount).toBe(0);
     expect(summary.trajectoryQuality.candidateDossierSignals).toEqual([]);
+    expect(summary.trajectoryQuality.trajectoryCleanupRisk).toBe(false);
+    expect(summary.trajectoryQuality.trajectoryCleanupEventCount).toBe(0);
+    expect(summary.trajectoryQuality.trajectoryCleanupNoisyOutputCount).toBe(0);
+    expect(summary.trajectoryQuality.trajectoryCleanupDuplicateOutputCount).toBe(0);
+    expect(summary.trajectoryQuality.trajectoryCleanupEvents).toEqual([]);
     expect(summary.trajectoryQuality.evidenceGroundingRisk).toBe(false);
     expect(summary.trajectoryQuality.evidenceGroundingEventCount).toBe(0);
     expect(summary.trajectoryQuality.evidenceGroundingEvents).toEqual([]);
@@ -352,6 +358,13 @@ describe('benchmark trace artifacts', () => {
         risk: false,
         signalCount: 0,
         signals: [],
+      },
+      trajectoryCleanup: {
+        risk: false,
+        eventCount: 0,
+        noisyOutputCount: 0,
+        duplicateOutputCount: 0,
+        events: [],
       },
       longHorizon: {
         risk: false,
@@ -5142,6 +5155,83 @@ describe('benchmark trace artifacts', () => {
     expect(quality.warnings.join('\n')).toContain('candidate-file dossier risk');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('candidate_dossier=no candidate_dossier_risk=yes candidate_dossier_signals=1');
     expect(buildBenchmarkCompletionReminder(events)).toContain('candidate-file dossier');
+  });
+
+  it('flags noisy encoded and duplicate output that should be cleaned before benchmark reuse', () => {
+    const base64Blob = Buffer.from('encoded screenshot bytes '.repeat(40)).toString('base64');
+    const repeatedOutput = Array.from({ length: 3 }, () => [
+      'src/app.ts:12: export function renderBillingTotal(value: number) {',
+      'src/app.ts:13:   return value.toFixed(2);',
+      'src/app.ts:14: }',
+      'src/app.ts:15: expect(renderBillingTotal(12.3)).toBe("12.30");',
+    ].join('\n')).join('\n');
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix billing total formatting',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'tmp/screenshot.txt' },
+        output: `data:image/png;base64,${base64Blob}`,
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'grep',
+        input: { pattern: 'renderBillingTotal', path: 'src' },
+        output: repeatedOutput,
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: repeatedOutput,
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const cleanup = buildBenchmarkTrajectoryCleanupEvents(events);
+    expect(cleanup.map((event) => event.reason)).toContain('base64_blob');
+    expect(cleanup.map((event) => event.reason)).toContain('duplicate_output');
+    expect(cleanup.find((event) => event.reason === 'duplicate_output')).toMatchObject({
+      seq: 4,
+      duplicateOfSeq: 3,
+    });
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.trajectoryCleanupRisk).toBe(true);
+    expect(quality.trajectoryCleanupNoisyOutputCount).toBe(1);
+    expect(quality.trajectoryCleanupDuplicateOutputCount).toBe(1);
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('trajectory_cleanup_needed');
+    expect(quality.warnings.join('\n')).toContain('trajectory-cleanup risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('trajectory_cleanup_risk=yes');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('deduplicate repeated tool output');
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'cleanup-test',
+      mode: 'benchmark',
+      cwd: 'C:\\repo',
+      config,
+      startedAtMs: 0,
+      endedAtMs: 1,
+      messages: [],
+      events,
+    });
+    expect(summary.experienceCard.trajectoryCleanup).toMatchObject({
+      risk: true,
+      noisyOutputCount: 1,
+      duplicateOutputCount: 1,
+    });
   });
 
   it('accepts a pre-edit candidate-file dossier recorded in assistant reasoning', () => {

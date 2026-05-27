@@ -620,6 +620,63 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('efficiency=tools:8,tool_elapsed_ms:620000,slow_tools:2,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,time_risk:true,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
   }, 15_000);
 
+  it('routes trajectory-cleanup risky prior runs to prior-experience warnings', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-27-noisy-prior');
+    mkdirSync(priorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    writeFileSync(join(root, 'TASK.md'), '- Must show billing totals with two decimal places.\n');
+    writeFileSync(join(root, 'src', 'app.ts'), 'export const total = 12.3;\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T09:30:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['src/app.ts'],
+      usage: {
+        totalTokens: 2400,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 90,
+        successfulVerificationCount: 1,
+        processDefects: [
+          { code: 'trajectory_cleanup_needed' },
+        ],
+        trajectoryCleanupRisk: true,
+        trajectoryCleanupEventCount: 2,
+        trajectoryCleanupNoisyOutputCount: 1,
+        trajectoryCleanupDuplicateOutputCount: 1,
+        trajectoryCleanupOversizedOutputCount: 0,
+      },
+      experienceCard: {
+        trajectoryCleanup: {
+          risk: true,
+          eventCount: 2,
+          noisyOutputCount: 1,
+          base64OutputCount: 1,
+          highEntropyOutputCount: 0,
+          duplicateOutputCount: 1,
+          oversizedOutputCount: 0,
+          events: [
+            { seq: 4, tool: 'read_file', target: 'tmp/screenshot.txt', reason: 'base64_blob', evidence: 'output contains a base64 blob' },
+            { seq: 6, tool: 'read_file', target: 'src/app.ts', reason: 'duplicate_output', duplicateOfSeq: 5, evidence: 'output repeats grep#5' },
+          ],
+        },
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('avoid prior run: 2026-05-27T09:30:00.000Z');
+    expect(result.output).toContain('reason=defects=trajectory_cleanup_needed|trajectory_cleanup=2');
+    expect(result.output).toContain('cleanup=events:2,noisy:1,base64:1,entropy:0,duplicates:1,oversized:0,risk:true');
+    expect(result.output).toContain('signals:base64_blob read_file#4 tmp/screenshot.txt | duplicate_output read_file#6 src/app.ts repeat_of:#5');
+  }, 15_000);
+
   it('routes context-bloated prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     const traceDir = join(root, '.ventipus', 'benchmark-runs');

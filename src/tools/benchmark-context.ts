@@ -114,6 +114,12 @@ interface PriorContextUtilizationSummary {
   scoreBonus: number;
 }
 
+interface PriorTrajectoryCleanupSummary {
+  text: string | null;
+  harmReasons: string[];
+  scoreBonus: number;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -672,6 +678,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorDecision = summarizePriorDecisionObservability(summary);
     const priorReliability = summarizePriorValidationReliability(summary, quality);
     const priorContext = summarizePriorContextUtilization(summary, quality);
+    const priorCleanup = summarizePriorTrajectoryCleanup(summary, quality);
     const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
     const priorSourceResearch = summarizePriorSourceResearchCoverage(summary, quality);
     const priorProactivity = summarizePriorProactivity(summary, quality);
@@ -698,7 +705,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       successfulVerificationCount,
       defectCodes,
       finalAnswerEvidence,
-    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons);
+    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons, priorCleanup.harmReasons);
 
     const changed = changedFiles.slice(0, 5).join(', ') || 'none recorded';
     const verifiers = verificationCommands.slice(0, 3).join(' | ') || 'none recorded';
@@ -730,6 +737,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorDecision,
         priorReliability,
         priorContext.text,
+        priorCleanup.text,
         priorSourceResearch,
         priorProactivity.text,
         priorEfficiency,
@@ -743,6 +751,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     if ((successfulVerificationCount ?? 0) > 0) score += 8;
     score += priorChangeEvaluation.scoreBonus;
     score += priorContext.scoreBonus;
+    score += priorCleanup.scoreBonus;
     if (currentPiBenchLike && priorProactivity.complete) score += 20;
     if (currentPiBenchLike && priorProactivity.risk) score -= 12;
     if (score < 18) continue;
@@ -763,6 +772,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorDecision,
       priorReliability,
       priorContext.text,
+      priorCleanup.text,
       priorSourceResearch,
       priorProactivity.text,
       priorEfficiency,
@@ -1311,6 +1321,85 @@ function summarizePriorContextUtilization(
   };
 }
 
+function summarizePriorTrajectoryCleanup(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): PriorTrajectoryCleanupSummary {
+  const card = objectRecord(summary.experienceCard);
+  const cleanup = objectRecord(card.trajectoryCleanup);
+  const risk = firstBooleanOrNull(cleanup.risk, quality.trajectoryCleanupRisk);
+  const eventCount = finiteNumber(cleanup.eventCount)
+    ?? finiteNumber(quality.trajectoryCleanupEventCount);
+  const noisyOutputCount = finiteNumber(cleanup.noisyOutputCount)
+    ?? finiteNumber(quality.trajectoryCleanupNoisyOutputCount);
+  const oversizedOutputCount = finiteNumber(cleanup.oversizedOutputCount)
+    ?? finiteNumber(quality.trajectoryCleanupOversizedOutputCount);
+  const duplicateOutputCount = finiteNumber(cleanup.duplicateOutputCount)
+    ?? finiteNumber(quality.trajectoryCleanupDuplicateOutputCount);
+  const base64OutputCount = finiteNumber(cleanup.base64OutputCount)
+    ?? finiteNumber(quality.trajectoryCleanupBase64OutputCount);
+  const highEntropyOutputCount = finiteNumber(cleanup.highEntropyOutputCount)
+    ?? finiteNumber(quality.trajectoryCleanupHighEntropyOutputCount);
+  const rawEvents = Array.isArray(cleanup.events)
+    ? cleanup.events
+    : (Array.isArray(quality.trajectoryCleanupEvents) ? quality.trajectoryCleanupEvents : []);
+
+  if (
+    risk === undefined
+    && eventCount == null
+    && noisyOutputCount == null
+    && oversizedOutputCount == null
+    && duplicateOutputCount == null
+    && base64OutputCount == null
+    && highEntropyOutputCount == null
+    && rawEvents.length === 0
+  ) {
+    return { text: null, harmReasons: [], scoreBonus: 0 };
+  }
+
+  const signals = rawEvents
+    .slice(0, 2)
+    .flatMap((raw) => {
+      const event = objectRecord(raw);
+      const seq = finiteNumber(event.seq);
+      const reason = typeof event.reason === 'string' ? event.reason.trim() : '';
+      const tool = typeof event.tool === 'string' ? event.tool.trim() : 'tool';
+      const target = typeof event.target === 'string' ? event.target.trim() : '';
+      const duplicateOfSeq = finiteNumber(event.duplicateOfSeq);
+      const parts = [
+        reason || null,
+        `${tool}#${seq ?? '?'}`,
+        target || null,
+        duplicateOfSeq == null ? null : `repeat_of:#${duplicateOfSeq}`,
+      ].filter(Boolean).join(' ');
+      return parts ? [parts] : [];
+    })
+    .map((signal) => truncateContractSignal(redactTraceText(signal), 140));
+
+  const harmReasons: string[] = [];
+  if (risk === true) {
+    harmReasons.push(`trajectory_cleanup=${eventCount ?? rawEvents.length}`);
+  }
+
+  const scoreBonus = risk === false && (eventCount ?? 0) === 0 ? 1 : 0;
+  const text = [
+    `cleanup=events:${eventCount ?? rawEvents.length}`,
+    `noisy:${noisyOutputCount ?? 0}`,
+    `base64:${base64OutputCount ?? 0}`,
+    `entropy:${highEntropyOutputCount ?? 0}`,
+    `duplicates:${duplicateOutputCount ?? 0}`,
+    `oversized:${oversizedOutputCount ?? 0}`,
+    risk === undefined ? null : `risk:${String(risk)}`,
+    signals.length ? `signals:${signals.join(' | ')}` : null,
+  ].filter(Boolean).join(',');
+
+  return {
+    text,
+    harmReasons,
+    scoreBonus,
+  };
+}
+
 function summarizePriorSourceResearchCoverage(
   summary: Record<string, unknown>,
   quality: Record<string, unknown>,
@@ -1806,7 +1895,7 @@ function classifyPriorExperienceHarm(input: {
   if (successfulVerificationCount === 0) reasons.push('no successful verifier');
   if (input.processScore != null && input.processScore < 70) reasons.push(`low process score ${input.processScore}`);
   const harmfulDefects = input.defectCodes.filter((code) =>
-    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_regression_forecast|pibench_proactivity_ledger_risk|proactivity_ledger_risk)/.test(code),
+    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_regression_forecast|trajectory_cleanup_needed|pibench_proactivity_ledger_risk|proactivity_ledger_risk)/.test(code),
   );
   if (harmfulDefects.length > 0) reasons.push(`defects=${harmfulDefects.slice(0, 4).join('|')}`);
   if (input.finalAnswerEvidence.claimsIncomplete === true || input.finalAnswerEvidence.claimsBlocked === true) {

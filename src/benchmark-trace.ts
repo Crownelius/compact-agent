@@ -61,6 +61,7 @@ export interface BenchmarkExperienceCard {
   longHorizon: BenchmarkExperienceLongHorizon;
   proactivity: BenchmarkExperienceProactivity;
   candidateDossier: BenchmarkExperienceCandidateDossier;
+  trajectoryCleanup: BenchmarkExperienceTrajectoryCleanup;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   decisionObservability: BenchmarkExperienceDecisionObservability;
@@ -294,6 +295,17 @@ export interface BenchmarkExperienceCandidateDossier {
   risk: boolean;
   signalCount: number;
   signals: BenchmarkCandidateDossierSignal[];
+}
+
+export interface BenchmarkExperienceTrajectoryCleanup {
+  risk: boolean;
+  eventCount: number;
+  noisyOutputCount: number;
+  oversizedOutputCount: number;
+  duplicateOutputCount: number;
+  base64OutputCount: number;
+  highEntropyOutputCount: number;
+  events: BenchmarkTrajectoryCleanupEvent[];
 }
 
 export interface BenchmarkExperienceRunEfficiency {
@@ -717,6 +729,14 @@ export interface BenchmarkTrajectoryQuality {
   candidateDossierRisk: boolean;
   candidateDossierSignalCount: number;
   candidateDossierSignals: BenchmarkCandidateDossierSignal[];
+  trajectoryCleanupRisk: boolean;
+  trajectoryCleanupEventCount: number;
+  trajectoryCleanupNoisyOutputCount: number;
+  trajectoryCleanupOversizedOutputCount: number;
+  trajectoryCleanupDuplicateOutputCount: number;
+  trajectoryCleanupBase64OutputCount: number;
+  trajectoryCleanupHighEntropyOutputCount: number;
+  trajectoryCleanupEvents: BenchmarkTrajectoryCleanupEvent[];
   evidenceGroundingRisk: boolean;
   evidenceGroundingEventCount: number;
   evidenceGroundingEvents: BenchmarkEvidenceGroundingEvent[];
@@ -956,6 +976,21 @@ export interface BenchmarkCandidateDossierSignal {
   evidence: string;
 }
 
+export type BenchmarkTrajectoryCleanupReason =
+  | 'base64_blob'
+  | 'high_entropy_output'
+  | 'duplicate_output'
+  | 'oversized_output';
+
+export interface BenchmarkTrajectoryCleanupEvent {
+  seq: number;
+  tool: string;
+  target: string;
+  reason: BenchmarkTrajectoryCleanupReason;
+  evidence: string;
+  duplicateOfSeq?: number;
+}
+
 export interface BenchmarkEvidenceGroundingEvent {
   seq: number;
   tool: string;
@@ -1083,6 +1118,10 @@ const PRE_EDIT_CONTEXT_BLOAT_MIN_INSPECTIONS = 10;
 const PRE_EDIT_CONTEXT_BLOAT_MIN_MISSES = 8;
 const PRE_EDIT_CONTEXT_BLOAT_MIN_MISS_PERCENT = 65;
 const CANDIDATE_DOSSIER_LOCAL_INSPECTION_THRESHOLD = 6;
+const TRAJECTORY_CLEANUP_DUPLICATE_MIN_CHARS = 220;
+const TRAJECTORY_CLEANUP_ENCODED_TOKEN_MIN_CHARS = 160;
+const TRAJECTORY_CLEANUP_HIGH_ENTROPY_TOKEN_MIN_CHARS = 220;
+const TRAJECTORY_CLEANUP_OVERSIZED_RISK_THRESHOLD = 3;
 
 export function redactTraceText(value: unknown): string {
   let text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
@@ -1364,6 +1403,7 @@ export function buildBenchmarkExperienceCard(input: {
     longHorizon: buildBenchmarkExperienceLongHorizon(input.trajectoryQuality),
     proactivity: buildBenchmarkExperienceProactivity(input.trajectoryQuality),
     candidateDossier: buildBenchmarkExperienceCandidateDossier(input.trajectoryQuality),
+    trajectoryCleanup: buildBenchmarkExperienceTrajectoryCleanup(input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
@@ -1527,6 +1567,28 @@ function buildBenchmarkExperienceCandidateDossier(
         evidence: truncate(redactTraceText(signal.evidence), 260),
       }))
       .slice(0, 12),
+  };
+}
+
+function buildBenchmarkExperienceTrajectoryCleanup(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceTrajectoryCleanup {
+  return {
+    risk: quality.trajectoryCleanupRisk,
+    eventCount: quality.trajectoryCleanupEventCount,
+    noisyOutputCount: quality.trajectoryCleanupNoisyOutputCount,
+    oversizedOutputCount: quality.trajectoryCleanupOversizedOutputCount,
+    duplicateOutputCount: quality.trajectoryCleanupDuplicateOutputCount,
+    base64OutputCount: quality.trajectoryCleanupBase64OutputCount,
+    highEntropyOutputCount: quality.trajectoryCleanupHighEntropyOutputCount,
+    events: quality.trajectoryCleanupEvents
+      .map((event) => ({
+        ...event,
+        tool: truncate(redactTraceText(event.tool), 80),
+        target: truncate(redactTraceText(event.target), 180),
+        evidence: truncate(redactTraceText(event.evidence), 260),
+      }))
+      .slice(0, 16),
   };
 }
 
@@ -2676,6 +2738,15 @@ export function buildBenchmarkTrajectoryQuality(
   const contextUtilization = buildBenchmarkContextUtilization(events, editTargetEvidence.targets);
   const contextBloat = buildBenchmarkContextBloat(events, editTargetEvidence.targets, firstEditSeq);
   const candidateDossier = buildBenchmarkCandidateDossierAssessment(events, messages, firstEditSeq);
+  const trajectoryCleanupEvents = buildBenchmarkTrajectoryCleanupEvents(events);
+  const trajectoryCleanupBase64OutputCount = trajectoryCleanupEvents.filter((event) => event.reason === 'base64_blob').length;
+  const trajectoryCleanupHighEntropyOutputCount = trajectoryCleanupEvents.filter((event) => event.reason === 'high_entropy_output').length;
+  const trajectoryCleanupNoisyOutputCount = trajectoryCleanupBase64OutputCount + trajectoryCleanupHighEntropyOutputCount;
+  const trajectoryCleanupOversizedOutputCount = trajectoryCleanupEvents.filter((event) => event.reason === 'oversized_output').length;
+  const trajectoryCleanupDuplicateOutputCount = trajectoryCleanupEvents.filter((event) => event.reason === 'duplicate_output').length;
+  const trajectoryCleanupRisk = trajectoryCleanupNoisyOutputCount > 0
+    || trajectoryCleanupDuplicateOutputCount > 0
+    || trajectoryCleanupOversizedOutputCount >= TRAJECTORY_CLEANUP_OVERSIZED_RISK_THRESHOLD;
   const evidenceGroundingEvents = buildBenchmarkEvidenceGroundingEvents(events);
   const broadEditContractDetected = hasBroadEditContract(events);
   const editSurface = buildBenchmarkEditSurface(events);
@@ -3186,6 +3257,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`candidate-file dossier risk: broad pre-edit local inspection was not compressed into a recorded candidate-file dossier before patching. List candidate files/functions, evidence, reproduction command, and ruled-out distractors before the first edit${examples ? `; ${examples}` : ''}.`);
   }
+  if (trajectoryCleanupRisk) {
+    const examples = trajectoryCleanupEvents
+      .slice(0, 3)
+      .map((event) => `${event.reason}#${event.seq} ${event.target}`)
+      .join('; ');
+    warnings.push(`trajectory-cleanup risk: tool outputs include encoded/noisy blobs, repeated duplicate output, or excessive truncation that should be deduplicated before reuse in benchmark reasoning${examples ? `; ${examples}` : ''}.`);
+  }
   if (evidenceGroundingEvents.length > 0) {
     const examples = evidenceGroundingEvents
       .slice(0, 3)
@@ -3374,6 +3452,11 @@ export function buildBenchmarkTrajectoryQuality(
     candidateDossierRisk: candidateDossier.risk,
     candidateDossierSignalCount: candidateDossier.signals.length,
     candidateDossierSignals: candidateDossier.signals,
+    trajectoryCleanupRisk,
+    trajectoryCleanupEvents,
+    trajectoryCleanupNoisyOutputCount,
+    trajectoryCleanupOversizedOutputCount,
+    trajectoryCleanupDuplicateOutputCount,
     evidenceGroundingEvents,
     broadEditContractDetected,
     largeEditSurfaceTargetCount: editSurface.targets.length,
@@ -3570,6 +3653,14 @@ export function buildBenchmarkTrajectoryQuality(
     candidateDossierRisk: candidateDossier.risk,
     candidateDossierSignalCount: candidateDossier.signals.length,
     candidateDossierSignals: candidateDossier.signals,
+    trajectoryCleanupRisk,
+    trajectoryCleanupEventCount: trajectoryCleanupEvents.length,
+    trajectoryCleanupNoisyOutputCount,
+    trajectoryCleanupOversizedOutputCount,
+    trajectoryCleanupDuplicateOutputCount,
+    trajectoryCleanupBase64OutputCount,
+    trajectoryCleanupHighEntropyOutputCount,
+    trajectoryCleanupEvents,
     evidenceGroundingRisk: evidenceGroundingEvents.length > 0,
     evidenceGroundingEventCount: evidenceGroundingEvents.length,
     evidenceGroundingEvents,
@@ -3650,7 +3741,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} trajectory_cleanup_risk=${yn(quality.trajectoryCleanupRisk)} trajectory_cleanup_events=${quality.trajectoryCleanupEventCount} trajectory_cleanup_noisy=${quality.trajectoryCleanupNoisyOutputCount} trajectory_cleanup_duplicates=${quality.trajectoryCleanupDuplicateOutputCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -3798,6 +3889,11 @@ interface BenchmarkProcessDefectInput {
   candidateDossierRisk: boolean;
   candidateDossierSignalCount: number;
   candidateDossierSignals: BenchmarkCandidateDossierSignal[];
+  trajectoryCleanupRisk: boolean;
+  trajectoryCleanupEvents: BenchmarkTrajectoryCleanupEvent[];
+  trajectoryCleanupNoisyOutputCount: number;
+  trajectoryCleanupOversizedOutputCount: number;
+  trajectoryCleanupDuplicateOutputCount: number;
   evidenceGroundingEvents: BenchmarkEvidenceGroundingEvent[];
   broadEditContractDetected: boolean;
   largeEditSurfaceTargetCount: number;
@@ -4305,6 +4401,26 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
         input.candidateDossierSignals
           .slice(0, 3)
           .map((signal) => `${signal.reason}#${signal.seq}:inspections=${signal.inspectCount}`)
+          .join('; '),
+      ].filter(Boolean).join(', '),
+    );
+  }
+  if (input.trajectoryCleanupRisk) {
+    const firstSignal = input.trajectoryCleanupEvents[0];
+    add(
+      'trajectory_cleanup_needed',
+      'execution_control',
+      input.trajectoryCleanupNoisyOutputCount > 0 || input.trajectoryCleanupDuplicateOutputCount >= 2 ? 'medium' : 'low',
+      firstSignal?.seq ?? null,
+      'Tool output cleanup was needed before reusing trajectory evidence.',
+      [
+        `events=${input.trajectoryCleanupEvents.length}`,
+        `noisy=${input.trajectoryCleanupNoisyOutputCount}`,
+        `duplicates=${input.trajectoryCleanupDuplicateOutputCount}`,
+        `oversized=${input.trajectoryCleanupOversizedOutputCount}`,
+        input.trajectoryCleanupEvents
+          .slice(0, 3)
+          .map((event) => `${event.reason}#${event.seq}:${event.target}`)
           .join('; '),
       ].filter(Boolean).join(', '),
     );
@@ -6059,6 +6175,174 @@ function formatCandidateDossierEvidence(
   ].filter(Boolean).join(', ');
 }
 
+export function buildBenchmarkTrajectoryCleanupEvents(events: BenchmarkTraceEvent[]): BenchmarkTrajectoryCleanupEvent[] {
+  const cleanup: BenchmarkTrajectoryCleanupEvent[] = [];
+  const seenOutputs = new Map<string, { seq: number; tool: string; target: string }>();
+
+  for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+    const output = trajectoryCleanupOutputText(event);
+    if (!output) continue;
+
+    const noisyReason = classifyNoisyTrajectoryOutput(output);
+    if (noisyReason) {
+      cleanup.push({
+        seq: event.seq,
+        tool: truncate(redactTraceText(event.tool || 'unknown'), 80),
+        target: trajectoryCleanupTarget(event),
+        reason: noisyReason,
+        evidence: trajectoryCleanupEvidence(output, noisyReason),
+      });
+    }
+
+    if (trajectoryOutputHasTruncationMarker(output)) {
+      cleanup.push({
+        seq: event.seq,
+        tool: truncate(redactTraceText(event.tool || 'unknown'), 80),
+        target: trajectoryCleanupTarget(event),
+        reason: 'oversized_output',
+        evidence: trajectoryCleanupEvidence(output, 'oversized_output'),
+      });
+    }
+
+    const fingerprint = trajectoryOutputFingerprint(output);
+    if (!fingerprint) continue;
+    const prior = seenOutputs.get(fingerprint);
+    if (prior) {
+      cleanup.push({
+        seq: event.seq,
+        tool: truncate(redactTraceText(event.tool || 'unknown'), 80),
+        target: trajectoryCleanupTarget(event),
+        reason: 'duplicate_output',
+        duplicateOfSeq: prior.seq,
+        evidence: truncate(redactTraceText(`output repeats ${prior.tool}#${prior.seq} (${prior.target}); normalized_chars=${trajectoryOutputNormalizedText(output).length}`), 260),
+      });
+    } else {
+      seenOutputs.set(fingerprint, {
+        seq: event.seq,
+        tool: truncate(redactTraceText(event.tool || 'unknown'), 80),
+        target: trajectoryCleanupTarget(event),
+      });
+    }
+  }
+
+  return cleanup.slice(0, 40);
+}
+
+function trajectoryCleanupOutputText(event: BenchmarkTraceEvent): string {
+  if (event.tool === BENCHMARK_INVALID_TOOL_ACTION_TOOL) return '';
+  const text = redactTraceText(event.outputPreview || '').trim();
+  if (text.length < 80) return '';
+  return text;
+}
+
+function trajectoryCleanupTarget(event: BenchmarkTraceEvent): string {
+  return truncate(redactTraceText(event.target || summarizeReplayInputTarget(event.inputPreview) || event.tool), 180);
+}
+
+function classifyNoisyTrajectoryOutput(text: string): BenchmarkTrajectoryCleanupReason | null {
+  if (trajectoryOutputHasBase64Blob(text)) return 'base64_blob';
+  if (trajectoryOutputHasHighEntropyBlob(text)) return 'high_entropy_output';
+  return null;
+}
+
+function trajectoryOutputHasBase64Blob(text: string): boolean {
+  if (/data:[^,\s]+;base64,/i.test(text)) return true;
+  const re = /[A-Za-z0-9+/]{160,}={0,2}/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (looksLikeEncodedToken(match[0], TRAJECTORY_CLEANUP_ENCODED_TOKEN_MIN_CHARS, 12)) return true;
+  }
+  return false;
+}
+
+function trajectoryOutputHasHighEntropyBlob(text: string): boolean {
+  const tokenRe = /[A-Za-z0-9_-]{220,}|[a-f0-9]{160,}/gi;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRe.exec(text)) !== null) {
+    const token = match[0];
+    if (looksLikeEncodedToken(token, TRAJECTORY_CLEANUP_HIGH_ENTROPY_TOKEN_MIN_CHARS, 14)
+      && approximateShannonEntropy(token) >= 3.5) {
+      return true;
+    }
+  }
+
+  return text.split(/\r?\n/)
+    .some((line) =>
+      line.length >= 500
+      && whitespaceRatio(line) < 0.03
+      && uniqueCharacterCount(line) >= 20
+      && approximateShannonEntropy(line) >= 3.8);
+}
+
+function looksLikeEncodedToken(token: string, minLength: number, minUniqueChars: number): boolean {
+  if (token.length < minLength) return false;
+  const compact = token.replace(/=+$/g, '');
+  if (compact.length < minLength) return false;
+  if (uniqueCharacterCount(compact) < minUniqueChars) return false;
+  const encodedChars = compact.match(/[A-Za-z0-9+/_-]/g)?.length ?? 0;
+  return encodedChars / compact.length >= 0.96;
+}
+
+function approximateShannonEntropy(text: string): number {
+  if (!text) return 0;
+  const counts = new Map<string, number>();
+  for (const char of text) counts.set(char, (counts.get(char) ?? 0) + 1);
+  let entropy = 0;
+  for (const count of counts.values()) {
+    const p = count / text.length;
+    entropy -= p * Math.log2(p);
+  }
+  return entropy;
+}
+
+function whitespaceRatio(text: string): number {
+  if (!text) return 1;
+  const whitespace = text.match(/\s/g)?.length ?? 0;
+  return whitespace / text.length;
+}
+
+function uniqueCharacterCount(text: string): number {
+  return new Set(text).size;
+}
+
+function trajectoryOutputHasTruncationMarker(text: string): boolean {
+  return /\.\.\.\[truncated \d+ chars(?:; tail follows)?\]/.test(text);
+}
+
+function trajectoryOutputFingerprint(text: string): string | null {
+  const normalized = trajectoryOutputNormalizedText(text);
+  if (normalized.length < TRAJECTORY_CLEANUP_DUPLICATE_MIN_CHARS) return null;
+  if (/^(?:ok|done|success|pass(?:ed)?|true|false|\[\])$/i.test(normalized)) return null;
+  return sha256Hex(normalized).slice(0, 24);
+}
+
+function trajectoryOutputNormalizedText(text: string): string {
+  return redactTraceText(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/\.\.\.\[truncated \d+ chars(?:; tail follows)?\]\.\.\./g, '...[truncated]...')
+    .replace(/\.\.\.\[truncated \d+ chars(?:; tail follows)?\]/g, '...[truncated]')
+    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g, '<timestamp>')
+    .replace(/\b\d+(?:\.\d+)?(?:ms|s|sec|seconds|m|min|minutes)?\b/gi, '<n>')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function trajectoryCleanupEvidence(text: string, reason: BenchmarkTrajectoryCleanupReason): string {
+  const normalized = trajectoryOutputNormalizedText(text);
+  const marker = trajectoryOutputHasTruncationMarker(text) ? ', truncated=yes' : '';
+  if (reason === 'oversized_output') {
+    return truncate(redactTraceText(`output preview was truncated; normalized_chars=${normalized.length}${marker}`), 260);
+  }
+  if (reason === 'base64_blob') {
+    return truncate(redactTraceText(`output contains a base64/data-URI-like blob; normalized_chars=${normalized.length}${marker}`), 260);
+  }
+  if (reason === 'high_entropy_output') {
+    return truncate(redactTraceText(`output contains a high-entropy encoded/minified blob; normalized_chars=${normalized.length}${marker}`), 260);
+  }
+  return truncate(redactTraceText(`output cleanup signal; normalized_chars=${normalized.length}${marker}`), 260);
+}
+
 export function buildBenchmarkEvidenceGroundingEvents(events: BenchmarkTraceEvent[]): BenchmarkEvidenceGroundingEvent[] {
   const staleByTarget = new Map<string, {
     seq: number;
@@ -7597,6 +7881,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('low context utilization')
     || warning.includes('pre-edit context bloat')
     || warning.includes('candidate-file dossier risk')
+    || warning.includes('trajectory-cleanup risk')
     || warning.includes('large edit surface')
     || warning.includes('redundant tool calls')
     || warning.includes('redundant verifier reruns')
@@ -7621,7 +7906,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, SWE-Cycle lifecycle phases, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-Cycle/SWE-CI completion, for Pi-Bench-style tasks build the user/profile/history/file/app/tool context contract and record hidden-intent hypotheses, privacy risk, clarification decision, and observable state verification before claiming proactive assistant completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line and an At-risk regression line to each non-trivial edit, then verify both the expected fix and the forecasted risk where feasible, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, lifecycle judge, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-Cycle/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, resolve harness-safety signals by avoiding protected resource access, external transfer, destructive operations, and oracle/hidden materials unless explicitly required, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, SWE-Cycle lifecycle phases, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-Cycle/SWE-CI completion, for Pi-Bench-style tasks build the user/profile/history/file/app/tool context contract and record hidden-intent hypotheses, privacy risk, clarification decision, and observable state verification before claiming proactive assistant completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, deduplicate repeated tool output and summarize encoded/minified blobs instead of replaying them into reasoning, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line and an At-risk regression line to each non-trivial edit, then verify both the expected fix and the forecasted risk where feasible, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, lifecycle judge, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-Cycle/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, resolve harness-safety signals by avoiding protected resource access, external transfer, destructive operations, and oracle/hidden materials unless explicitly required, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
