@@ -27,6 +27,12 @@ interface SourceHit {
   summary?: string;
 }
 
+interface SourceSearchResult {
+  source: ResearchSource;
+  hits: SourceHit[];
+  error?: string;
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function decodeEntities(s: string): string {
@@ -799,6 +805,7 @@ function formatHits(query: string, hits: SourceHit[], errors: string[], notes: s
     for (const note of notes) lines.push(`- ${note}`);
     lines.push('');
   }
+  lines.push(...buildSourceDigest(hits, errors), '');
   for (const h of hits) {
     lines.push(`## ${h.source}: ${h.title}`);
     lines.push(h.url);
@@ -811,6 +818,24 @@ function formatHits(query: string, hits: SourceHit[], errors: string[], notes: s
     for (const e of errors) lines.push(`- ${e}`);
   }
   return lines.join('\n').trim();
+}
+
+function buildSourceDigest(hits: SourceHit[], errors: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const hit of hits) {
+    counts.set(hit.source, (counts.get(hit.source) ?? 0) + 1);
+  }
+  const sources = Array.from(counts.entries())
+    .map(([source, count]) => `${source}=${count}`)
+    .join(' | ') || 'none';
+  const topUrls = Array.from(new Set(hits.map((hit) => hit.url).filter(Boolean))).slice(0, 6);
+  return [
+    '## Source digest',
+    `- hits: ${hits.length}`,
+    `- errors: ${errors.length}`,
+    `- sources: ${sources}`,
+    `- top_urls: ${topUrls.length ? topUrls.join(' | ') : 'none'}`,
+  ];
 }
 
 export const ResearchSourcesTool: Tool = {
@@ -886,19 +911,21 @@ export const ResearchSourcesTool: Tool = {
       return { output: `research_sources: unsupported kaggle_kind "${kaggleKind}"`, isError: true };
     }
 
-    const hits: SourceHit[] = [];
-    const errors: string[] = [];
     const notes = buildCoverageNotes(sources, githubKind, kind, kaggleKind, recentDays);
-    await Promise.all(sources.map(async (s) => {
+    const results = await Promise.all(sources.map(async (s): Promise<SourceSearchResult> => {
+      const sourceHits: SourceHit[] = [];
       try {
-        if (s === 'arxiv') hits.push(...await searchArxiv(query, limit, recentDays));
-        if (s === 'github') hits.push(...await searchGitHub(query, limit, recentDays, githubKind));
-        if (s === 'huggingface') hits.push(...await searchHuggingFace(query, limit, kind, recentDays));
-        if (s === 'kaggle') hits.push(...await searchKaggle(query, limit, kaggleKind, recentDays));
+        if (s === 'arxiv') sourceHits.push(...await searchArxiv(query, limit, recentDays));
+        if (s === 'github') sourceHits.push(...await searchGitHub(query, limit, recentDays, githubKind));
+        if (s === 'huggingface') sourceHits.push(...await searchHuggingFace(query, limit, kind, recentDays));
+        if (s === 'kaggle') sourceHits.push(...await searchKaggle(query, limit, kaggleKind, recentDays));
+        return { source: s, hits: sourceHits };
       } catch (e) {
-        errors.push(`${s}: ${e instanceof Error ? e.message : String(e)}`);
+        return { source: s, hits: [], error: `${s}: ${e instanceof Error ? e.message : String(e)}` };
       }
     }));
+    const hits = results.flatMap((result) => result.hits);
+    const errors = results.flatMap((result) => result.error ? [result.error] : []);
 
     return {
       output: formatHits(query, hits, errors, notes),

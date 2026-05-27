@@ -142,12 +142,78 @@ describe('benchmark_context tool', () => {
         totalTokens: 3700,
         estimatedCostUsd: 0,
       },
+      verificationEvidence: {
+        failureSignatures: [{
+          seq: 4,
+          command: 'pnpm run test',
+          framework: 'vitest',
+          tests: ['billing totals render with fixed decimals'],
+          files: ['src/index.ts'],
+          errors: ['AssertionError: expected 12.3 to equal 12.30'],
+          raw: 'billing total mismatch',
+        }],
+      },
       trajectoryQuality: {
         processScore: 96,
         successfulVerificationCount: 2,
+        taskContractSignalCount: 4,
+        taskContractChecklistAfterContext: true,
+        taskContractChecklistComplete: true,
         processDefects: [],
       },
     }, null, 2));
+    writeFileSync(join(priorRunDir, 'trace.jsonl'), [
+      JSON.stringify({
+        seq: 1,
+        tool: 'benchmark_context',
+        target: root,
+        status: 'ok',
+        verification: false,
+        elapsedMs: 50,
+        inputPreview: JSON.stringify({ path: root }),
+        outputPreview: 'context',
+      }),
+      JSON.stringify({
+        seq: 2,
+        tool: 'read_file',
+        target: 'src/index.ts',
+        status: 'ok',
+        verification: false,
+        elapsedMs: 20,
+        inputPreview: JSON.stringify({ file_path: 'src/index.ts' }),
+        outputPreview: 'export const ok = true;',
+      }),
+      JSON.stringify({
+        seq: 3,
+        tool: 'grep',
+        target: '/billing/ in src',
+        status: 'ok',
+        verification: false,
+        elapsedMs: 20,
+        inputPreview: JSON.stringify({ pattern: 'billing', path: 'src/index.ts' }),
+        outputPreview: 'src/index.ts:1: billing',
+      }),
+      JSON.stringify({
+        seq: 4,
+        tool: 'bash',
+        target: '$ pnpm run test',
+        status: 'error',
+        verification: true,
+        elapsedMs: 200,
+        inputPreview: JSON.stringify({ command: 'pnpm run test' }),
+        outputPreview: 'FAIL billing totals render with fixed decimals',
+      }),
+      JSON.stringify({
+        seq: 5,
+        tool: 'edit_file',
+        target: 'src/index.ts',
+        status: 'ok',
+        verification: false,
+        elapsedMs: 10,
+        inputPreview: JSON.stringify({ file_path: 'src/index.ts' }),
+        outputPreview: 'ok',
+      }),
+    ].join('\n') + '\n');
     writeFileSync(join(failedPriorRunDir, 'summary.json'), JSON.stringify({
       cwd: root,
       endedAt: '2026-05-26T13:00:00.000Z',
@@ -249,6 +315,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('localization dossier');
     expect(result.output).toContain('task instruction excerpts and full instruction files');
     expect(result.output).toContain('source research trigger');
+    expect(result.output).toContain('source research digest');
     expect(result.output).toContain('github_kind:"all"');
     expect(result.output).toContain('kind:"all"');
     expect(result.output).toContain('kaggle_kind:"both"');
@@ -258,7 +325,10 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('process_score=96');
     expect(result.output).toContain('success_verifiers=2');
     expect(result.output).toContain('verifiers=pnpm run test | python -m pytest');
-    expect(result.output).toContain('changed=src/index.ts, tests/test_app.py, src/index.ts');
+    expect(result.output).toContain('changed=src/index.ts, tests/test_app.py');
+    expect(result.output).toContain('replay=read_file#2 src/index.ts | grep#3 /billing/ in src | failing_verifier#4 pnpm run test');
+    expect(result.output).toContain('failures=pnpm run test tests=billing totals render with fixed decimals files=src/index.ts errors=AssertionError: expected 12.3 to equal 12.30');
+    expect(result.output).toContain('contract=signals:4,checklist_after_context:true,complete:true');
     expect(result.output).toContain('usage=3700 tokens/$0.0000');
     expect(result.output).toContain('Treat prior experience as a cost-saving heuristic only');
     expect(result.output).toContain('Prior Benchmark Experience Warnings');
@@ -268,6 +338,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('Do not copy these prior patterns without fresh current-task evidence');
     expect(result.output).toContain('Convert task instruction excerpts and task contract signals into a short todo checklist');
     expect(result.output).toContain('reuse only the method-level lesson');
+    expect(result.output).toContain('replay only the relevant read/search/verifier steps');
     expect(result.output).toContain('avoid any prior patterns listed as warnings');
   }, 15_000);
 

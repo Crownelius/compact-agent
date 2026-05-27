@@ -20,6 +20,8 @@ describe('benchmark mode and prompt', () => {
     expect(mode.systemPromptAddition).toContain('github_kind:"all"');
     expect(mode.systemPromptAddition).toContain('kaggle_kind:"both"');
     expect(mode.systemPromptAddition).toContain('recent_days:90');
+    expect(mode.systemPromptAddition).toContain('replay=');
+    expect(mode.systemPromptAddition).toContain('Source digest');
   });
 
   it('normalizes benchmark profile aliases', () => {
@@ -61,6 +63,8 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('kind:"all"');
     expect(prompt).toContain('kaggle_kind:"both"');
     expect(prompt).toContain('recent_days:90');
+    expect(prompt).toContain('Source digest');
+    expect(prompt).toContain('replay=');
     expect(prompt).toContain('Verify under benchmark pressure');
   });
 
@@ -77,6 +81,7 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('SWE-ContextBench');
     expect(prompt).toContain('Search project/global memory');
     expect(prompt).toContain('hypothesis');
+    expect(prompt).toContain('bounded replay checkpoints');
     expect(prompt).toContain('validating it against current files');
   });
 });

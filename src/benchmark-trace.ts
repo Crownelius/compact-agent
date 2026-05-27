@@ -4480,7 +4480,7 @@ function extractResearchSourcesPreviewLines(text: string): string[] {
       captureList = false;
       continue;
     }
-    if (/^##\s+(?:Coverage notes|Source errors)\b/i.test(line)) {
+    if (/^##\s+(?:Coverage notes|Source digest|Source errors)\b/i.test(line)) {
       push(line);
       captureList = true;
       continue;

@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { globSync } from 'glob';
 import { getConfigDir } from '../config.js';
 import { redactTraceText } from '../benchmark-trace.js';
@@ -265,6 +265,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '6. Run the narrowest likely verifier before broad verification when feasible.',
       '7. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
       '8. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
+      '9. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
     ];
 
     return { output: lines.filter((line, i, arr) => line || arr[i - 1] !== '').join('\n'), isError: false };
@@ -313,6 +314,7 @@ function summarizeBenchmarkMethodHints(
     hints.push('service tasks: start long-running services detached/backgrounded, then verify readiness via logs, process, port, or health endpoint.');
   }
   hints.push('source research trigger: for agent-improvement, benchmark-methodology, model, dataset, or leaderboard work, use research_sources before synthesis with arXiv papers; GitHub github_kind:"all"; Hugging Face kind:"all"; Kaggle kaggle_kind:"both"; and recent_days:90 unless older historical evidence is explicitly needed.');
+  hints.push('source research digest: after research_sources, inspect Source digest hits/errors/source mix/top URLs; refine the query or state the coverage gap before relying on weak source evidence.');
   return hints;
 }
 
@@ -488,10 +490,10 @@ export function summarizePriorBenchmarkExperienceSummary(
     const quality = objectRecord(summary.trajectoryQuality);
     const usage = objectRecord(summary.usage);
     const finalAnswerEvidence = objectRecord(summary.finalAnswerEvidence);
-    const changedFiles = stringsFromUnknown(summary.changedFiles)
+    const changedFiles = uniqueNormalizedStrings(stringsFromUnknown(summary.changedFiles)
       .concat(stringsFromUnknown(summary.worktreeChangedFiles))
       .map(normalizePath)
-      .slice(0, 80);
+      .slice(0, 80));
     const verificationCommands = stringsFromUnknown(summary.verificationCommands).slice(0, 20);
     const processScore = finiteNumber(quality.processScore);
     const successfulVerificationCount = finiteNumber(quality.successfulVerificationCount);
@@ -526,6 +528,9 @@ export function summarizePriorBenchmarkExperienceSummary(
       : 'usage=not recorded';
     const endedAt = typeof summary.endedAt === 'string' ? summary.endedAt : basename(summaryPath);
     const visibleDefects = defectCodes.slice(0, 4);
+    const replayCheckpoints = summarizePriorReplayCheckpoints(summaryPath, fileSet, fileBasenames, verifierSet);
+    const priorFailures = summarizePriorFailureSignatures(summary);
+    const contractText = summarizePriorTaskContractUse(quality);
 
     if (harmReasons.length > 0) {
       const line = [
@@ -537,6 +542,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
         `verifiers=${redactTraceText(verifiers)}`,
         `changed=${redactTraceText(changed)}`,
+        priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
       continue;
@@ -554,6 +560,9 @@ export function summarizePriorBenchmarkExperienceSummary(
       `success_verifiers=${successfulVerificationCount ?? 0}`,
       `verifiers=${redactTraceText(verifiers)}`,
       `changed=${redactTraceText(changed)}`,
+      replayCheckpoints.length ? `replay=${redactTraceText(replayCheckpoints.join(' | '))}` : null,
+      priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
+      contractText,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
     ].filter(Boolean).join('; ');
@@ -596,6 +605,154 @@ function stringsFromUnknown(value: unknown): string[] {
 function finiteNumber(value: unknown): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function uniqueNormalizedStrings(values: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const clean = normalizePath(value).trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+function summarizePriorReplayCheckpoints(
+  summaryPath: string,
+  fileSet: Set<string>,
+  fileBasenames: Set<string>,
+  verifierSet: Set<string>,
+): string[] {
+  const tracePath = join(dirname(summaryPath), 'trace.jsonl');
+  if (!existsSync(tracePath)) return [];
+
+  let text = '';
+  try {
+    const stats = statSync(tracePath);
+    if (!stats.isFile() || stats.size > 5 * 1024 * 1024) return [];
+    text = readFileSync(tracePath, 'utf-8');
+  } catch {
+    return [];
+  }
+
+  const events = text
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(0, 800)
+    .flatMap((line) => {
+      try {
+        return [objectRecord(JSON.parse(line) as unknown)];
+      } catch {
+        return [];
+      }
+    });
+  if (events.length === 0) return [];
+
+  const firstEditSeq = events
+    .filter((event) => isPriorEditTool(String(event.tool ?? '')))
+    .map((event) => finiteNumber(event.seq))
+    .filter((seq): seq is number => seq != null)
+    .sort((a, b) => a - b)[0] ?? null;
+
+  const checkpoints: Array<{ seq: number; score: number; line: string }> = [];
+  for (const event of events) {
+    const seq = finiteNumber(event.seq);
+    const tool = String(event.tool ?? '');
+    if (seq == null || !tool) continue;
+    if (firstEditSeq != null && seq > firstEditSeq) continue;
+
+    const target = String(event.target ?? '').trim();
+    const inputPreview = String(event.inputPreview ?? '').trim();
+    const searchable = normalizePath(`${target}\n${inputPreview}`);
+
+    if (tool === 'bash' && event.verification === true) {
+      const command = target.replace(/^\$\s*/, '').trim();
+      if (!command || event.status !== 'error') continue;
+      const normalized = normalizeExperienceText(command);
+      const score = verifierSet.has(normalized) ? 12 : 5;
+      checkpoints.push({
+        seq,
+        score,
+        line: `failing_verifier#${seq} ${truncateContractSignal(command, 140)}`,
+      });
+      continue;
+    }
+
+    if (!['read_file', 'grep', 'glob', 'list_dir'].includes(tool)) continue;
+    if (tool === 'list_dir' && (!target || target === '.')) continue;
+
+    const fileMatch = matchesCurrentFileReference(searchable, fileSet, fileBasenames);
+    const score =
+      (fileMatch ? 8 : 0) +
+      (tool === 'read_file' ? 4 : tool === 'grep' ? 3 : tool === 'glob' ? 2 : 1);
+    if (score < 8) continue;
+
+    checkpoints.push({
+      seq,
+      score,
+      line: `${tool}#${seq} ${truncateContractSignal(target || inputPreview, 140)}`,
+    });
+  }
+
+  return checkpoints
+    .sort((a, b) => b.score - a.score || a.seq - b.seq)
+    .slice(0, 6)
+    .sort((a, b) => a.seq - b.seq)
+    .map((checkpoint) => checkpoint.line);
+}
+
+function summarizePriorFailureSignatures(summary: Record<string, unknown>): string[] {
+  const evidence = objectRecord(summary.verificationEvidence);
+  const rawSignatures = Array.isArray(evidence.failureSignatures)
+    ? evidence.failureSignatures
+    : [];
+  const out: string[] = [];
+  for (const raw of rawSignatures.slice(-3)) {
+    const signature = objectRecord(raw);
+    const command = typeof signature.command === 'string' ? signature.command.trim() : '';
+    const tests = stringsFromUnknown(signature.tests).slice(0, 2).join('|');
+    const files = stringsFromUnknown(signature.files).slice(0, 2).join('|');
+    const errors = stringsFromUnknown(signature.errors).slice(0, 1).join('|');
+    const parts = [
+      command || `failure#${signature.seq ?? '?'}`,
+      tests ? `tests=${tests}` : null,
+      files ? `files=${files}` : null,
+      errors ? `errors=${errors}` : null,
+    ].filter(Boolean).join(' ');
+    if (parts && !out.includes(parts)) out.push(truncateContractSignal(parts, 180));
+  }
+  return out;
+}
+
+function summarizePriorTaskContractUse(quality: Record<string, unknown>): string | null {
+  const signals = finiteNumber(quality.taskContractSignalCount);
+  if (signals == null || signals <= 0) return null;
+  const afterContext = quality.taskContractChecklistAfterContext;
+  const complete = quality.taskContractChecklistComplete;
+  return `contract=signals:${signals},checklist_after_context:${String(afterContext)},complete:${String(complete)}`;
+}
+
+function isPriorEditTool(tool: string): boolean {
+  return ['write_file', 'edit_file', 'apply_patch'].includes(tool);
+}
+
+function matchesCurrentFileReference(text: string, fileSet: Set<string>, fileBasenames: Set<string>): boolean {
+  const normalized = normalizePath(text).toLowerCase();
+  if (!normalized) return false;
+  for (const file of fileSet) {
+    if (normalized.includes(file.toLowerCase())) return true;
+  }
+  const tokens = normalized
+    .split(/[^a-z0-9_.-]+/i)
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+  for (const token of tokens) {
+    if (fileBasenames.has(token)) return true;
+  }
+  return false;
 }
 
 function classifyPriorExperienceHarm(input: {

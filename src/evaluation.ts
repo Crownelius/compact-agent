@@ -303,6 +303,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
       return `Profile: SWE-ContextBench style context-learning task
 - Search project/global memory for prior related issues, patches, conventions, and verification commands.
 - Treat recalled memory as a hypothesis, not truth. Re-read current files and verify every reused pattern.
+- If benchmark_context includes bounded replay checkpoints, use them as candidate inspection/verifier starting points, not as a patch recipe.
 - Prefer concise, accurate summaries of prior experience over dumping unfiltered memory into the working context.
 - Track whether memory helped, hurt, or was irrelevant so useful experience can be persisted after the task.`;
     case 'generic':
@@ -339,6 +340,7 @@ Use this workflow as the default benchmark strategy:
    - Write/update a todo list before the first edit.
    - For risky or multi-file edits, inspect git state first and keep changes reviewable so failed paths can be reverted without losing unrelated user work.
    - Prefer one coherent root-cause patch over broad speculative rewrites.
+   - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
 
 4. Validate like a verifier.
    - After each patch, run the narrowest relevant test again.
@@ -347,6 +349,7 @@ Use this workflow as the default benchmark strategy:
 
 5. Use current science only when it helps the task.
    - For benchmark-methodology, agent-improvement, model, dataset, or leaderboard work, call \`research_sources\` before synthesis with source-specific coverage: arXiv papers; GitHub \`github_kind:"all"\` for repos/issues/PRs/code; Hugging Face \`kind:"all"\` for papers/models/datasets; Kaggle \`kaggle_kind:"both"\` for datasets/competitions; and \`recent_days:90\` unless older historical evidence is explicitly needed.
+   - Check the \`Source digest\` before relying on research: if hits are zero, errors are nonzero, or a source family is missing, refine the query or call out the coverage gap.
    - For local repository repair, prioritize the checkout and verifier over external popularity signals.
 
 6. Guard against contamination.
@@ -397,6 +400,7 @@ ${preflightSnapshot}
    - Run the narrowest failing command, visible test, or local reproduction before patching when feasible.
    - Search memory for related project conventions or prior fixes when relevant.
    - Use recalled context only after validating it against current files.
+   - If the preflight has prior \`replay=\` checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or ignore current task files.
    - Do not use memory as a substitute for reading the present checkout.
 
 4. Patch minimally with checkpoint discipline.

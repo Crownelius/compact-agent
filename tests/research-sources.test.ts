@@ -241,6 +241,10 @@ describe('research_sources tool', () => {
     const result = await ResearchSourcesTool.call({ query: 'agent', source: 'all', limit: 1 }, process.cwd());
     expect(result.isError).toBe(false);
     expect(result.output).toContain('Coverage notes');
+    expect(result.output).toContain('Source digest');
+    expect(result.output).toContain('- hits: 7');
+    expect(result.output).toContain('- errors: 0');
+    expect(result.output).toContain('- sources: arXiv=1 | GitHub=1 | HF model=1 | HF dataset=1 | HF paper=1 | Kaggle=1 | Kaggle competition=1');
     expect(result.output).toContain('arXiv papers requested');
     expect(result.output).toContain('GitHub repositories requested');
     expect(result.output).toContain('Hugging Face all requested');
@@ -252,6 +256,9 @@ describe('research_sources tool', () => {
     expect(result.output).toContain('HF paper: Agent Paper');
     expect(result.output).toContain('Kaggle: Data');
     expect(result.output).toContain('Kaggle competition: Agent Competition');
+    expect(result.output.indexOf('## arXiv: Paper')).toBeLessThan(result.output.indexOf('## GitHub: o/r'));
+    expect(result.output.indexOf('## GitHub: o/r')).toBeLessThan(result.output.indexOf('## HF model: o/m'));
+    expect(result.output.indexOf('## HF paper: Agent Paper')).toBeLessThan(result.output.indexOf('## Kaggle: Data'));
     expect(result.output).not.toContain('hf_test_token');
     expect(result.output).not.toContain('kg_test_token');
   });
@@ -510,6 +517,8 @@ describe('research_sources tool', () => {
     expect(notes.join('\n')).not.toContain('kg_note_secret');
     const output = _internal.formatHits('agent benchmark', [], [], notes);
     expect(output).toContain('Coverage notes');
+    expect(output).toContain('Source digest');
+    expect(output).toContain('- hits: 0');
     expect(output).toContain('Targeted benchmark coverage requested');
   });
 });

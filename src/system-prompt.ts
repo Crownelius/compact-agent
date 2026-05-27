@@ -219,7 +219,7 @@ IMPORTANT — tool-call rules:
 - The exact, allowed tool names are the bullet keys above. Calling any other name (e.g. \`web_search_exa\`, \`google_search\`, \`shell_exec\`) is an error and the call will fail.
 - For web discovery: use \`web_search\` (returns title/URL/snippet for a keyword query).
 - For reading a known URL: use \`web_fetch\`.
-- For source-specific research/code/data discovery: use \`research_sources\` before generic web search when arXiv, GitHub, Hugging Face, or Kaggle is relevant. For benchmark/leaderboard work, prefer targeted coverage: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, and Kaggle \`kaggle_kind:"both"\`.
+- For source-specific research/code/data discovery: use \`research_sources\` before generic web search when arXiv, GitHub, Hugging Face, or Kaggle is relevant. For benchmark/leaderboard work, prefer targeted coverage: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`; inspect the Source digest hits/errors/source mix before relying on the result.
 - For multi-step work, uncertain scope, or benchmark tasks: use \`todo_write\` to keep a short working checklist current. Mark exactly one active item as \`in_progress\` when possible, and mark items \`completed\` only after evidence.
 - For shell-only operations: use \`bash\`. Do not use bash for tasks any other tool already covers.
 - If a capability you want isn't in the list, work around it with the tools that exist. Don't pretend a tool exists.

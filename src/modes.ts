@@ -142,13 +142,18 @@ Science-backed method stack:
   evidence, reproduction command, and ruled-out distractors.
 - Use checkpoint discipline for risky edits: inspect git state, update todos,
   and keep failed paths revertible without touching unrelated user work.
+- If benchmark_context shows prior \`replay=\` checkpoints, use them only as
+  hypothesis trails for current read/search/verifier steps; current files and
+  verifier output override prior experience and warning patterns are failures
+  to avoid.
 - For benchmark-methodology, agent-improvement, model, dataset, or leaderboard
   work, call research_sources before synthesis with source-specific coverage:
   arXiv papers; GitHub github_kind:"all" for repos/issues/PRs/code; Hugging
   Face kind:"all" for papers/models/datasets; Kaggle kaggle_kind:"both" for
   datasets/competitions; and recent_days:90 unless the task explicitly needs
-  older historical sources. For local repair tasks, the checkout and verifier
-  remain authoritative.
+  older historical sources. Inspect the Source digest for hits, errors, source
+  mix, and top URLs before relying on the research. For local repair tasks, the
+  checkout and verifier remain authoritative.
 
 Core loop:
 1. Identify the task contract: issue statement, visible tests, verifier script,
