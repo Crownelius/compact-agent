@@ -60,6 +60,7 @@ export interface BenchmarkExperienceCard {
   harnessSafety: BenchmarkHarnessSafetyAudit;
   longHorizon: BenchmarkExperienceLongHorizon;
   proactivity: BenchmarkExperienceProactivity;
+  candidateDossier: BenchmarkExperienceCandidateDossier;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   decisionObservability: BenchmarkExperienceDecisionObservability;
@@ -286,6 +287,13 @@ export interface BenchmarkExperienceContextUtilization {
   preEditUtilizationPercent: number | null;
   preEditBloatRisk: boolean;
   preEditBloatEvents: BenchmarkContextBloatEvent[];
+}
+
+export interface BenchmarkExperienceCandidateDossier {
+  recorded: boolean;
+  risk: boolean;
+  signalCount: number;
+  signals: BenchmarkCandidateDossierSignal[];
 }
 
 export interface BenchmarkExperienceRunEfficiency {
@@ -705,6 +713,10 @@ export interface BenchmarkTrajectoryQuality {
   contextBloatRisk: boolean;
   contextBloatEventCount: number;
   contextBloatEvents: BenchmarkContextBloatEvent[];
+  candidateDossierRecorded: boolean;
+  candidateDossierRisk: boolean;
+  candidateDossierSignalCount: number;
+  candidateDossierSignals: BenchmarkCandidateDossierSignal[];
   evidenceGroundingRisk: boolean;
   evidenceGroundingEventCount: number;
   evidenceGroundingEvents: BenchmarkEvidenceGroundingEvent[];
@@ -937,6 +949,13 @@ export interface BenchmarkContextBloatEvent {
   reason: string;
 }
 
+export interface BenchmarkCandidateDossierSignal {
+  seq: number;
+  inspectCount: number;
+  reason: 'broad_pre_edit_context_without_dossier' | 'missing_candidate_dossier_before_edit';
+  evidence: string;
+}
+
 export interface BenchmarkEvidenceGroundingEvent {
   seq: number;
   tool: string;
@@ -1063,6 +1082,7 @@ const CONTEXT_UTILIZATION_MIN_PERCENT = 35;
 const PRE_EDIT_CONTEXT_BLOAT_MIN_INSPECTIONS = 10;
 const PRE_EDIT_CONTEXT_BLOAT_MIN_MISSES = 8;
 const PRE_EDIT_CONTEXT_BLOAT_MIN_MISS_PERCENT = 65;
+const CANDIDATE_DOSSIER_LOCAL_INSPECTION_THRESHOLD = 6;
 
 export function redactTraceText(value: unknown): string {
   let text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
@@ -1343,6 +1363,7 @@ export function buildBenchmarkExperienceCard(input: {
     harnessSafety: buildBenchmarkExperienceHarnessSafety(input.trajectoryQuality),
     longHorizon: buildBenchmarkExperienceLongHorizon(input.trajectoryQuality),
     proactivity: buildBenchmarkExperienceProactivity(input.trajectoryQuality),
+    candidateDossier: buildBenchmarkExperienceCandidateDossier(input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
@@ -1488,6 +1509,22 @@ function buildBenchmarkExperienceContextUtilization(
         tool: truncate(redactTraceText(event.tool), 80),
         target: truncate(redactTraceText(event.target), 160),
         reason: truncate(redactTraceText(event.reason), 180),
+      }))
+      .slice(0, 12),
+  };
+}
+
+function buildBenchmarkExperienceCandidateDossier(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceCandidateDossier {
+  return {
+    recorded: quality.candidateDossierRecorded,
+    risk: quality.candidateDossierRisk,
+    signalCount: quality.candidateDossierSignalCount,
+    signals: quality.candidateDossierSignals
+      .map((signal) => ({
+        ...signal,
+        evidence: truncate(redactTraceText(signal.evidence), 260),
       }))
       .slice(0, 12),
   };
@@ -2638,6 +2675,7 @@ export function buildBenchmarkTrajectoryQuality(
   const editTargetEvidence = buildBenchmarkEditTargetEvidence(events);
   const contextUtilization = buildBenchmarkContextUtilization(events, editTargetEvidence.targets);
   const contextBloat = buildBenchmarkContextBloat(events, editTargetEvidence.targets, firstEditSeq);
+  const candidateDossier = buildBenchmarkCandidateDossierAssessment(events, messages, firstEditSeq);
   const evidenceGroundingEvents = buildBenchmarkEvidenceGroundingEvents(events);
   const broadEditContractDetected = hasBroadEditContract(events);
   const editSurface = buildBenchmarkEditSurface(events);
@@ -3141,6 +3179,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`pre-edit context bloat: ${contextBloat.hitCount}/${contextBloat.inspectCount} pre-edit local inspections matched eventual edit targets (${contextBloat.percent?.toFixed(2) ?? 'n/a'}%). Stop broad recall-heavy browsing and build a smaller candidate-file dossier before patching${misses ? `; unused examples: ${misses}` : ''}.`);
   }
+  if (candidateDossier.risk) {
+    const examples = candidateDossier.signals
+      .slice(0, 2)
+      .map((signal) => `${signal.reason}#${signal.seq} ${signal.evidence}`)
+      .join('; ');
+    warnings.push(`candidate-file dossier risk: broad pre-edit local inspection was not compressed into a recorded candidate-file dossier before patching. List candidate files/functions, evidence, reproduction command, and ruled-out distractors before the first edit${examples ? `; ${examples}` : ''}.`);
+  }
   if (evidenceGroundingEvents.length > 0) {
     const examples = evidenceGroundingEvents
       .slice(0, 3)
@@ -3325,6 +3370,10 @@ export function buildBenchmarkTrajectoryQuality(
     preEditContextUtilizationPercent: contextBloat.percent,
     contextBloatRisk: contextBloat.risk,
     contextBloatEvents: contextBloat.bloatEvents,
+    candidateDossierRecorded: candidateDossier.recorded,
+    candidateDossierRisk: candidateDossier.risk,
+    candidateDossierSignalCount: candidateDossier.signals.length,
+    candidateDossierSignals: candidateDossier.signals,
     evidenceGroundingEvents,
     broadEditContractDetected,
     largeEditSurfaceTargetCount: editSurface.targets.length,
@@ -3517,6 +3566,10 @@ export function buildBenchmarkTrajectoryQuality(
     contextBloatRisk: contextBloat.risk,
     contextBloatEventCount: contextBloat.bloatEvents.length,
     contextBloatEvents: contextBloat.bloatEvents,
+    candidateDossierRecorded: candidateDossier.recorded,
+    candidateDossierRisk: candidateDossier.risk,
+    candidateDossierSignalCount: candidateDossier.signals.length,
+    candidateDossierSignals: candidateDossier.signals,
     evidenceGroundingRisk: evidenceGroundingEvents.length > 0,
     evidenceGroundingEventCount: evidenceGroundingEvents.length,
     evidenceGroundingEvents,
@@ -3597,7 +3650,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -3741,6 +3794,10 @@ interface BenchmarkProcessDefectInput {
   preEditContextUtilizationPercent: number | null;
   contextBloatRisk: boolean;
   contextBloatEvents: BenchmarkContextBloatEvent[];
+  candidateDossierRecorded: boolean;
+  candidateDossierRisk: boolean;
+  candidateDossierSignalCount: number;
+  candidateDossierSignals: BenchmarkCandidateDossierSignal[];
   evidenceGroundingEvents: BenchmarkEvidenceGroundingEvent[];
   broadEditContractDetected: boolean;
   largeEditSurfaceTargetCount: number;
@@ -4232,6 +4289,24 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       input.contextBloatEvents[0]?.seq ?? input.firstInspectSeq,
       'Pre-edit local context exploration was broad and mostly unused by the eventual patch.',
       `pre_edit_utilized=${input.preEditContextHitCount}/${input.preEditContextInspectCount}, percent=${input.preEditContextUtilizationPercent?.toFixed(2) ?? 'n/a'}, misses=${input.preEditContextMissCount}, examples=${input.contextBloatEvents.slice(0, 3).map((event) => `${event.tool}#${event.seq}:${event.target}`).join('; ')}`,
+    );
+  }
+  if (input.candidateDossierRisk) {
+    const firstSignal = input.candidateDossierSignals[0];
+    add(
+      'missing_candidate_file_dossier',
+      'localization',
+      firstSignal?.reason === 'missing_candidate_dossier_before_edit' ? 'medium' : 'low',
+      firstSignal?.seq ?? input.firstEditSeq ?? input.firstInspectSeq,
+      'Broad pre-edit local inspection was not compressed into a recorded candidate-file dossier.',
+      [
+        `recorded=${input.candidateDossierRecorded ? 'yes' : 'no'}`,
+        `signals=${input.candidateDossierSignals.length}`,
+        input.candidateDossierSignals
+          .slice(0, 3)
+          .map((signal) => `${signal.reason}#${signal.seq}:inspections=${signal.inspectCount}`)
+          .join('; '),
+      ].filter(Boolean).join(', '),
     );
   }
   if (input.evidenceGroundingEvents.length > 0) {
@@ -5847,6 +5922,143 @@ export function buildBenchmarkContextBloatEvents(events: BenchmarkTraceEvent[]):
   return buildBenchmarkContextBloat(events, editTargetEvidence.targets, firstEditSeq).bloatEvents;
 }
 
+export function buildBenchmarkCandidateDossierSignals(
+  events: BenchmarkTraceEvent[],
+  messages: Message[] = [],
+): BenchmarkCandidateDossierSignal[] {
+  return buildBenchmarkCandidateDossierAssessment(events, messages, firstSeq(events, isEditEvent)).signals;
+}
+
+function buildBenchmarkCandidateDossierAssessment(
+  events: BenchmarkTraceEvent[],
+  messages: Message[],
+  firstEditSeq: number | null,
+): {
+  recorded: boolean;
+  risk: boolean;
+  signals: BenchmarkCandidateDossierSignal[];
+} {
+  const recorded = hasCandidateDossierRecordBeforeEdit(events, messages, firstEditSeq);
+  const cutoff = firstEditSeq ?? Number.POSITIVE_INFINITY;
+  const preEditInspections = [...events]
+    .sort((a, b) => a.seq - b.seq)
+    .filter((event) => isLocalContextInspectionEvent(event) && event.seq < cutoff);
+  if (recorded || preEditInspections.length < CANDIDATE_DOSSIER_LOCAL_INSPECTION_THRESHOLD) {
+    return { recorded, risk: false, signals: [] };
+  }
+
+  const signalSeq = firstEditSeq ?? preEditInspections.at(-1)?.seq ?? null;
+  const signal: BenchmarkCandidateDossierSignal | null = signalSeq == null
+    ? null
+    : {
+        seq: signalSeq,
+        inspectCount: preEditInspections.length,
+        reason: firstEditSeq == null
+          ? 'broad_pre_edit_context_without_dossier'
+          : 'missing_candidate_dossier_before_edit',
+        evidence: formatCandidateDossierEvidence(events, preEditInspections, firstEditSeq),
+      };
+  return {
+    recorded,
+    risk: signal != null,
+    signals: signal ? [signal] : [],
+  };
+}
+
+function hasCandidateDossierRecordBeforeEdit(
+  events: BenchmarkTraceEvent[],
+  messages: Message[],
+  firstEditSeq: number | null,
+): boolean {
+  const firstEditBoundary = firstEditSeq ?? Number.POSITIVE_INFINITY;
+  if (events.some((event) =>
+    event.tool === 'todo_write'
+    && event.status === 'ok'
+    && event.seq < firstEditBoundary
+    && todoEventRecordsCandidateDossier(event))) {
+    return true;
+  }
+
+  const sortedEvents = [...events].sort((a, b) => a.seq - b.seq);
+  const cursor = { index: 0 };
+  let afterFirstEdit = false;
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+
+    const text = messageText(message);
+    if (!afterFirstEdit && textHasCandidateDossierRecord(text)) return true;
+
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    const messageSeqs: number[] = [];
+    for (const call of toolCalls) {
+      const tool = call.function?.name ?? '';
+      const matched = nextTraceEventForTool(sortedEvents, cursor, tool);
+      if (matched) messageSeqs.push(matched.seq);
+    }
+    if (firstEditSeq != null && messageSeqs.some((seq) => seq >= firstEditSeq)) {
+      afterFirstEdit = true;
+    }
+  }
+  return false;
+}
+
+function nextTraceEventForTool(
+  events: BenchmarkTraceEvent[],
+  cursor: { index: number },
+  tool: string,
+): BenchmarkTraceEvent | null {
+  if (!tool) return null;
+  for (let index = cursor.index; index < events.length; index++) {
+    if (events[index].tool !== tool) continue;
+    cursor.index = index + 1;
+    return events[index];
+  }
+  return null;
+}
+
+function todoEventRecordsCandidateDossier(event: BenchmarkTraceEvent): boolean {
+  const completedText = todoItemsForEvent(event)
+    .filter((item) => item.status === 'completed')
+    .map((item) => item.content)
+    .join('\n');
+  return textHasCandidateDossierRecord(completedText);
+}
+
+function textHasCandidateDossierRecord(text: string): boolean {
+  const normalized = text.replace(/\r/g, '\n').trim();
+  if (!normalized) return false;
+  const hasFileReference = extractFileReferences(normalized).length > 0;
+  const hasEvidenceCue = /\b(?:evidence|repro(?:duction)?|verifier|failing|ruled[-\s]?out|distractors?)\b/i.test(normalized);
+  if (/\b(?:candidate[-\s]?file|localization)\s+dossier\b/i.test(normalized)) {
+    return hasFileReference || hasEvidenceCue;
+  }
+  return /\bcandidate\s+files?(?:\/functions?)?\b/i.test(normalized)
+    && /\bevidence\b/i.test(normalized)
+    && /\b(?:repro(?:duction)?\s+command|reproduction|verifier|failing\s+test)\b/i.test(normalized)
+    && /\b(?:ruled[-\s]?out|distractors?|not\s+relevant|discarded)\b/i.test(normalized)
+    && hasFileReference;
+}
+
+function formatCandidateDossierEvidence(
+  events: BenchmarkTraceEvent[],
+  preEditInspections: BenchmarkTraceEvent[],
+  firstEditSeq: number | null,
+): string {
+  const examples = preEditInspections
+    .slice(0, 5)
+    .map((event) => {
+      const target = truncate(redactTraceText(event.target || summarizeReplayInputTarget(event.inputPreview) || event.tool), 120);
+      return `${event.tool}#${event.seq}:${target}`;
+    })
+    .join('; ');
+  return [
+    `local_inspections_before_edit=${preEditInspections.length}`,
+    `first_edit_seq=${firstEditSeq ?? 'none'}`,
+    `benchmark_context=${events.some((event) => event.tool === 'benchmark_context') ? 'yes' : 'no'}`,
+    examples ? `examples=${examples}` : '',
+  ].filter(Boolean).join(', ');
+}
+
 export function buildBenchmarkEvidenceGroundingEvents(events: BenchmarkTraceEvent[]): BenchmarkEvidenceGroundingEvent[] {
   const staleByTarget = new Map<string, {
     seq: number;
@@ -7384,6 +7596,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('edited target(s) lacked prior file-level localization evidence')
     || warning.includes('low context utilization')
     || warning.includes('pre-edit context bloat')
+    || warning.includes('candidate-file dossier risk')
     || warning.includes('large edit surface')
     || warning.includes('redundant tool calls')
     || warning.includes('redundant verifier reruns')

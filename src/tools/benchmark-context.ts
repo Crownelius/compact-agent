@@ -1199,6 +1199,7 @@ function summarizePriorContextUtilization(
 ): PriorContextUtilizationSummary {
   const card = objectRecord(summary.experienceCard);
   const context = objectRecord(card.contextUtilization);
+  const dossier = objectRecord(card.candidateDossier);
   const inspectCount = finiteNumber(context.inspectCount)
     ?? finiteNumber(quality.contextUtilizationInspectCount);
   const hitCount = finiteNumber(context.hitCount)
@@ -1227,12 +1228,19 @@ function summarizePriorContextUtilization(
   const rawPreEditBloatEvents = Array.isArray(context.preEditBloatEvents)
     ? context.preEditBloatEvents
     : (Array.isArray(quality.contextBloatEvents) ? quality.contextBloatEvents : []);
+  const candidateDossierRecorded = firstBooleanOrNull(dossier.recorded, quality.candidateDossierRecorded);
+  const candidateDossierRisk = firstBooleanOrNull(dossier.risk, quality.candidateDossierRisk);
+  const candidateDossierSignalCount = finiteNumber(dossier.signalCount)
+    ?? finiteNumber(quality.candidateDossierSignalCount);
   if ((inspectCount ?? 0) <= 0
     && (hitCount ?? 0) <= 0
     && (missCount ?? 0) <= 0
     && risk !== true
     && (preEditInspectCount ?? 0) <= 0
-    && preEditBloatRisk !== true) {
+    && preEditBloatRisk !== true
+    && candidateDossierRecorded === undefined
+    && candidateDossierRisk !== true
+    && (candidateDossierSignalCount ?? 0) <= 0) {
     return { text: null, harmReasons: [], scoreBonus: 0 };
   }
 
@@ -1266,6 +1274,9 @@ function summarizePriorContextUtilization(
   if (preEditBloatRisk === true) {
     harmReasons.push(`pre_edit_context_bloat=${preEditHitCount ?? 0}/${preEditInspectCount ?? 0}`);
   }
+  if (candidateDossierRisk === true) {
+    harmReasons.push(`candidate_dossier_missing=${candidateDossierSignalCount ?? 0}`);
+  }
 
   let scoreBonus = 0;
   if (risk === false && (inspectCount ?? 0) >= 2 && (percent ?? 0) >= 50) {
@@ -1273,6 +1284,9 @@ function summarizePriorContextUtilization(
   }
   if (preEditBloatRisk === false && (preEditInspectCount ?? 0) >= 2 && (preEditPercent ?? 0) >= 50) {
     scoreBonus += 3;
+  }
+  if (candidateDossierRecorded === true && candidateDossierRisk !== true) {
+    scoreBonus += 2;
   }
 
   const text = [
@@ -1286,6 +1300,9 @@ function summarizePriorContextUtilization(
     preEditPercent == null ? null : `pre_edit_utilization:${preEditPercent.toFixed(2)}%`,
     preEditBloatRisk === undefined ? null : `pre_edit_bloat:${String(preEditBloatRisk)}`,
     bloat.length ? `pre_edit_unused:${bloat.join(' | ')}` : null,
+    candidateDossierRecorded === undefined ? null : `candidate_dossier:${String(candidateDossierRecorded)}`,
+    candidateDossierRisk === undefined ? null : `candidate_dossier_risk:${String(candidateDossierRisk)}`,
+    candidateDossierSignalCount == null ? null : `candidate_dossier_signals:${candidateDossierSignalCount}`,
   ].filter(Boolean).join(',');
   return {
     text,

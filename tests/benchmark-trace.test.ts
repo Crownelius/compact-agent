@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildBenchmarkCompletionReminder,
   buildBenchmarkBlindRepairEvents,
+  buildBenchmarkCandidateDossierSignals,
   buildBenchmarkComponentEditEvents,
   buildBenchmarkContextBloatEvents,
   buildBenchmarkDependencyEditEvents,
@@ -277,6 +278,10 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.contextBloatRisk).toBe(false);
     expect(summary.trajectoryQuality.contextBloatEventCount).toBe(0);
     expect(summary.trajectoryQuality.contextBloatEvents).toEqual([]);
+    expect(summary.trajectoryQuality.candidateDossierRecorded).toBe(false);
+    expect(summary.trajectoryQuality.candidateDossierRisk).toBe(false);
+    expect(summary.trajectoryQuality.candidateDossierSignalCount).toBe(0);
+    expect(summary.trajectoryQuality.candidateDossierSignals).toEqual([]);
     expect(summary.trajectoryQuality.evidenceGroundingRisk).toBe(false);
     expect(summary.trajectoryQuality.evidenceGroundingEventCount).toBe(0);
     expect(summary.trajectoryQuality.evidenceGroundingEvents).toEqual([]);
@@ -338,6 +343,12 @@ describe('benchmark trace artifacts', () => {
         signals: [],
       },
       rewardHack: {
+        risk: false,
+        signalCount: 0,
+        signals: [],
+      },
+      candidateDossier: {
+        recorded: false,
         risk: false,
         signalCount: 0,
         signals: [],
@@ -4828,13 +4839,16 @@ describe('benchmark trace artifacts', () => {
     expect(quality.contextUtilizationPercent).toBe(33.33);
     expect(quality.contextUtilizationRisk).toBe(true);
     expect(quality.contextUtilizationMissEvents.map((event) => event.seq)).toEqual([2, 3, 4, 5]);
-    expect(quality.processDefects.map((defect) => defect.code)).toEqual(['low_context_utilization']);
+    expect(quality.processDefects.map((defect) => defect.code)).toEqual([
+      'low_context_utilization',
+      'missing_candidate_file_dossier',
+    ]);
     expect(quality.processDefects[0]).toMatchObject({
       category: 'localization',
       severity: 'low',
       seq: 2,
     });
-    expect(quality.processScore).toBe(95);
+    expect(quality.processScore).toBe(85);
     expect(quality.warnings.join('\n')).toContain('low context utilization');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('context_utilization=33.33% context_hits=2/6 context_misses=4 context_risk=yes');
     expect(buildBenchmarkCompletionReminder(events)).toContain('narrow broad context gathering');
@@ -5059,6 +5073,146 @@ describe('benchmark trace artifacts', () => {
     expect(quality.processDefects.map((defect) => defect.code)).toContain('pre_edit_context_bloat');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('pre_edit_context=2/11 pre_edit_context_bloat=9');
     expect(buildBenchmarkCompletionReminder(events)).toContain('tighten pre-edit context');
+  });
+
+  it('flags broad pre-edit local inspection without a recorded candidate-file dossier', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix parser trimming',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      ...[
+        ['read_file', { file_path: 'README.md' }, 'project overview'],
+        ['list_dir', { path: 'src' }, 'src/parser.ts\nsrc/tokenizer.ts\nsrc/config.ts'],
+        ['grep', { pattern: 'trim', path: 'src' }, 'src/parser.ts:10: trim'],
+        ['read_file', { file_path: 'src/tokenizer.ts' }, 'export function tokenize() {}'],
+        ['read_file', { file_path: 'src/config.ts' }, 'export const config = {};'],
+        ['glob', { pattern: 'src/**/*.ts' }, 'src/parser.ts\nsrc/tokenizer.ts\nsrc/config.ts'],
+      ].map(([tool, input, output], i) => makeBenchmarkTraceEvent({
+        seq: i + 2,
+        tool: String(tool),
+        input: input as Record<string, unknown>,
+        output: String(output),
+        isError: false,
+        elapsedMs: 1,
+      })),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' },
+        output: 'Updated src/parser.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 10,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ].flat();
+
+    const signals = buildBenchmarkCandidateDossierSignals(events);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      seq: 9,
+      inspectCount: 6,
+      reason: 'missing_candidate_dossier_before_edit',
+    });
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.candidateDossierRecorded).toBe(false);
+    expect(quality.candidateDossierRisk).toBe(true);
+    expect(quality.candidateDossierSignalCount).toBe(1);
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('missing_candidate_file_dossier');
+    expect(quality.warnings.join('\n')).toContain('candidate-file dossier risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('candidate_dossier=no candidate_dossier_risk=yes candidate_dossier_signals=1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('candidate-file dossier');
+  });
+
+  it('accepts a pre-edit candidate-file dossier recorded in assistant reasoning', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix parser trimming',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      ...[
+        ['read_file', { file_path: 'README.md' }, 'project overview'],
+        ['list_dir', { path: 'src' }, 'src/parser.ts\nsrc/tokenizer.ts\nsrc/config.ts'],
+        ['grep', { pattern: 'trim', path: 'src' }, 'src/parser.ts:10: trim'],
+        ['read_file', { file_path: 'src/tokenizer.ts' }, 'export function tokenize() {}'],
+        ['read_file', { file_path: 'src/config.ts' }, 'export const config = {};'],
+        ['glob', { pattern: 'src/**/*.ts' }, 'src/parser.ts\nsrc/tokenizer.ts\nsrc/config.ts'],
+      ].map(([tool, input, output], i) => makeBenchmarkTraceEvent({
+        seq: i + 2,
+        tool: String(tool),
+        input: input as Record<string, unknown>,
+        output: String(output),
+        isError: false,
+        elapsedMs: 1,
+      })),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' },
+        output: 'Updated src/parser.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ].flat();
+    const messages: Message[] = [
+      {
+        role: 'assistant',
+        content: [
+          'Candidate-file dossier:',
+          '- src/parser.ts: direct failing trim path from npm test -- parser.',
+          '- src/tokenizer.ts: adjacent parser input source, no edit planned unless parser evidence contradicts.',
+          '- Ruled out: README.md and src/config.ts; they only describe setup/config.',
+          'Reproduction command: npm test -- parser.',
+        ].join('\n'),
+        tool_calls: [{
+          id: 'tc1',
+          type: 'function',
+          function: {
+            name: 'edit_file',
+            arguments: JSON.stringify({ file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' }),
+          },
+        }],
+      },
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events, buildBenchmarkUsageSummary([]), messages);
+    expect(quality.candidateDossierRecorded).toBe(true);
+    expect(quality.candidateDossierRisk).toBe(false);
+    expect(quality.candidateDossierSignalCount).toBe(0);
+    expect(quality.processDefects.map((defect) => defect.code)).not.toContain('missing_candidate_file_dossier');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('candidate_dossier=yes candidate_dossier_risk=no candidate_dossier_signals=0');
   });
 
   it('flags large source edit surfaces without a broad-change task contract', () => {

@@ -31,6 +31,7 @@ task-alignment risk signals, spec-compliance risk signals, reward-hack risk sign
 environment setup/reconstruction signals for missing dependencies, toolchains,
 or build artifacts, dependency manifest/lockfile setup-validation signals,
 HarnessAudit-style harness-safety signals for protected-resource access, external information transfer, destructive operations, and oracle access,
+candidate-file dossier signals for broad pre-edit inspection without a compact dossier,
 skill-view fit/timing signals, per-target edit localization signals, large edit-surface
 signals, scratch/probe artifact signals, redundant tool-call signals,
 redundant failing-verifier rerun signals, blind-repair signals, post-edit regression-cycle signals,
@@ -46,7 +47,7 @@ trace previews preserve both head and tail output so final test summaries surviv
 noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
 task-alignment/spec-compliance/reward-hack/harness-safety/long-horizon/proactivity risk blocks, component-observability edit classification for AHE-style surface attribution, including SWE-WebDevBench canary/frontend-backend/security validation signals, SWE-Cycle lifecycle/setup/test-generation/judge validation signals, SWE-CI evolution/checklist/CI-loop validation signals, and Pi-Bench context-contract/hidden-intent/clarification/privacy/completion evidence, decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
-context-utilization precision/miss evidence for retrieval-aware scoring and
+context-utilization precision/miss evidence plus candidate-dossier status for retrieval-aware scoring and
 run-efficiency action/usage/cost/time evidence for cost-aware scoring. Prior
 experience hints also expose compact source-research coverage, including
 hit/error counts, targeted/fresh coverage, recency windows, top URLs, and
@@ -72,8 +73,9 @@ evaluations also participate in reuse: confirmed manifests can rank higher,
 while contradicted, regression-risk, pending-verification, missing-prediction,
 or missing-regression-forecast manifests are warnings rather than replay hints.
 Context-utilization evidence participates in reuse as well: concise runs whose
-inspected context was used by the eventual patch can rank higher, while
-low-utilization or pre-edit context-bloat runs are warnings rather than replay
+inspected context was used by the eventual patch and whose pre-edit search was
+compressed into a candidate-file dossier can rank higher, while low-utilization,
+missing-dossier, or pre-edit context-bloat runs are warnings rather than replay
 hints.
 Interactive type-ahead is preserved across active-turn cancellation and
 permission interruptions, so user drafts return to the prompt instead of being
