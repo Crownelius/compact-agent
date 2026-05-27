@@ -222,6 +222,14 @@ export interface BenchmarkEnvironmentSetupFailureEvent {
   evidence: string;
 }
 
+export interface BenchmarkDependencyEditEvent {
+  seq: number;
+  tool: string;
+  target: string;
+  ecosystem: string;
+  kind: 'manifest' | 'lockfile';
+}
+
 export interface BenchmarkSkillViewEvent {
   seq: number;
   name: string;
@@ -259,6 +267,16 @@ export interface BenchmarkTrajectoryQuality {
   environmentSetupCount: number;
   successfulEnvironmentSetupCount: number;
   environmentSetupEvents: BenchmarkEnvironmentSetupEvent[];
+  dependencyManifestEditCount: number;
+  dependencyLockfileEditCount: number;
+  dependencyManifestEditEvents: BenchmarkDependencyEditEvent[];
+  dependencyLockfileEditEvents: BenchmarkDependencyEditEvent[];
+  dependencySetupAfterManifestEdit: boolean | null;
+  passingDependencySetupAfterManifestEdit: boolean | null;
+  dependencyValidationAfterManifestEdit: boolean | null;
+  passingDependencyValidationAfterManifestEdit: boolean | null;
+  firstDependencySetupAfterManifestEditSeq: number | null;
+  firstDependencyValidationAfterManifestEditSeq: number | null;
   skillViewCount: number;
   skillViewEvents: BenchmarkSkillViewEvent[];
   skillNames: string[];
@@ -1081,6 +1099,28 @@ export function buildBenchmarkTrajectoryQuality(
     environmentSetupFailureEvents,
     environmentSetupEvents,
   );
+  const dependencyEditEvents = buildBenchmarkDependencyEditEvents(events);
+  const dependencyManifestEditEvents = dependencyEditEvents.filter((event) => event.kind === 'manifest');
+  const dependencyLockfileEditEvents = dependencyEditEvents.filter((event) => event.kind === 'lockfile');
+  const firstDependencyManifestEditSeq = dependencyManifestEditEvents[0]?.seq ?? null;
+  const firstDependencySetupAfterManifestEditSeq = firstDependencyManifestEditSeq == null
+    ? null
+    : firstSeq(events, (event) => event.seq > firstDependencyManifestEditSeq && isDependencySetupEvent(event));
+  const firstDependencyValidationAfterManifestEditSeq = firstDependencyManifestEditSeq == null
+    ? null
+    : firstSeq(events, (event) => event.seq > firstDependencyManifestEditSeq && event.verification);
+  const dependencySetupAfterManifestEdit = firstDependencyManifestEditSeq == null
+    ? null
+    : firstDependencySetupAfterManifestEditSeq != null;
+  const passingDependencySetupAfterManifestEdit = firstDependencyManifestEditSeq == null
+    ? null
+    : events.some((event) => event.seq > firstDependencyManifestEditSeq && event.status === 'ok' && isDependencySetupEvent(event));
+  const dependencyValidationAfterManifestEdit = firstDependencyManifestEditSeq == null
+    ? null
+    : firstDependencyValidationAfterManifestEditSeq != null;
+  const passingDependencyValidationAfterManifestEdit = firstDependencyManifestEditSeq == null
+    ? null
+    : events.some((event) => event.seq > firstDependencyManifestEditSeq && event.verification && event.status === 'ok');
   const skillViewEvents = buildBenchmarkSkillViewEvents(events);
   const firstSkillViewSeq = skillViewEvents[0]?.seq ?? null;
   const skillNames = uniqueStrings(skillViewEvents.map((event) => event.name)).slice(0, 12);
@@ -1442,6 +1482,18 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`verifier failure(s) looked like an unprepared environment or missing dependency/build artifact: ${failures}. Run project-native setup/restore/install or record why the environment is already reconstructed before treating verifier results as code evidence.`);
   }
+  if (dependencyManifestEditEvents.length > 0 && dependencySetupAfterManifestEdit === false) {
+    const targets = dependencyManifestEditEvents
+      .slice(0, 4)
+      .map((event) => `${event.ecosystem}:${event.target}`)
+      .join('; ');
+    warnings.push(`dependency manifest edit(s) lacked a later package setup/install/lockfile command: ${targets}. Run the project-native install/update/lockfile step or document why validation does not require dependency resolution.`);
+  }
+  if (dependencyManifestEditEvents.length > 0
+    && dependencySetupAfterManifestEdit === false
+    && passingDependencyValidationAfterManifestEdit !== true) {
+    warnings.push('dependency manifest edit(s) had neither a dependency setup command nor passing post-edit validation; resolve dependency state before finalizing a package-upgrade task.');
+  }
   if (skillLoadedBeforeLocalContext) {
     const names = skillNames.slice(0, 3).join(', ');
     warnings.push(`skill prompt loaded before local task/repo context: ${names || 'unknown skill'}. Verify domain/version fit against benchmark_context or file evidence before applying skill guidance.`);
@@ -1635,6 +1687,14 @@ export function buildBenchmarkTrajectoryQuality(
     environmentSetupFailureEvents,
     unresolvedEnvironmentSetupFailureEvents,
     environmentSetupEvents,
+    dependencyManifestEditEvents,
+    dependencyLockfileEditEvents,
+    dependencySetupAfterManifestEdit,
+    passingDependencySetupAfterManifestEdit,
+    dependencyValidationAfterManifestEdit,
+    passingDependencyValidationAfterManifestEdit,
+    firstDependencySetupAfterManifestEditSeq,
+    firstDependencyValidationAfterManifestEditSeq,
     skillViewEvents,
     skillLoadedBeforeLocalContext,
     excessiveSkillViewCount,
@@ -1702,6 +1762,16 @@ export function buildBenchmarkTrajectoryQuality(
     environmentSetupCount: environmentSetupEvents.length,
     successfulEnvironmentSetupCount: environmentSetupEvents.filter((event) => event.status === 'ok').length,
     environmentSetupEvents,
+    dependencyManifestEditCount: dependencyManifestEditEvents.length,
+    dependencyLockfileEditCount: dependencyLockfileEditEvents.length,
+    dependencyManifestEditEvents,
+    dependencyLockfileEditEvents,
+    dependencySetupAfterManifestEdit,
+    passingDependencySetupAfterManifestEdit,
+    dependencyValidationAfterManifestEdit,
+    passingDependencyValidationAfterManifestEdit,
+    firstDependencySetupAfterManifestEditSeq,
+    firstDependencyValidationAfterManifestEditSeq,
     skillViewCount: skillViewEvents.length,
     skillViewEvents,
     skillNames,
@@ -1801,7 +1871,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -1950,6 +2020,14 @@ interface BenchmarkProcessDefectInput {
   environmentSetupFailureEvents: BenchmarkEnvironmentSetupFailureEvent[];
   unresolvedEnvironmentSetupFailureEvents: BenchmarkEnvironmentSetupFailureEvent[];
   environmentSetupEvents: BenchmarkEnvironmentSetupEvent[];
+  dependencyManifestEditEvents: BenchmarkDependencyEditEvent[];
+  dependencyLockfileEditEvents: BenchmarkDependencyEditEvent[];
+  dependencySetupAfterManifestEdit: boolean | null;
+  passingDependencySetupAfterManifestEdit: boolean | null;
+  dependencyValidationAfterManifestEdit: boolean | null;
+  passingDependencyValidationAfterManifestEdit: boolean | null;
+  firstDependencySetupAfterManifestEditSeq: number | null;
+  firstDependencyValidationAfterManifestEditSeq: number | null;
   skillViewEvents: BenchmarkSkillViewEvent[];
   skillLoadedBeforeLocalContext: boolean;
   excessiveSkillViewCount: boolean;
@@ -2151,6 +2229,34 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
           .map((event) => `#${event.seq}:${event.reason}:${event.evidence}`)
           .join('; '),
       ].filter(Boolean).join(', '),
+    );
+  }
+  if (input.dependencyManifestEditEvents.length > 0 && input.dependencySetupAfterManifestEdit === false) {
+    add(
+      'dependency_manifest_without_setup',
+      'execution_control',
+      input.passingDependencyValidationAfterManifestEdit === true ? 'low' : 'medium',
+      input.dependencyManifestEditEvents[0]?.seq ?? null,
+      'A dependency manifest was edited without a later project-native install/update/lockfile command.',
+      [
+        `manifest_edits=${input.dependencyManifestEditEvents.length}`,
+        `lockfile_edits=${input.dependencyLockfileEditEvents.length}`,
+        `passing_validation=${input.passingDependencyValidationAfterManifestEdit === true ? 'yes' : 'no'}`,
+        `first_setup_seq=${input.firstDependencySetupAfterManifestEditSeq ?? 'none'}`,
+        `manifests=${input.dependencyManifestEditEvents.slice(0, 4).map((event) => `${event.ecosystem}:${event.target}`).join('; ')}`,
+      ].join(', '),
+    );
+  }
+  if (input.dependencyManifestEditEvents.length > 0
+    && input.dependencySetupAfterManifestEdit === false
+    && input.passingDependencyValidationAfterManifestEdit !== true) {
+    add(
+      'dependency_manifest_unvalidated',
+      'validation',
+      'medium',
+      input.dependencyManifestEditEvents[0]?.seq ?? null,
+      'A dependency manifest was edited without dependency setup evidence or passing post-edit validation.',
+      `first_validation_seq=${input.firstDependencyValidationAfterManifestEditSeq ?? 'none'}, dependency_validation=${input.dependencyValidationAfterManifestEdit === true ? 'yes' : 'no'}, passing_dependency_validation=${input.passingDependencyValidationAfterManifestEdit ? 'yes' : 'no'}`,
     );
   }
   if (input.skillLoadedBeforeLocalContext) {
@@ -3219,6 +3325,29 @@ export function buildBenchmarkEnvironmentSetupEvents(events: BenchmarkTraceEvent
     .slice(0, 20);
 }
 
+export function buildBenchmarkDependencyEditEvents(events: BenchmarkTraceEvent[]): BenchmarkDependencyEditEvent[] {
+  const seen = new Set<string>();
+  const dependencyEvents: BenchmarkDependencyEditEvent[] = [];
+  for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+    if (!isEditEvent(event)) continue;
+    for (const target of editedTargetsForEvent(event)) {
+      const dependency = classifyDependencyFileTarget(target);
+      if (!dependency) continue;
+      const key = `${event.seq}\0${normalizeTracePath(target)}\0${dependency.kind}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dependencyEvents.push({
+        seq: event.seq,
+        tool: event.tool,
+        target: truncate(redactTraceText(target), 240),
+        ecosystem: dependency.ecosystem,
+        kind: dependency.kind,
+      });
+    }
+  }
+  return dependencyEvents.slice(0, 40);
+}
+
 export function buildBenchmarkSkillViewEvents(events: BenchmarkTraceEvent[]): BenchmarkSkillViewEvent[] {
   return [...events]
     .sort((a, b) => a.seq - b.seq)
@@ -3599,7 +3728,8 @@ function localizationRequiredEditTargets(event: BenchmarkTraceEvent): string[] {
   const targets = editedTargetsForEvent(event)
     .map((target) => target.trim())
     .filter(Boolean)
-    .filter((target) => !detectTestHarnessEditRisk(target));
+    .filter((target) => !detectTestHarnessEditRisk(target))
+    .filter((target) => !isDependencyLockfileTarget(target));
   if (event.tool === 'edit_file') return targets;
   if (event.tool === 'apply_patch') {
     const input = parseEventInputPreview(event.inputPreview);
@@ -3607,9 +3737,13 @@ function localizationRequiredEditTargets(event: BenchmarkTraceEvent): string[] {
     return extractPatchTargetsByOperation(patch)
       .filter((target) => target.operation !== 'Add')
       .map((target) => target.file)
-      .filter((target) => target && !detectTestHarnessEditRisk(target));
+      .filter((target) => target && !detectTestHarnessEditRisk(target) && !isDependencyLockfileTarget(target));
   }
   return [];
+}
+
+function isDependencyLockfileTarget(target: string): boolean {
+  return classifyDependencyFileTarget(target)?.kind === 'lockfile';
 }
 
 function collectLocalizationEvidence(event: BenchmarkTraceEvent, localizedTargets: Set<string>): void {
@@ -3884,6 +4018,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('failing verifier commands')
     || warning.includes('inconclusive verifier failure')
     || warning.includes('unprepared environment')
+    || warning.includes('dependency manifest edit')
     || warning.includes('skill prompt loaded')
     || warning.includes('multiple full skill prompts')
     || warning.includes('source research was partial')
@@ -3916,7 +4051,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
@@ -4199,6 +4334,72 @@ function classifyEnvironmentSetupCommand(command: string): string | null {
     [/(?:^|[;&|]\s*)docker\s+build\b/i, 'container setup'],
   ];
   return checks.find(([pattern]) => pattern.test(normalized))?.[1] ?? null;
+}
+
+function isDependencySetupEvent(event: BenchmarkTraceEvent): boolean {
+  if (event.tool !== 'bash') return false;
+  return isDependencySetupCommand(verifierCommandForEvent(event));
+}
+
+function isDependencySetupCommand(command: string): boolean {
+  const normalized = command.replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return [
+    /(?:^|[;&|]\s*)npm\s+(?:ci|install|i|add|update|upgrade|dedupe|import|audit\s+fix)\b/i,
+    /(?:^|[;&|]\s*)pnpm\s+(?:install|i|add|update|upgrade|dedupe|import|audit\s+fix)\b/i,
+    /(?:^|[;&|]\s*)yarn\s+(?:install|add|upgrade|up|dedupe|import|--immutable|--frozen-lockfile)\b/i,
+    /(?:^|[;&|]\s*)bun\s+(?:install|add|update)\b/i,
+    /(?:^|[;&|]\s*)(?:python(?:3)?\s+-m\s+)?pip(?:3)?\s+(?:install|sync)\b/i,
+    /(?:^|[;&|]\s*)uv\s+(?:sync|lock|add|pip\s+(?:install|sync))\b/i,
+    /(?:^|[;&|]\s*)poetry\s+(?:install|update|lock|add)\b/i,
+    /(?:^|[;&|]\s*)pipenv\s+(?:install|lock|update)\b/i,
+    /(?:^|[;&|]\s*)conda\s+(?:env\s+)?(?:create|update|install)\b/i,
+    /(?:^|[;&|]\s*)cargo\s+(?:fetch|update|generate-lockfile)\b/i,
+    /(?:^|[;&|]\s*)go\s+(?:get|mod\s+(?:download|tidy|vendor|verify))\b/i,
+    /(?:^|[;&|]\s*)(?:mvn|mvnw|\.\/mvnw)\s+(?:dependency:resolve|dependency:go-offline|versions:[A-Za-z0-9_.:-]+)\b/i,
+    /(?:^|[;&|]\s*)(?:gradle|gradlew|\.\/gradlew)\s+(?:dependencies|buildEnvironment|--refresh-dependencies)\b/i,
+    /(?:^|[;&|]\s*)dotnet\s+(?:restore|add\s+package|remove\s+package)\b/i,
+    /(?:^|[;&|]\s*)composer\s+(?:install|update|require|remove)\b/i,
+    /(?:^|[;&|]\s*)bundle\s+(?:install|update|add)\b/i,
+    /(?:^|[;&|]\s*)swift\s+package\s+(?:resolve|update)\b/i,
+  ].some((pattern) => pattern.test(normalized));
+}
+
+function classifyDependencyFileTarget(target: string): { ecosystem: string; kind: 'manifest' | 'lockfile' } | null {
+  const normalized = normalizeTracePath(target);
+  if (!normalized) return null;
+  const base = normalized.split('/').at(-1) ?? normalized;
+
+  const manifestChecks: Array<[RegExp, string]> = [
+    [/^package\.json$/i, 'node'],
+    [/^(?:pyproject\.toml|setup\.py|setup\.cfg|pipfile|environment\.ya?ml|requirements(?:[-_.a-z0-9]*)?\.txt)$/i, 'python'],
+    [/^cargo\.toml$/i, 'rust'],
+    [/^go\.mod$/i, 'go'],
+    [/^(?:pom\.xml|build\.gradle(?:\.kts)?|settings\.gradle(?:\.kts)?|gradle\.properties)$/i, 'jvm'],
+    [/^(?:[^/]+\.(?:csproj|fsproj|vbproj)|directory\.packages\.props|global\.json)$/i, 'dotnet'],
+    [/^composer\.json$/i, 'php'],
+    [/^(?:gemfile|.+\.gemspec)$/i, 'ruby'],
+    [/^package\.swift$/i, 'swift'],
+    [/^(?:description|flake\.nix)$/i, 'data-science'],
+  ];
+  const lockfileChecks: Array<[RegExp, string]> = [
+    [/^(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|bun\.lock)$/i, 'node'],
+    [/^(?:poetry\.lock|uv\.lock|pipfile\.lock|conda-lock\.ya?ml|requirements\.lock)$/i, 'python'],
+    [/^cargo\.lock$/i, 'rust'],
+    [/^go\.sum$/i, 'go'],
+    [/^(?:gradle\.lockfile|verification-metadata\.xml)$/i, 'jvm'],
+    [/^packages\.lock\.json$/i, 'dotnet'],
+    [/^composer\.lock$/i, 'php'],
+    [/^gemfile\.lock$/i, 'ruby'],
+    [/^package\.resolved$/i, 'swift'],
+    [/^(?:renv\.lock|flake\.lock)$/i, 'data-science'],
+  ];
+
+  const manifest = manifestChecks.find(([pattern]) => pattern.test(base));
+  if (manifest) return { ecosystem: manifest[1], kind: 'manifest' };
+  const lockfile = lockfileChecks.find(([pattern]) => pattern.test(base));
+  if (lockfile) return { ecosystem: lockfile[1], kind: 'lockfile' };
+  return null;
 }
 
 function extractEnvironmentSetupFailure(event: BenchmarkTraceEvent): BenchmarkEnvironmentSetupFailureEvent | null {

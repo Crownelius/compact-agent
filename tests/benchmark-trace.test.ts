@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildBenchmarkCompletionReminder,
   buildBenchmarkBlindRepairEvents,
+  buildBenchmarkDependencyEditEvents,
   buildBenchmarkEnvironmentSetupEvents,
   buildBenchmarkEnvironmentSetupFailureEvents,
   buildBenchmarkFailureUnalignedRepairEvents,
@@ -2529,6 +2530,192 @@ describe('benchmark trace artifacts', () => {
     expect(quality.processDefects).toEqual([]);
     expect(quality.warnings.join('\n')).not.toContain('unprepared environment');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('env_setup_failures=1 unresolved_env=0 env_setup=1 env_setup_ok=1');
+  });
+
+  it('tracks dependency manifest edits that lack install or lockfile setup evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'package.json' },
+        output: '{ "dependencies": { "left-pad": "1.0.0" }, "scripts": { "test": "vitest run" } }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'FAIL src/app.test.ts > uses dependency\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'read_file',
+        input: { file_path: 'package.json' },
+        output: '{ "dependencies": { "left-pad": "1.0.0" }, "scripts": { "test": "vitest run" } }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'edit_file',
+        input: { file_path: 'package.json', old_string: '"left-pad": "1.0.0"', new_string: '"left-pad": "1.1.0"' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- package.json' },
+        output: 'diff --git a/package.json b/package.json',
+        isError: false,
+        elapsedMs: 5,
+      }),
+    ];
+
+    expect(buildBenchmarkDependencyEditEvents(events)).toEqual([{
+      seq: 5,
+      tool: 'edit_file',
+      target: 'package.json',
+      ecosystem: 'node',
+      kind: 'manifest',
+    }]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.dependencyManifestEditCount).toBe(1);
+    expect(quality.dependencyLockfileEditCount).toBe(0);
+    expect(quality.dependencySetupAfterManifestEdit).toBe(false);
+    expect(quality.passingDependencySetupAfterManifestEdit).toBe(false);
+    expect(quality.dependencyValidationAfterManifestEdit).toBe(true);
+    expect(quality.passingDependencyValidationAfterManifestEdit).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toContain('dependency_manifest_without_setup');
+    expect(quality.processDefects.find((d) => d.code === 'dependency_manifest_without_setup')).toMatchObject({
+      category: 'execution_control',
+      severity: 'low',
+      seq: 5,
+    });
+    expect(quality.warnings.join('\n')).toContain('dependency manifest edit(s) lacked a later package setup/install/lockfile command');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('dependency_manifests=1 dependency_lockfiles=0 dependency_setup_after_manifest=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('package-manager install/update/lockfile step');
+  });
+
+  it('treats dependency setup after manifest and lockfile edits as validated upgrade evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'package.json' },
+        output: '{ "dependencies": { "left-pad": "1.0.0" }, "scripts": { "test": "vitest run" } }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'FAIL src/app.test.ts > uses dependency\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'read_file',
+        input: { file_path: 'package.json' },
+        output: '{ "dependencies": { "left-pad": "1.0.0" }, "scripts": { "test": "vitest run" } }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'apply_patch',
+        input: {
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: package.json',
+            '@@',
+            '-    "left-pad": "1.0.0"',
+            '+    "left-pad": "1.1.0"',
+            '*** Update File: package-lock.json',
+            '@@',
+            '-      "version": "1.0.0"',
+            '+      "version": "1.1.0"',
+            '*** End Patch',
+          ].join('\n'),
+        },
+        output: 'Done',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm install' },
+        output: 'up to date',
+        isError: false,
+        elapsedMs: 1000,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'git status --short' },
+        output: ' M package.json\n M package-lock.json',
+        isError: false,
+        elapsedMs: 5,
+      }),
+    ];
+
+    const edits = buildBenchmarkDependencyEditEvents(events);
+    expect(edits.map((event) => `${event.kind}:${event.target}`)).toEqual([
+      'manifest:package.json',
+      'lockfile:package-lock.json',
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.dependencyManifestEditCount).toBe(1);
+    expect(quality.dependencyLockfileEditCount).toBe(1);
+    expect(quality.dependencySetupAfterManifestEdit).toBe(true);
+    expect(quality.passingDependencySetupAfterManifestEdit).toBe(true);
+    expect(quality.dependencyValidationAfterManifestEdit).toBe(true);
+    expect(quality.passingDependencyValidationAfterManifestEdit).toBe(true);
+    expect(quality.firstDependencySetupAfterManifestEditSeq).toBe(6);
+    expect(quality.firstDependencyValidationAfterManifestEditSeq).toBe(7);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings).toEqual([]);
   });
 
   it('warns when full skills are loaded before local context or in bulk', () => {

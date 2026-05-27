@@ -26,7 +26,8 @@ evidence, including parsed counts, compact failure signatures, and final-answer
 verification-claim plus incomplete/blocked completion evidence, usage/cost
 telemetry, cost-efficiency risk, invalid tool-action telemetry, task-contract checklist completion/no-edit/test-edit signals, incomplete/inconclusive verifier markers,
 environment setup/reconstruction signals for missing dependencies, toolchains,
-or build artifacts, skill-view fit/timing signals, per-target edit localization signals, large edit-surface
+or build artifacts, dependency manifest/lockfile setup-validation signals,
+skill-view fit/timing signals, per-target edit localization signals, large edit-surface
 signals, scratch/probe artifact signals, redundant tool-call signals,
 redundant failing-verifier rerun signals, blind-repair signals, post-edit regression-cycle signals,
 latest post-edit verifier signals, post-edit and final-state
