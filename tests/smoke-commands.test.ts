@@ -112,6 +112,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
     ['/sources coding agent verification --limit 1 --source arxiv', 'local'],
+    ['/repo-digest openai/codex --files 20 --text-files 0', 'local'],
     ['/source-research coding agent verification', 'llm'],
     ['/bench terminal-bench complete sandbox verifier', 'llm'],
     // Language reviews
@@ -274,6 +275,23 @@ describe('Non-interactive slash dispatch', () => {
       source: 'arxiv',
       recent_days: 30,
       limit: 2,
+    });
+  });
+
+  it('routes /repo-digest as a local non-interactive repository digest', () => {
+    const res = resolveNonInteractivePrompt(
+      '/repo-digest openai/codex --files 50 --text-files 1',
+      config,
+      [],
+      session,
+      { current: 'dev' as const },
+    );
+
+    expect(res.kind).toBe('repoDigest');
+    expect((res as { input: Record<string, unknown> }).input).toMatchObject({
+      repo: 'openai/codex',
+      max_files: 50,
+      max_text_files: 1,
     });
   });
 });

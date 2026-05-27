@@ -152,6 +152,7 @@ The legacy per-language slash commands (`/ts-review`, `/py-review`, `/go-review`
 |---|---|
 | `/search-first <task>` | Forces research-before-code mode: web/grep/glob first, then edit. |
 | `/sources <query> [flags]` | Direct source scan without a model call. Defaults to all sources, GitHub all, Hugging Face all, Kaggle both, recent 90 days, limit 5. Flags: `--source`, `--github`, `--hf`, `--kaggle`, `--recent`, `--limit`. |
+| `/repo-digest <github-url\|owner/repo> [flags]` | Direct GitHub repo digest without a model call or clone. Flags: `--ref`, `--files`, `--text-files`, `--chars`. |
 | `/docs-lookup <query>` | Search docs (project + web) for a concept or API. |
 
 ### 2.11 Tools & config (REPL state)
@@ -339,6 +340,7 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `harness_components` | AHE-style component observability: maps Ventipus prompts, tools, middleware, skills, sub-agents, MemPalace memory, providers/OAuth, benchmark adapters, CLI UX, and verification/release gates to current files, focused tests, docs, and short `Prediction:` edit contracts without printing credentials or memory contents. | Yes |
 | `todo_write` | Update the working todo list; reinjected before each turn and preserved across compaction. | No |
 | `research_sources` | Query arXiv, GitHub repositories/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions for source-grounded research; output includes coverage/auth/recency notes, a compact source digest, deterministic cross-source ordering for reproducible traces, applies `recent_days` to supported source date fields, caveats GitHub code freshness, and reports Kaggle competition fallback. | Yes |
+| `github_repo_digest` | Inspect a public GitHub repository without cloning it: metadata, bounded tree/file language counts, manifests, CI files, likely commands, key excerpts, and AHE-style component surface signals; optional GitHub auth is never printed. | Yes |
 | `web_fetch` | Fetch a URL and return text (HTML→text). | Yes |
 | `web_search` | Search the web by keyword (DuckDuckGo, no API key). | Yes |
 | `stitch` | Call Google Stitch's MCP server (`tools/list`, `tools/call`). Only present when `/stitch-config` has been run. | No |

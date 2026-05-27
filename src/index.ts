@@ -18,7 +18,14 @@ import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from './openai-
 import { fallbackModelForKnownFlakyTurn, isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import { buildHarnessComponentsReport } from './tools/harness-components.js';
+import { GitHubRepoDigestTool } from './tools/github-repo-digest.js';
 import { ResearchSourcesTool } from './tools/research-sources.js';
+import {
+  decodeRepoDigestSentinel,
+  encodeRepoDigestSentinel,
+  formatRepoDigestCommandUsage,
+  parseRepoDigestCommandArgs,
+} from './repo-command.js';
 import {
   decodeSourcesSentinel,
   encodeSourcesSentinel,
@@ -807,6 +814,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
+      console.log(d('  ') + c('/repo-digest <repo>') + d(' — direct GitHub repo component/source digest'));
       console.log(d('  ') + c('/source-research') + d('   — arXiv/GitHub/HF/Kaggle research brief'));
       console.log(d('  ') + c('/docs-lookup <query>') + d(' — search docs for answers'));
       // /review already auto-uses ECC's high-quality language-agnostic prompt;
@@ -2472,6 +2480,18 @@ export function handleSlashCommand(
       return { handled: true, injectPrompt: encodeSourcesSentinel(parsed.input) };
     }
 
+    case '/repo-digest':
+    case '/repo-inspect':
+    case '/github-digest': {
+      const parsed = parseRepoDigestCommandArgs(args);
+      if (parsed.error || !parsed.input) {
+        console.log(chalk.yellow(parsed.error ? `  /repo-digest: ${parsed.error}` : '  /repo-digest: invalid arguments'));
+        console.log(chalk.dim(formatRepoDigestCommandUsage()));
+        return { handled: true };
+      }
+      return { handled: true, injectPrompt: encodeRepoDigestSentinel(parsed.input) };
+    }
+
     case '/source-research':
     case '/research-sources': {
       if (!args) {
@@ -3135,6 +3155,7 @@ export type NonInteractivePromptResolution =
   | { kind: 'handled' }
   | { kind: 'exit' }
   | { kind: 'sources'; input: Record<string, unknown> }
+  | { kind: 'repoDigest'; input: Record<string, unknown> }
   | { kind: 'error'; message: string };
 
 export function resolveNonInteractivePrompt(
@@ -3160,6 +3181,11 @@ export function resolveNonInteractivePrompt(
     const input = decodeSourcesSentinel(result.injectPrompt);
     if (!input) return { kind: 'error', message: 'could not parse /sources arguments.' };
     return { kind: 'sources', input };
+  }
+  if (result.injectPrompt.startsWith('__REPO_DIGEST__')) {
+    const input = decodeRepoDigestSentinel(result.injectPrompt);
+    if (!input) return { kind: 'error', message: 'could not parse /repo-digest arguments.' };
+    return { kind: 'repoDigest', input };
   }
   if (result.injectPrompt.startsWith('__')) {
     const command = trimmed.split(/\s+/, 1)[0];
@@ -4186,6 +4212,16 @@ async function main(): Promise<void> {
       process.exitCode = result.isError ? 1 : 0;
       return;
     }
+    if (resolvedPrompt.kind === 'repoDigest') {
+      const result = await GitHubRepoDigestTool.call(resolvedPrompt.input, process.cwd());
+      console.log(result.output);
+      try {
+        await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
+      } catch { /* never fail a local command on hook errors */ }
+      try { rl.close(); } catch { /* noop */ }
+      process.exitCode = result.isError ? 1 : 0;
+      return;
+    }
     if (resolvedPrompt.kind === 'exit' || resolvedPrompt.kind === 'handled') {
       try {
         await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
@@ -4422,6 +4458,16 @@ async function main(): Promise<void> {
           console.log(chalk.dim('  Searching arXiv, GitHub, Hugging Face, and Kaggle sources...'));
           const sourceResult = await ResearchSourcesTool.call(sourceInput, process.cwd());
           console.log(sourceResult.output);
+          continue;
+        } else if (result.injectPrompt.startsWith('__REPO_DIGEST__')) {
+          const repoInput = decodeRepoDigestSentinel(result.injectPrompt);
+          if (!repoInput) {
+            console.log(chalk.yellow('  /repo-digest: could not parse repository arguments.'));
+            continue;
+          }
+          console.log(chalk.dim('  Inspecting GitHub repository metadata, tree, and key files...'));
+          const repoResult = await GitHubRepoDigestTool.call(repoInput, process.cwd());
+          console.log(repoResult.output);
           continue;
         } else if (result.injectPrompt.startsWith('__SWARM__')) {
           // Swarm dispatch: __SWARM__<agentsCsv>|||<task>. Same sentinel
