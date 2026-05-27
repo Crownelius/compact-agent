@@ -195,14 +195,20 @@ describe('Exgentic adapter packaging', () => {
         description: 'Look up order and customer state',
         is_finish: false,
         is_message: false,
-        arguments_schema: { properties: { order_id: { type: 'string' } } },
+        arguments_schema: {
+          properties: { order_id: { type: 'string' } },
+          required: ['order_id'],
+        },
       },
       {
         name: 'issue_refund',
         description: 'Issue refund for an eligible order',
         is_finish: false,
         is_message: false,
-        arguments_schema: { properties: { order_id: { type: 'string' }, amount: { type: 'number' } } },
+        arguments_schema: {
+          properties: { order_id: { type: 'string' }, amount: { type: 'number' } },
+          required: ['order_id', 'amount'],
+        },
       },
       {
         name: 'finish',
@@ -219,7 +225,7 @@ describe('Exgentic adapter packaging', () => {
       `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
       `pending_history = [{"role": "observation", "content": {"order_id": "ord-1", "status": "pending", "next": "lookup order before refund"}}]`,
       `done_history = [{"role": "observation", "content": {"order_id": "ord-1", "status": "completed", "note": "refund completed and customer confirmed"}}]`,
-      `pending = utils.shortlist_exgentic_actions(actions, task="Refund order ord-1", history=pending_history, profile="tau2", limit=2)`,
+      `pending = utils.shortlist_exgentic_actions(actions, task="Refund order ord-1", context={"order_id": "stale-context-order", "amount": 12.5}, history=pending_history, profile="tau2", limit=2)`,
       `done = utils.shortlist_exgentic_actions(actions, task="Refund order ord-1", history=done_history, profile="tau2", limit=3)`,
       `print(json.dumps({"pending": pending, "done": done}, sort_keys=True))`,
     ].join('\n');
@@ -235,6 +241,15 @@ describe('Exgentic adapter packaging', () => {
     expect(parsed.pending.format).toBe('ventipus-exgentic-action-shortlist-v1');
     expect(parsed.pending.completion_ready).toBe(false);
     expect(parsed.pending.shortlisted_actions[0].name).toBe('lookup_order');
+    expect(parsed.pending.shortlisted_actions[0].required_argument_keys).toEqual(['order_id']);
+    expect(parsed.pending.shortlisted_actions[0].available_required_hints).toEqual([
+      { key: 'order_id', source: 'latest_observation.order_id', value_preview: '"ord-1"' },
+    ]);
+    const refund = parsed.pending.shortlisted_actions.find((item: { name: string }) => item.name === 'issue_refund');
+    expect(refund.available_required_hints).toEqual([
+      { key: 'order_id', source: 'latest_observation.order_id', value_preview: '"ord-1"' },
+      { key: 'amount', source: 'context.amount', value_preview: '12.5' },
+    ]);
     expect(parsed.pending.shortlisted_actions.map((item: { name: string }) => item.name)).not.toContain('finish');
     expect(parsed.pending.deferred_completion_actions).toContain('finish');
     expect(parsed.done.completion_ready).toBe(true);
@@ -267,7 +282,7 @@ describe('Exgentic adapter packaging', () => {
       `import utils`,
       `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
       `payload = utils.ActionPayload(name="LookupOrder", arguments={"includeHistory": True, "debug": "drop"})`,
-      `hints = {"latest_observation": {"order_id": "ord-1", "status": "pending"}}`,
+      `hints = {"latest_observation": {"order_id": "ord-1", "status": "pending"}, "context": {"order_id": "stale-context-order"}}`,
       `repaired = utils.repair_exgentic_action_payload(payload, actions, argument_hints=hints)`,
       `unresolved = utils.repair_exgentic_action_payload(utils.ActionPayload(name="teleport", arguments={"x": 1}), actions)`,
       `print(json.dumps({`,

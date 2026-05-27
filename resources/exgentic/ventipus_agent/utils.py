@@ -228,6 +228,10 @@ def shortlist_exgentic_actions(
     safe_limit = max(1, min(16, int(limit or 8)))
     latest_observation = _latest_history_content(history or [], "observation")
     latest_observation_text = json_dumps(latest_observation, limit=6000) if latest_observation is not None else ""
+    argument_hints = {
+        "latest_observation": latest_observation,
+        "context": context or {},
+    }
     target_text = " ".join(
         [
             str(task or ""),
@@ -240,11 +244,14 @@ def shortlist_exgentic_actions(
     latest_action_name = _latest_selected_action_name(history or [])
     has_recent_error = _has_recent_action_error(history or [])
 
-    scored: list[tuple[float, str, dict[str, Any], list[str], list[str]]] = []
+    scored: list[tuple[float, str, dict[str, Any], list[str], list[str], list[str], list[dict[str, str]]]] = []
     for doc in docs:
         name = str(doc.get("name") or "")
         action_text = _action_doc_text(doc)
-        schema_keys = _schema_property_keys(doc.get("arguments_schema"))
+        schema = doc.get("arguments_schema")
+        schema_keys = _schema_property_keys(schema)
+        required_keys = _schema_required_keys(schema)
+        required_hints = _required_argument_hints(required_keys, argument_hints)
         score = 0.0
         reasons: list[str] = []
 
@@ -258,6 +265,13 @@ def shortlist_exgentic_actions(
             score += min(10, len(schema_hits) * 2)
             reasons.append(f"schema keys appear in current state: {', '.join(schema_hits)}")
 
+        if required_hints:
+            score += min(8, len(required_hints) * 3)
+            reasons.append(
+                "required args available in current state: "
+                + ", ".join(item["key"] for item in required_hints[:4])
+            )
+
         prior_score, prior_reason = _profile_action_prior(profile, name, action_text)
         if prior_score:
             score += prior_score
@@ -265,7 +279,7 @@ def shortlist_exgentic_actions(
 
         name_tokens = [token for token in _keyword_tokens(name.replace("_", " ")) if token not in {"action"}]
         if name_tokens and all(token in latest_observation_text.lower() for token in name_tokens):
-            score += 4
+            score += 8
             reasons.append("action name matches explicit latest-observation cue")
 
         is_completion = bool(doc.get("is_finish") or doc.get("is_message"))
@@ -284,12 +298,12 @@ def shortlist_exgentic_actions(
                 score -= 4
                 reasons.append("avoid repeating after recent action/schema error")
 
-        scored.append((score, name.lower(), doc, reasons, schema_keys))
+        scored.append((score, name.lower(), doc, reasons, schema_keys, required_keys, required_hints))
 
     scored.sort(key=lambda item: (-item[0], item[1]))
     shortlisted = [
-        _shortlist_item(doc, score, reasons, schema_keys)
-        for score, _name, doc, reasons, schema_keys in scored[:safe_limit]
+        _shortlist_item(doc, score, reasons, schema_keys, required_keys, required_hints)
+        for score, _name, doc, reasons, schema_keys, required_keys, required_hints in scored[:safe_limit]
     ]
     shortlisted_names = {str(item.get("name", "")).lower() for item in shortlisted}
     deferred_completion = [
@@ -600,6 +614,46 @@ def _schema_property_keys(schema: Any) -> list[str]:
     return deduped
 
 
+def _schema_required_keys(schema: Any) -> list[str]:
+    if not isinstance(schema, dict):
+        return []
+    required = schema.get("required")
+    if not isinstance(required, list):
+        return []
+    seen: set[str] = set()
+    keys: list[str] = []
+    for key in required:
+        text = str(key or "").strip()
+        lowered = text.lower()
+        if not text or lowered in seen:
+            continue
+        seen.add(lowered)
+        keys.append(text)
+    return keys
+
+
+def _required_argument_hints(required_keys: list[str], argument_hints: Any) -> list[dict[str, str]]:
+    if not required_keys:
+        return []
+    hint_index = _argument_hint_index(argument_hints)
+    hints: list[dict[str, str]] = []
+    for key in required_keys:
+        match = hint_index.get(_normalized_identifier(key))
+        if match is None:
+            continue
+        value, source = match
+        if not _hint_value_is_usable(value):
+            continue
+        hints.append(
+            {
+                "key": key,
+                "source": source,
+                "value_preview": truncate(json_dumps(value, limit=360), limit=360),
+            }
+        )
+    return hints
+
+
 def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[float, str]:
     text = f"{name} {action_text}".lower()
     if profile == "appworld":
@@ -628,12 +682,16 @@ def _shortlist_item(
     score: float,
     reasons: list[str],
     schema_keys: list[str],
+    required_keys: list[str],
+    required_hints: list[dict[str, str]],
 ) -> dict[str, Any]:
     return {
         "name": str(doc.get("name") or ""),
         "score": round(score, 2),
         "reason": "; ".join(reasons[:4]) or "available action",
         "argument_keys": schema_keys[:12],
+        "required_argument_keys": required_keys[:12],
+        "available_required_hints": required_hints[:8],
         "is_finish": bool(doc.get("is_finish", False)),
         "is_message": bool(doc.get("is_message", False)),
     }

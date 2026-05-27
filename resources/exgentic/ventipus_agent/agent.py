@@ -193,6 +193,7 @@ class VentipusAgentInstance(AgentInstance):
             "Work from the current task, context, latest observation, and the available action schemas.",
             "Choose exactly one available action. Do not invent action names.",
             "Prefer the recommended action shortlist when it matches the latest observation; use the full schemas only when the current state clearly requires another available action.",
+            "For shortlisted actions, include every required_argument_key; when available_required_hints lists an exact value from latest observation or context, copy that value into the matching argument.",
             "The benchmark may count malformed JSON, unknown action names, or schema-mismatched arguments as invalid actions.",
             "End your response with one JSON object on its own line using this exact shape:",
             '{"name":"<action name>","arguments":{}}',
@@ -314,8 +315,8 @@ class VentipusAgentInstance(AgentInstance):
             payload,
             action_docs,
             argument_hints={
-                "context": getattr(self, "context", {}) or {},
                 "latest_observation": self._latest_observation_data(),
+                "context": getattr(self, "context", {}) or {},
             },
         )
         if repair.diagnostics.get("status") != "unchanged":

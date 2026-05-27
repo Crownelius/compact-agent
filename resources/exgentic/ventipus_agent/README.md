@@ -10,9 +10,11 @@ action object, then maps that JSON back to an Exgentic `ActionType`.
 It auto-selects specialized `/benchmark` profiles for AppWorld, BrowseComp+,
 tau2, ARC, SaaS, roadmap, and mobile-style tasks from the task, context, and
 available action schemas. It also builds a deterministic recommended action
-shortlist before the full schema list, matching the Open Agent leaderboard
-finding that action-scaffold details matter while preserving compatibility with
-every available benchmark action. Long sessions use a folded history ledger
+shortlist before the full schema list, including required argument keys and
+redacted exact latest-observation/context hints when those required values are
+already present. This matches the Open Agent leaderboard finding that
+action-scaffold details matter while preserving compatibility with every
+available benchmark action. Long sessions use a folded history ledger
 that preserves latest observations, selected actions, action counts, and
 diagnostics without reinjecting bulky raw stdout into every step. Before
 dispatch, near-miss action JSON is repaired conservatively: action names are
