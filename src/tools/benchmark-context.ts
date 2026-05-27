@@ -103,6 +103,11 @@ interface PriorProactivitySummary {
   relevanceBonus: number;
 }
 
+interface PriorChangeEvaluationSummary {
+  harmReasons: string[];
+  scoreBonus: number;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -662,6 +667,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
     const priorSourceResearch = summarizePriorSourceResearchCoverage(summary, quality);
     const priorProactivity = summarizePriorProactivity(summary, quality);
+    const priorChangeEvaluation = summarizePriorChangeEvaluationForReuse(summary);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -684,7 +690,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       successfulVerificationCount,
       defectCodes,
       finalAnswerEvidence,
-    });
+    }).concat(priorChangeEvaluation.harmReasons);
 
     const changed = changedFiles.slice(0, 5).join(', ') || 'none recorded';
     const verifiers = verificationCommands.slice(0, 3).join(' | ') || 'none recorded';
@@ -727,6 +733,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     let score = relevanceScore;
     if (processScore != null && processScore >= 90) score += 8;
     if ((successfulVerificationCount ?? 0) > 0) score += 8;
+    score += priorChangeEvaluation.scoreBonus;
     if (currentPiBenchLike && priorProactivity.complete) score += 20;
     if (currentPiBenchLike && priorProactivity.risk) score -= 12;
     if (score < 18) continue;
@@ -1030,9 +1037,12 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
   const card = objectRecord(summary.experienceCard);
   const decision = objectRecord(card.decisionObservability);
   const changeEvaluation = objectRecord(summary.changeEvaluation);
-  const editCount = finiteNumber(decision.editCount);
-  const predictedEditCount = finiteNumber(decision.predictedEditCount);
-  const verifiedPredictionCount = finiteNumber(decision.verifiedPredictionCount);
+  const editCount = finiteNumber(decision.editCount)
+    ?? finiteNumber(changeEvaluation.editCount);
+  const predictedEditCount = finiteNumber(decision.predictedEditCount)
+    ?? finiteNumber(changeEvaluation.predictedEditCount);
+  const verifiedPredictionCount = finiteNumber(decision.verifiedPredictionCount)
+    ?? finiteNumber(changeEvaluation.confirmedPredictionCount);
   const regressionForecastCount = finiteNumber(decision.regressionForecastCount)
     ?? finiteNumber(changeEvaluation.regressionForecastCount);
   const missingRegressionForecastCount = finiteNumber(decision.missingRegressionForecastCount)
@@ -1081,6 +1091,48 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
     regressionCycleCount != null ? `regressions:${regressionCycleCount}` : null,
     predictions.length ? `predictions:${predictions.join(' | ')}` : null,
   ].filter(Boolean).join(',');
+}
+
+function summarizePriorChangeEvaluationForReuse(summary: Record<string, unknown>): PriorChangeEvaluationSummary {
+  const changeEvaluation = objectRecord(summary.changeEvaluation);
+  const status = typeof changeEvaluation.status === 'string'
+    ? changeEvaluation.status.trim().toLowerCase()
+    : '';
+  const accepted = firstBooleanOrNull(changeEvaluation.accepted);
+  const contradictedPredictionCount = finiteNumber(changeEvaluation.contradictedPredictionCount) ?? 0;
+  const regressionCycleCount = finiteNumber(changeEvaluation.regressionCycleCount) ?? 0;
+  const broadRegressionFailureCount = finiteNumber(changeEvaluation.broadRegressionFailureCount) ?? 0;
+  const unpredictedEditCount = finiteNumber(changeEvaluation.unpredictedEditCount) ?? 0;
+  const missingRegressionForecastCount = finiteNumber(changeEvaluation.missingRegressionForecastCount) ?? 0;
+  const unverifiedPredictionCount = finiteNumber(changeEvaluation.unverifiedPredictionCount) ?? 0;
+
+  if (!status
+    && accepted === undefined
+    && contradictedPredictionCount <= 0
+    && regressionCycleCount <= 0
+    && broadRegressionFailureCount <= 0
+    && unpredictedEditCount <= 0
+    && missingRegressionForecastCount <= 0
+    && unverifiedPredictionCount <= 0) {
+    return { harmReasons: [], scoreBonus: 0 };
+  }
+
+  const harmReasons: string[] = [];
+  if (accepted === false || /^(?:missing_predictions|missing_regression_forecasts|pending_verification|contradicted|regression_risk)$/.test(status)) {
+    harmReasons.push(`change_evaluation=${status || 'accepted_false'}`);
+  }
+  if (contradictedPredictionCount > 0) harmReasons.push(`contradicted_predictions=${contradictedPredictionCount}`);
+  if (regressionCycleCount > 0) harmReasons.push(`regression_cycles=${regressionCycleCount}`);
+  if (broadRegressionFailureCount > 0) harmReasons.push(`broad_regression_failures=${broadRegressionFailureCount}`);
+  if (unpredictedEditCount > 0) harmReasons.push(`unpredicted_edits=${unpredictedEditCount}`);
+  if (missingRegressionForecastCount > 0) harmReasons.push(`missing_regression_forecasts=${missingRegressionForecastCount}`);
+  if (unverifiedPredictionCount > 0) harmReasons.push(`unverified_predictions=${unverifiedPredictionCount}`);
+
+  const scoreBonus = status === 'confirmed' && accepted === true ? 6 : 0;
+  return {
+    harmReasons: harmReasons.slice(0, 6),
+    scoreBonus,
+  };
 }
 
 function summarizePriorValidationReliability(

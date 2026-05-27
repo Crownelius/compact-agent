@@ -737,6 +737,129 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('proactivity=detected:true,risk:true,signals:2,context:1/6,hidden_intent:false,clarification:false,privacy:false,completion:true,actions:1');
   }, 15_000);
 
+  it('routes rejected AHE change evaluations to prior-experience warnings', async () => {
+    const root = makeRoot();
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const rejectedPriorDir = join(traceDir, '2026-05-27-rejected-change-evaluation');
+    const pendingPriorDir = join(traceDir, '2026-05-27-pending-change-evaluation');
+    const confirmedPriorDir = join(traceDir, '2026-05-27-confirmed-change-evaluation');
+    mkdirSync(rejectedPriorDir, { recursive: true });
+    mkdirSync(pendingPriorDir, { recursive: true });
+    mkdirSync(confirmedPriorDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      '',
+      '## Acceptance Criteria',
+      '- Must preserve the parser regression behavior.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'parser.ts'), 'export const parser = true;\n');
+
+    writeFileSync(join(rejectedPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T11:00:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['parser.ts'],
+      trajectoryQuality: {
+        processScore: 98,
+        successfulVerificationCount: 2,
+        processDefects: [],
+      },
+      changeEvaluation: {
+        status: 'contradicted',
+        accepted: false,
+        editCount: 1,
+        predictedEditCount: 1,
+        regressionForecastCount: 1,
+        missingRegressionForecastCount: 0,
+        unpredictedEditCount: 0,
+        confirmedPredictionCount: 0,
+        contradictedPredictionCount: 1,
+        unverifiedPredictionCount: 0,
+        regressionCycleCount: 1,
+        broadRegressionFailureCount: 1,
+        recommendedAction: 'Inspect the failed verifier and repair or revert.',
+      },
+      experienceCard: {
+        decisionObservability: {
+          editCount: 1,
+          predictedEditCount: 1,
+          verifiedPredictionCount: 0,
+          regressionForecastCount: 1,
+          missingRegressionForecastCount: 0,
+        },
+      },
+    }, null, 2));
+
+    writeFileSync(join(pendingPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T11:03:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['parser.ts'],
+      trajectoryQuality: {
+        processScore: 99,
+        successfulVerificationCount: 2,
+        processDefects: [],
+      },
+      changeEvaluation: {
+        status: 'pending_verification',
+        accepted: null,
+        editCount: 1,
+        predictedEditCount: 1,
+        regressionForecastCount: 1,
+        missingRegressionForecastCount: 0,
+        unpredictedEditCount: 0,
+        confirmedPredictionCount: 0,
+        contradictedPredictionCount: 0,
+        unverifiedPredictionCount: 1,
+        regressionCycleCount: 0,
+        broadRegressionFailureCount: 0,
+      },
+    }, null, 2));
+
+    writeFileSync(join(confirmedPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T11:05:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['parser.ts'],
+      trajectoryQuality: {
+        processScore: 92,
+        successfulVerificationCount: 1,
+        processDefects: [],
+      },
+      changeEvaluation: {
+        status: 'confirmed',
+        accepted: true,
+        editCount: 1,
+        predictedEditCount: 1,
+        regressionForecastCount: 1,
+        missingRegressionForecastCount: 0,
+        unpredictedEditCount: 0,
+        confirmedPredictionCount: 1,
+        contradictedPredictionCount: 0,
+        unverifiedPredictionCount: 0,
+        regressionCycleCount: 0,
+        broadRegressionFailureCount: 0,
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root, probe_network: false }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('avoid prior run: 2026-05-27T11:00:00.000Z');
+    expect(result.output).toContain('reason=change_evaluation=contradicted|contradicted_predictions=1|regression_cycles=1|broad_regression_failures=1');
+    expect(result.output).toContain('decision=edits:1,predicted:1,verified:0,regression_forecasts:1,missing_regression_forecasts:0,change_status:contradicted,accepted:false,unpredicted:0,contradicted:1,unverified:0,regressions:1');
+    expect(result.output).toContain('avoid prior run: 2026-05-27T11:03:00.000Z');
+    expect(result.output).toContain('reason=change_evaluation=pending_verification|unverified_predictions=1');
+    expect(result.output).toContain('decision=edits:1,predicted:1,verified:0,regression_forecasts:1,missing_regression_forecasts:0,change_status:pending_verification,accepted:null,unpredicted:0,contradicted:0,unverified:1,regressions:0');
+    expect(result.output).not.toContain('previous run: 2026-05-27T11:00:00.000Z');
+    expect(result.output).not.toContain('previous run: 2026-05-27T11:03:00.000Z');
+    expect(result.output).toContain('previous run: 2026-05-27T11:05:00.000Z');
+    expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,regression_forecasts:1,missing_regression_forecasts:0,change_status:confirmed,accepted:true,unpredicted:0,contradicted:0,unverified:0,regressions:0');
+  }, 15_000);
+
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {
     const root = makeRoot();
     mkdirSync(join(root, 'src'));

@@ -66,7 +66,10 @@ It also separates reusable prior local benchmark experience from similar failed
 or unsafe prior runs, so context reuse stays method-level and current verifier
 evidence remains authoritative. Pi-Bench-like tasks additionally prefer prior
 experience with complete context/hidden-intent/clarification/privacy/completion
-proactivity ledgers and surface incomplete ledgers as warnings.
+proactivity ledgers and surface incomplete ledgers as warnings. AHE change
+evaluations also participate in reuse: confirmed manifests can rank higher,
+while contradicted, regression-risk, pending-verification, missing-prediction,
+or missing-regression-forecast manifests are warnings rather than replay hints.
 
 Useful env vars:
 
