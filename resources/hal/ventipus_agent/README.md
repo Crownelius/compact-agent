@@ -12,6 +12,7 @@ Defaults:
 - SWE-CI-like tasks are routed to the `swe-ci` benchmark profile, which keeps current/target commits, test gaps, inferred requirements, and CI-loop verifier deltas visible.
 - SWE-PRBench-like tasks are routed to the `swe-prbench` benchmark profile, which reviews PR metadata and diff first, expands only for concrete suspected findings, and returns severity-rated file/line findings unless patches are explicitly requested.
 - TML-Bench/Kaggle-style tabular ML tasks are routed to the `tml-bench` benchmark profile, which extracts the data contract, avoids hidden-label leakage, trains an honest baseline, and validates the generated submission schema before completion.
+- Pi-Bench-style proactive personal assistant tasks are routed to the `pi-bench` benchmark profile, which builds a user/workspace/app context contract, tracks hidden-intent hypotheses, asks focused clarification only when needed, and verifies observable state after proactive actions.
 - USACO and other text-response tasks return the original task dict with a `response` field.
 - Oracle-like fields such as `patch`, `test_patch`, `solution`, `answer`, `gold`, `FAIL_TO_PASS`, and `PASS_TO_PASS` are omitted from the prompt unless `VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS=1` is set.
 - Traces and logs are written under `.ventipus/hal-trace/` unless `VENTIPUS_HAL_TRACE_DIR` is set.

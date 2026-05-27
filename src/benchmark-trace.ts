@@ -2159,6 +2159,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\bswe[-_ ]?ci\b/i.test(text)) return 'sweci';
   if (/\bswe[-_ ]?pr(?:[-_ ]?bench)?\b|\bpr[-_ ]?bench\b|\bpull\s+request\s+review\b|\bcode\s+review\s+quality\b/i.test(text)) return 'sweprbench';
   if (/\btml[-_ ]?bench\b|\btabular\s+ml\b|\bkaggle[-_\s]?style\b|\bsample_submission\b|\bprivate\s+holdout\b/i.test(text)) return 'tmlbench';
+  if (/\bpi[-_ ]?bench\b|\bproactive\s+personal\s+assistant\b|\bproactivity\s+scor(?:e|ing)\b|\bhidden\s+intent\b/i.test(text)) return 'pibench';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
   if (/\bswe[- ]bench\b/i.test(text)) return 'swebench';
@@ -2181,6 +2182,7 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'sweci' || cleaned === 'swecibench') return 'sweci';
   if (cleaned === 'swepr' || cleaned === 'sweprbench' || cleaned === 'prbench' || cleaned === 'prreview' || cleaned === 'pullrequestreview' || cleaned === 'codereviewbench') return 'sweprbench';
   if (cleaned === 'tml' || cleaned === 'tmlbench' || cleaned === 'tabularml' || cleaned === 'kaggleml' || cleaned === 'kagglebench' || cleaned === 'datascience') return 'tmlbench';
+  if (cleaned === 'pi' || cleaned === 'pibench' || cleaned === 'proactive' || cleaned === 'proactiveassistant' || cleaned === 'personalassistant' || cleaned === 'hiddenintent') return 'pibench';
   if (cleaned === 'cirepair' || cleaned === 'cirepairbench' || cleaned === 'ci') return 'cirepairbench';
   if (cleaned === 'wildclaw' || cleaned === 'wildclawbench' || cleaned === 'wcbench') return 'wildclawbench';
   if (cleaned === 'arc' || cleaned === 'arcagi' || cleaned === 'arcagi3' || cleaned === 'arcprize') return 'arcagi3';
@@ -2211,6 +2213,7 @@ function formatBenchmarkName(slug: string): string {
     specbench: 'SpecBench',
     sweprbench: 'SWE-PRBench',
     tmlbench: 'TML-Bench',
+    pibench: 'Pi-Bench',
     swecycle: 'SWE-Cycle',
     sweci: 'SWE-CI',
     swebench: 'SWE-bench',

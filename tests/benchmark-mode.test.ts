@@ -43,6 +43,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('tml-bench')).toBe('tml-bench');
     expect(normalizeBenchmarkProfile('kaggle-ml')).toBe('tml-bench');
     expect(normalizeBenchmarkProfile('tabular-ml')).toBe('tml-bench');
+    expect(normalizeBenchmarkProfile('pi-bench')).toBe('pi-bench');
+    expect(normalizeBenchmarkProfile('proactive-assistant')).toBe('pi-bench');
+    expect(normalizeBenchmarkProfile('hidden-intent')).toBe('pi-bench');
     expect(normalizeBenchmarkProfile('wildclawbench')).toBe('wildclaw');
     expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
     expect(normalizeBenchmarkProfile('spec-bench')).toBe('specbench');
@@ -91,6 +94,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('tml-bench build valid sample_submission baseline')).toEqual({
       profile: 'tml-bench',
       task: 'build valid sample_submission baseline',
+    });
+    expect(splitBenchmarkArgs('pi-bench resolve latent user intent')).toEqual({
+      profile: 'pi-bench',
+      task: 'resolve latent user intent',
     });
     expect(splitBenchmarkArgs('wildclaw solve BrowseComp task')).toEqual({
       profile: 'wildclaw',
@@ -236,6 +243,16 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('private holdout');
     expect(prompt).toContain('exact columns/order');
     expect(prompt).toContain('valid baseline');
+  });
+
+  it('builds Pi-Bench prompts around proactive personal assistant context', () => {
+    const prompt = buildBenchmarkPrompt('infer hidden intent from user profile and app context', '/workspace', 'pi-bench');
+    expect(prompt).toContain('Pi-Bench / proactive personal assistant task');
+    expect(prompt).toContain('context contract');
+    expect(prompt).toContain('proactivity ledger');
+    expect(prompt).toContain('hidden/latent intents');
+    expect(prompt).toContain('clarifying question');
+    expect(prompt).toContain('Do not inspect hidden intents');
   });
 
   it('builds WildClawBench prompts around native-runtime agent contracts', () => {

@@ -85,6 +85,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/benchmark swe-ci maintain target commit CI loop', 'llm'],
     ['/benchmark swe-prbench review pull request feedback', 'llm'],
     ['/benchmark tml-bench train tabular ML baseline and write submission', 'llm'],
+    ['/benchmark pi-bench resolve hidden user intent from workspace context', 'llm'],
     ['/benchmark ci-repair fix failing workflow', 'llm'],
     ['/plan add user profiles', 'llm'],
     ['/verify', 'llm'],

@@ -220,6 +220,20 @@ def _profile_for_task(task: dict[str, Any]) -> str:
     ):
         return "tml-bench"
     if (
+        "pi-bench" in task_text
+        or "pibench" in task_text
+        or "proactive personal assistant" in task_text
+        or "proactive assistant" in task_text
+        or "hidden intent" in task_text
+        or "latent intent" in task_text
+        or "user profile" in task_text
+        or "message history" in task_text
+        or "current app" in task_text
+        or "proactivity score" in task_text
+        or "completion score" in task_text
+    ):
+        return "pi-bench"
+    if (
         "saasbench" in task_text
         or "saas-bench" in task_text
         or "enterprise saas" in task_text
@@ -325,6 +339,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         lines.append("This is a SWE-PRBench-style pull request review task. Inspect PR metadata and diff first, expand context only for concrete suspected issues, and return severity-rated review findings with file/line evidence instead of patching unless explicitly requested.")
     elif profile == "tml-bench":
         lines.append("This is a TML-Bench/Kaggle-style tabular ML task. Build the data contract first, avoid hidden-label leakage, train an honest baseline, and produce a sample_submission-compatible artifact with validation evidence.")
+    elif profile == "pi-bench":
+        lines.append("This is a Pi-Bench-style proactive personal assistant task. Build the user/workspace/app context contract, infer hidden intents carefully, ask one focused clarification when needed, and verify observable state after proactive actions.")
     elif _is_usaco_task(task):
         lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
     else:

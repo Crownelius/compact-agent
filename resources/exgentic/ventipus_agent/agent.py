@@ -442,6 +442,8 @@ def _profile_for_exgentic(task: Any, context: Any, action_docs: list[dict[str, A
         return "swe-prbench"
     if any(token in text for token in ("tml-bench", "tmlbench", "tabular ml", "kaggle-style", "kaggle style", "sample_submission", "private holdout", "train.csv", "test.csv")):
         return "tml-bench"
+    if any(token in text for token in ("pi-bench", "pibench", "proactive personal assistant", "proactive assistant", "hidden intent", "latent intent", "user profile", "message history", "current app", "proactivity score", "completion score")):
+        return "pi-bench"
     if any(token in text for token in ("saasbench", "saas-bench", "enterprise saas", "tenant", "migration")):
         return "saasbench"
     if any(token in text for token in ("roadmapbench", "roadmap-bench", "long-horizon", "version upgrade")):
@@ -470,6 +472,8 @@ def _profile_guidance(profile: str) -> str:
         return "SWE-PRBench discipline: review diff first, expand only to evidence-needed context, and produce severity-rated findings with file/line evidence rather than patching unless explicitly requested."
     if profile == "tml-bench":
         return "TML-Bench discipline: establish data contract, avoid hidden-label leakage, validate an honest baseline, and produce a schema-valid submission artifact."
+    if profile == "pi-bench":
+        return "Pi-Bench discipline: build the user/workspace/app context contract, infer hidden intent with evidence, ask only necessary clarifying questions, and verify state after proactive actions."
     if profile == "saasbench":
         return "SaaS discipline: preserve tenant, auth, migration, and cross-component workflow integrity."
     if profile == "roadmapbench":

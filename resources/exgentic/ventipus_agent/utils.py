@@ -474,6 +474,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward PR title/description, changed files, diff hunks, suspected findings, evidence gaps, and context-expansion reasons before selecting the next action."
     if profile == "tml-bench":
         return "Carry forward train/test/sample submission paths, ID/target columns, metric, validation split, leakage checks, model artifacts, submission path, and validity evidence before selecting the next action."
+    if profile == "pi-bench":
+        return "Carry forward user profile, current request, message/file/app context, available domain tools, hidden-intent hypotheses, clarification state, privacy risk, selected actions, and observable completion evidence before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
 
 
@@ -942,6 +944,15 @@ def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[fl
             return 4, "TML-Bench prior: build a reliable tabular baseline before complex ensembling"
         if re.search(r"\b(submit|submission|save|write|export|finish|answer|final)\b", text):
             return 4, "TML-Bench prior: produce and validate a schema-compatible submission artifact"
+    elif profile == "pi-bench":
+        if re.search(r"\b(profile|user|history|message|file|workspace|app|context|state|read|inspect|list|search|get|query)\b", text):
+            return 6, "Pi-Bench prior: establish personal/workspace/app context before proactive action"
+        if re.search(r"\b(intent|implicit|hidden|latent|need|preference|constraint|policy|privacy|permission|clarif(?:y|ication)|ask)\b", text):
+            return 6, "Pi-Bench prior: resolve hidden intent, privacy, and permission uncertainty"
+        if re.search(r"\b(tool|action|schedule|send|update|create|modify|book|message|email|calendar|file)\b", text):
+            return 4, "Pi-Bench prior: take reversible proactive action only after context is grounded"
+        if re.search(r"\b(verify|confirm|observe|check|finish|answer|final|done)\b", text):
+            return 4, "Pi-Bench prior: verify observable completion and communicate concise outcome"
     else:
         if re.search(r"\b(observe|read|search|list|get|lookup|inspect|query)\b", text):
             return 4, "generic prior: inspect available state before irreversible actions"

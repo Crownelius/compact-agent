@@ -261,6 +261,7 @@ export type BenchmarkProfile =
   | 'swe-ci'
   | 'swe-prbench'
   | 'tml-bench'
+  | 'pi-bench'
   | 'ci-repair'
   | 'wildclaw'
   | 'arc-agi'
@@ -330,6 +331,16 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'kaggle-bench': 'tml-bench',
   datascience: 'tml-bench',
   'data-science': 'tml-bench',
+  pi: 'pi-bench',
+  pibench: 'pi-bench',
+  'pi-bench': 'pi-bench',
+  proactive: 'pi-bench',
+  proactiveassistant: 'pi-bench',
+  'proactive-assistant': 'pi-bench',
+  personalassistant: 'pi-bench',
+  'personal-assistant': 'pi-bench',
+  hiddenintent: 'pi-bench',
+  'hidden-intent': 'pi-bench',
   cirepair: 'ci-repair',
   'ci-repair': 'ci-repair',
   ci_repair: 'ci-repair',
@@ -488,6 +499,14 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Do not read hidden labels, private holdout targets, leaderboard answer files, oracle submissions, result files, or benchmark scoring internals. Treat any private split outside the agent workspace as untouchable.
 - Validate the generated submission locally before finalizing: exact columns/order, row count equals test set, no NaN/inf where forbidden, predictions in legal range/classes, deterministic rerun if feasible, and metric/log output recorded.
 - Prefer correctness and reproducibility over speculative leaderboard chasing. If time is short, ship a valid baseline with clear evidence rather than an invalid high-complexity pipeline.`;
+    case 'pi-bench':
+      return `Profile: Pi-Bench / proactive personal assistant task
+- Treat the task as a proactive personal-assistant benchmark over a persistent workspace, not just a direct instruction-following task. Success is both task completion and helpful proactivity grounded in user context.
+- Build a context contract first: user profile, current request, message/history snippets, files/workspace state, current app/page state, available domain tools, explicit constraints, and plausible hidden/latent intents.
+- Maintain a compact proactivity ledger: inferred need, evidence, uncertainty, action considered, user-risk/privacy impact, and whether to ask a focused clarifying question before acting.
+- Use exact tool schemas and current-state IDs/fields. Do not invent personal data, app records, file contents, tool results, or confirmations not present in observations.
+- Prefer reversible, low-risk proactive help. Ask one concise clarifying question when hidden intent or permission is materially uncertain; otherwise act and then verify observable state.
+- Do not inspect hidden intents, gold answers, private grader rubrics, expected action traces, result files, or benchmark scoring internals. Preserve user privacy and avoid overreaching automation.`;
     case 'ci-repair':
       return `Profile: CI-Repair style repository workflow validation
 - Treat the task as repository-level CI repair or patch validation unless current evidence says otherwise.
@@ -588,6 +607,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task mentions SWE-CI, current/target commits, test gaps, maintainability over repository evolution, or the run_tests -> define_requirements -> modify_code loop, follow the SWE-CI profile.
 - If the task mentions SWE-PRBench, PRBench, pull request review, code review quality, human review comments, changed files plus diff_patch, or Type1/Type2/Type3 review issue classes, follow the SWE-PRBench profile.
 - If the task mentions TML-Bench, tabular ML, Kaggle-style competition, sample_submission, private holdout scoring, train/test CSVs, or valid submission artifacts, follow the TML-Bench profile.
+- If the task mentions Pi-Bench, proactive personal assistant, hidden/latent intent, user profile plus message history/file system/current app context, or proactivity/completion scoring, follow the Pi-Bench profile.
 - If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
 - If the task mentions WildClawBench, native-runtime agent work, OpenClaw, multimodal/social/search/safety categories, or long-horizon harness comparison, follow the WildClawBench profile.
 - If the task mentions ARC Prize, ARC-AGI, Kaggle ARC, grid abstractions, or no-instructions turn-based environments, follow the ARC-AGI profile.
@@ -627,6 +647,7 @@ Use this workflow as the default benchmark strategy:
    - For long-horizon roadmap, SaaS, mobile, WebDevBench, SWE-Cycle, or SWE-CI tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, lifecycle phases, CI-loop requirements, and production-readiness gaps stay visible.
    - For SWE-PRBench or PR-review tasks, keep a diff-first finding ledger and resist broad context expansion unless a specific suspected issue needs nearby source, tests, or API contract evidence.
    - For TML-Bench/Kaggle tabular ML tasks, keep a data-contract and submission-validity ledger before modeling so hidden-label leakage and invalid submissions are caught early.
+   - For Pi-Bench/proactive assistant tasks, keep a context contract plus proactivity ledger so hidden-intent inference, privacy risk, and clarification decisions stay auditable.
    - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.

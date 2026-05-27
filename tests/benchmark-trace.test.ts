@@ -384,6 +384,11 @@ describe('benchmark trace artifacts', () => {
         benchmarkName: 'TML-Bench',
       },
       {
+        prompt: '/benchmark pi-bench handle proactive personal assistant hidden intent',
+        benchmark: 'pibench',
+        benchmarkName: 'Pi-Bench',
+      },
+      {
         prompt: '/benchmark wildclaw solve BrowseComp task',
         benchmark: 'wildclawbench',
         benchmarkName: 'WildClawBench',

@@ -90,6 +90,7 @@ function profileForBenchmark(benchmark) {
   if (slug === 'sweci' || slug === 'swecibench') return 'swe-ci';
   if (slug === 'swepr' || slug === 'sweprbench' || slug === 'prbench' || slug === 'prreview' || slug === 'pullrequestreview' || slug === 'codereviewbench') return 'swe-prbench';
   if (slug === 'tml' || slug === 'tmlbench' || slug === 'tabularml' || slug === 'kaggleml' || slug === 'kagglebench' || slug === 'datascience') return 'tml-bench';
+  if (slug === 'pi' || slug === 'pibench' || slug === 'proactive' || slug === 'proactiveassistant' || slug === 'personalassistant' || slug === 'hiddenintent') return 'pi-bench';
   if (slug === 'cirepair' || slug === 'cirepairbench' || slug === 'ci') return 'ci-repair';
   if (slug === 'wildclaw' || slug === 'wildclawbench' || slug === 'wcbench') return 'wildclaw';
   if (slug === 'arc' || slug === 'arcagi' || slug === 'arcagi3' || slug === 'arcprize') return 'arc-agi';
