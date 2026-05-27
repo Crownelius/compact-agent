@@ -3708,11 +3708,10 @@ async function main(): Promise<void> {
             );
             if (result.accepted && result.command) {
               try {
-                setReadlineBuffer(rl, '');
+                setReadlineBuffer(rl, result.command);
                 const prefix = gp.__ventipusPromptStyled ?? theme.prompt(`${sym.prompt} `);
-                stdout.write('\r\x1b[2K' + prefix + result.command + '\n');
+                stdout.write('\r\x1b[2K' + prefix + result.command);
               } catch { /* noop */ }
-              try { rl.emit('line', result.command); } catch { /* noop */ }
             } else {
               try {
                 setReadlineBuffer(rl, result.filter);

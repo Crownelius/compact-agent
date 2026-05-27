@@ -437,19 +437,21 @@ export async function inlineSuggest(
           resolve({ accepted: false, filter });
           return;
         }
-        // Enter — accept and submit.
+        // Enter — accept the current selection and return it to the
+        // caller. The REPL fills the live prompt with this value; the
+        // user can edit it or press Enter again to run it.
         //
-        // Three submission paths:
+        // Three accepted-value paths:
         //   1. Filter contains a space → user typed "/cmd args".
-        //      Submit the FULL filter so handleSlashCommand sees the
+        //      Return the FULL filter so handleSlashCommand can later see the
         //      command AND its arguments (e.g. "/perm auto" sets the
         //      perm mode, "/think on" toggles). This is the path that
         //      was broken before — typing a space yielded zero
         //      matches and Enter did nothing, so users got stuck.
-        //   2. No space, dropdown has a match → submit the selected
+        //   2. No space, dropdown has a match → return the selected
         //      item's command verbatim.
         //   3. No space, dropdown has no match, but the user typed
-        //      something past "/" → submit the raw filter and let
+        //      something past "/" → return the raw filter and let
         //      handleSlashCommand say "unknown command". Better than
         //      silently swallowing the Enter.
         if (input.type === 'accept') {

@@ -10,7 +10,9 @@ action object, then maps that JSON back to an Exgentic `ActionType`.
 It auto-selects specialized `/benchmark` profiles for AppWorld, BrowseComp+,
 tau2, ARC, SaaS, roadmap, and mobile-style tasks from the task, context, and
 available action schemas, and lists valid action names separately to reduce
-invalid-action rate.
+invalid-action rate. Long sessions use a folded history ledger that preserves
+latest observations, selected actions, action counts, and diagnostics without
+reinjecting bulky raw stdout into every step.
 
 ## Python API use
 

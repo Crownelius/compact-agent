@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { COMMAND_CATALOG, completeSlashCommandNames } from '../src/command-palette.js';
 import {
   buildInlineSuggestDropdownEraseSequence,
@@ -106,5 +107,13 @@ describe('inline command selector helpers', () => {
     expect(resolveInlineSuggestAccept('/perm yolo', items, 0)).toBe('/perm yolo');
     expect(resolveInlineSuggestAccept('/unknown', [], 0)).toBe('/unknown');
     expect(resolveInlineSuggestAccept('/', [], 0)).toBeNull();
+  });
+
+  it('fills the live prompt after accepting a slash command instead of submitting stale input', () => {
+    const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf-8');
+
+    expect(source).toContain('setReadlineBuffer(rl, result.command)');
+    expect(source).toContain("stdout.write('\\r\\x1b[2K' + prefix + result.command)");
+    expect(source).not.toContain("rl.emit('line', result.command)");
   });
 });

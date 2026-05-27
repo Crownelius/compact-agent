@@ -16,7 +16,7 @@ from exgentic.core.agent_instance import AgentInstance
 from exgentic.core.types import Action, ActionType, Observation
 from exgentic.utils.cost import UpdatableCostReport
 
-from .utils import ActionPayload, extract_action_payload, json_dumps, redact, safe_id, truncate
+from .utils import ActionPayload, extract_action_payload, fold_exgentic_history, json_dumps, redact, safe_id, truncate
 
 
 class VentipusAgent(Agent):
@@ -196,7 +196,7 @@ class VentipusAgentInstance(AgentInstance):
             json_dumps(action_docs),
         ]
         if self._history:
-            lines.extend(["", "## Prior observations and actions", json_dumps(self._history[-8:])])
+            lines.extend(["", "## Folded session state", json_dumps(fold_exgentic_history(self._history, profile=profile), limit=24000)])
         return "\n".join(lines)
 
     def _run_ventipus(self, prompt: str) -> dict[str, Any]:
