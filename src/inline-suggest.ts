@@ -42,9 +42,9 @@
  *
  * Key handling
  * ────────────
- * While suggest is active, we detach all non-hotkey `keypress`
- * listeners so readline's line editor stops processing input. A raw
- * `data` listener parses bytes directly:
+ * While suggest is active, we detach readline's `data` listener and
+ * all non-hotkey `keypress` listeners so readline's line editor stops
+ * processing input. A raw `data` listener parses bytes directly:
  *
  *   Ctrl+C / Esc          cancel
  *   Enter (CR or LF)      accept current selection
@@ -137,6 +137,7 @@ export interface InlineSuggestResult {
 }
 
 type TaggedListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
+type DataListener = (chunk: Buffer) => void;
 
 /** Strip ANSI SGR escape sequences for visible-width math. */
 function ansiVisibleLen(s: string): number {
@@ -209,6 +210,24 @@ export function parseInlineSuggestInput(buf: Buffer): InlineSuggestInput {
   return printable.length > 0 ? { type: 'append', text: printable } : { type: 'ignore' };
 }
 
+export function resolveInlineSuggestAccept(
+  filter: string,
+  visibleItems: SuggestItem[],
+  selected: number,
+): string | null {
+  if (filter.includes(' ')) {
+    return filter.startsWith('/') ? filter : `/${filter}`;
+  }
+  if (visibleItems.length > 0) {
+    const safeSelected = Math.max(0, Math.min(visibleItems.length - 1, selected));
+    return visibleItems[safeSelected].command;
+  }
+  if (filter.length > 1) {
+    return filter.startsWith('/') ? filter : `/${filter}`;
+  }
+  return null;
+}
+
 function clipText(text: string, max: number): string {
   if (text.length <= max) return text;
   if (max <= 1) return text.slice(0, max);
@@ -273,10 +292,17 @@ export async function inlineSuggest(
     try { stdin.setRawMode(true); } catch { /* noop */ }
     stdin.resume();
 
-    // Detach readline's keypress listeners so the line editor doesn't
-    // also process input. The hotkey listener (tagged
-    // __ventipusHotkey__) stays attached because it has its own
-    // bail for `pickerActive`; the others get pulled.
+    // Detach readline's low-level input path so the line editor does
+    // not also process selector keystrokes. On Windows ConHost,
+    // detaching only keypress listeners can still let Enter resolve
+    // the pending rl.question() with the stale bare "/" while this
+    // selector resolves the highlighted command.
+    const dataListeners = stdin.listeners('data').slice() as DataListener[];
+    for (const l of dataListeners) stdin.removeListener('data', l);
+
+    // Detach readline's keypress listeners too. The hotkey listener
+    // (tagged __ventipusHotkey__) stays attached because it has its
+    // own bail for `pickerActive`; the others get pulled.
     const allKeypress = stdin.listeners('keypress').slice() as TaggedListener[];
     const togglable = allKeypress.filter((l) => !l.__ventipusHotkey__);
     for (const l of togglable) stdin.removeListener('keypress', l);
@@ -374,6 +400,9 @@ export async function inlineSuggest(
 
     function teardown(): void {
       stdin.removeListener('data', onData);
+      for (const l of dataListeners) {
+        if (!stdin.listeners('data').includes(l)) stdin.on('data', l);
+      }
       for (const l of togglable) stdin.on('keypress', l);
       try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
       // Wipe only the dropdown area. Leave the filter on screen — the
@@ -424,20 +453,11 @@ export async function inlineSuggest(
         //      handleSlashCommand say "unknown command". Better than
         //      silently swallowing the Enter.
         if (input.type === 'accept') {
-          let toSubmit: string;
-          if (filter.includes(' ')) {
-            toSubmit = filter.startsWith('/') ? filter : `/${filter}`;
-          } else {
-            const visible = visibleItems();
-            if (visible.length > 0) {
-              toSubmit = visible[selected].command;
-            } else if (filter.length > 1) {
-              toSubmit = filter.startsWith('/') ? filter : `/${filter}`;
-            } else {
-              // Filter is "/" alone or empty — nothing to submit. Stay
-              // open so the user can keep typing.
-              return;
-            }
+          const toSubmit = resolveInlineSuggestAccept(filter, visibleItems(), selected);
+          if (!toSubmit) {
+            // Filter is "/" alone or empty - nothing to submit. Stay
+            // open so the user can keep typing.
+            return;
           }
           teardown();
           resolve({ accepted: true, command: toSubmit, filter });

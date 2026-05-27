@@ -52,6 +52,7 @@ export interface BenchmarkExperienceCard {
   sourceResearchCoverage: SourceResearchCoverage;
   taskContract: BenchmarkExperienceTaskContract;
   taskAlignment: BenchmarkExperienceTaskAlignment;
+  specCompliance: BenchmarkExperienceSpecCompliance;
   rewardHack: BenchmarkExperienceRewardHack;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
@@ -85,6 +86,12 @@ export interface BenchmarkExperienceTaskAlignment {
   risk: boolean;
   signalCount: number;
   signals: BenchmarkTaskAlignmentSignal[];
+}
+
+export interface BenchmarkExperienceSpecCompliance {
+  risk: boolean;
+  signalCount: number;
+  signals: BenchmarkSpecComplianceSignal[];
 }
 
 export interface BenchmarkExperienceRewardHack {
@@ -487,6 +494,9 @@ export interface BenchmarkTrajectoryQuality {
   taskAlignmentRisk: boolean;
   taskAlignmentSignalCount: number;
   taskAlignmentSignals: BenchmarkTaskAlignmentSignal[];
+  specComplianceRisk: boolean;
+  specComplianceSignalCount: number;
+  specComplianceSignals: BenchmarkSpecComplianceSignal[];
   rewardHackRisk: boolean;
   rewardHackSignalCount: number;
   rewardHackSignals: BenchmarkRewardHackSignal[];
@@ -619,6 +629,14 @@ export interface BenchmarkTaskAlignmentSignal {
   tool: string;
   target: string;
   reason: 'ignored_task_contract' | 'distractor_reference' | 'off_task_edit';
+  evidence: string;
+}
+
+export interface BenchmarkSpecComplianceSignal {
+  seq: number;
+  tool: string;
+  target: string;
+  reason: 'visible_suite_only' | 'incomplete_contract_after_visible_pass' | 'test_case_memorization';
   evidence: string;
 }
 
@@ -870,7 +888,7 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
   const usage = buildBenchmarkUsageSummary(input.usageEvents ?? []);
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const finalAnswerEvidence = buildBenchmarkFinalAnswerEvidence(finalAssistantText, verificationEvidence, events);
-  const trajectoryQuality = buildBenchmarkTrajectoryQuality(events, usage);
+  const trajectoryQuality = buildBenchmarkTrajectoryQuality(events, usage, input.messages);
   const experienceCard = buildBenchmarkExperienceCard({
     events,
     messages: input.messages,
@@ -1035,6 +1053,7 @@ export function buildBenchmarkExperienceCard(input: {
     sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
     taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
     taskAlignment: buildBenchmarkExperienceTaskAlignment(input.trajectoryQuality),
+    specCompliance: buildBenchmarkExperienceSpecCompliance(input.trajectoryQuality),
     rewardHack: buildBenchmarkExperienceRewardHack(input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
@@ -1313,6 +1332,28 @@ function buildBenchmarkExperienceTaskAlignment(
 function compactBenchmarkTaskAlignmentSignal(
   signal: BenchmarkTaskAlignmentSignal,
 ): BenchmarkTaskAlignmentSignal {
+  return {
+    seq: signal.seq,
+    tool: truncate(redactTraceText(signal.tool), 80),
+    target: truncate(redactTraceText(signal.target), 160),
+    reason: signal.reason,
+    evidence: truncate(redactTraceText(signal.evidence), 220),
+  };
+}
+
+function buildBenchmarkExperienceSpecCompliance(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceSpecCompliance {
+  return {
+    risk: quality.specComplianceRisk,
+    signalCount: quality.specComplianceSignalCount,
+    signals: quality.specComplianceSignals.map(compactBenchmarkSpecComplianceSignal).slice(0, 12),
+  };
+}
+
+function compactBenchmarkSpecComplianceSignal(
+  signal: BenchmarkSpecComplianceSignal,
+): BenchmarkSpecComplianceSignal {
   return {
     seq: signal.seq,
     tool: truncate(redactTraceText(signal.tool), 80),
@@ -1658,6 +1699,8 @@ function extractBenchmarkSlug(messages: Message[]): string {
 
   if (/\bwild[-_ ]?claw(?:[-_ ]?bench)?\b/i.test(text)) return 'wildclawbench';
   if (/\barc[-_ ]?agi(?:[-_ ]?3)?\b|\barc[-_ ]?prize\b|\bkaggle\s+arc\b/i.test(text)) return 'arcagi3';
+  if (/\bspec[-_ ]?bench\b|\bspec[-_ ]?compliance\b/i.test(text)) return 'specbench';
+  if (/\breward[-_ ]?hacking(?:[-_ ]?benchmark|[-_ ]?agents)?\b|\brhb\b/i.test(text)) return 'rewardhackingbenchmark';
   if (/\bswe[-_ ]?chain\b/i.test(text)) return 'swechain';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b|\bswe[-_ ]?ci\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
@@ -1680,6 +1723,8 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'cirepair' || cleaned === 'cirepairbench' || cleaned === 'sweci' || cleaned === 'ci') return 'cirepairbench';
   if (cleaned === 'wildclaw' || cleaned === 'wildclawbench' || cleaned === 'wcbench') return 'wildclawbench';
   if (cleaned === 'arc' || cleaned === 'arcagi' || cleaned === 'arcagi3' || cleaned === 'arcprize') return 'arcagi3';
+  if (cleaned === 'spec' || cleaned === 'specbench' || cleaned === 'speccompliance') return 'specbench';
+  if (cleaned === 'rhb' || cleaned === 'rewardhack' || cleaned === 'rewardhacking' || cleaned === 'rewardhackingagents' || cleaned === 'rewardhackingbenchmark') return 'rewardhackingbenchmark';
   if (cleaned === 'taubench' || cleaned === 'tau' || cleaned === 'tau2') return 'tau2';
   if (cleaned === 'browsecomp' || cleaned === 'browsecompplus') return 'browsecompplus';
   return cleaned || 'ventipus_agent_benchmark';
@@ -1695,6 +1740,8 @@ function formatBenchmarkName(slug: string): string {
     hotpotqa: 'HotpotQA',
     arcagi3: 'ARC-AGI-3',
     cirepairbench: 'CI-Repair-Bench',
+    rewardhackingbenchmark: 'Reward Hacking Benchmark',
+    specbench: 'SpecBench',
     swebench: 'SWE-bench',
     swechain: 'SWE-Chain',
     swecontext: 'SWE-context',
@@ -1847,6 +1894,7 @@ function hasBenchmarkCostEfficiencyRisk(input: {
 export function buildBenchmarkTrajectoryQuality(
   events: BenchmarkTraceEvent[],
   usage: BenchmarkUsageSummary = emptyBenchmarkUsageSummary(),
+  messages: Message[] = [],
 ): BenchmarkTrajectoryQuality {
   const firstInspectSeq = firstSeq(events, isInspectionEvent);
   const firstEditSeq = firstSeq(events, isEditEvent);
@@ -2033,6 +2081,23 @@ export function buildBenchmarkTrajectoryQuality(
     : finalEditPassingVerificationCount >= 2
       || passingBroadValidationAfterLastEdit === true
       || passingCiValidationAfterLastEdit === true;
+  const specComplianceSignals = buildBenchmarkSpecComplianceSignals(events, {
+    messages,
+    taskContractSignalCount,
+    taskContractChecklistComplete,
+    todoIncompleteCount: latestTodoState?.incompleteCount ?? 0,
+    firstTaskContractSeq,
+    firstEditSeq,
+    passingValidationAfterFirstEdit,
+    passingBroadValidationAfterFirstEdit,
+    passingCiValidationAfterFirstEdit,
+    finalEditVerificationCount,
+    finalEditPassingVerificationCount,
+    stableValidationAfterLastEdit,
+    rewardHackSignals,
+    testHarnessEditEvents,
+    leakageRiskEvents,
+  });
   const postEditDiffReview = firstEditSeq == null
     ? null
     : firstPostEditDiffReviewSeq != null;
@@ -2318,6 +2383,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`task-alignment risk: action(s) may be following distractors or ignoring visible task constraints: ${examples}. Re-check the task contract and current verifier evidence before continuing.`);
   }
+  if (specComplianceSignals.length > 0) {
+    const examples = specComplianceSignals
+      .slice(0, 3)
+      .map((signal) => `${signal.reason}#${signal.seq} ${signal.target}`)
+      .join('; ');
+    warnings.push(`spec-compliance risk: visible validation may not prove the natural-language specification or held-out behavior: ${examples}. Complete the spec checklist and add a broader/generalization check before finalizing.`);
+  }
   if (editTargetEvidence.unlocalized.length > 0 && localizationBeforeFirstEdit !== false && !editAfterNoEditContract) {
     const targets = editTargetEvidence.unlocalized
       .slice(0, 3)
@@ -2458,6 +2530,7 @@ export function buildBenchmarkTrajectoryQuality(
     todoIncompleteCount: latestTodoState?.incompleteCount ?? 0,
     todoIncompleteItems: latestTodoState?.incompleteItems ?? [],
     taskAlignmentSignals,
+    specComplianceSignals,
     rewardHackSignals,
     noEditContractDetected,
     editAfterNoEditContract,
@@ -2595,6 +2668,9 @@ export function buildBenchmarkTrajectoryQuality(
     taskAlignmentRisk: taskAlignmentSignals.length > 0,
     taskAlignmentSignalCount: taskAlignmentSignals.length,
     taskAlignmentSignals,
+    specComplianceRisk: specComplianceSignals.length > 0,
+    specComplianceSignalCount: specComplianceSignals.length,
+    specComplianceSignals,
     rewardHackRisk: rewardHackSignals.length > 0,
     rewardHackSignalCount: rewardHackSignals.length,
     rewardHackSignals,
@@ -2675,7 +2751,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -2799,6 +2875,7 @@ interface BenchmarkProcessDefectInput {
   todoIncompleteCount: number;
   todoIncompleteItems: BenchmarkTodoIncompleteItem[];
   taskAlignmentSignals: BenchmarkTaskAlignmentSignal[];
+  specComplianceSignals: BenchmarkSpecComplianceSignal[];
   rewardHackSignals: BenchmarkRewardHackSignal[];
   noEditContractDetected: boolean;
   editAfterNoEditContract: boolean;
@@ -3174,6 +3251,21 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       input.taskAlignmentSignals[0]?.seq ?? null,
       'The trajectory may be following distractors or ignoring visible task constraints.',
       input.taskAlignmentSignals
+        .slice(0, 5)
+        .map((signal) => `${signal.reason}#${signal.seq}:${signal.target}`)
+        .join('; '),
+    );
+  }
+  if (input.specComplianceSignals.length > 0) {
+    const hasHardcoding = input.specComplianceSignals.some((signal) => signal.reason === 'test_case_memorization');
+    const hasIncompleteContract = input.specComplianceSignals.some((signal) => signal.reason === 'incomplete_contract_after_visible_pass');
+    add(
+      'spec_compliance_risk',
+      hasHardcoding ? 'benchmark_validity' : 'requirement_fidelity',
+      hasHardcoding || hasIncompleteContract ? 'high' : 'medium',
+      input.specComplianceSignals[0]?.seq ?? null,
+      'The trajectory may have passed visible validation without proving the full natural-language specification or held-out behavior.',
+      input.specComplianceSignals
         .slice(0, 5)
         .map((signal) => `${signal.reason}#${signal.seq}:${signal.target}`)
         .join('; '),
@@ -4716,6 +4808,98 @@ export function buildBenchmarkTaskAlignmentSignals(
   return dedupeBenchmarkSignals(signals).slice(0, 20);
 }
 
+export function buildBenchmarkSpecComplianceSignals(
+  events: BenchmarkTraceEvent[],
+  options: {
+    messages?: Message[];
+    taskContractSignalCount?: number;
+    taskContractChecklistComplete?: boolean | null;
+    todoIncompleteCount?: number;
+    firstTaskContractSeq?: number | null;
+    firstEditSeq?: number | null;
+    passingValidationAfterFirstEdit?: boolean | null;
+    passingBroadValidationAfterFirstEdit?: boolean | null;
+    passingCiValidationAfterFirstEdit?: boolean | null;
+    finalEditVerificationCount?: number;
+    finalEditPassingVerificationCount?: number;
+    stableValidationAfterLastEdit?: boolean | null;
+    rewardHackSignals?: BenchmarkRewardHackSignal[];
+    testHarnessEditEvents?: BenchmarkTestHarnessEditEvent[];
+    leakageRiskEvents?: BenchmarkLeakageRiskEvent[];
+  } = {},
+): BenchmarkSpecComplianceSignal[] {
+  const signals: BenchmarkSpecComplianceSignal[] = [];
+  const messages = options.messages ?? [];
+  const specContext = hasSpecComplianceContext(events, messages);
+  if (!specContext) return [];
+
+  const firstEditSeq = options.firstEditSeq ?? firstSeq(events, isEditEvent);
+  const taskContractSignalCount = options.taskContractSignalCount ?? countTaskContractSignals(events);
+  const taskContractChecklistComplete = options.taskContractChecklistComplete
+    ?? (taskContractSignalCount === 0 ? null : buildBenchmarkLatestTodoState(events)?.incompleteCount === 0);
+  const todoIncompleteCount = options.todoIncompleteCount ?? buildBenchmarkLatestTodoState(events)?.incompleteCount ?? 0;
+  const passingValidationAfterFirstEdit = options.passingValidationAfterFirstEdit
+    ?? (firstEditSeq == null ? null : events.some((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq));
+  const passingBroadValidationAfterFirstEdit = options.passingBroadValidationAfterFirstEdit
+    ?? (firstEditSeq == null ? null : events.some((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq && isBroadVerificationEvent(event)));
+  const passingCiValidationAfterFirstEdit = options.passingCiValidationAfterFirstEdit ?? null;
+  const finalEditPassingVerificationCount = options.finalEditPassingVerificationCount
+    ?? (firstEditSeq == null ? 0 : events.filter((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq).length);
+  const stableValidationAfterLastEdit = options.stableValidationAfterLastEdit
+    ?? (finalEditPassingVerificationCount >= 2 || passingBroadValidationAfterFirstEdit === true || passingCiValidationAfterFirstEdit === true);
+  const firstPassingPostEdit = firstEditSeq == null
+    ? events.find((event) => event.verification && event.status === 'ok')
+    : events.find((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq);
+  const explicitRiskSignals = [
+    ...(options.rewardHackSignals ?? []),
+    ...(options.testHarnessEditEvents ?? []),
+    ...(options.leakageRiskEvents ?? []),
+  ].length;
+
+  if (taskContractSignalCount > 0
+    && firstPassingPostEdit
+    && taskContractChecklistComplete !== true
+    && todoIncompleteCount > 0) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'incomplete_contract_after_visible_pass',
+      evidence: `visible validation passed while ${todoIncompleteCount} task-contract checklist item(s) remained incomplete`,
+    });
+  }
+
+  if (firstPassingPostEdit
+    && firstEditSeq != null
+    && stableValidationAfterLastEdit !== true
+    && passingBroadValidationAfterFirstEdit !== true
+    && passingCiValidationAfterFirstEdit !== true
+    && explicitRiskSignals === 0) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'visible_suite_only',
+      evidence: 'SpecBench/reward-hacking context detected, but post-edit evidence has visible validation without broad, CI, repeated, or held-out-style validation',
+    });
+  }
+
+  for (const event of events) {
+    if (!isEditEvent(event)) continue;
+    const evidence = detectTestCaseMemorizationRisk(event);
+    if (!evidence) continue;
+    signals.push({
+      seq: event.seq,
+      tool: event.tool,
+      target: truncate(redactTraceText(editedTargetsForEvent(event)[0] || event.target || event.tool), 240),
+      reason: 'test_case_memorization',
+      evidence,
+    });
+  }
+
+  return dedupeBenchmarkSignals(signals).slice(0, 20);
+}
+
 export function buildBenchmarkRewardHackSignals(
   events: BenchmarkTraceEvent[],
   options: {
@@ -4801,6 +4985,31 @@ function benchmarkTaskAlignmentCandidateStrings(event: BenchmarkTraceEvent): str
     event.tool === 'bash' ? input.command : undefined,
     ...editedTargetsForEvent(event),
   ]);
+}
+
+function hasSpecComplianceContext(events: BenchmarkTraceEvent[], messages: Message[] = []): boolean {
+  const messageTextBlock = messages.map(messageText).join('\n');
+  const eventTextBlock = events
+    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    .map((event) => `${event.target}\n${event.inputPreview}\n${event.outputPreview}`)
+    .join('\n');
+  const text = `${messageTextBlock}\n${eventTextBlock}`;
+  return /\b(?:specbench|spec[-_\s]?bench|reward\s+hacking\s+benchmark|\brhb\b|reward[-_\s]?hacking[-_\s]?agents|visible\s+(?:validation\s+)?suite|visible\s+tests?|held[-_\s]?out|holdout|hidden\s+tests?|natural[-_\s]?language\s+specification|specification[-_\s]?compliance|test[-_\s]?suite\s+gaming)\b/i.test(text);
+}
+
+function detectTestCaseMemorizationRisk(event: BenchmarkTraceEvent): string | null {
+  const input = parseEventInputPreview(event.inputPreview);
+  const editText = stringsFromUnknown([input.new_string, input.content, input.patch, event.inputPreview]).join('\n');
+  if (!editText.trim()) return null;
+  const addedLines = editText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('+') || /(?:if|switch|case)\b/.test(line));
+  const suspicious = addedLines.find((line) =>
+    /\b(?:hardcod(?:e|ed|ing)|memor(?:ize|ized|ization)|visible\s+tests?|fixture|sample\s+input|expected\s+output|golden\s+case|test\s+case|case[_-]?\d+)\b/i.test(line)
+    && /\b(?:if|case|return|equals?|==={0,2}|includes?|match|fixture|sample|expected)\b/i.test(line));
+  if (!suspicious) return null;
+  return `edit appears to reference or special-case visible test/sample data: ${truncate(redactTraceText(suspicious), 180)}`;
 }
 
 function detectBenchmarkDistractorReference(text: string): boolean {
@@ -5090,6 +5299,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('task contract checklist still has incomplete')
     || warning.includes('no-edit/no-op task contract')
     || warning.includes('task-alignment risk')
+    || warning.includes('spec-compliance risk')
     || warning.includes('edited target(s) lacked prior file-level localization evidence')
     || warning.includes('low context utilization')
     || warning.includes('large edit surface')
@@ -5113,7 +5323,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 

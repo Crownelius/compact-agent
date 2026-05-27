@@ -40,6 +40,8 @@ describe('KBench adapter packaging', () => {
     expect(runner).toContain("'ci-repair'");
     expect(runner).toContain("'wildclaw'");
     expect(runner).toContain("'arc-agi'");
+    expect(runner).toContain("'specbench'");
+    expect(runner).toContain("'reward-hacking'");
   });
 
   it('prints the packaged KBench adapter directory from the CLI wrapper', () => {

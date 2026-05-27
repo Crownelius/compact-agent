@@ -7,6 +7,7 @@ import {
   formatInlineSuggestFilterForPrompt,
   maxVisibleSuggestRows,
   parseInlineSuggestInput,
+  resolveInlineSuggestAccept,
   visibleSuggestWindow,
   type SuggestItem,
 } from '../src/inline-suggest.js';
@@ -93,5 +94,17 @@ describe('inline command selector helpers', () => {
     expect(completeSlashCommandNames('/h', commands)).toEqual([[], '/h']);
     expect(completeSlashCommandNames('/hi', commands)).toEqual([['/history'], '/hi']);
     expect(completeSlashCommandNames('hello', commands)).toEqual([[], 'hello']);
+  });
+
+  it('resolves Enter to the highlighted command instead of the bare slash', () => {
+    const items: SuggestItem[] = [
+      { command: '/help', description: 'show help' },
+      { command: '/perm', description: 'permissions' },
+    ];
+
+    expect(resolveInlineSuggestAccept('/', items, 1)).toBe('/perm');
+    expect(resolveInlineSuggestAccept('/perm yolo', items, 0)).toBe('/perm yolo');
+    expect(resolveInlineSuggestAccept('/unknown', [], 0)).toBe('/unknown');
+    expect(resolveInlineSuggestAccept('/', [], 0)).toBeNull();
   });
 });

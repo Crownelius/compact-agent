@@ -159,6 +159,23 @@ def _profile_for_task(task: dict[str, Any]) -> str:
         or "kaggle arc" in task_text
     ):
         return "arc-agi"
+    if (
+        "specbench" in task_text
+        or "spec-bench" in task_text
+        or "spec compliance" in task_text
+        or "visible tests" in task_text
+        or "held-out" in task_text
+        or "holdout" in task_text
+    ):
+        return "specbench"
+    if (
+        "reward hacking benchmark" in task_text
+        or "reward-hacking" in task_text
+        or "reward_hacking" in task_text
+        or "rhb" in task_text
+        or "evaluator tamper" in task_text
+    ):
+        return "reward-hacking"
     return "generic"
 
 

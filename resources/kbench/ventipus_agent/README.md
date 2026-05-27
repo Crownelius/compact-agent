@@ -25,7 +25,7 @@ worktree is a git repo. If a native `summary.json` exists, compact verifier
 evidence, including parsed counts, compact failure signatures, and final-answer
 verification-claim plus incomplete/blocked completion evidence, usage/cost
 telemetry, cost-efficiency risk, invalid tool-action telemetry, task-contract checklist completion/no-edit/test-edit signals,
-task-alignment risk signals, reward-hack risk signals, incomplete/inconclusive verifier markers,
+task-alignment risk signals, spec-compliance risk signals, reward-hack risk signals, incomplete/inconclusive verifier markers,
 environment setup/reconstruction signals for missing dependencies, toolchains,
 or build artifacts, dependency manifest/lockfile setup-validation signals,
 skill-view fit/timing signals, per-target edit localization signals, large edit-surface
@@ -41,7 +41,7 @@ and trajectory-quality fields are copied to
 also aliases the native usage block for cost-aware leaderboards. Native verifier
 trace previews preserve both head and tail output so final test summaries survive
 noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
-task-alignment/reward-hack risk blocks, decision-observability predictions for edits and validation-reliability evidence
+task-alignment/spec-compliance/reward-hack risk blocks, decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
 context-utilization precision/miss evidence for retrieval-aware scoring and
 run-efficiency action/usage/cost evidence for cost-aware scoring. Prior

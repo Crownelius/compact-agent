@@ -89,6 +89,8 @@ function profileForBenchmark(benchmark) {
   if (slug === 'cirepair' || slug === 'cirepairbench' || slug === 'sweci' || slug === 'ci') return 'ci-repair';
   if (slug === 'wildclaw' || slug === 'wildclawbench' || slug === 'wcbench') return 'wildclaw';
   if (slug === 'arc' || slug === 'arcagi' || slug === 'arcagi3' || slug === 'arcprize') return 'arc-agi';
+  if (slug === 'spec' || slug === 'specbench' || slug === 'speccompliance') return 'specbench';
+  if (slug === 'rhb' || slug === 'rewardhack' || slug === 'rewardhacking' || slug === 'rewardhackingagents') return 'reward-hacking';
   return 'generic';
 }
 
@@ -223,6 +225,9 @@ function compactTraceSummary(traceSummary) {
       taskAlignmentRisk: quality.taskAlignmentRisk,
       taskAlignmentSignalCount: quality.taskAlignmentSignalCount,
       taskAlignmentSignals: Array.isArray(quality.taskAlignmentSignals) ? quality.taskAlignmentSignals.slice(0, 20) : [],
+      specComplianceRisk: quality.specComplianceRisk,
+      specComplianceSignalCount: quality.specComplianceSignalCount,
+      specComplianceSignals: Array.isArray(quality.specComplianceSignals) ? quality.specComplianceSignals.slice(0, 20) : [],
       rewardHackRisk: quality.rewardHackRisk,
       rewardHackSignalCount: quality.rewardHackSignalCount,
       rewardHackSignals: Array.isArray(quality.rewardHackSignals) ? quality.rewardHackSignals.slice(0, 20) : [],
@@ -337,6 +342,7 @@ function compactExperienceCard(card) {
     sourceResearchCoverage: card.sourceResearchCoverage,
     taskContract: card.taskContract,
     taskAlignment: compactRiskSignalBlock(card.taskAlignment),
+    specCompliance: compactRiskSignalBlock(card.specCompliance),
     rewardHack: compactRiskSignalBlock(card.rewardHack),
     environmentReconstruction: compactEnvironmentReconstruction(card.environmentReconstruction),
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),

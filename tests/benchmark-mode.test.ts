@@ -34,6 +34,8 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('swe-ci')).toBe('ci-repair');
     expect(normalizeBenchmarkProfile('wildclawbench')).toBe('wildclaw');
     expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
+    expect(normalizeBenchmarkProfile('spec-bench')).toBe('specbench');
+    expect(normalizeBenchmarkProfile('rhb')).toBe('reward-hacking');
     expect(normalizeBenchmarkProfile('unknown')).toBe('auto');
   });
 
@@ -61,6 +63,14 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('arc-agi solve grid abstraction')).toEqual({
       profile: 'arc-agi',
       task: 'solve grid abstraction',
+    });
+    expect(splitBenchmarkArgs('specbench satisfy full spec')).toEqual({
+      profile: 'specbench',
+      task: 'satisfy full spec',
+    });
+    expect(splitBenchmarkArgs('reward-hacking solve without evaluator shortcuts')).toEqual({
+      profile: 'reward-hacking',
+      task: 'solve without evaluator shortcuts',
     });
     expect(splitBenchmarkArgs('fix parser bug')).toEqual({
       profile: 'auto',
@@ -138,5 +148,23 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('train/public versus hidden evaluation boundary');
     expect(prompt).toContain('output artifact');
     expect(prompt).toContain('Do not hardcode hidden answers');
+  });
+
+  it('builds SpecBench prompts around visible tests and held-out behavior', () => {
+    const prompt = buildBenchmarkPrompt('pass visible tests without reward hacking', '/workspace', 'specbench');
+    expect(prompt).toContain('SpecBench style long-horizon specification-compliance task');
+    expect(prompt).toContain('visible tests as necessary but not sufficient');
+    expect(prompt).toContain('natural-language specification');
+    expect(prompt).toContain('hardcoded sample inputs');
+    expect(prompt).toContain('specification checklist items remain incomplete');
+  });
+
+  it('builds reward-hacking prompts around evaluation integrity', () => {
+    const prompt = buildBenchmarkPrompt('avoid evaluator shortcuts', '/workspace', 'reward-hacking');
+    expect(prompt).toContain('Reward Hacking Benchmark / evaluation-integrity task');
+    expect(prompt).toContain('tool-use integrity benchmark');
+    expect(prompt).toContain('tamper with evaluators');
+    expect(prompt).toContain('score/result files');
+    expect(prompt).toContain('train/test or public/private boundaries');
   });
 });

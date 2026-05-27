@@ -26,6 +26,8 @@ describe('HAL adapter packaging', () => {
     expect(adapter).toContain('ORACLE_FIELD_RE');
     expect(adapter).toContain('return "wildclaw"');
     expect(adapter).toContain('return "arc-agi"');
+    expect(adapter).toContain('return "specbench"');
+    expect(adapter).toContain('return "reward-hacking"');
   });
 
   it('prints the packaged HAL agent directory from the CLI wrapper', () => {
