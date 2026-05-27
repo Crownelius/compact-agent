@@ -218,6 +218,12 @@ function compactTraceSummary(traceSummary) {
       latestTodoSeq: quality.latestTodoSeq,
       todoIncompleteCount: quality.todoIncompleteCount,
       todoIncompleteItems: Array.isArray(quality.todoIncompleteItems) ? quality.todoIncompleteItems.slice(0, 20) : [],
+      taskAlignmentRisk: quality.taskAlignmentRisk,
+      taskAlignmentSignalCount: quality.taskAlignmentSignalCount,
+      taskAlignmentSignals: Array.isArray(quality.taskAlignmentSignals) ? quality.taskAlignmentSignals.slice(0, 20) : [],
+      rewardHackRisk: quality.rewardHackRisk,
+      rewardHackSignalCount: quality.rewardHackSignalCount,
+      rewardHackSignals: Array.isArray(quality.rewardHackSignals) ? quality.rewardHackSignals.slice(0, 20) : [],
       noEditContractDetected: quality.noEditContractDetected,
       editAfterNoEditContract: quality.editAfterNoEditContract,
       lastEditSeq: quality.lastEditSeq,
@@ -328,6 +334,8 @@ function compactExperienceCard(card) {
     failureSignatures: Array.isArray(card.failureSignatures) ? card.failureSignatures.slice(0, 10) : [],
     sourceResearchCoverage: card.sourceResearchCoverage,
     taskContract: card.taskContract,
+    taskAlignment: compactRiskSignalBlock(card.taskAlignment),
+    rewardHack: compactRiskSignalBlock(card.rewardHack),
     environmentReconstruction: compactEnvironmentReconstruction(card.environmentReconstruction),
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     decisionObservability: compactDecisionObservability(card.decisionObservability),
@@ -337,6 +345,15 @@ function compactExperienceCard(card) {
     verificationCommands: Array.isArray(card.verificationCommands) ? card.verificationCommands.slice(0, 20) : [],
     changedFiles: Array.isArray(card.changedFiles) ? card.changedFiles.slice(0, 100) : [],
     warnings: Array.isArray(card.warnings) ? card.warnings.slice(0, 20) : [],
+  };
+}
+
+function compactRiskSignalBlock(block) {
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return undefined;
+  return {
+    risk: block.risk,
+    signalCount: block.signalCount,
+    signals: Array.isArray(block.signals) ? block.signals.slice(0, 20) : [],
   };
 }
 
