@@ -225,7 +225,145 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.processScore).toBe(90);
     expect(summary.trajectoryQuality.processDefects.map((d) => d.code)).toContain('missing_benchmark_context');
     expect(summary.trajectoryQuality.warnings).toContain('benchmark_context was not used; early environment/task discovery may be weaker.');
+    expect(summary.experienceCard).toMatchObject({
+      version: 1,
+      replayCheckpoints: [],
+      failureSignatures: [],
+      taskContract: {
+        signalCount: 0,
+        checklistAfterContext: null,
+        checklistComplete: null,
+        incompleteCount: 0,
+      },
+      verificationCommands: ['npm test'],
+      changedFiles: ['src/app.ts'],
+    });
     expect(JSON.stringify(summary)).not.toContain('sk-secret-secret-secret');
+  });
+
+  it('builds compact experience cards for future benchmark replay', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function total() { return 12.3; }',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'billing', path: 'src' },
+        output: 'src/app.ts:1: billing total',
+        isError: false,
+        elapsedMs: 12,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: [
+          'FAIL src/app.test.ts > billing totals render with fixed decimals',
+          'AssertionError: expected 12.3 to equal 12.30',
+          'at src/app.ts:10:1',
+        ].join('\n'),
+        isError: true,
+        elapsedMs: 120,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: '12.3', new_string: '12.30' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 120,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent experience replay',
+          source: 'all',
+          github_kind: 'all',
+          kind: 'all',
+          kaggle_kind: 'both',
+          recent_days: 90,
+        },
+        output: [
+          'Research source results for "coding agent experience replay"',
+          '## Source digest',
+          '- hits: 4',
+          '- errors: 0',
+          '- sources: arXiv=1 | GitHub=1 | HF paper=1 | Kaggle competition=1',
+          '- top_urls: https://arxiv.org/abs/2601.22129',
+          '## arXiv: SWE-Replay',
+          'https://arxiv.org/abs/2601.22129',
+          '## GitHub: owner/replay-agent',
+          'https://github.com/owner/replay-agent',
+          '## HF paper: SWE Context Bench',
+          'https://huggingface.co/papers/2602.08316',
+          '## Kaggle competition: Agent Leaderboard',
+          'https://www.kaggle.com/competitions/agent-leaderboard',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 20,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'tc-edit',
+        type: 'function',
+        function: {
+          name: 'edit_file',
+          arguments: JSON.stringify({ file_path: 'src/app.ts', old_string: '12.3', new_string: '12.30' }),
+        },
+      }],
+    }];
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-experience',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages,
+      events,
+    });
+
+    expect(summary.experienceCard.replayCheckpoints).toEqual([
+      { seq: 1, tool: 'read_file', target: 'src/app.ts', reason: 'file_context', score: 11 },
+      { seq: 2, tool: 'grep', target: '/billing/ in src', reason: 'search_context', score: 10 },
+      { seq: 3, tool: 'bash', target: 'npm test', reason: 'failing_verifier', score: 12 },
+    ]);
+    expect(summary.experienceCard.failureSignatures[0]).toMatchObject({
+      command: 'npm test',
+      files: expect.arrayContaining(['src/app.test.ts', 'src/app.ts']),
+    });
+    expect(summary.experienceCard.sourceResearchCoverage).toMatchObject({
+      callCount: 1,
+      sourceHitCount: 4,
+      arxiv: true,
+      github: true,
+      huggingface: true,
+      kaggle: true,
+      freshTargetedCoverage: true,
+    });
+    expect(summary.experienceCard.changedFiles).toEqual(['src/app.ts']);
+    expect(summary.experienceCard.verificationCommands).toEqual(['npm test']);
+    expect(summary.experienceCard.taskContract.signalCount).toBe(0);
+    expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
   });
 
   it('summarizes benchmark token and cost usage by model', () => {

@@ -37,8 +37,35 @@ export interface BenchmarkTraceSummary {
   artifacts: BenchmarkTraceArtifact[];
   openAgentLeaderboardDraft: OpenAgentLeaderboardDraft;
   trajectoryQuality: BenchmarkTrajectoryQuality;
+  experienceCard: BenchmarkExperienceCard;
   finalAssistant: string;
   events: BenchmarkTraceEvent[];
+}
+
+export interface BenchmarkExperienceCard {
+  version: 1;
+  replayCheckpoints: BenchmarkExperienceReplayCheckpoint[];
+  failureSignatures: BenchmarkVerifierFailureSignature[];
+  sourceResearchCoverage: SourceResearchCoverage;
+  taskContract: BenchmarkExperienceTaskContract;
+  verificationCommands: string[];
+  changedFiles: string[];
+  warnings: string[];
+}
+
+export interface BenchmarkExperienceReplayCheckpoint {
+  seq: number;
+  tool: string;
+  target: string;
+  reason: 'file_context' | 'search_context' | 'failing_verifier';
+  score: number;
+}
+
+export interface BenchmarkExperienceTaskContract {
+  signalCount: number;
+  checklistAfterContext: boolean | null;
+  checklistComplete: boolean | null;
+  incompleteCount: number;
 }
 
 export interface BenchmarkTraceArtifact {
@@ -585,6 +612,13 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const finalAnswerEvidence = buildBenchmarkFinalAnswerEvidence(finalAssistantText, verificationEvidence, events);
   const trajectoryQuality = buildBenchmarkTrajectoryQuality(events, usage);
+  const experienceCard = buildBenchmarkExperienceCard({
+    events,
+    changedFiles,
+    verificationCommands,
+    verificationEvidence,
+    trajectoryQuality,
+  });
 
   return {
     version: 1,
@@ -608,9 +642,105 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
     artifacts: [],
     openAgentLeaderboardDraft: buildOpenAgentLeaderboardDraft(input, events, usage, verificationEvidence, finalAnswerEvidence, trajectoryQuality),
     trajectoryQuality,
+    experienceCard,
     finalAssistant: finalAssistantText,
     events,
   };
+}
+
+export function buildBenchmarkExperienceCard(input: {
+  events: BenchmarkTraceEvent[];
+  changedFiles: string[];
+  verificationCommands: string[];
+  verificationEvidence: BenchmarkVerificationEvidence;
+  trajectoryQuality: BenchmarkTrajectoryQuality;
+}): BenchmarkExperienceCard {
+  return {
+    version: 1,
+    replayCheckpoints: buildBenchmarkExperienceReplayCheckpoints(input.events),
+    failureSignatures: input.verificationEvidence.failureSignatures
+      .slice(-4)
+      .map((signature) => ({
+        ...signature,
+        command: truncate(redactTraceText(signature.command), 180),
+        tests: signature.tests.map((test) => truncate(redactTraceText(test), 160)).slice(0, 4),
+        files: signature.files.map((file) => truncate(redactTraceText(file), 160)).slice(0, 6),
+        errors: signature.errors.map((error) => truncate(redactTraceText(error), 180)).slice(0, 3),
+        raw: truncate(redactTraceText(signature.raw), 240),
+      })),
+    sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
+    taskContract: {
+      signalCount: input.trajectoryQuality.taskContractSignalCount,
+      checklistAfterContext: input.trajectoryQuality.taskContractChecklistAfterContext,
+      checklistComplete: input.trajectoryQuality.taskContractChecklistComplete,
+      incompleteCount: input.trajectoryQuality.todoIncompleteCount,
+    },
+    verificationCommands: input.verificationCommands
+      .map((command) => truncate(redactTraceText(command), 180))
+      .slice(0, 12),
+    changedFiles: uniqueStrings(input.changedFiles)
+      .map((file) => truncate(redactTraceText(file), 160))
+      .slice(0, 20),
+    warnings: input.trajectoryQuality.warnings
+      .map((warning) => truncate(redactTraceText(warning), 220))
+      .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceReplayCheckpoints(events: BenchmarkTraceEvent[]): BenchmarkExperienceReplayCheckpoint[] {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq);
+  const firstEditSeq = firstSeq(sorted, isEditEvent);
+  const candidates: BenchmarkExperienceReplayCheckpoint[] = [];
+  for (const event of sorted) {
+    if (firstEditSeq != null && event.seq > firstEditSeq) continue;
+    const checkpoint = experienceReplayCheckpointForEvent(event);
+    if (checkpoint) candidates.push(checkpoint);
+  }
+  return candidates
+    .sort((a, b) => b.score - a.score || a.seq - b.seq)
+    .slice(0, 8)
+    .sort((a, b) => a.seq - b.seq);
+}
+
+function experienceReplayCheckpointForEvent(event: BenchmarkTraceEvent): BenchmarkExperienceReplayCheckpoint | null {
+  if (event.tool === 'bash' && event.verification && event.status === 'error') {
+    const command = verifierCommandForEvent(event);
+    if (!command) return null;
+    return {
+      seq: event.seq,
+      tool: event.tool,
+      target: truncate(redactTraceText(command), 180),
+      reason: 'failing_verifier',
+      score: 12,
+    };
+  }
+
+  if (!['read_file', 'grep', 'glob', 'list_dir'].includes(event.tool)) return null;
+  const target = event.target.trim() || summarizeReplayInputTarget(event.inputPreview);
+  if (!target || (event.tool === 'list_dir' && target === '.')) return null;
+  const score = event.tool === 'read_file'
+    ? 11
+    : event.tool === 'grep'
+      ? 10
+      : event.tool === 'glob'
+        ? 8
+        : 5;
+  return {
+    seq: event.seq,
+    tool: event.tool,
+    target: truncate(redactTraceText(target), 180),
+    reason: event.tool === 'read_file' ? 'file_context' : 'search_context',
+    score,
+  };
+}
+
+function summarizeReplayInputTarget(inputPreview: string): string {
+  const input = parseEventInputPreview(inputPreview);
+  for (const key of ['file_path', 'path', 'pattern', 'command']) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
 }
 
 export function buildOpenAgentLeaderboardDraft(
@@ -3455,6 +3585,12 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
   const artifactResult = collectBenchmarkTraceArtifacts(input.cwd, dir);
   summary.worktreeChangedFiles = artifactResult.changedFiles;
   summary.artifacts = artifactResult.artifacts;
+  summary.experienceCard.changedFiles = uniqueStrings([
+    ...summary.experienceCard.changedFiles,
+    ...summary.worktreeChangedFiles,
+  ])
+    .map((file) => truncate(redactTraceText(file), 160))
+    .slice(0, 20);
 
   const summaryPath = join(dir, 'summary.json');
   const jsonlPath = join(dir, 'trace.jsonl');

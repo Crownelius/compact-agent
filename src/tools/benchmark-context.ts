@@ -4,6 +4,7 @@ import { basename, dirname, join, relative } from 'node:path';
 import { globSync } from 'glob';
 import { getConfigDir } from '../config.js';
 import { redactTraceText } from '../benchmark-trace.js';
+import type { BenchmarkExperienceReplayCheckpoint } from '../benchmark-trace.js';
 import { resolveUserPath } from './path-utils.js';
 import type { Tool, ToolResult } from './types.js';
 
@@ -528,9 +529,9 @@ export function summarizePriorBenchmarkExperienceSummary(
       : 'usage=not recorded';
     const endedAt = typeof summary.endedAt === 'string' ? summary.endedAt : basename(summaryPath);
     const visibleDefects = defectCodes.slice(0, 4);
-    const replayCheckpoints = summarizePriorReplayCheckpoints(summaryPath, fileSet, fileBasenames, verifierSet);
+    const replayCheckpoints = summarizePriorReplayCheckpoints(summaryPath, summary, fileSet, fileBasenames, verifierSet);
     const priorFailures = summarizePriorFailureSignatures(summary);
-    const contractText = summarizePriorTaskContractUse(quality);
+    const contractText = summarizePriorTaskContractUse(summary, quality);
 
     if (harmReasons.length > 0) {
       const line = [
@@ -622,10 +623,14 @@ function uniqueNormalizedStrings(values: string[]): string[] {
 
 function summarizePriorReplayCheckpoints(
   summaryPath: string,
+  summary: Record<string, unknown>,
   fileSet: Set<string>,
   fileBasenames: Set<string>,
   verifierSet: Set<string>,
 ): string[] {
+  const cardCheckpoints = summarizePriorExperienceCardReplayCheckpoints(summary, fileSet, fileBasenames, verifierSet);
+  if (cardCheckpoints.length > 0) return cardCheckpoints;
+
   const tracePath = join(dirname(summaryPath), 'trace.jsonl');
   if (!existsSync(tracePath)) return [];
 
@@ -704,11 +709,63 @@ function summarizePriorReplayCheckpoints(
     .map((checkpoint) => checkpoint.line);
 }
 
-function summarizePriorFailureSignatures(summary: Record<string, unknown>): string[] {
-  const evidence = objectRecord(summary.verificationEvidence);
-  const rawSignatures = Array.isArray(evidence.failureSignatures)
-    ? evidence.failureSignatures
+function summarizePriorExperienceCardReplayCheckpoints(
+  summary: Record<string, unknown>,
+  fileSet: Set<string>,
+  fileBasenames: Set<string>,
+  verifierSet: Set<string>,
+): string[] {
+  const card = objectRecord(summary.experienceCard);
+  const rawCheckpoints = Array.isArray(card.replayCheckpoints)
+    ? card.replayCheckpoints
     : [];
+  const checkpoints: Array<{ seq: number; score: number; line: string }> = [];
+
+  for (const raw of rawCheckpoints) {
+    const checkpoint = objectRecord(raw) as Partial<BenchmarkExperienceReplayCheckpoint>;
+    const seq = finiteNumber(checkpoint.seq);
+    const tool = typeof checkpoint.tool === 'string' ? checkpoint.tool.trim() : '';
+    const target = typeof checkpoint.target === 'string' ? checkpoint.target.trim() : '';
+    const reason = typeof checkpoint.reason === 'string' ? checkpoint.reason : '';
+    if (seq == null || !tool || !target) continue;
+
+    if (reason === 'failing_verifier' || (tool === 'bash' && verifierSet.has(normalizeExperienceText(target)))) {
+      const normalized = normalizeExperienceText(target);
+      const score = verifierSet.has(normalized) ? 12 : 5;
+      checkpoints.push({
+        seq,
+        score,
+        line: `failing_verifier#${seq} ${truncateContractSignal(target, 140)}`,
+      });
+      continue;
+    }
+
+    if (!['read_file', 'grep', 'glob', 'list_dir'].includes(tool)) continue;
+    const fileMatch = matchesCurrentFileReference(target, fileSet, fileBasenames);
+    const score =
+      (fileMatch ? 8 : 0) +
+      (tool === 'read_file' ? 4 : tool === 'grep' ? 3 : tool === 'glob' ? 2 : 1);
+    if (score < 8) continue;
+    checkpoints.push({
+      seq,
+      score,
+      line: `${tool}#${seq} ${truncateContractSignal(target, 140)}`,
+    });
+  }
+
+  return checkpoints
+    .sort((a, b) => b.score - a.score || a.seq - b.seq)
+    .slice(0, 6)
+    .sort((a, b) => a.seq - b.seq)
+    .map((checkpoint) => checkpoint.line);
+}
+
+function summarizePriorFailureSignatures(summary: Record<string, unknown>): string[] {
+  const card = objectRecord(summary.experienceCard);
+  const evidence = objectRecord(summary.verificationEvidence);
+  const rawSignatures = Array.isArray(card.failureSignatures)
+    ? card.failureSignatures
+    : (Array.isArray(evidence.failureSignatures) ? evidence.failureSignatures : []);
   const out: string[] = [];
   for (const raw of rawSignatures.slice(-3)) {
     const signature = objectRecord(raw);
@@ -727,11 +784,17 @@ function summarizePriorFailureSignatures(summary: Record<string, unknown>): stri
   return out;
 }
 
-function summarizePriorTaskContractUse(quality: Record<string, unknown>): string | null {
-  const signals = finiteNumber(quality.taskContractSignalCount);
+function summarizePriorTaskContractUse(summary: Record<string, unknown>, quality: Record<string, unknown>): string | null {
+  const card = objectRecord(summary.experienceCard);
+  const taskContract = objectRecord(card.taskContract);
+  const signals = finiteNumber(taskContract.signalCount) ?? finiteNumber(quality.taskContractSignalCount);
   if (signals == null || signals <= 0) return null;
-  const afterContext = quality.taskContractChecklistAfterContext;
-  const complete = quality.taskContractChecklistComplete;
+  const afterContext = typeof taskContract.checklistAfterContext === 'boolean' || taskContract.checklistAfterContext === null
+    ? taskContract.checklistAfterContext
+    : quality.taskContractChecklistAfterContext;
+  const complete = typeof taskContract.checklistComplete === 'boolean' || taskContract.checklistComplete === null
+    ? taskContract.checklistComplete
+    : quality.taskContractChecklistComplete;
   return `contract=signals:${signals},checklist_after_context:${String(afterContext)},complete:${String(complete)}`;
 }
 

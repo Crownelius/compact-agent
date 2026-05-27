@@ -342,6 +342,84 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('avoid any prior patterns listed as warnings');
   }, 15_000);
 
+  it('uses summary experience-card replay checkpoints when trace.jsonl is absent', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'));
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-27-card-prior');
+    mkdirSync(priorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    writeFileSync(join(root, 'src', 'app.ts'), 'export const total = 12.3;\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T09:00:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['src/app.ts'],
+      usage: {
+        totalTokens: 1200,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 95,
+        successfulVerificationCount: 1,
+        processDefects: [],
+      },
+      experienceCard: {
+        version: 1,
+        replayCheckpoints: [
+          { seq: 2, tool: 'read_file', target: 'src/app.ts', reason: 'file_context', score: 11 },
+          { seq: 3, tool: 'bash', target: 'npm test', reason: 'failing_verifier', score: 12 },
+        ],
+        failureSignatures: [{
+          seq: 3,
+          command: 'npm test',
+          framework: 'vitest',
+          tests: ['billing totals render with fixed decimals'],
+          files: ['src/app.ts'],
+          errors: ['AssertionError: expected 12.3 to equal 12.30'],
+          raw: 'billing total mismatch',
+        }],
+        sourceResearchCoverage: {
+          callCount: 0,
+          arxiv: false,
+          github: false,
+          huggingface: false,
+          kaggle: false,
+          sourceHitCount: 0,
+          sourceErrorCount: 0,
+          githubKinds: [],
+          huggingFaceKinds: [],
+          kaggleKinds: [],
+          resultSources: [],
+          topUrls: [],
+          recentDays: [],
+          freshTargetedCoverage: false,
+          kaggleCompetitionsSkipped: false,
+          coverageNotes: [],
+          completeTargetedCoverage: false,
+        },
+        taskContract: {
+          signalCount: 2,
+          checklistAfterContext: true,
+          checklistComplete: true,
+          incompleteCount: 0,
+        },
+        verificationCommands: ['npm test'],
+        changedFiles: ['src/app.ts'],
+        warnings: [],
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('previous run: 2026-05-27T09:00:00.000Z');
+    expect(result.output).toContain('replay=read_file#2 src/app.ts | failing_verifier#3 npm test');
+    expect(result.output).toContain('failures=npm test tests=billing totals render with fixed decimals files=src/app.ts errors=AssertionError: expected 12.3 to equal 12.30');
+    expect(result.output).toContain('contract=signals:2,checklist_after_context:true,complete:true');
+  });
+
   it('reports missing paths as errors', async () => {
     const result = await BenchmarkContextTool.call({ path: join(tmpdir(), 'definitely-missing-ventipus') }, process.cwd());
     expect(result.isError).toBe(true);
