@@ -109,6 +109,10 @@ export const BenchmarkContextTool: Tool = {
         type: 'number',
         description: 'Maximum file paths to inspect for the snapshot. Default 400, max 2000.',
       },
+      probe_network: {
+        type: 'boolean',
+        description: 'Run short read-only TCP reachability probes for common package/model hosts. Defaults to true outside tests; set false to skip.',
+      },
     },
     required: [],
     additionalProperties: false,
@@ -154,6 +158,8 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const extensions = summarizeExtensions(sortedFiles);
     const runtime = summarizeRuntimeEnvironment(root, sortedFiles, manifests);
     const environmentPlan = summarizeEnvironmentReconstructionPlan(manifests, ciHints);
+    const toolchainProbe = summarizeToolchainProbe(root, manifests);
+    const networkProbe = summarizeNetworkProbe(input);
     const serviceHints = summarizeServiceHints(sortedFiles, scripts);
     const harnessFiles = findBenchmarkHarnessFiles(sortedFiles);
     const harnessHints = summarizeBenchmarkHarnessHints(sortedFiles, verifierCommands);
@@ -234,6 +240,12 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '## Tool Availability',
       formatList(toolHints, 30),
       '',
+      '## Toolchain Probe',
+      formatList(toolchainProbe, 40),
+      '',
+      '## Network / Offline Probe',
+      formatList(networkProbe, 20),
+      '',
       '## Environment Reconstruction Plan',
       environmentPlan.length
         ? formatList(environmentPlan, 30)
@@ -290,12 +302,13 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '4. Create a localization dossier: candidate files/functions, evidence, reproduction command, and ruled-out distractors.',
       '5. Before each non-trivial edit, write a one-line `Prediction:` naming the expected verifier or behavior change, then compare it to the next verifier result.',
       '6. Verify with the project-native runtime/toolchain, not an arbitrary interpreter or package manager.',
-      '7. Run the environment reconstruction plan before treating missing dependency/toolchain/build-artifact failures as code failures.',
-      '8. Run the narrowest likely verifier before broad verification when feasible.',
-      '9. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
-      '10. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
-      '11. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
-      '12. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
+      '7. Use the toolchain probe to catch PATH, virtualenv, package-manager, and offline/network mismatches before declaring a verifier representative.',
+      '8. Run the environment reconstruction plan before treating missing dependency/toolchain/build-artifact failures as code failures.',
+      '9. Run the narrowest likely verifier before broad verification when feasible.',
+      '10. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
+      '11. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
+      '12. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
+      '13. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
     ];
 
     return { output: lines.filter((line, i, arr) => line || arr[i - 1] !== '').join('\n'), isError: false };
@@ -2104,7 +2117,74 @@ function summarizeRuntimeEnvironment(root: string, files: string[], manifests: s
   if (files.some((f) => /(^|\/)(Dockerfile|docker-compose\.ya?ml|compose\.ya?ml)$/.test(f))) {
     lines.push('container hint: Docker/Compose artifacts present; verify whether services must run in containers.');
   }
-  lines.push('network/offline hint: this read-only snapshot does not probe the network; if downloads/models/APIs are involved, verify network availability early.');
+  lines.push('network/offline hint: see Network / Offline Probe before assuming package/model downloads or external APIs are reachable.');
+  return lines;
+}
+
+function summarizeToolchainProbe(root: string, manifests: string[]): string[] {
+  const lines: string[] = [
+    `process node: executable=${normalizePath(process.execPath)} version=${process.version}`,
+  ];
+  const pathEntries = pathEntriesForDisplay(process.env.PATH || process.env.Path || '');
+  if (pathEntries.length > 0) {
+    lines.push(`PATH first entries: ${pathEntries.join(' | ')}`);
+  }
+
+  const packageManager = detectPackageManager(manifests);
+  if (manifests.some((m) => basename(m) === 'package.json')) {
+    lines.push(`package manager expectation: ${packageManager} (${packageManagerEvidence(manifests)})`);
+  }
+
+  for (const tool of relevantToolchainCommands(manifests)) {
+    const resolved = commandPath(tool);
+    if (resolved) lines.push(`${tool} path: ${resolved}`);
+  }
+
+  for (const py of ['python', 'python3']) {
+    const identity = pythonIdentity(py);
+    if (identity) lines.push(identity);
+  }
+  for (const candidate of localPythonCandidates(root)) {
+    const identity = pythonIdentity(candidate, `local ${relative(root, candidate)}`);
+    if (identity) lines.push(identity);
+  }
+
+  const pythonPath = commandPath('python');
+  const localVirtualenvs = localPythonCandidates(root).filter((p) => existsSync(p));
+  if (pythonPath && localVirtualenvs.length > 0) {
+    const normalizedPython = normalizePath(pythonPath).toLowerCase();
+    const usesLocal = localVirtualenvs.some((p) => normalizedPython === normalizePath(p).toLowerCase());
+    if (!usesLocal) {
+      lines.push('virtualenv mismatch warning: project virtualenv exists but PATH python resolves outside it; prefer `.venv`/`venv` python or `uv run`/project-native runner for verification.');
+    }
+  }
+  if (manifests.some((m) => basename(m) === 'uv.lock') && commandPath('uv')) {
+    lines.push('uv verification reminder: run Python verifiers with `uv run ...` unless the task explicitly requires a different interpreter.');
+  }
+  return dedupe(lines).slice(0, 40);
+}
+
+function summarizeNetworkProbe(input: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const networkEnvIndicators = networkEnvironmentIndicators();
+  if (networkEnvIndicators.length > 0) {
+    lines.push(`network env indicators: ${networkEnvIndicators.join(', ')}`);
+  }
+  if (!shouldProbeNetwork(input)) {
+    lines.push('network probe: skipped (set probe_network:true or VENTIPUS_BENCHMARK_PROBE_NETWORK=1 to run short TCP probes).');
+    return lines;
+  }
+
+  const targets = [
+    { host: 'registry.npmjs.org', port: 443, label: 'npm registry/package installs' },
+    { host: 'huggingface.co', port: 443, label: 'Hugging Face models/datasets' },
+  ];
+  for (const target of targets) {
+    lines.push(probeTcpReachability(target.host, target.port, target.label));
+  }
+  if (lines.length === 0) {
+    lines.push('network probe: no indicators gathered.');
+  }
   return lines;
 }
 
@@ -2121,6 +2201,210 @@ function commandVersion(command: string, args: string[], label = command): strin
   } catch {
     return null;
   }
+}
+
+function commandPath(command: string): string | null {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('where.exe', [command], {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 1500,
+        maxBuffer: 16 * 1024,
+      }).trim();
+      return firstNonEmptyLine(out);
+    }
+    const out = execFileSync('sh', ['-lc', `command -v ${shellQuote(command)}`], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1500,
+      maxBuffer: 16 * 1024,
+    }).trim();
+    return firstNonEmptyLine(out);
+  } catch {
+    return null;
+  }
+}
+
+function pythonIdentity(command: string, label = command): string | null {
+  try {
+    const out = execFileSync(command, [
+      '-c',
+      [
+        'import sys',
+        'base=getattr(sys,"base_prefix",sys.prefix)',
+        'print("executable="+sys.executable)',
+        'print("version="+sys.version.split()[0])',
+        'print("prefix="+sys.prefix)',
+        'print("base_prefix="+base)',
+      ].join(';'),
+    ], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1500,
+      maxBuffer: 16 * 1024,
+    }).trim();
+    if (!out) return null;
+    return `${label} identity: ${out.split(/\r?\n/).join(' ')}`;
+  } catch {
+    return null;
+  }
+}
+
+function localPythonCandidates(root: string): string[] {
+  return process.platform === 'win32'
+    ? [
+      join(root, '.venv', 'Scripts', 'python.exe'),
+      join(root, 'venv', 'Scripts', 'python.exe'),
+    ]
+    : [
+      join(root, '.venv', 'bin', 'python'),
+      join(root, 'venv', 'bin', 'python'),
+    ];
+}
+
+function pathEntriesForDisplay(rawPath: string): string[] {
+  if (!rawPath.trim()) return [];
+  return rawPath
+    .split(process.platform === 'win32' ? ';' : ':')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .map(normalizePath);
+}
+
+function packageManagerEvidence(manifests: string[]): string {
+  const names = new Set(manifests.map((m) => basename(m)));
+  if (names.has('pnpm-lock.yaml')) return 'pnpm-lock.yaml detected';
+  if (names.has('yarn.lock')) return 'yarn.lock detected';
+  if (names.has('bun.lock') || names.has('bun.lockb')) return 'bun lockfile detected';
+  if (names.has('package-lock.json') || names.has('npm-shrinkwrap.json')) return 'npm lockfile detected';
+  return 'package.json detected without a stronger lockfile signal';
+}
+
+function relevantToolchainCommands(manifests: string[]): string[] {
+  const names = new Set(manifests.map((m) => basename(m)));
+  const commands = new Set<string>();
+  if (names.has('package.json')) {
+    commands.add('node');
+    commands.add(detectPackageManager(manifests));
+    commands.add('npm');
+  }
+  if (
+    names.has('uv.lock') ||
+    names.has('Pipfile') ||
+    names.has('Pipfile.lock') ||
+    Array.from(names).some((name) => /^requirements(?:[-_.a-z0-9]*)?\.txt$/i.test(name)) ||
+    ['pyproject.toml', 'setup.py', 'setup.cfg', 'tox.ini', 'pytest.ini'].some((name) => names.has(name))
+  ) {
+    commands.add('python');
+    commands.add('python3');
+    commands.add('uv');
+    commands.add('pip');
+    commands.add('pytest');
+    if (names.has('Pipfile') || names.has('Pipfile.lock')) commands.add('pipenv');
+  }
+  if (names.has('Cargo.toml')) commands.add('cargo');
+  if (names.has('go.mod')) commands.add('go');
+  if (names.has('pom.xml') || names.has('mvnw') || names.has('mvnw.cmd')) {
+    commands.add('java');
+    commands.add('mvn');
+  }
+  if (Array.from(names).some((name) => /^(build|settings)\.gradle(?:\.kts)?$/i.test(name))) {
+    commands.add('java');
+    commands.add('gradle');
+  }
+  if (Array.from(names).some((name) => /\.(sln|csproj|fsproj|vbproj)$/i.test(name))) {
+    commands.add('dotnet');
+  }
+  if (commands.size === 0) {
+    commands.add('node');
+    commands.add('python');
+    commands.add('python3');
+  }
+  return Array.from(commands);
+}
+
+function networkEnvironmentIndicators(env: NodeJS.ProcessEnv = process.env): string[] {
+  const names = [
+    'HF_HUB_OFFLINE',
+    'TRANSFORMERS_OFFLINE',
+    'HF_DATASETS_OFFLINE',
+    'PIP_NO_INDEX',
+    'UV_OFFLINE',
+    'npm_config_offline',
+    'YARN_ENABLE_NETWORK',
+    'NO_PROXY',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+  ];
+  return names
+    .filter((name) => {
+      const value = env[name];
+      if (value === undefined || value === '') return false;
+      if (name === 'YARN_ENABLE_NETWORK') return /^(0|false|no)$/i.test(value);
+      return true;
+    })
+    .map((name) => `${name}=set`);
+}
+
+function shouldProbeNetwork(input: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (typeof input.probe_network === 'boolean') return input.probe_network;
+  const raw = env.VENTIPUS_BENCHMARK_PROBE_NETWORK;
+  if (raw && raw.trim()) return /^(1|true|yes|on)$/i.test(raw.trim());
+  if (env.VITEST || env.NODE_ENV === 'test') return false;
+  return true;
+}
+
+function probeTcpReachability(host: string, port: number, label: string): string {
+  const timeoutMs = 900;
+  const script = [
+    'const net = require("node:net");',
+    `const host = ${JSON.stringify(host)};`,
+    `const port = ${JSON.stringify(port)};`,
+    `const timeoutMs = ${JSON.stringify(timeoutMs)};`,
+    'const socket = net.connect({ host, port });',
+    'let done = false;',
+    'function finish(code, message) {',
+    '  if (done) return;',
+    '  done = true;',
+    '  try { socket.destroy(); } catch {}',
+    '  console.log(message);',
+    '  process.exit(code);',
+    '}',
+    'socket.setTimeout(timeoutMs);',
+    'socket.once("connect", () => finish(0, "reachable"));',
+    'socket.once("timeout", () => finish(2, "timeout"));',
+    'socket.once("error", (err) => finish(1, "error:" + (err && (err.code || err.message) || "unknown")));',
+  ].join('\n');
+  try {
+    const result = spawnSync(process.execPath, ['-e', script], {
+      encoding: 'utf-8',
+      timeout: timeoutMs + 600,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const raw = firstNonEmptyLine(`${result.stdout || ''}\n${result.stderr || ''}`) || 'no-result';
+    const status = result.status === 0 ? 'reachable' : result.error ? `error:${result.error.message}` : raw;
+    return `network probe ${host}:${port} (${label}): ${status}`;
+  } catch (err) {
+    return `network probe ${host}:${port} (${label}): error:${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+function firstNonEmptyLine(value: string): string | null {
+  const line = value.split(/\r?\n/).map((part) => part.trim()).find(Boolean);
+  return line || null;
+}
+
+function dedupe(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
 function summarizeServiceHints(

@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.22
+version: 1.35.23
 developers:
   - Crownelius
 license: MIT
@@ -39,6 +39,7 @@ Benchmark mode emphasizes:
 - Task-contract checklist creation before edits.
 - Task-alignment checks for ignored constraints, distractor/decoy references, and off-task-looking edits.
 - Reproduction before repair when feasible.
+- Live preflight checks for PATH, package-manager, interpreter, virtualenv, and network/offline mismatches before treating a verifier as representative.
 - Narrow-to-broad validation after edits.
 - Reward-hack checks for verifier tampering, oracle/solution probes, result-file edits, shortcut completion markers, and bypass commands.
 - CI workflow reconstruction from visible configuration.

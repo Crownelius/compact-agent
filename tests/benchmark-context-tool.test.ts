@@ -17,6 +17,10 @@ function makeRoot(): string {
 afterEach(() => {
   delete process.env.VENTIPUS_BENCHMARK_TRACE_DIR;
   delete process.env.VENTIPUS_BENCHMARK_EXPERIENCE;
+  delete process.env.VENTIPUS_BENCHMARK_PROBE_NETWORK;
+  delete process.env.HF_HUB_OFFLINE;
+  delete process.env.TRANSFORMERS_OFFLINE;
+  delete process.env.PIP_NO_INDEX;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -28,6 +32,7 @@ describe('benchmark_context tool', () => {
     expect(tool).toBe(BenchmarkContextTool);
     expect(tool?.isReadOnly).toBe(true);
     expect(tool?.isDestructive).toBe(false);
+    expect((tool?.parameters.properties as Record<string, unknown>).probe_network).toBeDefined();
   });
 
   it('summarizes manifests, likely verifiers, task files, and oracle candidates', async () => {
@@ -238,7 +243,7 @@ describe('benchmark_context tool', () => {
       },
     }, null, 2));
 
-    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+    const result = await BenchmarkContextTool.call({ path: root, probe_network: false }, process.cwd());
 
     expect(result.isError).toBe(false);
     expect(result.output).toContain('# Benchmark Context');
@@ -316,6 +321,13 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('Gradle project detected');
     expect(result.output).toContain('.NET environment hint');
     expect(result.output).toContain('network/offline hint');
+    expect(result.output).toContain('Toolchain Probe');
+    expect(result.output).toContain('process node: executable=');
+    expect(result.output).toContain('package manager expectation: pnpm');
+    expect(result.output).toContain('uv verification reminder');
+    expect(result.output).toContain('Network / Offline Probe');
+    expect(result.output).toContain('network probe: skipped');
+    expect(result.output).toContain('Use the toolchain probe to catch PATH, virtualenv, package-manager, and offline/network mismatches');
     expect(result.output).toContain('Service Persistence Hints');
     expect(result.output).toContain('start: node src/server.js');
     expect(result.output).toContain('src/bitcoin_service.py');
@@ -355,6 +367,21 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('replay only the relevant read/search/verifier steps');
     expect(result.output).toContain('avoid any prior patterns listed as warnings');
   }, 15_000);
+
+  it('surfaces offline environment indicators without leaking env values', async () => {
+    const root = makeRoot();
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
+    process.env.HF_HUB_OFFLINE = '1';
+    process.env.PIP_NO_INDEX = 'https://example.invalid/private-index';
+
+    const result = await BenchmarkContextTool.call({ path: root, probe_network: false }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('Network / Offline Probe');
+    expect(result.output).toContain('network env indicators: HF_HUB_OFFLINE=set, PIP_NO_INDEX=set');
+    expect(result.output).not.toContain('example.invalid');
+    expect(result.output).toContain('network probe: skipped');
+  });
 
   it('uses summary experience-card replay checkpoints when trace.jsonl is absent', async () => {
     const root = makeRoot();
