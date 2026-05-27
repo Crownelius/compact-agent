@@ -464,6 +464,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward verified sources and unresolved search facets; do not treat snippets or stale single-source claims as final evidence."
     if profile == "tau2":
         return "Carry forward policy constraints, customer intent, tool results, and pending confirmations before selecting the next action."
+    if profile == "terminalworld":
+        return "TerminalWorld discipline: carry forward instruction.md/task artifact requirements, generated files/services, command outputs, verifier status, and any solve.sh/reference-solution avoidance before selecting the next action."
     if profile == "webdevbench":
         return "Carry forward canary requirements, frontend/backend state, integration evidence, and production/security gaps before selecting the next action."
     if profile == "swe-cycle":

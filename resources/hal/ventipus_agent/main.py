@@ -266,6 +266,13 @@ def _profile_for_task(task: dict[str, Any]) -> str:
         return "webdevbench"
     if _is_patch_task(task):
         return "swe-bench"
+    if (
+        "terminalworld" in task_text
+        or "terminal-world" in task_text
+        or "tw_" in task_text
+        or "asciinema" in task_text
+    ):
+        return "terminalworld"
     if "terminal-bench" in task_text or "terminalbench" in task_text:
         return "terminal-bench"
     if (
@@ -321,6 +328,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
             "This is a SWE-bench-style patch task. Modify the checked-out repository; the HAL adapter will collect the git patch after the run.",
             "Do not edit tests or harness files unless the task explicitly asks for that.",
         ])
+    elif profile == "terminalworld":
+        lines.append("This is a TerminalWorld-style terminal workflow. Treat instruction.md/task text as the contract, avoid solve.sh/reference material, produce required persistent artifacts, and verify files/services in the environment.")
     elif _is_science_agent_task(task):
         lines.append("This is a ScienceAgentBench-style task. Produce a concise solution trajectory and any required output/program artifact in the final response.")
     elif profile == "appworld" or _is_appworld_task(task):

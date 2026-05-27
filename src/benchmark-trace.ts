@@ -2461,6 +2461,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\btml[-_ ]?bench\b|\btabular\s+ml\b|\bkaggle[-_\s]?style\b|\bsample_submission\b|\bprivate\s+holdout\b/i.test(text)) return 'tmlbench';
   if (/\bpi[-_ ]?bench\b|\bproactive\s+personal\s+assistant\b|\bproactivity\s+scor(?:e|ing)\b|\bhidden\s+intent\b/i.test(text)) return 'pibench';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b/i.test(text)) return 'cirepairbench';
+  if (/\bterminal[-_ ]?world(?:[-_ ]?bench)?\b|\btw_[0-9]+\b|\basciinema[-_\s]?derived\b/i.test(text)) return 'terminalworld';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
   if (/\bswe[- ]bench\b/i.test(text)) return 'swebench';
   if (/\bappworld\b/i.test(text)) return 'appworld';
@@ -2476,6 +2477,7 @@ function normalizeBenchmarkSlug(value: string): string {
   const cleaned = value.replace(/[^a-z0-9]+/g, '');
   if (cleaned === 'swebench' || cleaned === 'swe') return 'swebench';
   if (cleaned === 'terminalbench' || cleaned === 'tb' || cleaned === 'tb2') return 'terminalbench';
+  if (cleaned === 'terminalworld' || cleaned === 'terminalworldbench' || cleaned === 'tw' || cleaned === 'tworld') return 'terminalworld';
   if (cleaned === 'swecontext') return 'swecontext';
   if (cleaned === 'swechain' || cleaned === 'chain' || cleaned === 'upgrade') return 'swechain';
   if (cleaned === 'swecycle' || cleaned === 'swecyclebench' || cleaned === 'fullcycle' || cleaned === 'swejudge') return 'swecycle';
@@ -2523,6 +2525,7 @@ function formatBenchmarkName(slug: string): string {
     swecontext: 'SWE-context',
     tau2: 'Tau Bench 2',
     terminalbench: 'Terminal-Bench',
+    terminalworld: 'TerminalWorld',
     wildclawbench: 'WildClawBench',
   };
   return names[slug] ?? slug;

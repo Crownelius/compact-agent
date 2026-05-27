@@ -430,6 +430,10 @@ def _profile_for_exgentic(task: Any, context: Any, action_docs: list[dict[str, A
         return "browsecomp"
     if any(token in text for token in ("tau2", "tau 2", "tau-bench", "tau_bench", "taubench", "customer support", "customer-service")):
         return "tau2"
+    if any(token in text for token in ("terminalworld", "terminal-world", "tw_", "asciinema")) or (
+        "instruction.md" in text and "solve.sh" in text
+    ):
+        return "terminalworld"
     if any(token in text for token in ("swe-bench mobile", "xcode", "swift", "objective-c", "simulator", "figma")):
         return "swe-bench-mobile"
     if any(token in text for token in ("swe-webdevbench", "swe-webdev-bench", "webdevbench", "webdev-bench", "vibe coding", "virtual software agency", "canary requirement", "frontend-backend", "production readiness")):
@@ -460,6 +464,8 @@ def _profile_guidance(profile: str) -> str:
         return "BrowseComp+ discipline: decompose the research question, prefer primary/high-authority sources, cross-check facts, and include auditable source attribution in finish/message arguments."
     if profile == "tau2":
         return "tau2 discipline: read policy/context first, take only policy-supported tool actions, and confirm observations before promising customer outcomes."
+    if profile == "terminalworld":
+        return "TerminalWorld discipline: extract required artifacts from instruction.md/task text, avoid solve.sh/reference material, execute real CLI steps, and verify persistent files/services before finishing."
     if profile == "swe-bench-mobile":
         return "Mobile discipline: respect PRD/design/platform constraints and prefer platform validation evidence when the harness exposes it."
     if profile == "webdevbench":

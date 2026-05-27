@@ -85,6 +85,7 @@ function profileForBenchmark(benchmark) {
   const slug = String(benchmark || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   if (slug === 'swe' || slug === 'swebench') return 'swe-bench';
   if (slug === 'tb2' || slug === 'terminalbench') return 'terminal-bench';
+  if (slug === 'terminalworld' || slug === 'terminalworldbench' || slug === 'tw' || slug === 'tworld') return 'terminalworld';
   if (slug === 'swechain' || slug === 'chain' || slug === 'upgrade') return 'swe-chain';
   if (slug === 'swecycle' || slug === 'swecyclebench' || slug === 'fullcycle' || slug === 'swejudge') return 'swe-cycle';
   if (slug === 'sweci' || slug === 'swecibench') return 'swe-ci';

@@ -38,6 +38,7 @@ describe('Exgentic adapter packaging', () => {
     expect(agent).toContain('return "appworld"');
     expect(agent).toContain('return "browsecomp"');
     expect(agent).toContain('return "tau2"');
+    expect(agent).toContain('return "terminalworld"');
     expect(agent).toContain('return "swe-cycle"');
     expect(agent).toContain('return "swe-ci"');
     expect(agent).toContain('return "swe-prbench"');
@@ -51,6 +52,7 @@ describe('Exgentic adapter packaging', () => {
     expect(utils).toContain('swe-prbench');
     expect(utils).toContain('tml-bench');
     expect(utils).toContain('pi-bench');
+    expect(utils).toContain('TerminalWorld');
   });
 
   it('prints the packaged Exgentic agent directory from the CLI wrapper', () => {

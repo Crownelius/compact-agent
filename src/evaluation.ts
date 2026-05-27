@@ -255,6 +255,7 @@ export type BenchmarkProfile =
   | 'auto'
   | 'swe-bench'
   | 'terminal-bench'
+  | 'terminalworld'
   | 'swe-context'
   | 'swe-chain'
   | 'swe-cycle'
@@ -284,6 +285,12 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   terminal: 'terminal-bench',
   tbench: 'terminal-bench',
   'terminal-bench': 'terminal-bench',
+  terminalworld: 'terminalworld',
+  'terminal-world': 'terminalworld',
+  terminalworldbench: 'terminalworld',
+  'terminalworld-bench': 'terminalworld',
+  tworld: 'terminalworld',
+  tw: 'terminalworld',
   context: 'swe-context',
   'swe-context': 'swe-context',
   contextbench: 'swe-context',
@@ -455,6 +462,13 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Do not open oracle/reference solution files unless the task explicitly says they are allowed.
 - Use bash for real terminal work, keep services/processes under control, and capture verifier commands and exit status.
 - If the task has a test script, that script is the completion oracle. Run it before finalizing.`;
+    case 'terminalworld':
+      return `Profile: TerminalWorld style in-the-wild terminal workflow
+- Treat the task as a reproduced real terminal session: satisfy the outcome-oriented instruction and required artifacts, not a source patch by default.
+- Extract exact output paths, file formats, command names, ports, services, and container assumptions from instruction.md or the task text before acting.
+- Do not read solve.sh or reference-solution material unless the benchmark explicitly permits it; treat it as oracle-only.
+- Prefer real CLI execution over mock/stub shortcuts. For package installs, container builds, network tools, and services, verify the installed command/artifact behaves in the current environment.
+- Use a state ledger: initial files/services, commands run, artifacts produced, and final verifier or manual artifact checks. Validate persistent artifacts such as files, hashes, structured outputs, processes, or service responses before finalizing.`;
     case 'swe-context':
       return `Profile: SWE-ContextBench style context-learning task
 - Search project/global memory for prior related issues, patches, conventions, and verification commands.
@@ -601,6 +615,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
       return `Profile: auto-detect
 - If the task looks like a repository issue or patch challenge, follow the SWE-bench profile.
 - If the task drops you into a sandbox with a verifier/test script, follow the Terminal-Bench profile.
+- If the task mentions TerminalWorld, in-the-wild terminal recordings, asciinema-derived tasks, tw_ task ids, instruction.md plus solve.sh/Dockerfile artifacts, or required /app output artifacts, follow the TerminalWorld profile.
 - If related prior cases or memory are part of the challenge, follow the SWE-ContextBench profile.
 - If the task is a chained dependency, release, package, or API upgrade, follow the SWE-Chain profile.
 - If the task mentions SWE-Cycle, SWE-Judge, FullCycle, EnvSetup, CodeImpl, TestGen, run_script, parsing_script, selected_test_files_to_run, environment_setup_commit, before_repo_set_cmd, or bare-repo issue resolution, follow the SWE-Cycle profile.
@@ -697,6 +712,7 @@ ${preflightSnapshot}
    - Use the automatic preflight snapshot above. Call \`benchmark_context\` only if the environment changes or the snapshot is incomplete.
    - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
    - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
+   - For TerminalWorld work, first identify instruction.md/task text, required \`/app\` artifacts, Docker/service assumptions, visible verifier/tests, and whether solve.sh/reference material is present before assuming this is a source-patch task.
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
    - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench/SWE-Cycle/SWE-CI work, identify roadmap milestones, validation nodes, canary requirements, lifecycle phases, current/target commit boundaries, test gaps, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
    - For AppWorld/BrowseComp+/tau2 work, identify available actions, required source/policy evidence, finish action, and state-observation loop before taking environment actions.
@@ -743,6 +759,7 @@ ${preflightSnapshot}
 ## Anti-Leakage Rules
 
 - Do not inspect gold patches, oracle solutions, hidden tests, benchmark answer keys, result JSONL from prior submissions, or upstream PR diffs unless the benchmark task explicitly permits it.
+- For TerminalWorld-style tasks, treat \`solve.sh\` and reference-solution scripts as oracle material unless explicitly permitted.
 - Do not claim leaderboard performance from this run unless the official harness output proves it.
 - Do not rely on remembered benchmark solutions. Treat all prior knowledge as potentially contaminated until verified locally.`;
 }

@@ -128,6 +128,7 @@ describe('benchmark_context tool', () => {
     writeFileSync(join(root, 'instruction.md'), 'Fix the Harbor task.\n');
     writeFileSync(join(root, 'Dockerfile'), 'FROM ubuntu:24.04\n');
     writeFileSync(join(root, 'docker-compose.yaml'), 'services:\n  client:\n    build: .\n');
+    writeFileSync(join(root, 'solve.sh'), '#!/bin/bash\necho oracle\n');
     writeFileSync(join(root, 'run-tests.sh'), '#!/bin/bash\npython -m pytest tests/test_outputs.py -rA\n');
     writeFileSync(join(root, 'solution', 'solve.sh'), '#!/bin/bash\ntrue\n');
     writeFileSync(join(root, 'src', 'index.ts'), 'export const ok = true;\n');
@@ -302,7 +303,9 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('Benchmark Harness Artifacts');
     expect(result.output).toContain('Benchmark Harness Hints');
     expect(result.output).toContain('Terminal-Bench layout detected');
+    expect(result.output).toContain('TerminalWorld layout detected');
     expect(result.output).toContain('Harbor task layout detected');
+    expect(result.output).toContain('solve.sh');
     expect(result.output).toContain('solution artifact detected');
     expect(result.output).toContain('Environment Reconstruction Plan');
     expect(result.output).toContain('setup: pnpm install --frozen-lockfile');

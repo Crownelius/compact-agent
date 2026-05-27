@@ -32,6 +32,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('swe')).toBe('swe-bench');
     expect(normalizeBenchmarkProfile('swebench')).toBe('swe-bench');
     expect(normalizeBenchmarkProfile('tbench')).toBe('terminal-bench');
+    expect(normalizeBenchmarkProfile('terminalworld')).toBe('terminalworld');
+    expect(normalizeBenchmarkProfile('terminal-world')).toBe('terminalworld');
+    expect(normalizeBenchmarkProfile('tw')).toBe('terminalworld');
     expect(normalizeBenchmarkProfile('contextbench')).toBe('swe-context');
     expect(normalizeBenchmarkProfile('swechain')).toBe('swe-chain');
     expect(normalizeBenchmarkProfile('swe-cycle')).toBe('swe-cycle');
@@ -74,6 +77,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('terminal-bench train a model')).toEqual({
       profile: 'terminal-bench',
       task: 'train a model',
+    });
+    expect(splitBenchmarkArgs('terminalworld create /app/result.txt')).toEqual({
+      profile: 'terminalworld',
+      task: 'create /app/result.txt',
     });
     expect(splitBenchmarkArgs('swe-chain upgrade package graph')).toEqual({
       profile: 'swe-chain',
@@ -182,6 +189,15 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('task verifier passing');
     expect(prompt).toContain('oracle/reference solution');
     expect(prompt).toContain('test script');
+  });
+
+  it('builds TerminalWorld prompts around artifact-oriented terminal workflows', () => {
+    const prompt = buildBenchmarkPrompt('complete tw_100135 and write /app/result.txt', '/workspace', 'terminalworld');
+    expect(prompt).toContain('TerminalWorld style in-the-wild terminal workflow');
+    expect(prompt).toContain('outcome-oriented instruction');
+    expect(prompt).toContain('solve.sh');
+    expect(prompt).toContain('persistent artifacts');
+    expect(prompt).toContain('/app');
   });
 
   it('builds context prompts that use memory as verified hypotheses', () => {

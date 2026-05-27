@@ -1872,12 +1872,12 @@ export function handleSlashCommand(
     case '/bench':
     case '/leaderboard': {
       if (!args) {
-        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|swe-chain|swe-cycle|swe-ci|swe-prbench|tml-bench|pi-bench|ci-repair|wildclaw|arc-agi|specbench|reward-hacking|roadmapbench|saasbench|swe-bench-mobile|appworld|browsecomp|tau2|generic] <task>'));
+        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|terminalworld|swe-context|swe-chain|swe-cycle|swe-ci|swe-prbench|tml-bench|pi-bench|ci-repair|wildclaw|arc-agi|specbench|reward-hacking|roadmapbench|saasbench|swe-bench-mobile|appworld|browsecomp|tau2|generic] <task>'));
         return { handled: true };
       }
       const { profile, task } = splitBenchmarkArgs(args);
       if (!task) {
-        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|swe-chain|swe-cycle|swe-ci|swe-prbench|tml-bench|pi-bench|ci-repair|wildclaw|arc-agi|specbench|reward-hacking|roadmapbench|saasbench|swe-bench-mobile|appworld|browsecomp|tau2|generic] <task>'));
+        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|terminalworld|swe-context|swe-chain|swe-cycle|swe-ci|swe-prbench|tml-bench|pi-bench|ci-repair|wildclaw|arc-agi|specbench|reward-hacking|roadmapbench|saasbench|swe-bench-mobile|appworld|browsecomp|tau2|generic] <task>'));
         return { handled: true };
       }
       mode.current = 'benchmark';

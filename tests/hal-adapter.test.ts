@@ -40,6 +40,7 @@ describe('HAL adapter packaging', () => {
     expect(adapter).toContain('return "appworld"');
     expect(adapter).toContain('return "browsecomp"');
     expect(adapter).toContain('return "tau2"');
+    expect(adapter).toContain('return "terminalworld"');
   });
 
   it('prints the packaged HAL agent directory from the CLI wrapper', () => {

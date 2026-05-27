@@ -15,7 +15,8 @@ The runner reads the KBench JSON payload from `KBENCH_ADAPTER_INPUT` or stdin,
 invokes `ventipus --prompt "/benchmark ..."` in task mode, and emits one
 `AdapterRunnerOutput` JSON object to stdout.
 Known KBench slugs are mapped to benchmark profiles before dispatch:
-`swe`/`swe-bench`, `tb2`/`terminal-bench`, `swe-chain`,
+`swe`/`swe-bench`, `tb2`/`terminal-bench`, `terminalworld`/`terminal-world`,
+`swe-chain`,
 `swe-cycle`/`fullcycle`/`swe-judge`, `swe-ci`/`swecibench`, `swe-prbench`/`prbench`/`pr-review`, `tml-bench`/`tabular-ml`/`kaggle-ml`, `pi-bench`/`proactive-assistant`, `ci-repair`/`ci-repair-bench`, `roadmapbench`, `saasbench`,
 `swe-bench-mobile`, `webdevbench`/`swe-webdev-bench`, `appworld`, `browsecomp`/`browsecompplus`, and
 `tau2`/`tau-bench` use specialized prompts; unknown slugs use

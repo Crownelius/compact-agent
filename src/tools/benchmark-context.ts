@@ -70,7 +70,7 @@ const MANIFEST_NAMES = new Set([
 ]);
 
 const INSTRUCTION_RE = /(^|\/)(readme|task|tasks|instruction|instructions|problem|prompt)(\.[a-z0-9]+)?$/i;
-const CAREFUL_RE = /(^|\/)(oracle|gold|answer|answers|reference|references|hidden|expected|result|results|submission|submissions|patch|solution)([-_.a-z0-9]*)(\/|\.|$)/i;
+const CAREFUL_RE = /(^|\/)(oracle|gold|answer|answers|reference|references|hidden|expected|result|results|submission|submissions|patch|solution|solve\.(?:sh|bash|bat))([-_.a-z0-9]*)(\/|\.|$)/i;
 const TASK_CONTRACT_HEADING_RE = /^\s{0,3}(?:#{1,6}\s*)?(acceptance criteria|requirements?|success criteria|expected behavior|expected output|deliverables?|constraints?|must have|must-have|definition of done)\s*:?\s*$/i;
 const TASK_CONTRACT_LINE_RE = /^\s*(?:[-*]\s+|\d+[.)]\s+|\[[ xX-]\]\s*)?(must|must not|should|should not|need(?:s)? to|expected to|ensure|verify|deliver|create|update|fix|implement|allow|preserve|provide(?:s)?|show(?:s)?|include(?:s)?|write(?:s)?|save(?:s)?|output(?:s)?|do not|don't|no\s+(?:code\s+)?changes?|no\s+modifications?|no\s+patch|already\s+(?:fixed|resolved)|issue\s+(?:is\s+)?(?:already\s+)?(?:fixed|resolved)|requirement|acceptance|success)\b/i;
 const TASK_CONTRACT_KEY_RE = /^\s*(acceptance_criteria|acceptanceCriteria|requirements?|success_criteria|successCriteria|expected_output|expectedOutput|deliverables?|constraints?)\s*[:=]\s*(.*)$/i;
@@ -2159,6 +2159,7 @@ function findBenchmarkHarnessFiles(files: string[]): string[] {
       'task.yml',
       'task.toml',
       'instruction.md',
+      'solve.sh',
       'run-tests.sh',
       'run_test.sh',
       'run-tests.bash',
@@ -2188,12 +2189,24 @@ function summarizeBenchmarkHarnessHints(files: string[], verifierCommands: strin
   const hasHarborTask =
     set.has('task.toml') &&
     (set.has('instruction.md') || normalized.some((file) => file.startsWith('tests/')));
+  const hasTerminalWorldTask =
+    set.has('instruction.md') &&
+    set.has('solve.sh') &&
+    (set.has('Dockerfile') ||
+      set.has('docker-compose.yml') ||
+      set.has('docker-compose.yaml') ||
+      set.has('compose.yml') ||
+      set.has('compose.yaml') ||
+      normalized.some((file) => file.startsWith('tests/')));
 
   if (hasTerminalBenchTask) {
     add('Terminal-Bench layout detected: task.yaml plus run-tests.sh/tests; prefer the visible run-tests verifier before broad harness claims.');
   }
   if (hasHarborTask) {
     add('Harbor task layout detected: task.toml plus instruction/tests; tests/test.sh is the local verifier when present.');
+  }
+  if (hasTerminalWorldTask) {
+    add('TerminalWorld layout detected: instruction.md plus solve.sh and Docker/tests artifacts; treat instruction.md as the task contract, solve.sh as oracle-only, and verify persistent /app artifacts or services.');
   }
   if (set.has('run-tests.sh')) {
     add('first local verifier candidate: bash run-tests.sh');
@@ -2204,7 +2217,7 @@ function summarizeBenchmarkHarnessHints(files: string[], verifierCommands: strin
   if (set.has('tests/test_outputs.py')) {
     add('Terminal-Bench pytest target detected: tests/test_outputs.py; do not edit test/oracle files unless the task explicitly asks.');
   }
-  if (normalized.some((file) => /(^|\/)(solution\.sh|solution\.yaml|solution\/solve\.(sh|bat))$/i.test(file))) {
+  if (normalized.some((file) => /(^|\/)(solution\.sh|solution\.yaml|solution\/solve\.(sh|bat)|solve\.(sh|bash|bat))$/i.test(file))) {
     add('solution artifact detected: treat as oracle-only material and avoid reading it during benchmark solving unless explicitly permitted.');
   }
   if (normalized.some((file) => /(^|\/)(Dockerfile|docker-compose\.ya?ml|compose\.ya?ml|environment\/Dockerfile)$/i.test(file))) {

@@ -39,6 +39,7 @@ describe('KBench adapter packaging', () => {
     expect(runner).toContain("'swe-chain'");
     expect(runner).toContain("'swe-cycle'");
     expect(runner).toContain("'swe-ci'");
+    expect(runner).toContain("'terminalworld'");
     expect(runner).toContain("'swe-prbench'");
     expect(runner).toContain("'tml-bench'");
     expect(runner).toContain("'pi-bench'");
