@@ -252,6 +252,16 @@ function compactTraceSummary(traceSummary) {
       longHorizonRisk: quality.longHorizonRisk,
       longHorizonSignalCount: quality.longHorizonSignalCount,
       longHorizonSignals: Array.isArray(quality.longHorizonSignals) ? quality.longHorizonSignals.slice(0, 20) : [],
+      proactivityDetected: quality.proactivityDetected,
+      proactivityRisk: quality.proactivityRisk,
+      proactivitySignalCount: quality.proactivitySignalCount,
+      proactivitySignals: Array.isArray(quality.proactivitySignals) ? quality.proactivitySignals.slice(0, 20) : [],
+      proactivityContextContract: quality.proactivityContextContract,
+      proactivityHiddenIntentEvidence: quality.proactivityHiddenIntentEvidence,
+      proactivityClarificationEvidence: quality.proactivityClarificationEvidence,
+      proactivityPrivacyEvidence: quality.proactivityPrivacyEvidence,
+      proactivityCompletionEvidence: quality.proactivityCompletionEvidence,
+      proactivityActionCount: quality.proactivityActionCount,
       noEditContractDetected: quality.noEditContractDetected,
       editAfterNoEditContract: quality.editAfterNoEditContract,
       lastEditSeq: quality.lastEditSeq,
@@ -407,6 +417,7 @@ function compactExperienceCard(card) {
     specCompliance: compactRiskSignalBlock(card.specCompliance),
     rewardHack: compactRiskSignalBlock(card.rewardHack),
     longHorizon: compactRiskSignalBlock(card.longHorizon),
+    proactivity: compactProactivity(card.proactivity),
     environmentReconstruction: compactEnvironmentReconstruction(card.environmentReconstruction),
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     decisionObservability: compactDecisionObservability(card.decisionObservability),
@@ -425,6 +436,22 @@ function compactRiskSignalBlock(block) {
     risk: block.risk,
     signalCount: block.signalCount,
     signals: Array.isArray(block.signals) ? block.signals.slice(0, 20) : [],
+  };
+}
+
+function compactProactivity(proactivity) {
+  if (!proactivity || typeof proactivity !== 'object' || Array.isArray(proactivity)) return undefined;
+  return {
+    detected: proactivity.detected,
+    risk: proactivity.risk,
+    signalCount: proactivity.signalCount,
+    signals: Array.isArray(proactivity.signals) ? proactivity.signals.slice(0, 20) : [],
+    contextContract: proactivity.contextContract,
+    hiddenIntentEvidence: proactivity.hiddenIntentEvidence,
+    clarificationEvidence: proactivity.clarificationEvidence,
+    privacyEvidence: proactivity.privacyEvidence,
+    completionEvidence: proactivity.completionEvidence,
+    actionCount: proactivity.actionCount,
   };
 }
 

@@ -18,6 +18,7 @@ import {
   buildBenchmarkLeakageRiskEvents,
   buildBenchmarkLongHorizonSignals,
   buildBenchmarkPostSuccessMutationEvents,
+  buildBenchmarkProactivitySignals,
   buildBenchmarkRewardHackSignals,
   buildBenchmarkRedundantVerifierEvents,
   buildBenchmarkRedundantToolCallEvents,
@@ -778,6 +779,140 @@ describe('benchmark trace artifacts', () => {
     expect(summary.experienceCard.runEfficiency.processDefectCount).toBe(summary.trajectoryQuality.processDefects.length);
     expect(summary.experienceCard.runEfficiency.warningCount).toBe(summary.trajectoryQuality.warnings.length);
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
+  });
+
+  it('records Pi-Bench proactivity ledger evidence without penalizing grounded proactive runs', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: { path: 'C:/repo' },
+        output: [
+          'Pi-Bench proactive personal assistant episode.',
+          'User profile: marketer persona.',
+          'Message history: prior launch conversation.',
+          'Workspace files: campaign brief and budget sheet.',
+          'Application state: current app cart and draft email state.',
+          'Domain tools: calendar, email, shopping, and file tools.',
+          'Preferences: avoid irreversible purchases without confirmation.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'app_action',
+        input: { action: 'draft_email', id: 'draft-1' },
+        output: 'Observable state after action confirmed: draft_email id=draft-1 saved.',
+        isError: false,
+        elapsedMs: 20,
+      }),
+    ];
+    const messages: Message[] = [
+      {
+        role: 'user',
+        content: '/benchmark pi-bench help with the underspecified personal assistant request',
+      },
+      {
+        role: 'assistant',
+        content: [
+          'Hidden-intent hypothesis: the user needs the launch draft to respect the existing budget constraint.',
+          'Clarification decision: enough context to draft only; ask before sending.',
+          'Privacy risk: low-risk reversible draft action, no sensitive data exposed.',
+          'Completion evidence: observable state confirms the draft artifact exists.',
+        ].join('\n'),
+      },
+    ];
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-pibench-ledger',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages,
+      events,
+    });
+
+    expect(buildBenchmarkProactivitySignals(events, { messages })).toEqual([]);
+    expect(summary.trajectoryQuality).toMatchObject({
+      proactivityDetected: true,
+      proactivityRisk: false,
+      proactivitySignalCount: 0,
+      proactivityHiddenIntentEvidence: true,
+      proactivityClarificationEvidence: true,
+      proactivityPrivacyEvidence: true,
+      proactivityCompletionEvidence: true,
+      proactivityActionCount: 1,
+    });
+    expect(summary.experienceCard.proactivity).toMatchObject({
+      detected: true,
+      risk: false,
+      signalCount: 0,
+      contextContract: {
+        profile: true,
+        history: true,
+        files: true,
+        appState: true,
+        tools: true,
+        preferences: true,
+        coverageCount: 6,
+      },
+      hiddenIntentEvidence: true,
+      clarificationEvidence: true,
+      privacyEvidence: true,
+      completionEvidence: true,
+      actionCount: 1,
+    });
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('proactivity_risk=no');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('Proactivity ledger: detected=yes, context=6/6');
+  });
+
+  it('flags under-evidenced Pi-Bench proactivity before finalizing', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Pi-Bench proactive personal assistant task. User profile: financier.',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'app_action',
+        input: { action: 'send_message' },
+        output: 'message sent',
+        isError: false,
+        elapsedMs: 20,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'user',
+      content: '/benchmark pi-bench resolve hidden intent from the user profile and app context',
+    }];
+
+    const quality = buildBenchmarkTrajectoryQuality(events, buildBenchmarkUsageSummary([]), messages);
+
+    expect(quality.proactivityDetected).toBe(true);
+    expect(quality.proactivitySignalCount).toBe(5);
+    expect(quality.proactivitySignals.map((signal) => signal.reason)).toEqual([
+      'missing_pibench_context_contract',
+      'missing_hidden_intent_hypothesis',
+      'missing_clarification_decision',
+      'missing_privacy_review',
+      'missing_observable_completion_evidence',
+    ]);
+    expect(quality.processDefects).toEqual([
+      expect.objectContaining({
+        code: 'pibench_proactivity_ledger_risk',
+        category: 'requirement_fidelity',
+        severity: 'high',
+      }),
+    ]);
+    expect(quality.warnings.join('\n')).toContain('Pi-Bench proactivity risk');
+    expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('Pi-Bench proactivity risk');
   });
 
   it('flags AHE regression-foresight gaps in otherwise predicted edits', () => {

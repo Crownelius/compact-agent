@@ -42,6 +42,8 @@ describe('KBench adapter packaging', () => {
     expect(runner).toContain("'swe-prbench'");
     expect(runner).toContain("'tml-bench'");
     expect(runner).toContain("'pi-bench'");
+    expect(runner).toContain('compactProactivity');
+    expect(runner).toContain('proactivitySignalCount');
     expect(runner).toContain("'ci-repair'");
     expect(runner).toContain("'wildclaw'");
     expect(runner).toContain("'arc-agi'");
