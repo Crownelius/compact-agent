@@ -1092,7 +1092,26 @@ function summarizePriorContextUtilization(
   const rawMissEvents = Array.isArray(context.missEvents)
     ? context.missEvents
     : (Array.isArray(quality.contextUtilizationMissEvents) ? quality.contextUtilizationMissEvents : []);
-  if ((inspectCount ?? 0) <= 0 && (hitCount ?? 0) <= 0 && (missCount ?? 0) <= 0 && risk !== true) return null;
+  const preEditInspectCount = finiteNumber(context.preEditInspectCount)
+    ?? finiteNumber(quality.preEditContextInspectCount);
+  const preEditHitCount = finiteNumber(context.preEditHitCount)
+    ?? finiteNumber(quality.preEditContextHitCount);
+  const preEditMissCount = finiteNumber(context.preEditMissCount)
+    ?? finiteNumber(quality.preEditContextMissCount);
+  const preEditPercent = finiteNumber(context.preEditUtilizationPercent)
+    ?? finiteNumber(quality.preEditContextUtilizationPercent);
+  const preEditBloatRisk = typeof context.preEditBloatRisk === 'boolean'
+    ? context.preEditBloatRisk
+    : (typeof quality.contextBloatRisk === 'boolean' ? quality.contextBloatRisk : undefined);
+  const rawPreEditBloatEvents = Array.isArray(context.preEditBloatEvents)
+    ? context.preEditBloatEvents
+    : (Array.isArray(quality.contextBloatEvents) ? quality.contextBloatEvents : []);
+  if ((inspectCount ?? 0) <= 0
+    && (hitCount ?? 0) <= 0
+    && (missCount ?? 0) <= 0
+    && risk !== true
+    && (preEditInspectCount ?? 0) <= 0
+    && preEditBloatRisk !== true) return null;
 
   const misses = rawMissEvents
     .slice(0, 2)
@@ -1105,6 +1124,17 @@ function summarizePriorContextUtilization(
       return [`${tool}#${seq ?? '?'} ${target}`];
     })
     .map((miss) => truncateContractSignal(redactTraceText(miss), 160));
+  const bloat = rawPreEditBloatEvents
+    .slice(0, 2)
+    .flatMap((raw) => {
+      const event = objectRecord(raw);
+      const seq = finiteNumber(event.seq);
+      const tool = typeof event.tool === 'string' ? event.tool.trim() : 'inspect';
+      const target = typeof event.target === 'string' ? event.target.trim() : '';
+      if (!target) return [];
+      return [`${tool}#${seq ?? '?'} ${target}`];
+    })
+    .map((event) => truncateContractSignal(redactTraceText(event), 160));
 
   return [
     `context=inspects:${inspectCount ?? 0}`,
@@ -1113,6 +1143,10 @@ function summarizePriorContextUtilization(
     percent == null ? null : `utilization:${percent.toFixed(2)}%`,
     risk === undefined ? null : `risk:${String(risk)}`,
     misses.length ? `unused:${misses.join(' | ')}` : null,
+    preEditInspectCount == null ? null : `pre_edit:${preEditHitCount ?? 0}/${preEditInspectCount}`,
+    preEditPercent == null ? null : `pre_edit_utilization:${preEditPercent.toFixed(2)}%`,
+    preEditBloatRisk === undefined ? null : `pre_edit_bloat:${String(preEditBloatRisk)}`,
+    bloat.length ? `pre_edit_unused:${bloat.join(' | ')}` : null,
   ].filter(Boolean).join(',');
 }
 

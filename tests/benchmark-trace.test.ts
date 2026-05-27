@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildBenchmarkCompletionReminder,
   buildBenchmarkBlindRepairEvents,
+  buildBenchmarkContextBloatEvents,
   buildBenchmarkDependencyEditEvents,
   buildBenchmarkEnvironmentSetupEvents,
   buildBenchmarkEnvironmentSetupFailureEvents,
@@ -246,6 +247,13 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.contextUtilizationPercent).toBeNull();
     expect(summary.trajectoryQuality.contextUtilizationRisk).toBe(false);
     expect(summary.trajectoryQuality.contextUtilizationMissEvents).toEqual([]);
+    expect(summary.trajectoryQuality.preEditContextInspectCount).toBe(0);
+    expect(summary.trajectoryQuality.preEditContextHitCount).toBe(0);
+    expect(summary.trajectoryQuality.preEditContextMissCount).toBe(0);
+    expect(summary.trajectoryQuality.preEditContextUtilizationPercent).toBeNull();
+    expect(summary.trajectoryQuality.contextBloatRisk).toBe(false);
+    expect(summary.trajectoryQuality.contextBloatEventCount).toBe(0);
+    expect(summary.trajectoryQuality.contextBloatEvents).toEqual([]);
     expect(summary.trajectoryQuality.evidenceGroundingRisk).toBe(false);
     expect(summary.trajectoryQuality.evidenceGroundingEventCount).toBe(0);
     expect(summary.trajectoryQuality.evidenceGroundingEvents).toEqual([]);
@@ -4333,6 +4341,100 @@ describe('benchmark trace artifacts', () => {
     ];
 
     expect(buildBenchmarkEvidenceGroundingEvents(events)).toEqual([]);
+  });
+
+  it('flags broad pre-edit context gathering that is mostly unused by the eventual patch', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix app value rendering',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      ...[
+        ['read_file', { file_path: 'README.md' }, 'project overview'],
+        ['list_dir', { path: 'docs' }, 'docs/setup.md\ndocs/api.md'],
+        ['grep', { pattern: 'config', path: 'src' }, 'src/config.ts:1: config'],
+        ['read_file', { file_path: 'src/unrelated-a.ts' }, 'export const a = 1;'],
+        ['read_file', { file_path: 'src/unrelated-b.ts' }, 'export const b = 1;'],
+        ['list_dir', { path: 'examples' }, 'examples/demo.ts'],
+        ['glob', { pattern: '**/*.md' }, 'README.md\ndocs/setup.md'],
+        ['read_file', { file_path: 'docs/setup.md' }, 'setup details'],
+        ['grep', { pattern: 'render', path: 'tests' }, 'tests/app.test.ts:1: render'],
+        ['read_file', { file_path: 'src/app.ts' }, 'export const value = 1;'],
+        ['grep', { pattern: 'value', path: 'src/app.ts' }, 'src/app.ts:1: value'],
+      ].map(([tool, input, output], i) => makeBenchmarkTraceEvent({
+        seq: i + 2,
+        tool: String(tool),
+        input: input as Record<string, unknown>,
+        output: String(output),
+        isError: false,
+        elapsedMs: 1,
+      })),
+      makeBenchmarkTraceEvent({
+        seq: 13,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 14,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'value = 1', new_string: 'value = 2' },
+        output: 'Updated src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 15,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 16,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 17,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ].flat();
+
+    const bloat = buildBenchmarkContextBloatEvents(events);
+    expect(bloat).toHaveLength(9);
+    expect(bloat[0]).toMatchObject({
+      seq: 2,
+      tool: 'read_file',
+      target: 'README.md',
+      reason: expect.stringContaining('pre-edit'),
+    });
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.preEditContextInspectCount).toBe(11);
+    expect(quality.preEditContextHitCount).toBe(2);
+    expect(quality.preEditContextMissCount).toBe(9);
+    expect(quality.preEditContextUtilizationPercent).toBe(18.18);
+    expect(quality.contextBloatRisk).toBe(true);
+    expect(quality.contextBloatEventCount).toBe(9);
+    expect(quality.warnings.join('\n')).toContain('pre-edit context bloat');
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('pre_edit_context_bloat');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('pre_edit_context=2/11 pre_edit_context_bloat=9');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('tighten pre-edit context');
   });
 
   it('flags large source edit surfaces without a broad-change task contract', () => {
