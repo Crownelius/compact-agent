@@ -30,6 +30,7 @@ telemetry, cost-efficiency risk, invalid tool-action telemetry, task-contract ch
 task-alignment risk signals, spec-compliance risk signals, reward-hack risk signals, long-horizon coverage risk signals, Pi-Bench proactivity ledger signals, incomplete/inconclusive verifier markers,
 environment setup/reconstruction signals for missing dependencies, toolchains,
 or build artifacts, dependency manifest/lockfile setup-validation signals,
+HarnessAudit-style harness-safety signals for protected-resource access, external information transfer, destructive operations, and oracle access,
 skill-view fit/timing signals, per-target edit localization signals, large edit-surface
 signals, scratch/probe artifact signals, redundant tool-call signals,
 redundant failing-verifier rerun signals, blind-repair signals, post-edit regression-cycle signals,
@@ -43,7 +44,7 @@ and trajectory-quality fields are copied to
 also aliases the native usage block for cost-aware leaderboards. Native verifier
 trace previews preserve both head and tail output so final test summaries survive
 noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
-task-alignment/spec-compliance/reward-hack/long-horizon/proactivity risk blocks, component-observability edit classification for AHE-style surface attribution, including SWE-WebDevBench canary/frontend-backend/security validation signals, SWE-Cycle lifecycle/setup/test-generation/judge validation signals, SWE-CI evolution/checklist/CI-loop validation signals, and Pi-Bench context-contract/hidden-intent/clarification/privacy/completion evidence, decision-observability predictions for edits and validation-reliability evidence
+task-alignment/spec-compliance/reward-hack/harness-safety/long-horizon/proactivity risk blocks, component-observability edit classification for AHE-style surface attribution, including SWE-WebDevBench canary/frontend-backend/security validation signals, SWE-Cycle lifecycle/setup/test-generation/judge validation signals, SWE-CI evolution/checklist/CI-loop validation signals, and Pi-Bench context-contract/hidden-intent/clarification/privacy/completion evidence, decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
 context-utilization precision/miss evidence for retrieval-aware scoring and
 run-efficiency action/usage/cost/time evidence for cost-aware scoring. Prior
