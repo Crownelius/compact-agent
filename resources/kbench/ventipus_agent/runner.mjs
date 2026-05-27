@@ -272,10 +272,24 @@ function compactExperienceCard(card) {
     failureSignatures: Array.isArray(card.failureSignatures) ? card.failureSignatures.slice(0, 10) : [],
     sourceResearchCoverage: card.sourceResearchCoverage,
     taskContract: card.taskContract,
+    environmentReconstruction: compactEnvironmentReconstruction(card.environmentReconstruction),
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     verificationCommands: Array.isArray(card.verificationCommands) ? card.verificationCommands.slice(0, 20) : [],
     changedFiles: Array.isArray(card.changedFiles) ? card.changedFiles.slice(0, 100) : [],
     warnings: Array.isArray(card.warnings) ? card.warnings.slice(0, 20) : [],
+  };
+}
+
+function compactEnvironmentReconstruction(environmentReconstruction) {
+  if (!environmentReconstruction || typeof environmentReconstruction !== 'object' || Array.isArray(environmentReconstruction)) return undefined;
+  return {
+    setupFailureCount: environmentReconstruction.setupFailureCount,
+    unresolvedSetupFailureCount: environmentReconstruction.unresolvedSetupFailureCount,
+    setupCount: environmentReconstruction.setupCount,
+    successfulSetupCount: environmentReconstruction.successfulSetupCount,
+    setupEvents: Array.isArray(environmentReconstruction.setupEvents) ? environmentReconstruction.setupEvents.slice(0, 12) : [],
+    setupFailures: Array.isArray(environmentReconstruction.setupFailures) ? environmentReconstruction.setupFailures.slice(0, 12) : [],
+    unresolvedSetupFailures: Array.isArray(environmentReconstruction.unresolvedSetupFailures) ? environmentReconstruction.unresolvedSetupFailures.slice(0, 12) : [],
   };
 }
 

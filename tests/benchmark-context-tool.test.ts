@@ -299,6 +299,16 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('Terminal-Bench layout detected');
     expect(result.output).toContain('Harbor task layout detected');
     expect(result.output).toContain('solution artifact detected');
+    expect(result.output).toContain('Environment Reconstruction Plan');
+    expect(result.output).toContain('setup: pnpm install --frozen-lockfile');
+    expect(result.output).toContain('setup: uv sync');
+    expect(result.output).toContain('setup: go mod download');
+    expect(result.output).toContain('setup: ./mvnw dependency:go-offline');
+    expect(result.output).toContain('setup: ./gradlew dependencies');
+    expect(result.output).toContain('setup: dotnet restore');
+    expect(result.output).toContain('setup: docker compose config');
+    expect(result.output).toContain('ci setup: mirror workflow setup/env/service/container hints before relying on CI-only verifier failures.');
+    expect(result.output).toContain('Use these setup/restore commands before interpreting missing dependency');
     expect(result.output).toContain('Runtime Environment Hints');
     expect(result.output).toContain('uv project detected');
     expect(result.output).toContain('Go module detected');
@@ -417,6 +427,25 @@ describe('benchmark_context tool', () => {
           incompleteCount: 0,
           incompleteItems: [],
         },
+        environmentReconstruction: {
+          setupFailureCount: 1,
+          unresolvedSetupFailureCount: 0,
+          setupCount: 1,
+          successfulSetupCount: 1,
+          setupEvents: [{
+            seq: 4,
+            command: 'npm ci',
+            status: 'ok',
+            kind: 'node package install',
+          }],
+          setupFailures: [{
+            seq: 3,
+            command: 'npm test',
+            reason: 'javascript dependency or build artifact missing',
+            evidence: "Error: Cannot find module 'vitest'",
+          }],
+          unresolvedSetupFailures: [],
+        },
         dependencyUpgrade: {
           manifestEditCount: 1,
           lockfileEditCount: 1,
@@ -455,6 +484,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('failures=npm test tests=billing totals render with fixed decimals files=src/app.ts errors=AssertionError: expected 12.3 to equal 12.30');
     expect(result.output).toContain('contract_overlap=TASK.md: Must show billing totals with two decimal places.');
     expect(result.output).toContain('contract=signals:2,checklist_after_context:true,complete:true');
+    expect(result.output).toContain('environment=setup_failures:1,unresolved:0,setup:1,setup_ok:1,commands:npm ci,failures:javascript dependency or build artifact missing');
     expect(result.output).toContain('dependency=manifests:1,lockfiles:1,setup:true,setup_ok:true,validation:true,validation_ok:true,targets:node:package.json|node:package-lock.json');
   });
 

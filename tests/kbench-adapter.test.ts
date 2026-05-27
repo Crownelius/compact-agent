@@ -71,7 +71,7 @@ describe('KBench adapter packaging', () => {
       '    verificationEvidence: { lastVerificationSeq: 7, lastVerificationStatus: "ok", extracted: [{ framework: "vitest", passed: 3, total: 3 }] },',
       '    finalAnswerEvidence: { mentionsVerification: true, claimsPassingVerification: true, claimsNoVerificationRun: false, claimsIncomplete: false, claimsBlocked: false, finalAnswerCompletion: "unknown", unsupportedPassingClaim: false, contradictedPassingClaim: false, staleNoVerificationClaim: false, latestVerificationStatus: "ok", lastSuccessfulVerificationSeq: 7, verificationCount: 1, warnings: [] },',
       '    usage: { callCount: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0, byModel: [{ model: "openrouter/free", calls: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0 }] },',
-      '    experienceCard: { version: 1, replayCheckpoints: [{ seq: 1, tool: "read_file", target: "fixture.txt", reason: "file_context", score: 11 }, { seq: 3, tool: "bash", target: "npm test", reason: "failing_verifier", score: 12 }], failureSignatures: [{ seq: 3, command: "npm test", framework: "vitest", tests: ["fixture regression"], files: ["fixture.txt"], errors: ["AssertionError: expected before to equal after"], raw: "fixture mismatch" }], sourceResearchCoverage: { callCount: 1, sourceHitCount: 4, sourceErrorCount: 0, arxiv: true, github: true, huggingface: true, kaggle: true, freshTargetedCoverage: true, completeTargetedCoverage: true }, taskContract: { signalCount: 2, checklistAfterContext: true, checklistComplete: true, incompleteCount: 0 }, dependencyUpgrade: { manifestEditCount: 1, lockfileEditCount: 1, manifestEdits: [{ seq: 5, tool: "apply_patch", target: "package.json", ecosystem: "node", kind: "manifest" }], lockfileEdits: [{ seq: 5, tool: "apply_patch", target: "package-lock.json", ecosystem: "node", kind: "lockfile" }], setupAfterManifestEdit: true, passingSetupAfterManifestEdit: true, validationAfterManifestEdit: true, passingValidationAfterManifestEdit: true, firstSetupAfterManifestEditSeq: 6, firstValidationAfterManifestEditSeq: 7 }, verificationCommands: ["npm test"], changedFiles: ["fixture.txt", "new-file.txt"], warnings: [] },',
+      '    experienceCard: { version: 1, replayCheckpoints: [{ seq: 1, tool: "read_file", target: "fixture.txt", reason: "file_context", score: 11 }, { seq: 3, tool: "bash", target: "npm test", reason: "failing_verifier", score: 12 }], failureSignatures: [{ seq: 3, command: "npm test", framework: "vitest", tests: ["fixture regression"], files: ["fixture.txt"], errors: ["AssertionError: expected before to equal after"], raw: "fixture mismatch" }], sourceResearchCoverage: { callCount: 1, sourceHitCount: 4, sourceErrorCount: 0, arxiv: true, github: true, huggingface: true, kaggle: true, freshTargetedCoverage: true, completeTargetedCoverage: true }, taskContract: { signalCount: 2, checklistAfterContext: true, checklistComplete: true, incompleteCount: 0 }, environmentReconstruction: { setupFailureCount: 1, unresolvedSetupFailureCount: 0, setupCount: 1, successfulSetupCount: 1, setupEvents: [{ seq: 4, command: "npm ci", status: "ok", kind: "node package install" }], setupFailures: [{ seq: 3, command: "npm test", reason: "javascript dependency or build artifact missing", evidence: "Error: Cannot find module vitest" }], unresolvedSetupFailures: [] }, dependencyUpgrade: { manifestEditCount: 1, lockfileEditCount: 1, manifestEdits: [{ seq: 5, tool: "apply_patch", target: "package.json", ecosystem: "node", kind: "manifest" }], lockfileEdits: [{ seq: 5, tool: "apply_patch", target: "package-lock.json", ecosystem: "node", kind: "lockfile" }], setupAfterManifestEdit: true, passingSetupAfterManifestEdit: true, validationAfterManifestEdit: true, passingValidationAfterManifestEdit: true, firstSetupAfterManifestEditSeq: 6, firstValidationAfterManifestEditSeq: 7 }, verificationCommands: ["npm test"], changedFiles: ["fixture.txt", "new-file.txt"], warnings: [] },',
       '    changedFiles: ["fixture.txt"],',
       '    worktreeChangedFiles: ["fixture.txt", "new-file.txt"],',
       '    artifacts: [{ kind: "patch", path: "worktree.patch", contentType: "text/x-diff", description: "patch" }],',
@@ -162,6 +162,18 @@ describe('KBench adapter packaging', () => {
         callCount: 1,
         sourceHitCount: 4,
         freshTargetedCoverage: true,
+      },
+      environmentReconstruction: {
+        setupFailureCount: 1,
+        unresolvedSetupFailureCount: 0,
+        setupCount: 1,
+        successfulSetupCount: 1,
+        setupEvents: [{
+          seq: 4,
+          command: 'npm ci',
+          status: 'ok',
+          kind: 'node package install',
+        }],
       },
       dependencyUpgrade: {
         manifestEditCount: 1,

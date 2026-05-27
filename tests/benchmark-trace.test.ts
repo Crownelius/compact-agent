@@ -2530,6 +2530,36 @@ describe('benchmark trace artifacts', () => {
     expect(quality.processDefects).toEqual([]);
     expect(quality.warnings.join('\n')).not.toContain('unprepared environment');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('env_setup_failures=1 unresolved_env=0 env_setup=1 env_setup_ok=1');
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-environment-reconstruction',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages: [],
+      events,
+    });
+    expect(summary.experienceCard.environmentReconstruction).toMatchObject({
+      setupFailureCount: 1,
+      unresolvedSetupFailureCount: 0,
+      setupCount: 1,
+      successfulSetupCount: 1,
+      setupEvents: [{
+        seq: 4,
+        command: 'npm ci',
+        status: 'ok',
+        kind: 'node package install',
+      }],
+      setupFailures: [{
+        seq: 3,
+        command: 'npm test',
+        reason: 'javascript dependency or build artifact missing',
+        evidence: "Error: Cannot find module 'vitest'",
+      }],
+      unresolvedSetupFailures: [],
+    });
   });
 
   it('tracks dependency manifest edits that lack install or lockfile setup evidence', () => {

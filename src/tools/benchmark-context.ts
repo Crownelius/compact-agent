@@ -153,6 +153,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const ciHints = summarizeCiWorkflowHints(root, sortedFiles);
     const extensions = summarizeExtensions(sortedFiles);
     const runtime = summarizeRuntimeEnvironment(root, sortedFiles, manifests);
+    const environmentPlan = summarizeEnvironmentReconstructionPlan(manifests, ciHints);
     const serviceHints = summarizeServiceHints(sortedFiles, scripts);
     const harnessFiles = findBenchmarkHarnessFiles(sortedFiles);
     const harnessHints = summarizeBenchmarkHarnessHints(sortedFiles, verifierCommands);
@@ -233,6 +234,14 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '## Tool Availability',
       formatList(toolHints, 30),
       '',
+      '## Environment Reconstruction Plan',
+      environmentPlan.length
+        ? formatList(environmentPlan, 30)
+        : '(no project-native setup commands inferred)',
+      environmentPlan.length
+        ? 'Use these setup/restore commands before interpreting missing dependency, toolchain, generated artifact, or CI-only verifier failures as code failures.'
+        : '',
+      '',
       '## Runtime Environment Hints',
       formatList(runtime, 30),
       '',
@@ -280,11 +289,12 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '3. Restate the success oracle and non-goals; call out any missing or ambiguous acceptance criteria before assuming them.',
       '4. Create a localization dossier: candidate files/functions, evidence, reproduction command, and ruled-out distractors.',
       '5. Verify with the project-native runtime/toolchain, not an arbitrary interpreter or package manager.',
-      '6. Run the narrowest likely verifier before broad verification when feasible.',
-      '7. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
-      '8. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
-      '9. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
-      '10. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
+      '6. Run the environment reconstruction plan before treating missing dependency/toolchain/build-artifact failures as code failures.',
+      '7. Run the narrowest likely verifier before broad verification when feasible.',
+      '8. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
+      '9. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
+      '10. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
+      '11. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
     ];
 
     return { output: lines.filter((line, i, arr) => line || arr[i - 1] !== '').join('\n'), isError: false };
@@ -609,6 +619,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorTaskContractSignals = priorTaskContractSignalsFromSummary(summary);
     const contractOverlap = summarizeTaskContractOverlap(priorTaskContractSignals, currentContractSet);
     const priorDependency = summarizePriorDependencyUpgrade(summary, quality);
+    const priorEnvironment = summarizePriorEnvironmentReconstruction(summary, quality);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -655,6 +666,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         `changed=${redactTraceText(changed)}`,
         contractOverlap.length ? `contract_overlap=${redactTraceText(contractOverlap.join(' | '))}` : null,
         priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
+        priorEnvironment.text,
         priorDependency.text,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
@@ -677,6 +689,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
       contractOverlap.length ? `contract_overlap=${redactTraceText(contractOverlap.join(' | '))}` : null,
       contractText,
+      priorEnvironment.text,
       priorDependency.text,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
@@ -952,6 +965,96 @@ function summarizePriorTaskContractUse(summary: Record<string, unknown>, quality
     ? taskContract.checklistComplete
     : quality.taskContractChecklistComplete;
   return `contract=signals:${signals},checklist_after_context:${String(afterContext)},complete:${String(complete)}`;
+}
+
+function summarizePriorEnvironmentReconstruction(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): { text: string | null } {
+  const card = objectRecord(summary.experienceCard);
+  const environment = objectRecord(card.environmentReconstruction);
+  const setupEvents = summarizePriorEnvironmentSetupEvents(
+    Array.isArray(environment.setupEvents) ? environment.setupEvents : quality.environmentSetupEvents,
+  );
+  const setupFailures = summarizePriorEnvironmentSetupFailures(
+    Array.isArray(environment.setupFailures) ? environment.setupFailures : quality.environmentSetupFailureEvents,
+  );
+  const unresolvedSetupFailures = summarizePriorEnvironmentSetupFailures(
+    Array.isArray(environment.unresolvedSetupFailures)
+      ? environment.unresolvedSetupFailures
+      : quality.unresolvedEnvironmentSetupFailureEvents,
+  );
+  const setupFailureCount = finiteNumber(environment.setupFailureCount)
+    ?? finiteNumber(quality.environmentSetupFailureCount)
+    ?? setupFailures.length;
+  const unresolvedSetupFailureCount = finiteNumber(environment.unresolvedSetupFailureCount)
+    ?? finiteNumber(quality.unresolvedEnvironmentSetupFailureCount)
+    ?? unresolvedSetupFailures.length;
+  const setupCount = finiteNumber(environment.setupCount)
+    ?? finiteNumber(quality.environmentSetupCount)
+    ?? setupEvents.length;
+  const successfulSetupCount = finiteNumber(environment.successfulSetupCount)
+    ?? finiteNumber(quality.successfulEnvironmentSetupCount)
+    ?? setupEvents.filter((event) => event.status === 'ok').length;
+
+  if ((setupFailureCount ?? 0) <= 0 && (setupCount ?? 0) <= 0) return { text: null };
+
+  const commands = uniqueExperienceStrings(setupEvents
+    .map((event) => event.command)
+    .filter(Boolean)
+    .map((command) => truncateContractSignal(redactTraceText(command), 120)))
+    .slice(0, 3);
+  const failures = uniqueExperienceStrings([...setupFailures, ...unresolvedSetupFailures]
+    .map((failure) => failure.reason || failure.evidence)
+    .filter(Boolean)
+    .map((failure) => truncateContractSignal(redactTraceText(failure), 120)))
+    .slice(0, 3);
+  const text = [
+    `environment=setup_failures:${setupFailureCount ?? 0}`,
+    `unresolved:${unresolvedSetupFailureCount ?? 0}`,
+    `setup:${setupCount ?? 0}`,
+    `setup_ok:${successfulSetupCount ?? 0}`,
+    commands.length ? `commands:${commands.join('|')}` : null,
+    failures.length ? `failures:${failures.join('|')}` : null,
+  ].filter(Boolean).join(',');
+  return { text };
+}
+
+function summarizePriorEnvironmentSetupEvents(value: unknown): Array<{ command: string; status: string; kind: string }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ command: string; status: string; kind: string }> = [];
+  for (const raw of value) {
+    const event = objectRecord(raw);
+    const command = typeof event.command === 'string'
+      ? truncateContractSignal(redactTraceText(event.command), 140)
+      : '';
+    if (!command) continue;
+    const status = typeof event.status === 'string'
+      ? truncateContractSignal(redactTraceText(event.status), 20)
+      : 'unknown';
+    const kind = typeof event.kind === 'string'
+      ? truncateContractSignal(redactTraceText(event.kind), 80)
+      : 'setup';
+    out.push({ command, status, kind });
+  }
+  return out.slice(0, 12);
+}
+
+function summarizePriorEnvironmentSetupFailures(value: unknown): Array<{ reason: string; evidence: string }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ reason: string; evidence: string }> = [];
+  for (const raw of value) {
+    const event = objectRecord(raw);
+    const reason = typeof event.reason === 'string'
+      ? truncateContractSignal(redactTraceText(event.reason), 120)
+      : '';
+    const evidence = typeof event.evidence === 'string'
+      ? truncateContractSignal(redactTraceText(event.evidence), 120)
+      : '';
+    if (!reason && !evidence) continue;
+    out.push({ reason, evidence });
+  }
+  return out.slice(0, 12);
 }
 
 function summarizePriorDependencyUpgrade(
@@ -1632,6 +1735,54 @@ function isCiServiceNestedKey(key: string): boolean {
 
 function isLikelyCiVerifierCommand(command: string): boolean {
   return /\b(test|tests|pytest|tox|nox|vitest|jest|mocha|tap|cargo\s+test|go\s+test|mvnw?\s+.*test|gradlew?\s+.*test|dotnet\s+test|lint|typecheck|tsc|build|check|verify|make\s+(?:test|check|verify))\b/i.test(command);
+}
+
+function summarizeEnvironmentReconstructionPlan(manifests: string[], ciHints: string[]): string[] {
+  const names = new Set(manifests.map((m) => basename(m)));
+  const hints: string[] = [];
+  const add = (hint: string) => {
+    if (!hints.includes(hint)) hints.push(hint);
+  };
+
+  if (names.has('package.json')) {
+    const packageManager = detectPackageManager(manifests);
+    if (packageManager === 'pnpm') add('setup: pnpm install --frozen-lockfile');
+    else if (packageManager === 'yarn') add('setup: yarn install --frozen-lockfile');
+    else if (packageManager === 'bun') add('setup: bun install');
+    else if (names.has('package-lock.json') || names.has('npm-shrinkwrap.json')) add('setup: npm ci');
+    else add('setup: npm install');
+  }
+  if (names.has('uv.lock')) add('setup: uv sync');
+  else if (names.has('Pipfile') || names.has('Pipfile.lock')) add('setup: pipenv install --dev');
+  else if (Array.from(names).some((name) => /^requirements(?:[-_.a-z0-9]*)?\.txt$/i.test(name))) {
+    const requirements = manifests
+      .map((manifest) => basename(manifest))
+      .find((name) => /^requirements(?:[-_.a-z0-9]*)?\.txt$/i.test(name)) ?? 'requirements.txt';
+    add(`setup: python -m pip install -r ${requirements}`);
+  }
+  if (names.has('pyproject.toml') || names.has('setup.py') || names.has('setup.cfg')) {
+    add('setup: python -m pip install -e .');
+  }
+  if (names.has('Cargo.toml')) add('setup: cargo fetch');
+  if (names.has('go.mod')) add('setup: go mod download');
+  if (names.has('pom.xml')) add(`setup: ${names.has('mvnw') ? './mvnw' : 'mvn'} dependency:go-offline`);
+  if (Array.from(names).some((name) => /^(build|settings)\.gradle(?:\.kts)?$/i.test(name))) {
+    add(`setup: ${names.has('gradlew') ? './gradlew' : 'gradle'} dependencies`);
+  }
+  if (Array.from(names).some((name) => /\.(sln|csproj|fsproj|vbproj)$/i.test(name))) {
+    add('setup: dotnet restore');
+  }
+  if (Array.from(names).some((name) => /^(docker-compose|compose)\.ya?ml$/i.test(name))) {
+    add('setup: docker compose config');
+  }
+
+  const ciSetup = ciHints
+    .filter((hint) => /^ci (?:setup|env|service|container|image):/i.test(hint))
+    .slice(0, 6);
+  if (ciSetup.length > 0) {
+    add('ci setup: mirror workflow setup/env/service/container hints before relying on CI-only verifier failures.');
+  }
+  return hints.slice(0, 30);
 }
 
 function summarizeRuntimeEnvironment(root: string, files: string[], manifests: string[]): string[] {

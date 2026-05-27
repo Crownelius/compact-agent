@@ -48,6 +48,7 @@ export interface BenchmarkExperienceCard {
   failureSignatures: BenchmarkVerifierFailureSignature[];
   sourceResearchCoverage: SourceResearchCoverage;
   taskContract: BenchmarkExperienceTaskContract;
+  environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   verificationCommands: string[];
   changedFiles: string[];
@@ -221,6 +222,16 @@ export interface BenchmarkEnvironmentSetupFailureEvent {
   command: string;
   reason: string;
   evidence: string;
+}
+
+export interface BenchmarkExperienceEnvironmentReconstruction {
+  setupFailureCount: number;
+  unresolvedSetupFailureCount: number;
+  setupCount: number;
+  successfulSetupCount: number;
+  setupEvents: BenchmarkEnvironmentSetupEvent[];
+  setupFailures: BenchmarkEnvironmentSetupFailureEvent[];
+  unresolvedSetupFailures: BenchmarkEnvironmentSetupFailureEvent[];
 }
 
 export interface BenchmarkDependencyEditEvent {
@@ -736,6 +747,7 @@ export function buildBenchmarkExperienceCard(input: {
       })),
     sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
     taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
+    environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
@@ -746,6 +758,46 @@ export function buildBenchmarkExperienceCard(input: {
     warnings: input.trajectoryQuality.warnings
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceEnvironmentReconstruction(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceEnvironmentReconstruction {
+  return {
+    setupFailureCount: quality.environmentSetupFailureCount,
+    unresolvedSetupFailureCount: quality.unresolvedEnvironmentSetupFailureCount,
+    setupCount: quality.environmentSetupCount,
+    successfulSetupCount: quality.successfulEnvironmentSetupCount,
+    setupEvents: quality.environmentSetupEvents
+      .map(compactBenchmarkEnvironmentSetupEvent)
+      .slice(0, 8),
+    setupFailures: quality.environmentSetupFailureEvents
+      .map(compactBenchmarkEnvironmentSetupFailureEvent)
+      .slice(0, 8),
+    unresolvedSetupFailures: quality.unresolvedEnvironmentSetupFailureEvents
+      .map(compactBenchmarkEnvironmentSetupFailureEvent)
+      .slice(0, 8),
+  };
+}
+
+function compactBenchmarkEnvironmentSetupEvent(event: BenchmarkEnvironmentSetupEvent): BenchmarkEnvironmentSetupEvent {
+  return {
+    seq: event.seq,
+    command: truncate(redactTraceText(event.command), 180),
+    status: event.status,
+    kind: truncate(redactTraceText(event.kind), 100),
+  };
+}
+
+function compactBenchmarkEnvironmentSetupFailureEvent(
+  event: BenchmarkEnvironmentSetupFailureEvent,
+): BenchmarkEnvironmentSetupFailureEvent {
+  return {
+    seq: event.seq,
+    command: truncate(redactTraceText(event.command), 180),
+    reason: truncate(redactTraceText(event.reason), 120),
+    evidence: truncate(redactTraceText(event.evidence), 180),
   };
 }
 
