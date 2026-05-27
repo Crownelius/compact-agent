@@ -112,6 +112,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
     ['/sources coding agent verification --limit 1 --source arxiv', 'local'],
+    ['/benchmark-repos openhands --all --limit 2', 'local'],
     ['/repo-digest openai/codex --files 20 --text-files 0', 'local'],
     ['/source-research coding agent verification', 'llm'],
     ['/bench terminal-bench complete sandbox verifier', 'llm'],
@@ -292,6 +293,24 @@ describe('Non-interactive slash dispatch', () => {
       repo: 'openai/codex',
       max_files: 50,
       max_text_files: 1,
+    });
+  });
+
+  it('routes /benchmark-repos as a local non-interactive repo catalog', () => {
+    const res = resolveNonInteractivePrompt(
+      '/benchmark-repos codex --all --limit 5 --repos-only',
+      config,
+      [],
+      session,
+      { current: 'dev' as const },
+    );
+
+    expect(res.kind).toBe('benchmarkRepos');
+    expect((res as { input: Record<string, unknown> }).input).toMatchObject({
+      query: 'codex',
+      status: 'all',
+      limit: 5,
+      repos_only: true,
     });
   });
 });

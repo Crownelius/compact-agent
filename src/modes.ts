@@ -154,6 +154,9 @@ Science-backed method stack:
   older historical sources. Inspect the Source digest for hits, errors, source
   mix, and top URLs before relying on the research. For local repair tasks, the
   checkout and verifier remain authoritative.
+- For Terminal-Bench public-agent source mining, call benchmark_repo_catalog
+  first to get the packaged public repo seed list, then use github_repo_digest
+  on the relevant repo(s).
 - If those results include public GitHub repos that are plausible
   demonstrations, call github_repo_digest on the most relevant repo(s), compare
   component surfaces/manifests/commands, and verify exact files before importing
@@ -184,7 +187,7 @@ Anti-leakage rules:
   and verify against the current checkout.
 - Use source-specific research only for benchmark selection or current context;
   concrete local tasks should prioritize the local repo and verifier.`,
-    suggestedTools: ['bash', 'benchmark_context', 'todo_write', 'read_file', 'edit_file', 'apply_patch', 'grep', 'glob', 'list_dir', 'memory_search', 'research_sources', 'github_repo_digest'],
+    suggestedTools: ['bash', 'benchmark_context', 'todo_write', 'read_file', 'edit_file', 'apply_patch', 'grep', 'glob', 'list_dir', 'memory_search', 'research_sources', 'benchmark_repo_catalog', 'github_repo_digest'],
     temperature: 0.2,
   },
 

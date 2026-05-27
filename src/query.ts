@@ -606,7 +606,7 @@ function isInspectTool(name: string): boolean {
 }
 
 function isResearchTool(name: string): boolean {
-  return ['web_search', 'web_fetch', 'research_sources', 'github_repo_digest'].includes(name);
+  return ['web_search', 'web_fetch', 'research_sources', 'benchmark_repo_catalog', 'github_repo_digest'].includes(name);
 }
 
 function isEditTool(name: string): boolean {

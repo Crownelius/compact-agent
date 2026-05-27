@@ -336,6 +336,7 @@ Use the \`research_sources\` tool before answering. Query at least:
 - \`source:"kaggle"\`, \`kaggle_kind:"both"\` for datasets and competitions
 
 After the GitHub pass, call \`github_repo_digest\` on one or two directly relevant public GitHub repos when the topic is about agent/harness implementation, benchmark strategy, or source-code patterns. Use the digest's manifests, likely commands, and component surface signals as evidence; do not infer implementation details from repo popularity alone.
+For Terminal-Bench public-agent comparisons, call \`benchmark_repo_catalog\` first so known public leaderboard repos are not missed.
 
 Then synthesize a brief with:
 1. The strongest current ideas or artifacts relevant to the topic.

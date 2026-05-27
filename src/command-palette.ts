@@ -99,6 +99,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/checkpoint', description: 'Save git-state checkpoint inside this session', category: 'Planning' },
   { command: '/search-first', description: 'Research before coding', category: 'Planning' },
   { command: '/sources', description: 'Direct arXiv/GitHub/HF/Kaggle source scan without a model call', category: 'Planning' },
+  { command: '/benchmark-repos', description: 'Public Terminal-Bench repo catalog for source mining', category: 'Planning' },
   { command: '/repo-digest', description: 'Direct GitHub repo component/source digest without a model call', category: 'Planning' },
   { command: '/source-research', description: 'Research arXiv, GitHub, Hugging Face, and Kaggle', category: 'Planning' },
   { command: '/update-docs', description: 'Sync documentation with code', category: 'Planning' },

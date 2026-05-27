@@ -9,6 +9,7 @@ import { WebFetchTool } from './web-fetch.js';
 import { WebSearchTool } from './web-search.js';
 import { ResearchSourcesTool } from './research-sources.js';
 import { GitHubRepoDigestTool } from './github-repo-digest.js';
+import { BenchmarkRepoCatalogTool } from '../benchmark-repos.js';
 import { BenchmarkContextTool } from './benchmark-context.js';
 import { HarnessComponentsTool } from './harness-components.js';
 import { ListDirTool } from './list-dir.js';
@@ -46,6 +47,7 @@ export const ALL_TOOLS: Tool[] = [
   WebFetchTool,
   WebSearchTool,
   ResearchSourcesTool,
+  BenchmarkRepoCatalogTool,
   GitHubRepoDigestTool,
   BenchmarkContextTool,
   HarnessComponentsTool,

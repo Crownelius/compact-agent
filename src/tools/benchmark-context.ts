@@ -386,6 +386,7 @@ function summarizeBenchmarkMethodHints(
   }
   hints.push('source research trigger: for agent-improvement, benchmark-methodology, model, dataset, or leaderboard work, use research_sources before synthesis with arXiv papers; GitHub github_kind:"all"; Hugging Face kind:"all"; Kaggle kaggle_kind:"both"; and recent_days:90 unless older historical evidence is explicitly needed.');
   hints.push('source research digest: after research_sources, inspect Source digest hits/errors/source mix/top URLs; refine the query or state the coverage gap before relying on weak source evidence.');
+  hints.push('benchmark repo catalog: for Terminal-Bench public-agent source mining, call benchmark_repo_catalog before ad hoc web discovery, then github_repo_digest the relevant repo(s).');
   hints.push('source repository digest: when Source digest includes public GitHub repos relevant to agent or harness design, call github_repo_digest on the top repo(s) before porting patterns; compare manifests, CI files, likely commands, and component surface signals to the current task.');
   return hints;
 }

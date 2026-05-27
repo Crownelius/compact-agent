@@ -341,6 +341,8 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('task instruction excerpts and full instruction files');
     expect(result.output).toContain('source research trigger');
     expect(result.output).toContain('source research digest');
+    expect(result.output).toContain('benchmark repo catalog');
+    expect(result.output).toContain('benchmark_repo_catalog');
     expect(result.output).toContain('source repository digest');
     expect(result.output).toContain('github_repo_digest');
     expect(result.output).toContain('github_kind:"all"');

@@ -21,6 +21,13 @@ import { buildHarnessComponentsReport } from './tools/harness-components.js';
 import { GitHubRepoDigestTool } from './tools/github-repo-digest.js';
 import { ResearchSourcesTool } from './tools/research-sources.js';
 import {
+  decodeBenchmarkReposSentinel,
+  encodeBenchmarkReposSentinel,
+  formatBenchmarkRepoCatalog,
+  formatBenchmarkRepoCatalogUsage,
+  parseBenchmarkRepoCatalogCommandArgs,
+} from './benchmark-repos.js';
+import {
   decodeRepoDigestSentinel,
   encodeRepoDigestSentinel,
   formatRepoDigestCommandUsage,
@@ -814,6 +821,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
+      console.log(d('  ') + c('/benchmark-repos') + d('  — public Terminal-Bench repo catalog'));
       console.log(d('  ') + c('/repo-digest <repo>') + d(' — direct GitHub repo component/source digest'));
       console.log(d('  ') + c('/source-research') + d('   — arXiv/GitHub/HF/Kaggle research brief'));
       console.log(d('  ') + c('/docs-lookup <query>') + d(' — search docs for answers'));
@@ -2480,6 +2488,19 @@ export function handleSlashCommand(
       return { handled: true, injectPrompt: encodeSourcesSentinel(parsed.input) };
     }
 
+    case '/benchmark-repos':
+    case '/bench-repos':
+    case '/leaderboard-repos':
+    case '/tb-repos': {
+      const parsed = parseBenchmarkRepoCatalogCommandArgs(args);
+      if (parsed.error || !parsed.input) {
+        console.log(chalk.yellow(parsed.error ? `  /benchmark-repos: ${parsed.error}` : '  /benchmark-repos: invalid arguments'));
+        console.log(chalk.dim(formatBenchmarkRepoCatalogUsage()));
+        return { handled: true };
+      }
+      return { handled: true, injectPrompt: encodeBenchmarkReposSentinel(parsed.input) };
+    }
+
     case '/repo-digest':
     case '/repo-inspect':
     case '/github-digest': {
@@ -3155,6 +3176,7 @@ export type NonInteractivePromptResolution =
   | { kind: 'handled' }
   | { kind: 'exit' }
   | { kind: 'sources'; input: Record<string, unknown> }
+  | { kind: 'benchmarkRepos'; input: Record<string, unknown> }
   | { kind: 'repoDigest'; input: Record<string, unknown> }
   | { kind: 'error'; message: string };
 
@@ -3181,6 +3203,11 @@ export function resolveNonInteractivePrompt(
     const input = decodeSourcesSentinel(result.injectPrompt);
     if (!input) return { kind: 'error', message: 'could not parse /sources arguments.' };
     return { kind: 'sources', input };
+  }
+  if (result.injectPrompt.startsWith('__BENCHMARK_REPOS__')) {
+    const input = decodeBenchmarkReposSentinel(result.injectPrompt);
+    if (!input) return { kind: 'error', message: 'could not parse /benchmark-repos arguments.' };
+    return { kind: 'benchmarkRepos', input };
   }
   if (result.injectPrompt.startsWith('__REPO_DIGEST__')) {
     const input = decodeRepoDigestSentinel(result.injectPrompt);
@@ -4212,6 +4239,15 @@ async function main(): Promise<void> {
       process.exitCode = result.isError ? 1 : 0;
       return;
     }
+    if (resolvedPrompt.kind === 'benchmarkRepos') {
+      console.log(formatBenchmarkRepoCatalog(resolvedPrompt.input));
+      try {
+        await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
+      } catch { /* never fail a local command on hook errors */ }
+      try { rl.close(); } catch { /* noop */ }
+      process.exitCode = 0;
+      return;
+    }
     if (resolvedPrompt.kind === 'repoDigest') {
       const result = await GitHubRepoDigestTool.call(resolvedPrompt.input, process.cwd());
       console.log(result.output);
@@ -4458,6 +4494,14 @@ async function main(): Promise<void> {
           console.log(chalk.dim('  Searching arXiv, GitHub, Hugging Face, and Kaggle sources...'));
           const sourceResult = await ResearchSourcesTool.call(sourceInput, process.cwd());
           console.log(sourceResult.output);
+          continue;
+        } else if (result.injectPrompt.startsWith('__BENCHMARK_REPOS__')) {
+          const repoCatalogInput = decodeBenchmarkReposSentinel(result.injectPrompt);
+          if (!repoCatalogInput) {
+            console.log(chalk.yellow('  /benchmark-repos: could not parse catalog arguments.'));
+            continue;
+          }
+          console.log(formatBenchmarkRepoCatalog(repoCatalogInput));
           continue;
         } else if (result.injectPrompt.startsWith('__REPO_DIGEST__')) {
           const repoInput = decodeRepoDigestSentinel(result.injectPrompt);

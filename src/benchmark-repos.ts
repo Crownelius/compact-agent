@@ -1,0 +1,509 @@
+import type { Tool, ToolResult } from './tools/types.js';
+
+export type BenchmarkRepoStatus = 'official' | 'related';
+
+export interface BenchmarkRepoRef {
+  slug: string;
+  role?: string;
+}
+
+export interface BenchmarkRepoEntry {
+  project: string;
+  status: BenchmarkRepoStatus;
+  repos: BenchmarkRepoRef[];
+  tags: string[];
+  note: string;
+  lastSeen?: string;
+}
+
+export interface BenchmarkRepoCatalogParseResult {
+  input?: Record<string, unknown>;
+  error?: string;
+}
+
+const CATALOG_SOURCE = 'Terminal-Bench 2.0 public source mapping report, reviewed 2026-05-27';
+
+export const TERMINAL_BENCH_REPO_CATALOG: BenchmarkRepoEntry[] = [
+  {
+    project: 'NexAU-AHE',
+    status: 'official',
+    repos: [{ slug: 'china-qijizhifeng/agentic-harness-engineering' }],
+    tags: ['terminal-bench', 'harness', 'ahe'],
+    note: 'Official submission metadata points directly to the agentic-harness-engineering repo.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'LemonHarness',
+    status: 'official',
+    repos: [{ slug: 'Open-Lemon/LemonAgent' }],
+    tags: ['terminal-bench', 'agent', 'harness'],
+    note: 'Official submission maps LemonHarness to the LemonAgent repo.',
+    lastSeen: '2026-02-10',
+  },
+  {
+    project: 'Codex CLI',
+    status: 'official',
+    repos: [{ slug: 'openai/codex' }],
+    tags: ['terminal-agent', 'rust', 'cli', 'openai'],
+    note: 'Official OpenAI terminal coding agent repository.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'WOZCODE',
+    status: 'official',
+    repos: [
+      { slug: 'WithWoz/WozCode', role: 'canonical submission repo' },
+      { slug: 'WithWoz/wozcode-plugin', role: 'installable Claude Code plugin' },
+    ],
+    tags: ['claude-code', 'plugin', 'terminal-bench'],
+    note: 'Submission materials reference WozCode; plugin repo README identifies WOZCODE plugin.',
+    lastSeen: '2026-05-22',
+  },
+  {
+    project: 'Codelia',
+    status: 'official',
+    repos: [{ slug: 'kousw/codelia' }],
+    tags: ['terminal-bench', 'agent'],
+    note: 'Official submission metadata links directly to the codelia repo.',
+    lastSeen: '2026-05-17',
+  },
+  {
+    project: 'Mux',
+    status: 'official',
+    repos: [{ slug: 'coder/mux' }],
+    tags: ['terminal-bench', 'coder', 'agent'],
+    note: 'Official submission metadata links directly to Coder mux.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'Crux',
+    status: 'official',
+    repos: [{ slug: '0xDarkMatter/crux-agent' }],
+    tags: ['terminal-bench', 'agent'],
+    note: 'Official metadata maps Crux to crux-agent; commit-history evidence was incomplete in the report.',
+  },
+  {
+    project: 'Deep Agents',
+    status: 'official',
+    repos: [{ slug: 'langchain-ai/deepagents' }],
+    tags: ['langchain', 'agent-harness', 'python'],
+    note: 'LangChain repository for a batteries-included agent harness.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'clnkr',
+    status: 'official',
+    repos: [{ slug: 'clnkr-ai/clnkr' }],
+    tags: ['go', 'cli', 'coding-agent'],
+    note: 'Coding-agent CLI with upstream-maintained public repository.',
+    lastSeen: '2026-05-24',
+  },
+  {
+    project: 'II-Agent',
+    status: 'official',
+    repos: [{ slug: 'intelligent-internet/ii-agent' }],
+    tags: ['python', 'agent-framework'],
+    note: 'Open-source agent framework under the Intelligent Internet organization.',
+    lastSeen: '2026-04-13',
+  },
+  {
+    project: 'Warp',
+    status: 'official',
+    repos: [{ slug: 'warpdotdev/warp' }],
+    tags: ['terminal', 'agentic-development-environment'],
+    note: 'Official Warp product repository; broader than the benchmark harness but same product family.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'Gemini CLI',
+    status: 'official',
+    repos: [{ slug: 'google-gemini/gemini-cli' }],
+    tags: ['google', 'terminal-agent', 'cli'],
+    note: 'Official Google Gemini CLI terminal agent repository.',
+    lastSeen: '2026-05-26',
+  },
+  {
+    project: 'Letta Code',
+    status: 'official',
+    repos: [{ slug: 'letta-ai/letta-code' }],
+    tags: ['memory', 'coding-agent'],
+    note: 'Memory-first coding agent under Letta.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'Abacus AI Desktop',
+    status: 'official',
+    repos: [
+      { slug: 'abacusai/abacusai-desktop', role: 'desktop and CLI product' },
+      { slug: 'abacusai/DeepAgent', role: 'agent engine repo referenced by benchmark materials' },
+    ],
+    tags: ['desktop', 'cli', 'agent'],
+    note: 'Implementation appears split across desktop/CLI product and DeepAgent engine repos.',
+    lastSeen: '2026-03-17',
+  },
+  {
+    project: 'Claude Code',
+    status: 'official',
+    repos: [{ slug: 'anthropics/claude-code' }],
+    tags: ['anthropic', 'terminal-agent', 'cli'],
+    note: 'Official Anthropic terminal coding tool repository.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'Grok CLI',
+    status: 'official',
+    repos: [{ slug: 'superagent-ai/grok-cli' }],
+    tags: ['typescript', 'cli', 'grok'],
+    note: 'Open-source coding agent for Grok API; community-built but official for the Superagent leaderboard entry.',
+    lastSeen: '2026-05-15',
+  },
+  {
+    project: 'Goose',
+    status: 'official',
+    repos: [{ slug: 'aaif-goose/goose' }],
+    tags: ['rust', 'cli', 'desktop', 'agent'],
+    note: 'Open-source general-purpose agent with desktop, CLI, and API surfaces.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'OpenHands',
+    status: 'official',
+    repos: [{ slug: 'OpenHands/openhands' }],
+    tags: ['python', 'coding-agent', 'platform'],
+    note: 'Official OpenHands open-source platform repository.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'OpenCode',
+    status: 'official',
+    repos: [{ slug: 'anomalyco/opencode' }],
+    tags: ['typescript', 'coding-agent', 'cli'],
+    note: 'Official open-source coding agent from Anomaly.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'cchuter',
+    status: 'official',
+    repos: [{ slug: 'cchuter/blobfish' }],
+    tags: ['terminal-bench', 'agent', 'blobfish'],
+    note: 'Team Blobfish repo documents a username-mapped cchuter agent.',
+    lastSeen: '2026-05-08',
+  },
+  {
+    project: 'Mini-SWE-Agent',
+    status: 'official',
+    repos: [{ slug: 'SWE-agent/mini-swe-agent' }],
+    tags: ['swe-bench', 'lightweight-agent'],
+    note: 'Official lightweight software-engineering agent repository.',
+    lastSeen: '2026-05-21',
+  },
+  {
+    project: 'little-coder',
+    status: 'official',
+    repos: [{ slug: 'itayinbarr/little-coder' }],
+    tags: ['typescript', 'local-models', 'coding-agent'],
+    note: 'Coding agent optimized for smaller local models.',
+    lastSeen: '2026-05-23',
+  },
+  {
+    project: 'Harness Agent',
+    status: 'official',
+    repos: [{ slug: 'lazyFrogLOL/Harness_Engineering' }],
+    tags: ['terminal-bench', 'harness'],
+    note: 'Public Harness_Engineering repo reports the Terminal-Bench result for Harness Agent.',
+  },
+  {
+    project: 'vix',
+    status: 'related',
+    repos: [{ slug: 'kirby88/vix-releases' }],
+    tags: ['release-repo', 'terminal-bench'],
+    note: 'Public release repository only; full source was not verified in the report.',
+  },
+  {
+    project: 'Meta-Harness',
+    status: 'related',
+    repos: [{ slug: 'stanford-iris-lab/meta-harness-tbench2-artifact' }],
+    tags: ['artifact', 'terminal-bench', 'research'],
+    note: 'Official Stanford IRIS artifact repo, not clearly the full product source.',
+    lastSeen: '2026-03-26',
+  },
+  {
+    project: 'Simple Codex',
+    status: 'related',
+    repos: [{ slug: 'openai/codex' }],
+    tags: ['openai', 'codex', 'indirect'],
+    note: 'Indirect mapping: benchmark entry points to Codex product page; public source is broader Codex CLI.',
+    lastSeen: '2026-05-27',
+  },
+  {
+    project: 'CAMEL-AI',
+    status: 'related',
+    repos: [
+      { slug: 'camel-ai/seta', role: 'terminal-agent project' },
+      { slug: 'camel-ai/camel', role: 'broader agent framework' },
+    ],
+    tags: ['terminal-agent', 'framework', 'indirect'],
+    note: 'Relevant terminal-agent work is SETA under CAMEL-AI; mapping is organization-level and indirect.',
+    lastSeen: '2026-02-16',
+  },
+];
+
+export function formatBenchmarkRepoCatalog(input: Record<string, unknown> = {}): string {
+  const normalized = normalizeBenchmarkRepoCatalogInput(input);
+  const allMatches = filterBenchmarkRepoCatalog(normalized);
+  const matches = allMatches.slice(0, normalized.limit);
+  const officialCount = TERMINAL_BENCH_REPO_CATALOG.filter((entry) => entry.status === 'official').length;
+  const relatedCount = TERMINAL_BENCH_REPO_CATALOG.filter((entry) => entry.status === 'related').length;
+
+  if (normalized.reposOnly) {
+    return uniqueStrings(matches.flatMap((entry) => entry.repos.map((repo) => repo.slug))).join('\n');
+  }
+
+  const lines = [
+    '# Terminal-Bench Public Repo Catalog',
+    `Source: ${CATALOG_SOURCE}.`,
+    `Coverage seed: ${officialCount} official/direct project mappings, ${relatedCount} related or partial mappings.`,
+    'Caveat: this is a packaged source-mining seed, not live leaderboard truth; verify with /repo-digest before porting patterns.',
+    '',
+    `Filters: status=${normalized.status}, query=${normalized.query ? JSON.stringify(normalized.query) : '(none)'}, limit=${normalized.limit}`,
+    `Matches: ${allMatches.length}${allMatches.length > matches.length ? ` (showing ${matches.length})` : ''}`,
+    '',
+  ];
+
+  if (matches.length === 0) {
+    lines.push('No matching public repo mappings found.');
+    lines.push('Try: /benchmark-repos --all');
+    return lines.join('\n');
+  }
+
+  for (const entry of matches) {
+    const repoText = entry.repos
+      .map((repo) => repo.role ? `${repo.slug} (${repo.role})` : repo.slug)
+      .join(' | ');
+    const seen = entry.lastSeen ? `; last_seen=${entry.lastSeen}` : '';
+    lines.push(`- ${entry.project} [${entry.status}${seen}]`);
+    lines.push(`  repos: ${repoText}`);
+    lines.push(`  tags: ${entry.tags.join(', ')}`);
+    lines.push(`  note: ${entry.note}`);
+  }
+
+  lines.push('');
+  lines.push('Next step: run /repo-digest <owner/repo> --files 500 --text-files 6 on the most relevant repo, then verify exact files locally.');
+  return lines.join('\n');
+}
+
+export function filterBenchmarkRepoCatalog(input: {
+  query?: string;
+  status: 'official' | 'related' | 'all';
+}): BenchmarkRepoEntry[] {
+  const query = input.query?.trim().toLowerCase();
+  return TERMINAL_BENCH_REPO_CATALOG.filter((entry) => {
+    if (input.status !== 'all' && entry.status !== input.status) return false;
+    if (!query) return true;
+    const haystack = [
+      entry.project,
+      entry.status,
+      entry.note,
+      ...entry.tags,
+      ...entry.repos.flatMap((repo) => [repo.slug, repo.role ?? '']),
+    ].join('\n').toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+export function parseBenchmarkRepoCatalogCommandArgs(args: string): BenchmarkRepoCatalogParseResult {
+  const tokens = tokenizeArgs(args);
+  const input: Record<string, unknown> = {
+    status: 'official',
+    limit: 12,
+  };
+  const queryParts: string[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token.startsWith('-')) {
+      queryParts.push(token);
+      continue;
+    }
+
+    if (token === '--all') {
+      input.status = 'all';
+      input.limit = input.limit === 12 ? 50 : input.limit;
+      continue;
+    }
+    if (token === '--official') {
+      input.status = 'official';
+      continue;
+    }
+    if (token === '--related' || token === '--partial') {
+      input.status = 'related';
+      continue;
+    }
+    if (token === '--repos-only' || token === '--slugs') {
+      input.repos_only = true;
+      continue;
+    }
+
+    const { name, inlineValue } = splitFlag(token);
+    if (!['--status', '--kind', '--limit', '-n'].includes(name)) {
+      return { error: `unknown option "${name}"` };
+    }
+    const value = inlineValue ?? tokens[i + 1];
+    if (!value || value.startsWith('-')) return { error: `${name} requires a value` };
+    if (inlineValue == null) i++;
+
+    switch (name) {
+      case '--status':
+      case '--kind': {
+        const normalized = value.toLowerCase();
+        if (!['official', 'related', 'partial', 'all'].includes(normalized)) {
+          return { error: `unsupported status "${value}"` };
+        }
+        input.status = normalized === 'partial' ? 'related' : normalized;
+        break;
+      }
+      case '--limit':
+      case '-n': {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) return { error: `limit must be a positive number, got "${value}"` };
+        input.limit = Math.floor(n);
+        break;
+      }
+    }
+  }
+
+  const query = queryParts.join(' ').trim();
+  if (query) input.query = query;
+  return { input };
+}
+
+export function formatBenchmarkRepoCatalogUsage(): string {
+  return [
+    '  Usage: /benchmark-repos [query] [--all|--official|--related] [--limit n] [--repos-only]',
+    '  Defaults: --official --limit 12',
+    '  Examples:',
+    '    /benchmark-repos openhands --all',
+    '    /benchmark-repos terminal-agent --all --repos-only',
+  ].join('\n');
+}
+
+export function encodeBenchmarkReposSentinel(input: Record<string, unknown>): string {
+  return `__BENCHMARK_REPOS__${JSON.stringify(input)}`;
+}
+
+export function decodeBenchmarkReposSentinel(value: string): Record<string, unknown> | null {
+  if (!value.startsWith('__BENCHMARK_REPOS__')) return null;
+  try {
+    const parsed = JSON.parse(value.slice('__BENCHMARK_REPOS__'.length));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export const BenchmarkRepoCatalogTool: Tool = {
+  name: 'benchmark_repo_catalog',
+  description:
+    'List a packaged Terminal-Bench 2.0 public-repository source-mining catalog. Use before github_repo_digest when looking for public agent or leaderboard implementation examples; verify exact files before porting patterns.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Optional filter over project name, repo slug, tags, and notes.',
+      },
+      status: {
+        type: 'string',
+        enum: ['official', 'related', 'all'],
+        description: 'Catalog subset to show. Defaults to official/direct mappings.',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum project entries to return. Default 12, max 50.',
+      },
+      repos_only: {
+        type: 'boolean',
+        description: 'If true, return only owner/repo slugs, one per line.',
+      },
+    },
+    additionalProperties: false,
+  },
+  isReadOnly: true,
+  isDestructive: false,
+  async call(input): Promise<ToolResult> {
+    return { output: formatBenchmarkRepoCatalog(input), isError: false };
+  },
+};
+
+function normalizeBenchmarkRepoCatalogInput(input: Record<string, unknown>): {
+  query?: string;
+  status: 'official' | 'related' | 'all';
+  limit: number;
+  reposOnly: boolean;
+} {
+  const rawStatus = String(input.status || 'official').toLowerCase();
+  const status = rawStatus === 'all' || rawStatus === 'related' ? rawStatus : 'official';
+  const n = Number(input.limit ?? 12);
+  const limit = Number.isFinite(n) && n > 0 ? Math.min(50, Math.floor(n)) : 12;
+  const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : undefined;
+  const reposOnly = input.repos_only === true;
+  return { query, status, limit, reposOnly };
+}
+
+function splitFlag(token: string): { name: string; inlineValue?: string } {
+  const idx = token.indexOf('=');
+  if (idx === -1) return { name: token };
+  return { name: token.slice(0, idx), inlineValue: token.slice(idx + 1) };
+}
+
+function tokenizeArgs(input: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+
+  for (const ch of input) {
+    if (escaping) {
+      current += ch;
+      escaping = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += ch;
+  }
+
+  if (escaping) current += '\\';
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+export const _internal = {
+  tokenizeArgs,
+  normalizeBenchmarkRepoCatalogInput,
+  CATALOG_SOURCE,
+};
