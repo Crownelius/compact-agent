@@ -37,7 +37,7 @@ latest post-edit verifier signals, post-edit and final-state
 diff-review signals, final-edit validation stability/lucky-pass signals, broad-validation signals,
 CI-derived validation signals,
 source-research recency signals,
-process-defect scoring, submission bundle manifest readiness/hash metadata,
+process-defect scoring, AHE-style change-evaluation verdicts, submission bundle manifest readiness/hash metadata,
 and trajectory-quality fields are copied to
 `benchmarkResult.traceSummary` for harness-side scoring. `benchmarkResult.usage`
 also aliases the native usage block for cost-aware leaderboards. Native verifier
@@ -46,13 +46,13 @@ noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
 task-alignment/spec-compliance/reward-hack/long-horizon risk blocks, decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
 context-utilization precision/miss evidence for retrieval-aware scoring and
-run-efficiency action/usage/cost evidence for cost-aware scoring. Prior
+run-efficiency action/usage/cost/time evidence for cost-aware scoring. Prior
 experience hints also expose compact source-research coverage, including
 hit/error counts, targeted/fresh coverage, recency windows, top URLs, and
 Kaggle fallback status. When present, `benchmarkResult.traceSummary` also
 includes the redacted ACC-style task/context/answer compilation from the native
 Ventipus trace for retrieval, replay, or training-data curation.
-It also includes `submissionBundleManifest` when present, so leaderboard
+It also includes `changeEvaluation` and `submissionBundleManifest` when present, so leaderboard
 submission tooling can inspect artifact hashes and missing official score/session
 fields without parsing the full summary.
 

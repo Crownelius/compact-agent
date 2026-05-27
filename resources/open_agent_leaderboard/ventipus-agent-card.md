@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.28
+version: 1.35.29
 developers:
   - Crownelius
 license: MIT
@@ -50,7 +50,7 @@ Benchmark mode emphasizes:
 
 Ventipus includes MemPalace-backed project and global memory. In benchmark mode, `benchmark_context` can surface bounded relevant memories and prior local benchmark experience cards. These are explicitly framed as hypotheses that must be verified against current task files and verifier output.
 
-Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, reward-hack, and long-horizon roadmap/SaaS/mobile coverage risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence plus pre-edit context-bloat evidence, evidence-grounding signals for stale/no-effect edit retries without a current-state refresh, run-efficiency action/usage/cost/time evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact for retrieval, replay, or training-data curation.
+Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, reward-hack, and long-horizon roadmap/SaaS/mobile coverage risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence plus pre-edit context-bloat evidence, evidence-grounding signals for stale/no-effect edit retries without a current-state refresh, run-efficiency action/usage/cost/time evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact and an AHE-style change-evaluation artifact for edit prediction verdicts, unpredicted edits, and post-edit regression-cycle attribution.
 
 ## Models
 
@@ -69,7 +69,7 @@ Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, cont
 
 ## Evaluation Results
 
-Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, and `submission-bundle-manifest.json` artifacts when benchmark trace output is enabled. The draft row follows the public Open Agent Leaderboard result-column shape where local trace evidence can support it, but remains `submissionReady:false` until an official harness supplies benchmark-owned scores and session success evidence. The submission bundle manifest indexes artifact paths and SHA-256 hashes, summarizes verifier/usage/process evidence, and lists missing official fields so local traces are not mistaken for leaderboard scores. Trajectory quality includes explicit task-alignment, spec-compliance, reward-hack, long-horizon coverage, context-utilization, pre-edit context-bloat, and evidence-grounding risk fields so benchmark reviewers can separate genuine task progress from distractor-following, recall-heavy unused context gathering, visible-suite-only validation, stale/no-effect edit loops, verifier tampering, oracle access, shortcut score markers, or unsupported RoadmapBench/SaaSBench/SWE-Bench Mobile completion claims.
+Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, `change-evaluation.json`, and `submission-bundle-manifest.json` artifacts when benchmark trace output is enabled. The draft row follows the public Open Agent Leaderboard result-column shape where local trace evidence can support it, but remains `submissionReady:false` until an official harness supplies benchmark-owned scores and session success evidence. The submission bundle manifest indexes artifact paths and SHA-256 hashes, summarizes verifier/usage/process evidence, and lists missing official fields so local traces are not mistaken for leaderboard scores. Trajectory quality includes explicit task-alignment, spec-compliance, reward-hack, long-horizon coverage, context-utilization, pre-edit context-bloat, weak change-manifest, and evidence-grounding risk fields so benchmark reviewers can separate genuine task progress from distractor-following, recall-heavy unused context gathering, visible-suite-only validation, stale/no-effect edit loops, verifier tampering, oracle access, shortcut score markers, unsupported RoadmapBench/SaaSBench/SWE-Bench Mobile completion claims, or edits without falsifiable prediction/verifier follow-through.
 
 Official results should be produced through Exgentic, HAL, Terminal-Bench, KBench, or another benchmark-owned grader before submission.
 

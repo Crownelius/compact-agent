@@ -163,6 +163,7 @@ function compactTraceSummary(traceSummary) {
     usage: summary.usage,
     experienceCard,
     agentContextCompilation: compactAgentContextCompilation(summary.agentContextCompilation),
+    changeEvaluation: compactChangeEvaluation(summary.changeEvaluation),
     submissionBundleManifest: compactSubmissionBundleManifest(summary.submissionBundleManifest),
     changedFiles: Array.isArray(summary.changedFiles) ? summary.changedFiles.slice(0, 100) : [],
     worktreeChangedFiles: Array.isArray(summary.worktreeChangedFiles) ? summary.worktreeChangedFiles.slice(0, 100) : [],
@@ -281,6 +282,11 @@ function compactTraceSummary(traceSummary) {
       failureUnalignedRepairEvents: Array.isArray(quality.failureUnalignedRepairEvents) ? quality.failureUnalignedRepairEvents.slice(0, 20) : [],
       postEditRegressionCycleCount: quality.postEditRegressionCycleCount,
       postEditRegressionCycleEvents: Array.isArray(quality.postEditRegressionCycleEvents) ? quality.postEditRegressionCycleEvents.slice(0, 20) : [],
+      predictedEditCount: quality.predictedEditCount,
+      unpredictedEditCount: quality.unpredictedEditCount,
+      contradictedEditPredictionCount: quality.contradictedEditPredictionCount,
+      unverifiedEditPredictionCount: quality.unverifiedEditPredictionCount,
+      decisionObservabilityRisk: quality.decisionObservabilityRisk,
       scratchArtifactPermissionDetected: quality.scratchArtifactPermissionDetected,
       scratchArtifactEvents: Array.isArray(quality.scratchArtifactEvents) ? quality.scratchArtifactEvents.slice(0, 20) : [],
       postEditDiffReview: quality.postEditDiffReview,
@@ -331,6 +337,30 @@ function compactAgentContextCompilation(compilation) {
       sourceResearchCoverage: metadata.sourceResearchCoverage,
       warnings: Array.isArray(metadata.warnings) ? metadata.warnings.slice(0, 20) : [],
     },
+  };
+}
+
+function compactChangeEvaluation(changeEvaluation) {
+  if (!changeEvaluation || typeof changeEvaluation !== 'object' || Array.isArray(changeEvaluation)) return undefined;
+  return {
+    version: changeEvaluation.version,
+    format: changeEvaluation.format,
+    status: changeEvaluation.status,
+    accepted: changeEvaluation.accepted,
+    reason: truncate(changeEvaluation.reason || '', 500),
+    editCount: changeEvaluation.editCount,
+    predictedEditCount: changeEvaluation.predictedEditCount,
+    unpredictedEditCount: changeEvaluation.unpredictedEditCount,
+    confirmedPredictionCount: changeEvaluation.confirmedPredictionCount,
+    contradictedPredictionCount: changeEvaluation.contradictedPredictionCount,
+    unverifiedPredictionCount: changeEvaluation.unverifiedPredictionCount,
+    decisionCoveragePercent: changeEvaluation.decisionCoveragePercent,
+    regressionCycleCount: changeEvaluation.regressionCycleCount,
+    broadRegressionFailureCount: changeEvaluation.broadRegressionFailureCount,
+    predictions: Array.isArray(changeEvaluation.predictions) ? changeEvaluation.predictions.slice(0, 20) : [],
+    unpredictedEdits: Array.isArray(changeEvaluation.unpredictedEdits) ? changeEvaluation.unpredictedEdits.slice(0, 20) : [],
+    regressionCycles: Array.isArray(changeEvaluation.regressionCycles) ? changeEvaluation.regressionCycles.slice(0, 20) : [],
+    recommendedAction: truncate(changeEvaluation.recommendedAction || '', 500),
   };
 }
 

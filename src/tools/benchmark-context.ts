@@ -1000,11 +1000,25 @@ function summarizePriorTaskContractUse(summary: Record<string, unknown>, quality
 function summarizePriorDecisionObservability(summary: Record<string, unknown>): string | null {
   const card = objectRecord(summary.experienceCard);
   const decision = objectRecord(card.decisionObservability);
+  const changeEvaluation = objectRecord(summary.changeEvaluation);
   const editCount = finiteNumber(decision.editCount);
   const predictedEditCount = finiteNumber(decision.predictedEditCount);
   const verifiedPredictionCount = finiteNumber(decision.verifiedPredictionCount);
+  const status = typeof changeEvaluation.status === 'string' ? changeEvaluation.status.trim() : '';
+  const accepted = typeof changeEvaluation.accepted === 'boolean' || changeEvaluation.accepted === null
+    ? changeEvaluation.accepted
+    : undefined;
+  const unpredictedEditCount = finiteNumber(changeEvaluation.unpredictedEditCount);
+  const contradictedPredictionCount = finiteNumber(changeEvaluation.contradictedPredictionCount);
+  const unverifiedPredictionCount = finiteNumber(changeEvaluation.unverifiedPredictionCount);
+  const regressionCycleCount = finiteNumber(changeEvaluation.regressionCycleCount);
   const rawPredictions = Array.isArray(decision.editPredictions) ? decision.editPredictions : [];
-  if ((editCount ?? 0) <= 0 && (predictedEditCount ?? 0) <= 0 && rawPredictions.length === 0) return null;
+  if (
+    (editCount ?? 0) <= 0
+    && (predictedEditCount ?? 0) <= 0
+    && rawPredictions.length === 0
+    && !status
+  ) return null;
 
   const predictions = rawPredictions
     .slice(0, 2)
@@ -1022,6 +1036,12 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
     `decision=edits:${editCount ?? 0}`,
     `predicted:${predictedEditCount ?? 0}`,
     `verified:${verifiedPredictionCount ?? 0}`,
+    status ? `change_status:${status}` : null,
+    accepted !== undefined ? `accepted:${String(accepted)}` : null,
+    unpredictedEditCount != null ? `unpredicted:${unpredictedEditCount}` : null,
+    contradictedPredictionCount != null ? `contradicted:${contradictedPredictionCount}` : null,
+    unverifiedPredictionCount != null ? `unverified:${unverifiedPredictionCount}` : null,
+    regressionCycleCount != null ? `regressions:${regressionCycleCount}` : null,
     predictions.length ? `predictions:${predictions.join(' | ')}` : null,
   ].filter(Boolean).join(',');
 }
@@ -1522,7 +1542,7 @@ function classifyPriorExperienceHarm(input: {
   if (successfulVerificationCount === 0) reasons.push('no successful verifier');
   if (input.processScore != null && input.processScore < 70) reasons.push(`low process score ${input.processScore}`);
   const harmfulDefects = input.defectCodes.filter((code) =>
-    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract)/.test(code),
+    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest)/.test(code),
   );
   if (harmfulDefects.length > 0) reasons.push(`defects=${harmfulDefects.slice(0, 4).join('|')}`);
   if (input.finalAnswerEvidence.claimsIncomplete === true || input.finalAnswerEvidence.claimsBlocked === true) {

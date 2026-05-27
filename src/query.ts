@@ -1369,7 +1369,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     const globalPlanBlock = buildGlobalPlanBlock(visibleMessages);
     const todoStateBlock = buildTodoStateBlock(ctx.cwd);
     const benchmarkTrajectoryBlock = ctx.mode === 'benchmark'
-      ? buildBenchmarkTrajectorySystemBlock(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents)
+      ? buildBenchmarkTrajectorySystemBlock(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents, visibleMessages)
       : null;
     const editVerificationBlock = !chainStats.verificationAttemptedSinceEdit
       ? buildEditVerificationReminder(chainStats.pendingEditFiles, chainStats.editCountSinceVerification)
@@ -1859,7 +1859,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const benchmarkCompletionReminder = selfCritiqueEnabled
         && ctx.mode === 'benchmark'
         && !chainStats.benchmarkTrajectoryGatePrompted
-        ? buildBenchmarkCompletionReminder(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents)
+        ? buildBenchmarkCompletionReminder(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents, ctx.messages)
         : null;
       if (benchmarkCompletionReminder) {
         chainStats.benchmarkTrajectoryGatePrompted = true;

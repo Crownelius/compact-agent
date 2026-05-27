@@ -191,6 +191,20 @@ describe('benchmark trace artifacts', () => {
     expect(summary.agentContextCompilation.context).toContain('Source coverage: none');
     expect(summary.agentContextCompilation.answer).toContain('Latest verifier status: ok.');
     expect(JSON.stringify(summary.agentContextCompilation)).not.toContain(config.apiKey);
+    expect(summary.changeEvaluation).toMatchObject({
+      version: 1,
+      format: 'ventipus-change-evaluation-v1',
+      source: 'ventipus benchmark trace',
+      status: 'no_edits',
+      accepted: null,
+      editCount: 0,
+      predictedEditCount: 0,
+      decisionCoveragePercent: null,
+      regressionCycleCount: 0,
+      predictions: [],
+      unpredictedEdits: [],
+      regressionCycles: [],
+    });
     expect(summary.changedFiles).toContain('src/app.ts');
     expect(summary.trajectoryQuality.usageCallCount).toBe(0);
     expect(summary.trajectoryQuality.usageTotalTokens).toBe(0);
@@ -573,6 +587,24 @@ describe('benchmark trace artifacts', () => {
         nextVerifierCommand: 'npm test',
       }],
     });
+    expect(summary.changeEvaluation).toMatchObject({
+      status: 'confirmed',
+      accepted: true,
+      editCount: 1,
+      predictedEditCount: 1,
+      unpredictedEditCount: 0,
+      confirmedPredictionCount: 1,
+      contradictedPredictionCount: 0,
+      unverifiedPredictionCount: 0,
+      decisionCoveragePercent: 100,
+      regressionCycleCount: 0,
+      predictions: [{
+        editSeq: 4,
+        target: 'src/app.ts',
+        verdict: 'confirmed',
+        evidence: 'next verifier #5 passed: npm test',
+      }],
+    });
     expect(summary.experienceCard.validationReliability).toMatchObject({
       lastEditSeq: 4,
       finalEditVerificationCount: 1,
@@ -614,6 +646,70 @@ describe('benchmark trace artifacts', () => {
     expect(summary.experienceCard.runEfficiency.processDefectCount).toBe(summary.trajectoryQuality.processDefects.length);
     expect(summary.experienceCard.runEfficiency.warningCount).toBe(summary.trajectoryQuality.warnings.length);
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
+  });
+
+  it('writes AHE-style change evaluation for unpredicted benchmark edits', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 20,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'assistant',
+      content: 'Editing src/app.ts.',
+      tool_calls: [{
+        id: 'tc-edit',
+        type: 'function',
+        function: {
+          name: 'edit_file',
+          arguments: JSON.stringify({ file_path: 'src/app.ts', old_string: 'a', new_string: 'b' }),
+        },
+      }],
+    }];
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-change-eval',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages,
+      events,
+    });
+
+    expect(summary.changeEvaluation).toMatchObject({
+      status: 'missing_predictions',
+      accepted: false,
+      editCount: 1,
+      predictedEditCount: 0,
+      unpredictedEditCount: 1,
+      decisionCoveragePercent: 0,
+      unpredictedEdits: [{
+        editSeq: 1,
+        tool: 'edit_file',
+        target: 'src/app.ts',
+      }],
+    });
+    expect(summary.trajectoryQuality.decisionObservabilityRisk).toBe(true);
+    expect(summary.trajectoryQuality.processDefects.map((defect) => defect.code)).toContain('weak_change_manifest');
+    expect(summary.trajectoryQuality.warnings.join('\n')).toContain('decision-observability risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('decision_risk=yes');
+    expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('Prediction line');
+    expect(JSON.stringify(summary.changeEvaluation)).not.toContain(config.apiKey);
   });
 
   it('summarizes benchmark token and cost usage by model', () => {
@@ -5664,6 +5760,7 @@ describe('benchmark trace artifacts', () => {
     expect(summary).toContain('"mode": "benchmark"');
     expect(summary).toContain('"openAgentLeaderboardDraft"');
     expect(summary).toContain('"agentContextCompilation"');
+    expect(summary).toContain('"changeEvaluation"');
     expect(jsonl).toContain('"tool":"bash"');
     expect(summary).not.toContain(config.apiKey);
     const parsedSummary = JSON.parse(summary);
@@ -5678,6 +5775,13 @@ describe('benchmark trace artifacts', () => {
     expect(compiledText).toContain('"format":"ventipus-agent-context-compilation-v1"');
     expect(compiledText).toContain('Latest verifier status: ok.');
     expect(compiledText).not.toContain(config.apiKey);
+    const changeEvaluationArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'change-evaluation');
+    expect(changeEvaluationArtifact).toBeTruthy();
+    expect(changeEvaluationArtifact.sha256).toMatch(/^[a-f0-9]{64}$/);
+    const changeEvaluationText = readFileSync(changeEvaluationArtifact.path, 'utf-8');
+    expect(changeEvaluationText).toContain('"format": "ventipus-change-evaluation-v1"');
+    expect(changeEvaluationText).toContain('"status": "no_edits"');
+    expect(changeEvaluationText).not.toContain(config.apiKey);
     const manifestArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'submission-bundle-manifest');
     expect(manifestArtifact).toBeTruthy();
     expect(manifestArtifact.sha256).toMatch(/^[a-f0-9]{64}$/);
@@ -5704,6 +5808,7 @@ describe('benchmark trace artifacts', () => {
     expect(manifest.artifacts.map((artifact: { kind: string }) => artifact.kind)).toEqual(expect.arrayContaining([
       'open-agent-leaderboard-draft',
       'agent-context-compilation',
+      'change-evaluation',
       'trace-jsonl',
     ]));
     expect(manifest.artifacts.every((artifact: { sha256: string }) => /^[a-f0-9]{64}$/.test(artifact.sha256))).toBe(true);
