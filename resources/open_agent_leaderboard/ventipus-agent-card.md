@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.39
+version: 1.35.40
 developers:
   - Crownelius
 license: MIT
@@ -48,7 +48,7 @@ Benchmark mode emphasizes:
 
 ## Memory
 
-Ventipus includes MemPalace-backed project and global memory. In benchmark mode, `benchmark_context` can surface bounded relevant memories and prior local benchmark experience cards. These are explicitly framed as hypotheses that must be verified against current task files and verifier output.
+Ventipus includes MemPalace-backed project and global memory. In benchmark mode, `benchmark_context` can surface bounded relevant memories and prior local benchmark experience cards. These are explicitly framed as hypotheses that must be verified against current task files and verifier output. For Pi-Bench-style tasks, prior-run ranking uses complete proactivity ledgers as positive evidence and routes proactivity-ledger defects to warnings instead of replay hints.
 
 Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, component-observability edit classification, task-contract state and signals, task-alignment, spec-compliance, reward-hack, long-horizon roadmap/SaaS/mobile/WebDevBench/SWE-Cycle/SWE-CI coverage risk signals, and Pi-Bench proactivity ledger signals for context contract, hidden-intent hypothesis, clarification, privacy, and observable completion evidence. They also capture environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence plus pre-edit context-bloat evidence, evidence-grounding signals for stale/no-effect edit retries without a current-state refresh, AHE publish-state mutation signals for post-pass edits or state-changing commands without revalidation, run-efficiency action/usage/cost/time evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact and an AHE-style change-evaluation artifact for edit prediction verdicts, unpredicted edits, and post-edit regression-cycle attribution.
 

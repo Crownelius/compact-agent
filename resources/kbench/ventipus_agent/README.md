@@ -64,7 +64,9 @@ the relevant CI environment and then reproduce project-native test/build/lint
 steps before finalizing.
 It also separates reusable prior local benchmark experience from similar failed
 or unsafe prior runs, so context reuse stays method-level and current verifier
-evidence remains authoritative.
+evidence remains authoritative. Pi-Bench-like tasks additionally prefer prior
+experience with complete context/hidden-intent/clarification/privacy/completion
+proactivity ledgers and surface incomplete ledgers as warnings.
 
 Useful env vars:
 

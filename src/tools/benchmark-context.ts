@@ -94,6 +94,15 @@ interface BenchmarkMemoryHint {
   line: string;
 }
 
+interface PriorProactivitySummary {
+  text: string | null;
+  detected: boolean;
+  risk: boolean;
+  complete: boolean;
+  contextCoverageCount: number;
+  relevanceBonus: number;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -164,7 +173,12 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const harnessFiles = findBenchmarkHarnessFiles(sortedFiles);
     const harnessHints = summarizeBenchmarkHarnessHints(sortedFiles, verifierCommands);
     const methodHints = summarizeBenchmarkMethodHints(instructions, carefulFiles, verifierCommands, serviceHints, harnessHints, ciHints);
-    const priorExperience = summarizePriorBenchmarkExperienceSummary(root, sortedFiles, verifierCommands, taskContractSignals);
+    const priorExperience = summarizePriorBenchmarkExperienceSummary(
+      root,
+      sortedFiles,
+      verifierCommands,
+      taskContractSignals.concat(instructionExcerpts),
+    );
     const experienceHints = priorExperience.hints;
     const experienceWarnings = priorExperience.warnings;
     const memoryHints = summarizeBenchmarkMemoryHints(root, manifests, instructionExcerpts, taskContractSignals);
@@ -589,6 +603,11 @@ export function summarizePriorBenchmarkExperienceSummary(
   const currentContractSet = new Set(currentTaskContractSignals
     .map(normalizeContractSignalForMatch)
     .filter(Boolean));
+  const currentPiBenchLike = isPiBenchLikeExperienceText([
+    root,
+    ...files,
+    ...currentTaskContractSignals,
+  ].join('\n'));
 
   const candidates = globSync('**/summary.json', {
     cwd: baseDir,
@@ -642,6 +661,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorContext = summarizePriorContextUtilization(summary, quality);
     const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
     const priorSourceResearch = summarizePriorSourceResearchCoverage(summary, quality);
+    const priorProactivity = summarizePriorProactivity(summary, quality);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -654,6 +674,9 @@ export function summarizePriorBenchmarkExperienceSummary(
       .length * 4);
     relevanceScore += Math.min(12, verificationCommands.filter((cmd) => verifierSet.has(normalizeExperienceText(cmd))).length * 6);
     relevanceScore += Math.min(18, contractOverlap.length * 6);
+    if (currentPiBenchLike && priorProactivity.detected) {
+      relevanceScore += priorProactivity.relevanceBonus;
+    }
     if (relevanceScore < 18) continue;
 
     const harmReasons = classifyPriorExperienceHarm({
@@ -694,6 +717,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorReliability,
         priorContext,
         priorSourceResearch,
+        priorProactivity.text,
         priorEfficiency,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
@@ -703,6 +727,8 @@ export function summarizePriorBenchmarkExperienceSummary(
     let score = relevanceScore;
     if (processScore != null && processScore >= 90) score += 8;
     if ((successfulVerificationCount ?? 0) > 0) score += 8;
+    if (currentPiBenchLike && priorProactivity.complete) score += 20;
+    if (currentPiBenchLike && priorProactivity.risk) score -= 12;
     if (score < 18) continue;
 
     const line = [
@@ -722,6 +748,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorReliability,
       priorContext,
       priorSourceResearch,
+      priorProactivity.text,
       priorEfficiency,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
@@ -1270,6 +1297,129 @@ function summarizePriorSourceResearchCoverage(
   ].filter(Boolean).join(',');
 }
 
+function summarizePriorProactivity(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): PriorProactivitySummary {
+  const card = objectRecord(summary.experienceCard);
+  const proactivity = objectRecord(card.proactivity);
+  const cardContext = objectRecord(proactivity.contextContract);
+  const qualityContext = objectRecord(quality.proactivityContextContract);
+  const contextContract = Object.keys(cardContext).length > 0 ? cardContext : qualityContext;
+  const detectedValue = firstBooleanOrNull(proactivity.detected, quality.proactivityDetected);
+  const riskValue = firstBooleanOrNull(proactivity.risk, quality.proactivityRisk);
+  const rawSignals = Array.isArray(proactivity.signals) ? proactivity.signals : quality.proactivitySignals;
+  const signals = summarizePriorProactivitySignals(rawSignals);
+  const signalCount = finiteNumber(proactivity.signalCount) ?? finiteNumber(quality.proactivitySignalCount) ?? signals.length;
+  const contextCoverageCount = finiteNumber(contextContract.coverageCount)
+    ?? countProactivityContextCoverage(contextContract);
+  const hiddenIntentEvidence = firstBooleanOrNull(
+    proactivity.hiddenIntentEvidence,
+    quality.proactivityHiddenIntentEvidence,
+  );
+  const clarificationEvidence = firstBooleanOrNull(
+    proactivity.clarificationEvidence,
+    quality.proactivityClarificationEvidence,
+  );
+  const privacyEvidence = firstBooleanOrNull(
+    proactivity.privacyEvidence,
+    quality.proactivityPrivacyEvidence,
+  );
+  const completionEvidence = firstBooleanOrNull(
+    proactivity.completionEvidence,
+    quality.proactivityCompletionEvidence,
+  );
+  const actionCount = finiteNumber(proactivity.actionCount) ?? finiteNumber(quality.proactivityActionCount) ?? 0;
+
+  const detected = detectedValue === true;
+  const risk = riskValue === true || signalCount > 0 || signals.length > 0;
+  const hasEvidence = detected
+    || riskValue !== undefined
+    || signalCount > 0
+    || contextCoverageCount > 0
+    || hiddenIntentEvidence !== undefined
+    || clarificationEvidence !== undefined
+    || privacyEvidence !== undefined
+    || completionEvidence !== undefined
+    || actionCount > 0
+    || signals.length > 0;
+  if (!hasEvidence) {
+    return {
+      text: null,
+      detected: false,
+      risk: false,
+      complete: false,
+      contextCoverageCount: 0,
+      relevanceBonus: 0,
+    };
+  }
+
+  const complete = detected
+    && !risk
+    && contextCoverageCount >= 4
+    && hiddenIntentEvidence === true
+    && clarificationEvidence === true
+    && privacyEvidence === true
+    && completionEvidence === true;
+  const rawBonus = (detected ? 4 : 0)
+    + Math.min(12, contextCoverageCount * 2)
+    + (hiddenIntentEvidence === true ? 2 : 0)
+    + (clarificationEvidence === true ? 2 : 0)
+    + (privacyEvidence === true ? 2 : 0)
+    + (completionEvidence === true ? 2 : 0)
+    + (actionCount > 0 ? 2 : 0)
+    + (complete ? 8 : 0)
+    - (risk ? 8 : 0);
+  const relevanceBonus = Math.max(0, Math.min(24, rawBonus));
+  const text = [
+    `proactivity=detected:${String(detected)}`,
+    `risk:${String(risk)}`,
+    `signals:${signalCount}`,
+    `context:${contextCoverageCount}/6`,
+    `hidden_intent:${formatDependencyTriState(hiddenIntentEvidence)}`,
+    `clarification:${formatDependencyTriState(clarificationEvidence)}`,
+    `privacy:${formatDependencyTriState(privacyEvidence)}`,
+    `completion:${formatDependencyTriState(completionEvidence)}`,
+    `actions:${actionCount}`,
+    signals.length ? `issues:${signals.join('|')}` : null,
+  ].filter(Boolean).join(',');
+
+  return {
+    text,
+    detected,
+    risk,
+    complete,
+    contextCoverageCount,
+    relevanceBonus,
+  };
+}
+
+function countProactivityContextCoverage(contextContract: Record<string, unknown>): number {
+  const keys = ['profile', 'history', 'files', 'appState', 'tools', 'preferences'];
+  return keys.filter((key) => contextContract[key] === true).length;
+}
+
+function summarizePriorProactivitySignals(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueExperienceStrings(value
+    .slice(0, 8)
+    .flatMap((raw) => {
+      if (typeof raw === 'string') return [raw];
+      const signal = objectRecord(raw);
+      const reason = typeof signal.reason === 'string' ? signal.reason.trim() : '';
+      const target = typeof signal.target === 'string' ? signal.target.trim() : '';
+      const evidence = typeof signal.evidence === 'string' ? signal.evidence.trim() : '';
+      const parts = [
+        reason,
+        target ? `target:${target}` : null,
+        evidence ? `evidence:${evidence}` : null,
+      ].filter(Boolean).join(' ');
+      return parts ? [parts] : [];
+    })
+    .map((signal) => truncateContractSignal(redactTraceText(signal), 120)))
+    .slice(0, 3);
+}
+
 function summarizePriorRunEfficiency(
   summary: Record<string, unknown>,
   quality: Record<string, unknown>,
@@ -1555,7 +1705,7 @@ function classifyPriorExperienceHarm(input: {
   if (successfulVerificationCount === 0) reasons.push('no successful verifier');
   if (input.processScore != null && input.processScore < 70) reasons.push(`low process score ${input.processScore}`);
   const harmfulDefects = input.defectCodes.filter((code) =>
-    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_regression_forecast)/.test(code),
+    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_regression_forecast|pibench_proactivity_ledger_risk|proactivity_ledger_risk)/.test(code),
   );
   if (harmfulDefects.length > 0) reasons.push(`defects=${harmfulDefects.slice(0, 4).join('|')}`);
   if (input.finalAnswerEvidence.claimsIncomplete === true || input.finalAnswerEvidence.claimsBlocked === true) {
@@ -1569,6 +1719,10 @@ function classifyPriorExperienceHarm(input: {
 
 function normalizeExperienceText(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isPiBenchLikeExperienceText(value: string): boolean {
+  return /\b(?:pi[-_\s]?bench|pibench|proactive\s+(?:personal\s+)?assistant|hidden\s+intent|latent\s+intent|user\s+profile|message\s+history|current\s+app|app\s+context|proactivity|privacy\s+review|clarification\s+decision)\b/i.test(value);
 }
 
 function normalizeContractSignalForMatch(value: string): string {

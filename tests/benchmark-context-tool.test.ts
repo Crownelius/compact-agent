@@ -450,6 +450,26 @@ describe('benchmark_context tool', () => {
           coverageNotes: ['targeted benchmark coverage requested'],
           completeTargetedCoverage: true,
         },
+        proactivity: {
+          detected: true,
+          risk: false,
+          signalCount: 0,
+          signals: [],
+          contextContract: {
+            profile: true,
+            history: true,
+            files: true,
+            appState: true,
+            tools: true,
+            preferences: true,
+            coverageCount: 6,
+          },
+          hiddenIntentEvidence: true,
+          clarificationEvidence: true,
+          privacyEvidence: true,
+          completionEvidence: true,
+          actionCount: 1,
+        },
         taskContract: {
           signalCount: 2,
           signals: [
@@ -592,7 +612,129 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,post_success_mutations:0,latest:ok,commands:npm test|npm run build');
     expect(result.output).toContain('context=inspects:4,hits:1,misses:3,utilization:25.00%,risk:true,unused:read_file#2 src/unrelated.ts,pre_edit:1/4,pre_edit_utilization:25.00%,pre_edit_bloat:true,pre_edit_unused:read_file#2 src/unrelated.ts');
     expect(result.output).toContain('source_research=calls:1,hits:4,errors:0,sources:arxiv|github|huggingface|kaggle,github:repositories|issues,hf:papers,kaggle:competitions,result_sources:arxiv|github_repo|hf_paper|kaggle_competition,targeted:true,fresh:true,kaggle_skipped:false,recent_days:90,top:https://arxiv.org/abs/2602.08316|https://github.com/example/benchmark-agent,notes:targeted benchmark coverage requested');
+    expect(result.output).toContain('proactivity=detected:true,risk:false,signals:0,context:6/6,hidden_intent:true,clarification:true,privacy:true,completion:true,actions:1');
     expect(result.output).toContain('efficiency=tools:8,tool_elapsed_ms:620000,slow_tools:2,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,time_risk:true,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
+  }, 15_000);
+
+  it('ranks complete Pi-Bench proactivity evidence ahead of generic prior runs', async () => {
+    const root = makeRoot();
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const completePriorDir = join(traceDir, '2026-05-27-complete-pibench');
+    const genericPriorDir = join(traceDir, '2026-05-27-generic-prior');
+    const riskyPriorDir = join(traceDir, '2026-05-27-risky-pibench');
+    mkdirSync(completePriorDir, { recursive: true });
+    mkdirSync(genericPriorDir, { recursive: true });
+    mkdirSync(riskyPriorDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      '',
+      'Pi-Bench proactive personal assistant scenario.',
+      '',
+      '## Acceptance Criteria',
+      '- Must infer hidden intent from user profile, message history, current app context, files, and preferences.',
+      '- Must record whether clarification is needed and review privacy risk before acting.',
+      '- Must produce observable completion evidence.',
+      '',
+    ].join('\n'));
+
+    writeFileSync(join(completePriorDir, 'summary.json'), JSON.stringify({
+      cwd: join(root, '..', 'other-pibench-workspace'),
+      endedAt: '2026-05-27T10:00:00.000Z',
+      verificationCommands: ['custom pibench verifier'],
+      changedFiles: ['assistant/actions.ts'],
+      trajectoryQuality: {
+        processScore: 94,
+        successfulVerificationCount: 1,
+        processDefects: [],
+      },
+      experienceCard: {
+        proactivity: {
+          detected: true,
+          risk: false,
+          signalCount: 0,
+          signals: [],
+          contextContract: {
+            profile: true,
+            history: true,
+            files: true,
+            appState: true,
+            tools: true,
+            preferences: true,
+            coverageCount: 6,
+          },
+          hiddenIntentEvidence: true,
+          clarificationEvidence: true,
+          privacyEvidence: true,
+          completionEvidence: true,
+          actionCount: 2,
+        },
+      },
+    }, null, 2));
+
+    writeFileSync(join(genericPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T10:05:00.000Z',
+      verificationCommands: ['custom verifier'],
+      changedFiles: ['src/index.ts'],
+      trajectoryQuality: {
+        processScore: 99,
+        successfulVerificationCount: 1,
+        processDefects: [],
+      },
+    }, null, 2));
+
+    writeFileSync(join(riskyPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T10:10:00.000Z',
+      verificationCommands: ['custom pibench verifier'],
+      changedFiles: ['assistant/actions.ts'],
+      trajectoryQuality: {
+        processScore: 92,
+        successfulVerificationCount: 1,
+        processDefects: [
+          { code: 'pibench_proactivity_ledger_risk' },
+        ],
+      },
+      experienceCard: {
+        proactivity: {
+          detected: true,
+          risk: true,
+          signalCount: 2,
+          signals: [
+            { reason: 'missing_hidden_intent_hypothesis', target: 'hidden-intent hypotheses' },
+          ],
+          contextContract: {
+            profile: true,
+            history: false,
+            files: false,
+            appState: false,
+            tools: false,
+            preferences: false,
+            coverageCount: 1,
+          },
+          hiddenIntentEvidence: false,
+          clarificationEvidence: false,
+          privacyEvidence: false,
+          completionEvidence: true,
+          actionCount: 1,
+        },
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root, probe_network: false }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    const completeIndex = result.output.indexOf('previous run: 2026-05-27T10:00:00.000Z');
+    const genericIndex = result.output.indexOf('previous run: 2026-05-27T10:05:00.000Z');
+    expect(completeIndex).toBeGreaterThan(-1);
+    expect(genericIndex).toBeGreaterThan(-1);
+    expect(completeIndex).toBeLessThan(genericIndex);
+    expect(result.output).toContain('proactivity=detected:true,risk:false,signals:0,context:6/6,hidden_intent:true,clarification:true,privacy:true,completion:true,actions:2');
+    expect(result.output).toContain('avoid prior run: 2026-05-27T10:10:00.000Z');
+    expect(result.output).toContain('reason=defects=pibench_proactivity_ledger_risk');
+    expect(result.output).toContain('proactivity=detected:true,risk:true,signals:2,context:1/6,hidden_intent:false,clarification:false,privacy:false,completion:true,actions:1');
   }, 15_000);
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {
