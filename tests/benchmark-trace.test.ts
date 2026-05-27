@@ -365,6 +365,21 @@ describe('benchmark trace artifacts', () => {
         benchmark: 'swebenchmobile',
         benchmarkName: 'SWE-Bench Mobile',
       },
+      {
+        prompt: '/benchmark appworld complete user app workflow',
+        benchmark: 'appworld',
+        benchmarkName: 'AppWorld',
+      },
+      {
+        prompt: '/benchmark browsecomp answer difficult research question',
+        benchmark: 'browsecompplus',
+        benchmarkName: 'BrowseComp+',
+      },
+      {
+        prompt: '/benchmark tau2 resolve customer policy workflow',
+        benchmark: 'tau2',
+        benchmarkName: 'Tau Bench 2',
+      },
     ];
 
     for (const testCase of cases) {

@@ -1755,7 +1755,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
   if (/\bswe[- ]bench\b/i.test(text)) return 'swebench';
   if (/\bappworld\b/i.test(text)) return 'appworld';
-  if (/\btau\s*2\b|\btau2\b/i.test(text)) return 'tau2';
+  if (/\btau\s*2\b|\btau2\b|\btau[-_ ]?bench(?:[-_ ]?2)?\b/i.test(text)) return 'tau2';
   if (/\bbfcl\b|berkeley function calling/i.test(text)) return 'bfcl';
   if (/\bgsm8k\b/i.test(text)) return 'gsm8k';
   if (/\bhotpotqa\b/i.test(text)) return 'hotpotqa';
@@ -1777,8 +1777,8 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'roadmap' || cleaned === 'roadmapbench' || cleaned === 'longhorizon' || cleaned === 'versionupgrade') return 'roadmapbench';
   if (cleaned === 'saas' || cleaned === 'saasbench' || cleaned === 'enterprise') return 'saasbench';
   if (cleaned === 'mobile' || cleaned === 'swebenchmobile' || cleaned === 'swemobile' || cleaned === 'ios') return 'swebenchmobile';
-  if (cleaned === 'taubench' || cleaned === 'tau' || cleaned === 'tau2') return 'tau2';
-  if (cleaned === 'browsecomp' || cleaned === 'browsecompplus') return 'browsecompplus';
+  if (cleaned === 'taubench' || cleaned === 'taubench2' || cleaned === 'tau' || cleaned === 'tau2' || cleaned.startsWith('tau2') || cleaned.startsWith('taubench')) return 'tau2';
+  if (cleaned === 'browsecomp' || cleaned === 'browsecompplus' || cleaned === 'deepresearch' || cleaned === 'webresearch') return 'browsecompplus';
   return cleaned || 'ventipus_agent_benchmark';
 }
 
@@ -1786,7 +1786,7 @@ function formatBenchmarkName(slug: string): string {
   const names: Record<string, string> = {
     appworld: 'AppWorld',
     bfcl: 'Berkeley Function Calling Leaderboard',
-    browsecompplus: 'BrowseCompPlus',
+    browsecompplus: 'BrowseComp+',
     ventipus_agent_benchmark: 'Ventipus Benchmark',
     gsm8k: 'GSM8K',
     hotpotqa: 'HotpotQA',

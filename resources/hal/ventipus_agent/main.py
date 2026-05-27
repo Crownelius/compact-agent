@@ -138,6 +138,25 @@ def _is_usaco_task(task: dict[str, Any]) -> bool:
 
 def _profile_for_task(task: dict[str, Any]) -> str:
     task_text = json.dumps(task, ensure_ascii=False).lower()
+    if _is_appworld_task(task) or "appworld" in task_text or "app-world" in task_text:
+        return "appworld"
+    if (
+        "browsecomp" in task_text
+        or "browsecomp+" in task_text
+        or "browse-comp" in task_text
+        or "deep research" in task_text
+        or "web research" in task_text
+    ):
+        return "browsecomp"
+    if (
+        "tau2" in task_text
+        or "tau 2" in task_text
+        or "tau-bench" in task_text
+        or "tau_bench" in task_text
+        or "taubench" in task_text
+        or "customer support" in task_text
+    ):
+        return "tau2"
     if (
         "roadmapbench" in task_text
         or "roadmap-bench" in task_text
@@ -225,8 +244,12 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         ])
     elif _is_science_agent_task(task):
         lines.append("This is a ScienceAgentBench-style task. Produce a concise solution trajectory and any required output/program artifact in the final response.")
-    elif _is_appworld_task(task):
+    elif profile == "appworld" or _is_appworld_task(task):
         lines.append("This is an AppWorld-style environment task. Interact with the environment as needed, then complete the task through the environment API.")
+    elif profile == "browsecomp":
+        lines.append("This is a BrowseComp+-style research task. Use source-grounded browsing/retrieval evidence, cross-check claims, and return the answer with auditable attribution.")
+    elif profile == "tau2":
+        lines.append("This is a tau2/Tau-Bench-style policy workflow. Follow the domain policy, use only available action schemas, and verify tool observations before completing.")
     elif _is_usaco_task(task):
         lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
     else:

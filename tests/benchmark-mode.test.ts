@@ -39,6 +39,10 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('roadmap-bench')).toBe('roadmapbench');
     expect(normalizeBenchmarkProfile('saas-bench')).toBe('saasbench');
     expect(normalizeBenchmarkProfile('swebenchmobile')).toBe('swe-bench-mobile');
+    expect(normalizeBenchmarkProfile('app-world')).toBe('appworld');
+    expect(normalizeBenchmarkProfile('browsecomp-plus')).toBe('browsecomp');
+    expect(normalizeBenchmarkProfile('tau-bench')).toBe('tau2');
+    expect(normalizeBenchmarkProfile('tau2-airline')).toBe('tau2');
     expect(normalizeBenchmarkProfile('unknown')).toBe('auto');
   });
 
@@ -86,6 +90,18 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('swe-bench-mobile implement iOS feature')).toEqual({
       profile: 'swe-bench-mobile',
       task: 'implement iOS feature',
+    });
+    expect(splitBenchmarkArgs('appworld update calendar records')).toEqual({
+      profile: 'appworld',
+      task: 'update calendar records',
+    });
+    expect(splitBenchmarkArgs('browsecomp answer source-grounded question')).toEqual({
+      profile: 'browsecomp',
+      task: 'answer source-grounded question',
+    });
+    expect(splitBenchmarkArgs('tau2 resolve customer policy request')).toEqual({
+      profile: 'tau2',
+      task: 'resolve customer policy request',
     });
     expect(splitBenchmarkArgs('fix parser bug')).toEqual({
       profile: 'auto',
@@ -201,5 +217,22 @@ describe('benchmark mode and prompt', () => {
     expect(mobile).toContain('PRDs, screenshots/Figma references');
     expect(mobile).toContain('defensive programming');
     expect(mobile).toContain('xcodebuild');
+  });
+
+  it('builds Open Agent general-task prompts around actions, sources, and policy', () => {
+    const appworld = buildBenchmarkPrompt('complete the AppWorld calendar workflow', '/workspace', 'appworld');
+    expect(appworld).toContain('AppWorld style stateful app-environment task');
+    expect(appworld).toContain('action/state ledger');
+    expect(appworld).toContain('persistent state');
+
+    const browsecomp = buildBenchmarkPrompt('answer the BrowseComp+ research question', '/workspace', 'browsecomp');
+    expect(browsecomp).toContain('BrowseComp+ style difficult web-research task');
+    expect(browsecomp).toContain('source-grounded research');
+    expect(browsecomp).toContain('cross-check claims');
+
+    const tau2 = buildBenchmarkPrompt('handle a tau2 airline customer request', '/workspace', 'tau2');
+    expect(tau2).toContain('tau2 / Tau-Bench style policy-bound customer workflow');
+    expect(tau2).toContain('domain policy');
+    expect(tau2).toContain('available action schemas');
   });
 });

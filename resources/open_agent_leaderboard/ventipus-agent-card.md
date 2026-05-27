@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.6
+version: 1.35.13
 developers:
   - Crownelius
 license: MIT
@@ -64,7 +64,7 @@ Packaged evaluation surfaces:
 - HAL custom agent.
 - Exgentic/Open Agent Leaderboard custom agent.
 
-Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, and generic multi-step tool-use tasks.
+Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, Open Agent AppWorld/BrowseComp+/tau2-style tasks, and generic multi-step tool-use tasks.
 
 ## Evaluation Results
 

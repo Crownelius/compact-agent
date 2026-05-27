@@ -94,6 +94,9 @@ function profileForBenchmark(benchmark) {
   if (slug === 'roadmap' || slug === 'roadmapbench' || slug === 'longhorizon' || slug === 'versionupgrade') return 'roadmapbench';
   if (slug === 'saas' || slug === 'saasbench' || slug === 'enterprise') return 'saasbench';
   if (slug === 'mobile' || slug === 'swebenchmobile' || slug === 'swemobile' || slug === 'ios') return 'swe-bench-mobile';
+  if (slug === 'app' || slug === 'appworld' || slug === 'appworldbench') return 'appworld';
+  if (slug === 'browsecomp' || slug === 'browsecompplus' || slug === 'deepresearch' || slug === 'webresearch') return 'browsecomp';
+  if (slug === 'tau' || slug === 'tau2' || slug === 'taubench' || slug === 'taubench2' || slug.startsWith('tau2') || slug.startsWith('taubench')) return 'tau2';
   return 'generic';
 }
 

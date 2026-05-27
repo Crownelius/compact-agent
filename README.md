@@ -123,7 +123,7 @@ Agents are pulled from the bundled ECC harness. Each runs against an empty tool 
 | `/keys add\|remove\|status\|clear` | Manage the key-rotation pool. |
 | `/swarm <agents> <task>` | Parallel multi-agent fan-out. |
 | `/source-research <topic>` | Research arXiv, GitHub repos/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions before synthesis. |
-| `/benchmark <task>` | Run a benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `wildclaw`, `arc-agi`, `specbench`, `reward-hacking`, `roadmapbench`, `saasbench`, `swe-bench-mobile`, `generic`. |
+| `/benchmark <task>` | Run a benchmark-grade issue/terminal/general-agent workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `wildclaw`, `arc-agi`, `specbench`, `reward-hacking`, `roadmapbench`, `saasbench`, `swe-bench-mobile`, `appworld`, `browsecomp`, `tau2`, `generic`. |
 | `/tdd <feature>` | TDD workflow — failing test first. |
 | `/review [target]` | Severity-rated code review. |
 | `/audit` | Local project health check. Nothing leaves your machine. |
@@ -199,6 +199,8 @@ The compact `experienceCard` also carries `runEfficiency` action/usage/cost evid
 
 Long-horizon profiles (`roadmapbench`, `saasbench`, and `swe-bench-mobile`) add milestone-oriented prompts and trace fields for roadmap/SaaS/mobile coverage risk. The trace warns when these tasks lack a post-context milestone checklist, leave roadmap items incomplete after visible validation, or claim completion without broad integration, platform, migration, e2e, or repeated validation evidence.
 
+Open Agent general-task profiles (`appworld`, `browsecomp`, and `tau2`) tune the benchmark prompt toward stateful app actions, source-grounded web research, and policy-bound customer workflows. The Exgentic adapter auto-selects these profiles from task/context/action schemas instead of always dispatching a generic prompt, and it prints available action names separately to reduce invalid action selection.
+
 KBench-style CLI harnesses can use ventipus directly:
 
 ```bash
@@ -229,7 +231,7 @@ The KBench `experienceCard` alias includes the same `runEfficiency` block so har
 
 For HAL, `ventipus --print-hal-agent` prints a custom-agent directory containing `main.py`, `requirements.txt`, and a HAL `run(input, **kwargs)` entrypoint. The adapter shells out to ventipus in `/benchmark` mode, returns SWE-bench-style git patches, ScienceAgentBench-style trajectory strings, AppWorld `Completed` markers, and USACO/general `response` fields, stores redacted HAL stdout/stderr plus ventipus traces under `.ventipus/hal-trace/`, forwards HAL `-A model_name=...`, `provider`, `max_turns`, `max_tokens`, `temperature`, and `output_format` kwargs to CLI flags, and omits oracle-like fields such as gold patches, test patches, solutions, and answers from the prompt by default.
 
-For Exgentic/Open Agent Leaderboard, `ventipus --print-exgentic-agent` prints a custom Exgentic `Agent` package. Add its parent `resources/exgentic` directory to `PYTHONPATH` and pass `VentipusAgent(...)` to Exgentic's Python `evaluate(...)`, or copy it into an Exgentic checkout under `src/exgentic/agents/ventipus_agent/` and register the `ventipus_agent` slug for CLI use. The adapter shells out to ventipus in `/benchmark` mode on each Exgentic `react()` step, asks for one machine-readable action JSON object, maps that back to the benchmark's `ActionType`, stores prompt/stdout/stderr/trace artifacts under Exgentic's session agent directory, and reports ventipus `summary.json` estimated cost when available.
+For Exgentic/Open Agent Leaderboard, `ventipus --print-exgentic-agent` prints a custom Exgentic `Agent` package. Add its parent `resources/exgentic` directory to `PYTHONPATH` and pass `VentipusAgent(...)` to Exgentic's Python `evaluate(...)`, or copy it into an Exgentic checkout under `src/exgentic/agents/ventipus_agent/` and register the `ventipus_agent` slug for CLI use. The adapter shells out to ventipus in `/benchmark` mode on each Exgentic `react()` step, auto-selects profiles such as AppWorld, BrowseComp+, tau2, ARC, SaaS, roadmap, and mobile from the benchmark task/context/actions, asks for one machine-readable action JSON object, maps that back to the benchmark's `ActionType`, stores prompt/stdout/stderr/trace artifacts under Exgentic's session agent directory, and reports ventipus `summary.json` estimated cost when available.
 
 `ventipus --print-open-agent-card` prints a packaged Open Agent Leaderboard-style agent card documenting Ventipus identity, architecture, tools, memory, supported environments, evaluation artifact policy, limitations, and run commands. The card is submission metadata only; leaderboard claims still require official harness output.
 

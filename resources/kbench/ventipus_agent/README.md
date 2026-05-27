@@ -16,8 +16,9 @@ invokes `ventipus --prompt "/benchmark ..."` in task mode, and emits one
 `AdapterRunnerOutput` JSON object to stdout.
 Known KBench slugs are mapped to benchmark profiles before dispatch:
 `swe`/`swe-bench`, `tb2`/`terminal-bench`, `swe-chain`,
-`ci-repair`/`ci-repair-bench`, `roadmapbench`, `saasbench`, and
-`swe-bench-mobile` use specialized prompts; unknown slugs use
+`ci-repair`/`ci-repair-bench`, `roadmapbench`, `saasbench`,
+`swe-bench-mobile`, `appworld`, `browsecomp`/`browsecompplus`, and
+`tau2`/`tau-bench` use specialized prompts; unknown slugs use
 `generic`.
 
 The output includes redacted instruction/stdout/stderr artifact refs, native

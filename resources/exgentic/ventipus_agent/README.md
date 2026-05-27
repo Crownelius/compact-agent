@@ -7,6 +7,10 @@ The adapter implements Exgentic's `Agent` / `AgentInstance` split. On each
 `react()` step it writes an Exgentic prompt, launches ventipus in
 non-interactive `/benchmark` mode, asks ventipus to finish with one JSON
 action object, then maps that JSON back to an Exgentic `ActionType`.
+It auto-selects specialized `/benchmark` profiles for AppWorld, BrowseComp+,
+tau2, ARC, SaaS, roadmap, and mobile-style tasks from the task, context, and
+available action schemas, and lists valid action names separately to reduce
+invalid-action rate.
 
 ## Python API use
 

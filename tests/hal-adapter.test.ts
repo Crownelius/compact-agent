@@ -31,6 +31,9 @@ describe('HAL adapter packaging', () => {
     expect(adapter).toContain('return "roadmapbench"');
     expect(adapter).toContain('return "saasbench"');
     expect(adapter).toContain('return "swe-bench-mobile"');
+    expect(adapter).toContain('return "appworld"');
+    expect(adapter).toContain('return "browsecomp"');
+    expect(adapter).toContain('return "tau2"');
   });
 
   it('prints the packaged HAL agent directory from the CLI wrapper', () => {

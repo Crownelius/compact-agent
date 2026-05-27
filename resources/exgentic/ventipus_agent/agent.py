@@ -167,23 +167,30 @@ class VentipusAgentInstance(AgentInstance):
         action_docs = [_action_type_to_doc(action) for action in getattr(self, "actions", [])]
         context = getattr(self, "context", {}) or {}
         task = getattr(self, "task", "")
+        profile = _profile_for_exgentic(task, context, action_docs)
+        action_names = [str(doc.get("name", "")) for doc in action_docs if doc.get("name")]
         lines = [
-            "/benchmark generic Exgentic task",
+            f"/benchmark {profile} Exgentic task",
             "",
             "You are running inside Exgentic/Open Agent Leaderboard.",
             "Work from the current task, context, latest observation, and the available action schemas.",
             "Choose exactly one available action. Do not invent action names.",
+            "The benchmark may count malformed JSON, unknown action names, or schema-mismatched arguments as invalid actions.",
             "End your response with one JSON object on its own line using this exact shape:",
             '{"name":"<action name>","arguments":{}}',
             "",
             "If the benchmark exposes environment actions, return the next action to execute.",
             "If the task is complete, use a finish/message action when one is available.",
+            _profile_guidance(profile),
             "",
             "## Task",
             truncate(task),
             "",
             "## Context",
             json_dumps(context),
+            "",
+            "## Available action names",
+            json_dumps(action_names),
             "",
             "## Available actions",
             json_dumps(action_docs),
@@ -338,6 +345,49 @@ def _action_type_to_doc(action: ActionType) -> dict[str, Any]:
         "is_message": bool(getattr(action, "is_message", False)),
         "arguments_schema": schema,
     }
+
+
+def _profile_for_exgentic(task: Any, context: Any, action_docs: list[dict[str, Any]]) -> str:
+    text = " ".join(
+        [
+            str(task or ""),
+            json.dumps(context or {}, ensure_ascii=False, default=str),
+            json.dumps(action_docs or [], ensure_ascii=False, default=str),
+        ]
+    ).lower()
+    if any(token in text for token in ("appworld", "app-world", "app world")):
+        return "appworld"
+    if any(token in text for token in ("browsecomp", "browsecomp+", "browse-comp", "deep research", "web research")):
+        return "browsecomp"
+    if any(token in text for token in ("tau2", "tau 2", "tau-bench", "tau_bench", "taubench", "customer support", "customer-service")):
+        return "tau2"
+    if any(token in text for token in ("swe-bench mobile", "xcode", "swift", "objective-c", "simulator", "figma")):
+        return "swe-bench-mobile"
+    if any(token in text for token in ("saasbench", "saas-bench", "enterprise saas", "tenant", "migration")):
+        return "saasbench"
+    if any(token in text for token in ("roadmapbench", "roadmap-bench", "long-horizon", "version upgrade")):
+        return "roadmapbench"
+    if any(token in text for token in ("arc-agi", "arc prize", "kaggle arc")):
+        return "arc-agi"
+    return "generic"
+
+
+def _profile_guidance(profile: str) -> str:
+    if profile == "appworld":
+        return "AppWorld discipline: track app/API state from observations, preserve record IDs and permissions, and finish only after the requested state change is confirmed."
+    if profile == "browsecomp":
+        return "BrowseComp+ discipline: decompose the research question, prefer primary/high-authority sources, cross-check facts, and include auditable source attribution in finish/message arguments."
+    if profile == "tau2":
+        return "tau2 discipline: read policy/context first, take only policy-supported tool actions, and confirm observations before promising customer outcomes."
+    if profile == "swe-bench-mobile":
+        return "Mobile discipline: respect PRD/design/platform constraints and prefer platform validation evidence when the harness exposes it."
+    if profile == "saasbench":
+        return "SaaS discipline: preserve tenant, auth, migration, and cross-component workflow integrity."
+    if profile == "roadmapbench":
+        return "Roadmap discipline: keep milestones explicit and avoid claiming completion while roadmap items remain unverified."
+    if profile == "arc-agi":
+        return "ARC discipline: infer environment dynamics with small experiments and avoid hardcoding hidden answers."
+    return "Generic discipline: use the available actions exactly, observe after state-changing actions, and finish only with benchmark-visible evidence."
 
 
 def _find_action_type(actions: list[ActionType], name: str) -> ActionType | None:

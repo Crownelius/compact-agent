@@ -27,6 +27,12 @@ describe('Exgentic adapter packaging', () => {
     expect(agent).toContain('--benchmark-trace-dir');
     expect(agent).toContain('summary.json');
     expect(agent).toContain('{"name":"<action name>","arguments":{}}');
+    expect(agent).toContain('def _profile_for_exgentic');
+    expect(agent).toContain('/benchmark {profile} Exgentic task');
+    expect(agent).toContain('## Available action names');
+    expect(agent).toContain('return "appworld"');
+    expect(agent).toContain('return "browsecomp"');
+    expect(agent).toContain('return "tau2"');
   });
 
   it('prints the packaged Exgentic agent directory from the CLI wrapper', () => {

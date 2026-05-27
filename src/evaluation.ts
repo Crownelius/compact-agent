@@ -265,6 +265,9 @@ export type BenchmarkProfile =
   | 'roadmapbench'
   | 'saasbench'
   | 'swe-bench-mobile'
+  | 'appworld'
+  | 'browsecomp'
+  | 'tau2'
   | 'generic';
 
 const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
@@ -329,6 +332,32 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'swe-bench-mobile': 'swe-bench-mobile',
   'swe-mobile': 'swe-bench-mobile',
   ios: 'swe-bench-mobile',
+  app: 'appworld',
+  appworld: 'appworld',
+  'app-world': 'appworld',
+  'appworld-bench': 'appworld',
+  browsecomp: 'browsecomp',
+  'browse-comp': 'browsecomp',
+  browsecompplus: 'browsecomp',
+  'browsecomp-plus': 'browsecomp',
+  'browse-comp-plus': 'browsecomp',
+  deepresearch: 'browsecomp',
+  'deep-research': 'browsecomp',
+  webresearch: 'browsecomp',
+  'web-research': 'browsecomp',
+  tau: 'tau2',
+  tau2: 'tau2',
+  'tau-2': 'tau2',
+  tau2airline: 'tau2',
+  'tau2-airline': 'tau2',
+  'tau2-retail': 'tau2',
+  'tau2-telecom': 'tau2',
+  taubench: 'tau2',
+  'tau-bench': 'tau2',
+  'tau-bench-2': 'tau2',
+  'tau-bench-airline': 'tau2',
+  'tau-bench-retail': 'tau2',
+  'tau-bench-telecom': 'tau2',
   generic: 'generic',
 };
 
@@ -434,6 +463,27 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Prefer defensive programming around lifecycle, nil/nullability, permissions, concurrency, feature flags, and backwards compatibility; avoid broad rewrites of mixed native code.
 - Validate with the narrowest relevant mobile test first, then run a platform-level build/test command such as xcodebuild, swift test, fastlane, Gradle, or the supplied emulator/simulator harness when feasible.
 - Do not claim completion from generic unit tests alone when platform build, simulator, or design-contract evidence is available.`;
+    case 'appworld':
+      return `Profile: AppWorld style stateful app-environment task
+- Treat the task as a grounded workflow over apps, APIs, and persistent state, not as a prose QA task.
+- Identify the allowed actions/tools, current app state, user goal, and success condition before acting; keep a compact action/state ledger.
+- Prefer small reversible environment actions. Re-read observations after each action and avoid assuming hidden state changed unless the environment confirms it.
+- Preserve user identity, permissions, dates, IDs, and record integrity; do not fabricate database/API state or skip required app interactions.
+- Finish only after the environment state satisfies the requested user outcome, using the benchmark's finish/done action when available.`;
+    case 'browsecomp':
+      return `Profile: BrowseComp+ style difficult web-research task
+- Treat the task as source-grounded research with adversarial ambiguity, not as recall.
+- Decompose the question into search facets, run targeted searches, open primary/high-authority sources, and cross-check claims across independent evidence.
+- Track source URLs, dates, entity names, and disambiguators; prefer exact quoted evidence only when short and necessary.
+- Do not overfit snippets, SEO pages, stale mirrors, or single-source claims. Resolve conflicts explicitly before finalizing.
+- Return a concise answer with enough source attribution for the grader/user to audit the reasoning path.`;
+    case 'tau2':
+      return `Profile: tau2 / Tau-Bench style policy-bound customer workflow
+- Treat the task as an interactive customer-service workflow constrained by domain policy, tools, and conversation state.
+- Read the policy/context before tool calls; identify allowed, required, and forbidden actions for the specific user request.
+- Use only available action schemas and exact required arguments. Confirm tool observations before promising outcomes or taking dependent actions.
+- Preserve privacy and account integrity: do not infer unavailable IDs, waive policy constraints, invent inventory/status, or take irreversible actions without policy support.
+- Finish with the benchmark's message/finish action only after the requested workflow is either completed or clearly blocked by policy/tool evidence.`;
     case 'generic':
       return `Profile: generic benchmark task
 - Identify the benchmark contract from local files and task text.
@@ -454,6 +504,9 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task mentions RoadmapBench, version-upgrade roadmaps, multi-target subtasks, or long-horizon repository development, follow the RoadmapBench profile.
 - If the task mentions SaaSBench, enterprise SaaS, validation nodes, multi-component app workflows, tenants, migrations, or cross-service integration, follow the SaaSBench profile.
 - If the task mentions SWE-Bench Mobile, iOS/mobile feature work, PRDs, Figma, Swift, Objective-C, Xcode, Android, or simulator/emulator validation, follow the SWE-Bench Mobile profile.
+- If the task mentions AppWorld, app/API state, user records, calendars, mail, spreadsheets, or environment state transitions, follow the AppWorld profile.
+- If the task mentions BrowseComp, BrowseComp+, difficult web research, source-grounded browsing, or multi-hop search, follow the BrowseComp+ profile.
+- If the task mentions tau2, Tau-Bench, customer support, airline/retail/telecom policy workflows, or policy-bound tool use, follow the tau2 profile.
 - Otherwise follow the generic benchmark profile.`;
   }
 }
@@ -479,6 +532,7 @@ Use this workflow as the default benchmark strategy:
    - Prefer one coherent root-cause patch over broad speculative rewrites.
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
    - For long-horizon roadmap, SaaS, or mobile tasks, keep the checklist milestone-based so partially completed acceptance nodes stay visible.
+   - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.
    - After each patch, run the narrowest relevant test again.
@@ -527,6 +581,7 @@ ${preflightSnapshot}
    - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
    - For RoadmapBench/SaaSBench/SWE-Bench Mobile work, identify roadmap milestones, validation nodes, platform/integration verifiers, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
+   - For AppWorld/BrowseComp+/tau2 work, identify available actions, required source/policy evidence, finish action, and state-observation loop before taking environment actions.
    - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
 
 2. Localize before editing.
@@ -557,6 +612,7 @@ ${preflightSnapshot}
    - For services, servers, watchers, and daemons, call bash with \`background:true\`, then inspect the returned log path before assuming readiness.
    - Then run the broad verifier or build/test command available in the task.
    - For roadmap/SaaS/mobile tasks, prefer at least one broad integration, platform, migration, e2e, or full build/test verifier after the final edit.
+   - For AppWorld/tau2 tasks, verify the latest observation or tool response reflects the intended state; for BrowseComp+, cross-check final claims against opened source evidence.
    - If a verifier fails, diagnose from output and iterate. Do not final-answer on unverified edits.
 
 6. Final response.
