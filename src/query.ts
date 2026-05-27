@@ -53,6 +53,42 @@ import { archiveLargeToolOutput } from './tool-output-archive.js';
 // sessions get fresh hints.
 const _thinkingHintShownForSession = new Set<string>();
 
+const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 60_000;
+const FLAKY_FIRST_TOKEN_TIMEOUT_MS = 20_000;
+
+function envTimeoutMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
+export function resolveFirstTokenTimeoutMs(
+  config: Pick<VentipusConfig, 'model' | 'provider'>,
+): number {
+  const model = String(config.model || '').toLowerCase();
+  const provider = String(config.provider || '').toLowerCase();
+  const flaky = provider.includes('openrouter') && [
+    'owl-alpha',
+    'horizon-alpha',
+    'horizon-beta',
+    'optimus-alpha',
+    'quasar-alpha',
+  ].some((pattern) => model.includes(pattern));
+  const fallback = flaky ? FLAKY_FIRST_TOKEN_TIMEOUT_MS : DEFAULT_FIRST_TOKEN_TIMEOUT_MS;
+  return envTimeoutMs('VENTIPUS_FIRST_TOKEN_TIMEOUT_MS', fallback);
+}
+
+function fallbackModelForTurn(
+  config: VentipusConfig,
+  usedFallbackModel: boolean,
+): string | null {
+  const fallback = config.fallbackModel;
+  if (usedFallbackModel || !fallback || fallback === config.model) return null;
+  return fallback;
+}
+
 /**
  * Count how many NON-OVERLAPPING occurrences of the last `windowSize`
  * characters of `fullText` appear in the full string. Bails as soon as
@@ -1438,9 +1474,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const { startSpinner } = await import('./animations.js');
       waitingSpinner = startSpinner(`  {S} ${chalk.dim('waiting for model response…')}`);
     }
-    // 30-second slow-model warning. If no token has arrived by 30s,
-    // tell the user explicitly that the model is taking longer than
-    // usual and how to bail out. Cleared as soon as ANY event arrives.
+    // Slow-model warning and first-token watchdog. The warning is a
+    // UX hint; the watchdog is the hard recovery path for providers
+    // that accept a request but then never produce a stream event.
     const slowTimer = setTimeout(() => {
       if (!firstTokenSeen) {
         console.log(chalk.yellow(
@@ -1448,6 +1484,16 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         ));
       }
     }, 30_000);
+    let firstTokenTimedOut = false;
+    const firstTokenTimeoutMs = resolveFirstTokenTimeoutMs(ctx.config);
+    const firstTokenTimer = firstTokenTimeoutMs > 0
+      ? setTimeout(() => {
+          if (!firstTokenSeen) {
+            firstTokenTimedOut = true;
+            try { streamAbort.abort(); } catch { /* noop */ }
+          }
+        }, firstTokenTimeoutMs)
+      : null;
 
     try {
       for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS, streamAbort.signal)) {
@@ -1456,6 +1502,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
           clearTimeout(slowTimer);
+          if (firstTokenTimer) clearTimeout(firstTokenTimer);
           // Tear down the live "waiting…" spinner so the next print
           // (thinking header, response text, or tool call) lands on
           // a fresh line. Clear the spinner row first — stop() leaves
@@ -1519,11 +1566,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           }
         }
       }
+      clearTimeout(slowTimer);
+      if (firstTokenTimer) clearTimeout(firstTokenTimer);
     } catch (err: unknown) {
       // Stream threw before any token arrived — clear the slow-model
       // timer so its 30s callback doesn't fire after the error is
       // already on stdout (would look like a false positive).
       clearTimeout(slowTimer);
+      if (firstTokenTimer) clearTimeout(firstTokenTimer);
       // Tear down the waiting spinner if it's still ticking — error
       // print below shouldn't trail an animated row.
       if (waitingSpinner) {
@@ -1534,6 +1584,27 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
+
+      if (firstTokenTimedOut) {
+        const failedModel = ctx.config.model;
+        const fallback = fallbackModelForTurn(ctx.config, usedFallbackModel);
+        if (fallback) {
+          usedFallbackModel = true;
+          ctx.config.model = fallback;
+          resetClient();
+          console.log(theme.warning(
+            `  ${sym.warn} ${failedModel} produced no stream events for ${formatDuration(firstTokenTimeoutMs)} — retrying once with fallback model ${fallback}.`,
+          ));
+          console.log(theme.dim('    Configure with /fallback <model-id>, disable with /fallback off, or switch now with /openrouter-free.'));
+          turns--;
+          continue;
+        }
+        const timeoutMsg = `${failedModel} produced no stream events for ${formatDuration(firstTokenTimeoutMs)}`;
+        console.log(theme.error(`  ${sym.warn} ${timeoutMsg}.`));
+        console.log(theme.dim('    The request was cancelled so the prompt can recover. Try /openrouter-free or /model <known-good-model>.'));
+        ctx.messages.push({ role: 'assistant', content: `[Provider timeout: ${timeoutMsg}]` });
+        break;
+      }
 
       // ── Steer path (graceful — not an error) ──────────────
       // If the user pressed Ctrl+G / Esc during streaming, the
@@ -1595,15 +1666,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         provider: ctx.config.provider,
         model: ctx.config.model,
       });
-      const canFallback =
-        cat.category === 'unknown'
-        && ctx.config.fallbackModel
-        && ctx.config.fallbackModel !== ctx.config.model
-        && !usedFallbackModel;
-      if (canFallback) {
+      const errorFallback = cat.category === 'unknown'
+        ? fallbackModelForTurn(ctx.config, usedFallbackModel)
+        : null;
+      if (errorFallback) {
         usedFallbackModel = true;
         const failedModel = ctx.config.model;
-        const fallback = ctx.config.fallbackModel as string;
+        const fallback = errorFallback;
         ctx.config.model = fallback;
         resetClient();
         console.log(theme.warning(
@@ -1633,6 +1702,27 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         }
       }
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
+      break;
+    }
+
+    if (!hasOutput && (!toolCalls || toolCalls.length === 0)) {
+      const failedModel = ctx.config.model;
+      const fallback = fallbackModelForTurn(ctx.config, usedFallbackModel);
+      if (fallback) {
+        usedFallbackModel = true;
+        ctx.config.model = fallback;
+        resetClient();
+        console.log(theme.warning(
+          `  ${sym.warn} ${failedModel} returned an empty response — retrying once with fallback model ${fallback}.`,
+        ));
+        console.log(theme.dim('    Configure with /fallback <model-id>, disable with /fallback off, or switch now with /openrouter-free.'));
+        turns--;
+        continue;
+      }
+      const emptyMsg = `${failedModel} returned an empty response`;
+      console.log(theme.error(`  ${sym.warn} ${emptyMsg}.`));
+      console.log(theme.dim('    Try /openrouter-free or /model <known-good-model>.'));
+      ctx.messages.push({ role: 'assistant', content: `[Provider empty response: ${emptyMsg}]` });
       break;
     }
 

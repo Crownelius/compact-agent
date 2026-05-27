@@ -312,6 +312,71 @@ describe('Exgentic adapter packaging', () => {
     expect(parsed.done.diagnostics.completion_ready).toBe(true);
   });
 
+  it('avoids repeating an action when the latest Exgentic observation did not change', () => {
+    const actionDocs = [
+      {
+        name: 'lookup_order',
+        description: 'Look up order and customer state',
+        is_finish: false,
+        is_message: false,
+        arguments_schema: {
+          properties: { order_id: { type: 'string' } },
+          required: ['order_id'],
+        },
+      },
+      {
+        name: 'issue_refund',
+        description: 'Issue refund for an eligible order',
+        is_finish: false,
+        is_message: false,
+        arguments_schema: {
+          properties: { order_id: { type: 'string' }, amount: { type: 'number' } },
+          required: ['order_id', 'amount'],
+        },
+      },
+      {
+        name: 'finish',
+        description: 'Finish with the final answer',
+        is_finish: true,
+        is_message: false,
+        arguments_schema: { properties: { answer: { type: 'string' } } },
+      },
+    ];
+    const script = [
+      `import json, sys`,
+      `sys.path.insert(0, ${JSON.stringify(adapterDir)})`,
+      `import utils`,
+      `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
+      `obs = {"order_id": "ord-1", "status": "pending", "next": "issue refund", "note": "customer still waiting"}`,
+      `history = [`,
+      `  {"role": "observation", "content": obs},`,
+      `  {"role": "selected_action", "content": [{"name": "lookup_order", "arguments": {"order_id": "ord-1"}}]},`,
+      `  {"role": "observation", "content": obs},`,
+      `]`,
+      `shortlist = utils.shortlist_exgentic_actions(actions, task="Refund order ord-1", context={"amount": 12.5}, history=history, profile="tau2", limit=3)`,
+      `fallback = utils.fallback_exgentic_action_payload(actions, task="Refund order ord-1", context={"amount": 12.5}, history=history, profile="tau2")`,
+      `print(json.dumps({`,
+      `  "avoid": shortlist["avoid_no_effect_repeat_actions"],`,
+      `  "names": [item["name"] for item in shortlist["shortlisted_actions"]],`,
+      `  "fallback": {"name": fallback.payload.name, "arguments": fallback.payload.arguments, "diagnostics": fallback.diagnostics},`,
+      `}, sort_keys=True))`,
+    ].join('\n');
+    const out = execFileSync('python', ['-c', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+    }).trim();
+    const parsed = JSON.parse(out);
+    expect(parsed.avoid).toEqual(['lookup_order']);
+    expect(parsed.names[0]).toBe('issue_refund');
+    expect(parsed.fallback.name).toBe('issue_refund');
+    expect(parsed.fallback.arguments).toEqual({ order_id: 'ord-1', amount: 12.5 });
+    expect(parsed.fallback.diagnostics.avoid_no_effect_repeat_actions).toEqual(['lookup_order']);
+  });
+
   it('repairs near-miss Exgentic action names and argument keys before dispatch', () => {
     const actionDocs = [
       {

@@ -154,6 +154,7 @@ def fold_exgentic_history(
         "turns_seen": len(history or []),
         "latest_observation": latest_observation,
         "latest_action": latest_action,
+        "no_effect_repeat_actions": _recent_no_effect_action_names(history or []),
         "recent_observations": observations[-max_items:],
         "recent_actions": actions[-max_items:],
         "diagnostics": diagnostics[-max_items:],
@@ -244,7 +245,17 @@ def fallback_exgentic_action_payload(
         profile=profile,
     )
     completion_ready = bool(shortlist.get("completion_ready"))
-    candidate_names = _fallback_candidate_names(shortlist, docs, completion_ready=completion_ready)
+    no_effect_repeat_actions = [
+        str(name)
+        for name in shortlist.get("avoid_no_effect_repeat_actions") or []
+        if str(name)
+    ]
+    candidate_names = _fallback_candidate_names(
+        shortlist,
+        docs,
+        completion_ready=completion_ready,
+        avoid_names=no_effect_repeat_actions,
+    )
     skipped: list[dict[str, Any]] = []
 
     for name in candidate_names:
@@ -269,6 +280,7 @@ def fallback_exgentic_action_payload(
             "fallback_reason": reason,
             "selected_name": repair.payload.name,
             "completion_ready": completion_ready,
+            "avoid_no_effect_repeat_actions": no_effect_repeat_actions,
             "candidate_names": candidate_names[:12],
             "skipped_candidates": skipped[:8],
             "shortlist": shortlist,
@@ -314,6 +326,8 @@ def shortlist_exgentic_actions(
     completion_ready = _completion_ready(latest_observation_text)
     latest_action_name = _latest_selected_action_name(history or [])
     has_recent_error = _has_recent_action_error(history or [])
+    no_effect_repeat_actions = _recent_no_effect_action_names(history or [])
+    no_effect_repeat_set = {name.lower() for name in no_effect_repeat_actions}
 
     scored: list[tuple[float, str, dict[str, Any], list[str], list[str], list[str], list[dict[str, str]]]] = []
     for doc in docs:
@@ -368,6 +382,9 @@ def shortlist_exgentic_actions(
             if has_recent_error:
                 score -= 4
                 reasons.append("avoid repeating after recent action/schema error")
+        if not completion_ready and name.lower() in no_effect_repeat_set:
+            score -= 10
+            reasons.append("avoid repeating no-effect action; latest observation did not change")
 
         scored.append((score, name.lower(), doc, reasons, schema_keys, required_keys, required_hints))
 
@@ -391,9 +408,10 @@ def shortlist_exgentic_actions(
         "action_count": len(docs),
         "shortlist_limit": safe_limit,
         "completion_ready": completion_ready,
+        "avoid_no_effect_repeat_actions": no_effect_repeat_actions,
         "shortlisted_actions": shortlisted,
         "deferred_completion_actions": deferred_completion,
-        "discipline": "Prefer shortlisted actions when they fit the latest observation; use full schemas below if the current state clearly requires a non-shortlisted action.",
+        "discipline": "Prefer shortlisted actions when they fit the latest observation; use full schemas below if the current state clearly requires a non-shortlisted action. If avoid_no_effect_repeat_actions is non-empty, change strategy unless no other viable action has its required arguments.",
     }
 
 
@@ -619,6 +637,61 @@ def _latest_selected_action_name(history: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _recent_no_effect_action_names(history: list[dict[str, Any]]) -> list[str]:
+    latest_observation_idx: int | None = None
+    previous_observation_idx: int | None = None
+    for idx in range(len(history or []) - 1, -1, -1):
+        item = history[idx]
+        if not isinstance(item, dict) or item.get("role") != "observation":
+            continue
+        if latest_observation_idx is None:
+            latest_observation_idx = idx
+        else:
+            previous_observation_idx = idx
+            break
+
+    if latest_observation_idx is None or previous_observation_idx is None:
+        return []
+
+    latest = history[latest_observation_idx].get("content")
+    previous = history[previous_observation_idx].get("content")
+    latest_text = json_dumps(latest, limit=4000).lower()
+    unchanged = (
+        _observation_fingerprint(latest) == _observation_fingerprint(previous)
+        or bool(
+            re.search(
+                r"\b(no change|no changes|unchanged|same state|nothing changed|no effect|still pending|"
+                r"did not (?:change|update|move|complete|resolve)|not (?:changed|updated|completed|resolved))\b",
+                latest_text,
+            )
+        )
+    )
+    if not unchanged:
+        return []
+
+    names: list[str] = []
+    for item in history[previous_observation_idx + 1:latest_observation_idx]:
+        if not isinstance(item, dict) or item.get("role") != "selected_action":
+            continue
+        for name in _selected_action_names(item.get("content")):
+            push_unique(names, name)
+    return names
+
+
+def _selected_action_names(value: Any) -> list[str]:
+    actions = value if isinstance(value, list) else [value]
+    names: list[str] = []
+    for action in actions:
+        if isinstance(action, dict) and action.get("name"):
+            push_unique(names, str(action.get("name")))
+    return names
+
+
+def _observation_fingerprint(value: Any) -> str:
+    text = json_dumps(value, limit=8000).lower()
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _has_recent_action_error(history: list[dict[str, Any]]) -> bool:
     for item in reversed((history or [])[-4:]):
         if not isinstance(item, dict) or item.get("role") != "ventipus":
@@ -742,29 +815,44 @@ def _fallback_candidate_names(
     docs: list[dict[str, Any]],
     *,
     completion_ready: bool,
+    avoid_names: list[str] | None = None,
 ) -> list[str]:
     names: list[str] = []
+    delayed: list[str] = []
+    avoid = {str(name).lower() for name in avoid_names or [] if str(name)}
+
+    def add_candidate(value: Any) -> None:
+        name = str(value or "")
+        if not name:
+            return
+        if not completion_ready and name.lower() in avoid:
+            push_unique(delayed, name)
+            return
+        push_unique(names, name)
+
     if completion_ready:
         for doc in docs:
             if (doc.get("is_finish") or doc.get("is_message")) and doc.get("name"):
-                push_unique(names, str(doc.get("name")))
+                add_candidate(doc.get("name"))
         for doc in docs:
             name = str(doc.get("name") or "")
             if name.lower() in {"finish", "final", "done"}:
-                push_unique(names, name)
+                add_candidate(name)
 
     for item in shortlist.get("shortlisted_actions") or []:
         if isinstance(item, dict) and item.get("name"):
-            push_unique(names, str(item.get("name")))
+            add_candidate(item.get("name"))
 
     if not completion_ready:
         for doc in docs:
             if not (doc.get("is_finish") or doc.get("is_message")) and doc.get("name"):
-                push_unique(names, str(doc.get("name")))
+                add_candidate(doc.get("name"))
 
     for doc in docs:
         if (completion_ready or len(docs) == 1) and doc.get("name"):
-            push_unique(names, str(doc.get("name")))
+            add_candidate(doc.get("name"))
+    for name in delayed:
+        push_unique(names, name)
     return names
 
 

@@ -24,7 +24,10 @@ when available, and unknown extra keys are dropped when the benchmark exposes a
 fixed schema. If ventipus produces malformed or missing action JSON, the adapter
 uses the same shortlist and exact required-argument hints to select a viable
 non-finish action while the latest observation is still pending, instead of
-falling straight to a finish/message action.
+falling straight to a finish/message action. When a selected action is followed
+by an effectively unchanged observation, the next shortlist and deterministic
+fallback mark that action as a no-effect repeat and prefer another viable action
+with satisfiable required arguments.
 
 ## Python API use
 

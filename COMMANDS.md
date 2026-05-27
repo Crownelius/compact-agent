@@ -32,6 +32,8 @@ Everything in this section is typed inside the REPL after `❯ `.
 
 At an empty prompt, `/` opens the inline command selector. It stays below the prompt, keeps the widget under roughly half the terminal height, lets you type to narrow, scroll with arrows/PageUp/PageDown, jump with Home/End, and press Enter to fill the prompt with the highlighted command so you can edit it or press Enter again to run it. If a slash prefix is already typed, Tab reopens the same bounded selector with that filter instead of printing the full command list. It only erases its own prompt/dropdown rows instead of clearing the rest of the terminal.
 
+During model/tool work, typing is captured in a fixed bottom `queued next` line for the next prompt. If an OpenRouter preview/free model accepts a request but sends no stream event, Ventipus cancels after a first-token watchdog and retries once with `/fallback` (default `openrouter/free` for OpenRouter), so the prompt returns instead of appearing frozen.
+
 ### 2.1 General & session control
 
 | Command | What it does |
@@ -340,7 +342,7 @@ Prior benchmark hints emitted by `benchmark_context` include compact `efficiency
 
 Long-horizon profiles (`roadmapbench`, `saasbench`, and `swe-bench-mobile`) add roadmap/SaaS/mobile coverage checks to benchmark traces and KBench/HAL adapter routing. Trace summaries flag missing milestone checklists, incomplete roadmap items after validation, and absent broad integration/platform validation for RoadmapBench, SaaSBench, and SWE-Bench Mobile-style work.
 
-Open Agent general-task profiles (`appworld`, `browsecomp`, and `tau2`) tune `/benchmark` prompts for stateful app/API actions, source-grounded web research, and policy-bound customer workflows. The Exgentic adapter auto-selects these profiles from task/context/action schemas, prints available action names separately, adds a deterministic current-state action shortlist with required argument keys and redacted exact latest-observation/context hints before the full schemas, repairs case/camelCase/schema-key near misses plus exact latest-observation/context required-argument omissions before dispatch, and uses the same shortlist/hints to recover from malformed or missing action JSON with a viable non-finish action while the latest observation is still pending.
+Open Agent general-task profiles (`appworld`, `browsecomp`, and `tau2`) tune `/benchmark` prompts for stateful app/API actions, source-grounded web research, and policy-bound customer workflows. The Exgentic adapter auto-selects these profiles from task/context/action schemas, prints available action names separately, adds a deterministic current-state action shortlist with required argument keys and redacted exact latest-observation/context hints before the full schemas, repairs case/camelCase/schema-key near misses plus exact latest-observation/context required-argument omissions before dispatch, avoids no-effect repeated actions when the latest observation did not change, and uses the same shortlist/hints to recover from malformed or missing action JSON with a viable non-finish action while the latest observation is still pending.
 
 Any tool name you see in error output other than these (e.g. `web_search_exa`, `TodoWrite`, `exec_file`) is a model hallucination — the agent will be told the valid list and self-correct on the next iteration.
 

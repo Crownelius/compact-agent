@@ -123,9 +123,9 @@ function drawBox(text: string): void {
   stdout.write(ANSI.moveTo(boxRow, 1));
   stdout.write(ANSI.clearLine);
 
-  const prefix = '  ▶ queued: ';
+  const prefix = '  ▶ queued next: ';
   const budget = Math.max(20, cols - prefix.length - 2);
-  let display = text;
+  let display = text || '(type ahead; Shift+F5 cancels current model call)';
   // Show the END of the text (most recently typed) when overflowing
   if (display.length > budget) {
     display = '…' + display.slice(display.length - budget + 1);
@@ -135,7 +135,7 @@ function drawBox(text: string): void {
 
   // Soft-styled prefix + content. Bold for the marker, dim for "queued:",
   // normal for the text itself.
-  stdout.write(ANSI.bold + '  ▶' + ANSI.reset + ANSI.dim + ' queued: ' + ANSI.reset + display);
+  stdout.write(ANSI.bold + '  ▶' + ANSI.reset + ANSI.dim + ' queued next: ' + ANSI.reset + display);
 
   // Restore cursor to where streaming was writing
   stdout.write(ANSI.restoreCursor);
