@@ -16,7 +16,16 @@ from exgentic.core.agent_instance import AgentInstance
 from exgentic.core.types import Action, ActionType, Observation
 from exgentic.utils.cost import UpdatableCostReport
 
-from .utils import ActionPayload, extract_action_payload, fold_exgentic_history, json_dumps, redact, safe_id, truncate
+from .utils import (
+    ActionPayload,
+    extract_action_payload,
+    fold_exgentic_history,
+    json_dumps,
+    redact,
+    safe_id,
+    shortlist_exgentic_actions,
+    truncate,
+)
 
 
 class VentipusAgent(Agent):
@@ -169,12 +178,20 @@ class VentipusAgentInstance(AgentInstance):
         task = getattr(self, "task", "")
         profile = _profile_for_exgentic(task, context, action_docs)
         action_names = [str(doc.get("name", "")) for doc in action_docs if doc.get("name")]
+        action_shortlist = shortlist_exgentic_actions(
+            action_docs,
+            task=task,
+            context=context,
+            history=self._history,
+            profile=profile,
+        )
         lines = [
             f"/benchmark {profile} Exgentic task",
             "",
             "You are running inside Exgentic/Open Agent Leaderboard.",
             "Work from the current task, context, latest observation, and the available action schemas.",
             "Choose exactly one available action. Do not invent action names.",
+            "Prefer the recommended action shortlist when it matches the latest observation; use the full schemas only when the current state clearly requires another available action.",
             "The benchmark may count malformed JSON, unknown action names, or schema-mismatched arguments as invalid actions.",
             "End your response with one JSON object on its own line using this exact shape:",
             '{"name":"<action name>","arguments":{}}',
@@ -188,6 +205,9 @@ class VentipusAgentInstance(AgentInstance):
             "",
             "## Context",
             json_dumps(context),
+            "",
+            "## Recommended action shortlist",
+            json_dumps(action_shortlist),
             "",
             "## Available action names",
             json_dumps(action_names),

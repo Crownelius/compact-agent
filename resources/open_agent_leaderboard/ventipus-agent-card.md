@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.15
+version: 1.35.16
 developers:
   - Crownelius
 license: MIT
@@ -64,7 +64,7 @@ Packaged evaluation surfaces:
 - HAL custom agent.
 - Exgentic/Open Agent Leaderboard custom agent.
 
-Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, Open Agent AppWorld/BrowseComp+/tau2-style tasks, and generic multi-step tool-use tasks. The Exgentic adapter folds prior observations/actions into a compact task-relevant ledger between steps so long noisy sessions keep current state, policy evidence, selected actions, and diagnostics in view without repeatedly reinjecting raw transcripts.
+Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, Open Agent AppWorld/BrowseComp+/tau2-style tasks, and generic multi-step tool-use tasks. The Exgentic adapter builds a deterministic recommended action shortlist from the current task, context, latest observation, profile, schemas, and recent diagnostics before showing the full action schemas, then folds prior observations/actions into a compact task-relevant ledger between steps so long noisy sessions keep current state, policy evidence, selected actions, and diagnostics in view without repeatedly reinjecting raw transcripts.
 
 ## Evaluation Results
 

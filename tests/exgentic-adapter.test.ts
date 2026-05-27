@@ -30,6 +30,8 @@ describe('Exgentic adapter packaging', () => {
     expect(agent).toContain('def _profile_for_exgentic');
     expect(agent).toContain('/benchmark {profile} Exgentic task');
     expect(agent).toContain('## Available action names');
+    expect(agent).toContain('## Recommended action shortlist');
+    expect(agent).toContain('shortlist_exgentic_actions');
     expect(agent).toContain('## Folded session state');
     expect(agent).toContain('fold_exgentic_history');
     expect(agent).toContain('return "appworld"');
@@ -174,6 +176,59 @@ describe('Exgentic adapter packaging', () => {
     expect(folded.action_counts.lookup_order).toBe(1);
     expect(folded.diagnostics[0].evidence).toContain('schema mismatch');
     expect(JSON.stringify(folded)).not.toContain('large harmless model transcript large harmless model transcript large harmless model transcript');
+  });
+
+  it('shortlists Exgentic actions while deferring premature finish actions', () => {
+    const actionDocs = [
+      {
+        name: 'lookup_order',
+        description: 'Look up order and customer state',
+        is_finish: false,
+        is_message: false,
+        arguments_schema: { properties: { order_id: { type: 'string' } } },
+      },
+      {
+        name: 'issue_refund',
+        description: 'Issue refund for an eligible order',
+        is_finish: false,
+        is_message: false,
+        arguments_schema: { properties: { order_id: { type: 'string' }, amount: { type: 'number' } } },
+      },
+      {
+        name: 'finish',
+        description: 'Finish with the final answer',
+        is_finish: true,
+        is_message: false,
+        arguments_schema: { properties: { answer: { type: 'string' } } },
+      },
+    ];
+    const script = [
+      `import json, sys`,
+      `sys.path.insert(0, ${JSON.stringify(adapterDir)})`,
+      `import utils`,
+      `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
+      `pending_history = [{"role": "observation", "content": {"order_id": "ord-1", "status": "pending", "next": "lookup order before refund"}}]`,
+      `done_history = [{"role": "observation", "content": {"order_id": "ord-1", "status": "completed", "note": "refund completed and customer confirmed"}}]`,
+      `pending = utils.shortlist_exgentic_actions(actions, task="Refund order ord-1", history=pending_history, profile="tau2", limit=2)`,
+      `done = utils.shortlist_exgentic_actions(actions, task="Refund order ord-1", history=done_history, profile="tau2", limit=3)`,
+      `print(json.dumps({"pending": pending, "done": done}, sort_keys=True))`,
+    ].join('\n');
+    const out = execFileSync('python', ['-c', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+    }).trim();
+    const parsed = JSON.parse(out);
+    expect(parsed.pending.format).toBe('ventipus-exgentic-action-shortlist-v1');
+    expect(parsed.pending.completion_ready).toBe(false);
+    expect(parsed.pending.shortlisted_actions[0].name).toBe('lookup_order');
+    expect(parsed.pending.shortlisted_actions.map((item: { name: string }) => item.name)).not.toContain('finish');
+    expect(parsed.pending.deferred_completion_actions).toContain('finish');
+    expect(parsed.done.completion_ready).toBe(true);
+    expect(parsed.done.shortlisted_actions.map((item: { name: string }) => item.name)).toContain('finish');
   });
 
   it('compiles the Python adapter files without writing __pycache__ into resources', () => {

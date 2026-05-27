@@ -16,6 +16,47 @@ SECRET_REPLACEMENTS = [
     (re.compile(r"npm_[A-Za-z0-9]{16,}"), "npm_[REDACTED]"),
 ]
 
+STOPWORDS = {
+    "about",
+    "after",
+    "again",
+    "also",
+    "and",
+    "any",
+    "are",
+    "available",
+    "been",
+    "before",
+    "being",
+    "can",
+    "context",
+    "could",
+    "current",
+    "does",
+    "for",
+    "from",
+    "has",
+    "have",
+    "into",
+    "latest",
+    "need",
+    "needs",
+    "not",
+    "observation",
+    "only",
+    "requested",
+    "should",
+    "task",
+    "that",
+    "the",
+    "then",
+    "this",
+    "use",
+    "user",
+    "with",
+    "you",
+}
+
 
 @dataclass(frozen=True)
 class ActionPayload:
@@ -103,6 +144,110 @@ def fold_exgentic_history(
     }
 
 
+def shortlist_exgentic_actions(
+    action_docs: list[dict[str, Any]],
+    *,
+    task: Any = None,
+    context: Any = None,
+    history: list[dict[str, Any]] | None = None,
+    profile: str = "generic",
+    limit: int = 8,
+) -> dict[str, Any]:
+    """Rank available actions into a compact shortlist for the next step.
+
+    Exgentic still receives the full action schema list below this shortlist.
+    The shortlist is a deterministic scaffold: it narrows attention to likely
+    actions and finish/message timing without hiding benchmark capabilities.
+    """
+
+    docs = [doc for doc in action_docs or [] if isinstance(doc, dict) and doc.get("name")]
+    safe_limit = max(1, min(16, int(limit or 8)))
+    latest_observation = _latest_history_content(history or [], "observation")
+    latest_observation_text = json_dumps(latest_observation, limit=6000) if latest_observation is not None else ""
+    target_text = " ".join(
+        [
+            str(task or ""),
+            json_dumps(context or {}, limit=6000),
+            latest_observation_text,
+        ]
+    ).lower()
+    tokens = _keyword_tokens(target_text)
+    completion_ready = _completion_ready(latest_observation_text)
+    latest_action_name = _latest_selected_action_name(history or [])
+    has_recent_error = _has_recent_action_error(history or [])
+
+    scored: list[tuple[float, str, dict[str, Any], list[str], list[str]]] = []
+    for doc in docs:
+        name = str(doc.get("name") or "")
+        action_text = _action_doc_text(doc)
+        schema_keys = _schema_property_keys(doc.get("arguments_schema"))
+        score = 0.0
+        reasons: list[str] = []
+
+        token_hits = [token for token in tokens if token in action_text][:6]
+        if token_hits:
+            score += min(12, len(token_hits) * 2)
+            reasons.append(f"matches task/observation tokens: {', '.join(token_hits)}")
+
+        schema_hits = [key for key in schema_keys if key.lower() in target_text][:6]
+        if schema_hits:
+            score += min(10, len(schema_hits) * 2)
+            reasons.append(f"schema keys appear in current state: {', '.join(schema_hits)}")
+
+        prior_score, prior_reason = _profile_action_prior(profile, name, action_text)
+        if prior_score:
+            score += prior_score
+            reasons.append(prior_reason)
+
+        name_tokens = [token for token in _keyword_tokens(name.replace("_", " ")) if token not in {"action"}]
+        if name_tokens and all(token in latest_observation_text.lower() for token in name_tokens):
+            score += 4
+            reasons.append("action name matches explicit latest-observation cue")
+
+        is_completion = bool(doc.get("is_finish") or doc.get("is_message"))
+        if is_completion:
+            if completion_ready:
+                score += 8
+                reasons.append("latest observation suggests completion is ready")
+            else:
+                score -= 7
+                reasons.append("defer finish/message until benchmark-visible completion evidence")
+
+        if latest_action_name and name.lower() == latest_action_name.lower():
+            score -= 2
+            reasons.append("same as previous selected action")
+            if has_recent_error:
+                score -= 4
+                reasons.append("avoid repeating after recent action/schema error")
+
+        scored.append((score, name.lower(), doc, reasons, schema_keys))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    shortlisted = [
+        _shortlist_item(doc, score, reasons, schema_keys)
+        for score, _name, doc, reasons, schema_keys in scored[:safe_limit]
+    ]
+    shortlisted_names = {str(item.get("name", "")).lower() for item in shortlisted}
+    deferred_completion = [
+        str(doc.get("name"))
+        for doc in docs
+        if (doc.get("is_finish") or doc.get("is_message"))
+        and str(doc.get("name", "")).lower() not in shortlisted_names
+        and not completion_ready
+    ]
+
+    return {
+        "format": "ventipus-exgentic-action-shortlist-v1",
+        "profile": profile,
+        "action_count": len(docs),
+        "shortlist_limit": safe_limit,
+        "completion_ready": completion_ready,
+        "shortlisted_actions": shortlisted,
+        "deferred_completion_actions": deferred_completion,
+        "discipline": "Prefer shortlisted actions when they fit the latest observation; use full schemas below if the current state clearly requires a non-shortlisted action.",
+    }
+
+
 def safe_id(value: Any, default: str = "session") -> str:
     raw = str(value or default)
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip("-")
@@ -153,6 +298,127 @@ def _folding_discipline(profile: str) -> str:
     if profile == "tau2":
         return "Carry forward policy constraints, customer intent, tool results, and pending confirmations before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
+
+
+def _latest_history_content(history: list[dict[str, Any]], role: str) -> Any | None:
+    for item in reversed(history or []):
+        if isinstance(item, dict) and item.get("role") == role:
+            return item.get("content")
+    return None
+
+
+def _latest_selected_action_name(history: list[dict[str, Any]]) -> str | None:
+    content = _latest_history_content(history, "selected_action")
+    actions = content if isinstance(content, list) else [content]
+    for action in actions:
+        if isinstance(action, dict) and action.get("name"):
+            return str(action.get("name"))
+    return None
+
+
+def _has_recent_action_error(history: list[dict[str, Any]]) -> bool:
+    for item in reversed((history or [])[-4:]):
+        if not isinstance(item, dict) or item.get("role") != "ventipus":
+            continue
+        diagnostic = _compact_ventipus_diagnostic(item, item_limit=600)
+        if diagnostic is not None:
+            return True
+    return False
+
+
+def _keyword_tokens(text: str) -> list[str]:
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for raw in re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}", text or ""):
+        token = raw.lower().strip("-_")
+        if token in STOPWORDS or len(token) < 3 or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+        if len(tokens) >= 80:
+            break
+    return tokens
+
+
+def _completion_ready(latest_observation_text: str) -> bool:
+    text = (latest_observation_text or "").lower()
+    if not text:
+        return False
+    if re.search(r"\b(pending|missing|need|needs|required|error|failed|invalid|not complete|unresolved)\b", text):
+        return False
+    return bool(re.search(r"\b(done|complete|completed|success|succeeded|confirmed|final answer|resolved)\b", text))
+
+
+def _action_doc_text(doc: dict[str, Any]) -> str:
+    parts = [
+        str(doc.get("name") or ""),
+        str(doc.get("description") or ""),
+        " ".join(_schema_property_keys(doc.get("arguments_schema"))),
+        json_dumps(doc.get("arguments_schema") or {}, limit=4000),
+    ]
+    return " ".join(parts).lower()
+
+
+def _schema_property_keys(schema: Any) -> list[str]:
+    if not isinstance(schema, dict):
+        return []
+    keys: list[str] = []
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        keys.extend(str(key) for key in properties.keys())
+    for nested_key in ("$defs", "definitions"):
+        nested = schema.get(nested_key)
+        if isinstance(nested, dict):
+            for value in nested.values():
+                keys.extend(_schema_property_keys(value))
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for key in keys:
+        lowered = key.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(key)
+    return deduped
+
+
+def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[float, str]:
+    text = f"{name} {action_text}".lower()
+    if profile == "appworld":
+        if re.search(r"\b(get|lookup|list|search|find|query|read|fetch|load|inspect)\b", text):
+            return 5, "AppWorld prior: inspect app/API state before mutating records"
+        if re.search(r"\b(create|update|set|delete|cancel|submit|send)\b", text):
+            return 3, "AppWorld prior: likely state-changing app action"
+    elif profile == "browsecomp":
+        if re.search(r"\b(search|query|browse|web|open|read|fetch|source|cite|visit)\b", text):
+            return 6, "BrowseComp prior: gather and verify source evidence"
+        if re.search(r"\b(answer|final|finish|message|respond)\b", text):
+            return 2, "BrowseComp prior: final answer action when evidence is sufficient"
+    elif profile == "tau2":
+        if re.search(r"\b(policy|lookup|search|get|list|read|check|verify|order|customer|account|ticket)\b", text):
+            return 5, "tau2 prior: check policy/customer/tool state before commitments"
+        if re.search(r"\b(update|create|cancel|refund|transfer|confirm|submit|send)\b", text):
+            return 3, "tau2 prior: policy-supported customer-service action"
+    else:
+        if re.search(r"\b(observe|read|search|list|get|lookup|inspect|query)\b", text):
+            return 4, "generic prior: inspect available state before irreversible actions"
+    return 0, ""
+
+
+def _shortlist_item(
+    doc: dict[str, Any],
+    score: float,
+    reasons: list[str],
+    schema_keys: list[str],
+) -> dict[str, Any]:
+    return {
+        "name": str(doc.get("name") or ""),
+        "score": round(score, 2),
+        "reason": "; ".join(reasons[:4]) or "available action",
+        "argument_keys": schema_keys[:12],
+        "is_finish": bool(doc.get("is_finish", False)),
+        "is_message": bool(doc.get("is_message", False)),
+    }
 
 
 def extract_action_payload(text: str) -> ActionPayload | None:
