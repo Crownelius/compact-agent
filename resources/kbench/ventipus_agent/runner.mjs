@@ -140,6 +140,7 @@ function compactTraceSummary(traceSummary) {
   if (!traceSummary) return undefined;
   const summary = traceSummary.summary || {};
   const quality = summary.trajectoryQuality || {};
+  const experienceCard = compactExperienceCard(summary.experienceCard);
   return {
     path: traceSummary.path,
     verificationCount: summary.verificationCount,
@@ -147,6 +148,7 @@ function compactTraceSummary(traceSummary) {
     verificationEvidence: summary.verificationEvidence,
     finalAnswerEvidence: summary.finalAnswerEvidence,
     usage: summary.usage,
+    experienceCard,
     changedFiles: Array.isArray(summary.changedFiles) ? summary.changedFiles.slice(0, 100) : [],
     worktreeChangedFiles: Array.isArray(summary.worktreeChangedFiles) ? summary.worktreeChangedFiles.slice(0, 100) : [],
     artifacts: Array.isArray(summary.artifacts) ? summary.artifacts.slice(0, 20) : [],
@@ -237,6 +239,20 @@ function compactTraceSummary(traceSummary) {
       processDefects: Array.isArray(quality.processDefects) ? quality.processDefects.slice(0, 20) : [],
       warnings: Array.isArray(quality.warnings) ? quality.warnings.slice(0, 20) : [],
     },
+  };
+}
+
+function compactExperienceCard(card) {
+  if (!card || typeof card !== 'object' || Array.isArray(card)) return undefined;
+  return {
+    version: card.version,
+    replayCheckpoints: Array.isArray(card.replayCheckpoints) ? card.replayCheckpoints.slice(0, 20) : [],
+    failureSignatures: Array.isArray(card.failureSignatures) ? card.failureSignatures.slice(0, 10) : [],
+    sourceResearchCoverage: card.sourceResearchCoverage,
+    taskContract: card.taskContract,
+    verificationCommands: Array.isArray(card.verificationCommands) ? card.verificationCommands.slice(0, 20) : [],
+    changedFiles: Array.isArray(card.changedFiles) ? card.changedFiles.slice(0, 100) : [],
+    warnings: Array.isArray(card.warnings) ? card.warnings.slice(0, 20) : [],
   };
 }
 
@@ -435,6 +451,7 @@ const output = {
     workdir: workdirUsed,
     traceSummary,
     verificationEvidence: traceSummary?.verificationEvidence,
+    experienceCard: traceSummary?.experienceCard,
     usage: traceSummary?.usage,
   },
   error: ok ? undefined : {

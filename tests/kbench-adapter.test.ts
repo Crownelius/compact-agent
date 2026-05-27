@@ -69,6 +69,7 @@ describe('KBench adapter packaging', () => {
       '    verificationEvidence: { lastVerificationSeq: 7, lastVerificationStatus: "ok", extracted: [{ framework: "vitest", passed: 3, total: 3 }] },',
       '    finalAnswerEvidence: { mentionsVerification: true, claimsPassingVerification: true, claimsNoVerificationRun: false, claimsIncomplete: false, claimsBlocked: false, finalAnswerCompletion: "unknown", unsupportedPassingClaim: false, contradictedPassingClaim: false, staleNoVerificationClaim: false, latestVerificationStatus: "ok", lastSuccessfulVerificationSeq: 7, verificationCount: 1, warnings: [] },',
       '    usage: { callCount: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0, byModel: [{ model: "openrouter/free", calls: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0 }] },',
+      '    experienceCard: { version: 1, replayCheckpoints: [{ seq: 1, tool: "read_file", target: "fixture.txt", reason: "file_context", score: 11 }, { seq: 3, tool: "bash", target: "npm test", reason: "failing_verifier", score: 12 }], failureSignatures: [{ seq: 3, command: "npm test", framework: "vitest", tests: ["fixture regression"], files: ["fixture.txt"], errors: ["AssertionError: expected before to equal after"], raw: "fixture mismatch" }], sourceResearchCoverage: { callCount: 1, sourceHitCount: 4, sourceErrorCount: 0, arxiv: true, github: true, huggingface: true, kaggle: true, freshTargetedCoverage: true, completeTargetedCoverage: true }, taskContract: { signalCount: 2, checklistAfterContext: true, checklistComplete: true, incompleteCount: 0 }, verificationCommands: ["npm test"], changedFiles: ["fixture.txt", "new-file.txt"], warnings: [] },',
       '    changedFiles: ["fixture.txt"],',
       '    worktreeChangedFiles: ["fixture.txt", "new-file.txt"],',
       '    artifacts: [{ kind: "patch", path: "worktree.patch", contentType: "text/x-diff", description: "patch" }],',
@@ -143,6 +144,31 @@ describe('KBench adapter packaging', () => {
         estimatedCostUsd: 0,
       },
     ]);
+    expect(output.benchmarkResult.experienceCard).toMatchObject({
+      version: 1,
+      replayCheckpoints: [
+        { seq: 1, tool: 'read_file', target: 'fixture.txt', reason: 'file_context', score: 11 },
+        { seq: 3, tool: 'bash', target: 'npm test', reason: 'failing_verifier', score: 12 },
+      ],
+      taskContract: {
+        signalCount: 2,
+        checklistAfterContext: true,
+        checklistComplete: true,
+        incompleteCount: 0,
+      },
+      sourceResearchCoverage: {
+        callCount: 1,
+        sourceHitCount: 4,
+        freshTargetedCoverage: true,
+      },
+      verificationCommands: ['npm test'],
+      changedFiles: ['fixture.txt', 'new-file.txt'],
+    });
+    expect(output.benchmarkResult.traceSummary.experienceCard.failureSignatures[0]).toMatchObject({
+      command: 'npm test',
+      tests: ['fixture regression'],
+      files: ['fixture.txt'],
+    });
     expect(output.benchmarkResult.traceSummary.trajectoryQuality).toMatchObject({
       benchmarkContextUsed: true,
       usageCallCount: 2,
