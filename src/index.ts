@@ -123,6 +123,7 @@ import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage,
 import { applyScreenReader, summarize } from './accessibility.js';
 import { COMMAND_CATALOG, completeSlashCommandNames } from './command-palette.js';
 import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand } from './inline-suggest.js';
+import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -4217,17 +4218,11 @@ async function main(): Promise<void> {
       (globalThis as { __ventipusPromptStyled?: string; __ventipusPromptVisLen?: number })
         .__ventipusPromptVisLen = ansiVisibleLen(promptStyled);
 
-      // Queued input (Codex audit's queued_user_messages). If the user
-      // typed something during the previous chain's streaming/tool
-      // execution, that text was buffered by suppressInputDuringStream
-      // and stashed on globalThis. Drain it here:
-      //   - If it contains a newline → auto-submit immediately (the
-      //     user pressed Enter mid-stream; treat that as commit-on-end-of-turn)
-      //   - Otherwise → display a small "queued:" hint and let the user
-      //     decide whether to send. (Pre-filling rl's buffer cross-platform
-      //     is unreliable — readline.write() works on POSIX but the cursor
-      //     state on Windows ConHost gets weird. Hint + manual paste is
-      //     more predictable than trying to pre-fill.)
+      // Type-ahead input. If the user typed during the previous chain's
+      // streaming/tool execution, restore it into the next prompt as a
+      // draft instead of auto-submitting it or printing a "queued" hint.
+      // This keeps the REPL editable: the user can continue typing,
+      // backspace, or press Enter once the model is done.
       const g = globalThis as {
         __ventipusQueuedInput?: string;
         __ventipusSlashAccepted?: InlineSuggestAcceptedCommand;
@@ -4237,42 +4232,9 @@ async function main(): Promise<void> {
       const slashPrefill = g.__ventipusSlashPrefillInput || '';
       g.__ventipusQueuedInput = undefined;
       g.__ventipusSlashPrefillInput = undefined;
-      if (queued.includes('\n')) {
-        // Auto-submit the ENTIRE queued buffer as a single message —
-        // preserving its internal newlines verbatim so a multi-line
-        // paste arrives at the model as the intended single multi-
-        // line input.
-        //
-        // Previous behavior split on the first newline and re-queued
-        // the remainder, on the theory that the user might have
-        // committed two separate messages with two separate Enter
-        // presses during streaming. In practice that case is rare,
-        // while the catastrophic case — pasting multi-line content
-        // during streaming — was extremely common. The split-and-re-
-        // queue path turned a paste of N lines into N separate user
-        // turns, where each turn drained one line, queued the rest,
-        // and looped indefinitely until the buffer was empty.
-        //
-        // Sanitize the auto-submit hint by collapsing internal
-        // newlines to spaces so the one-line console.log preview
-        // doesn't get split across multiple rows.
-        const next = queued.trim();
-        if (next) {
-          const previewSrc = next.replace(/\s+/g, ' ');
-          const preview = previewSrc.slice(0, 80) + (previewSrc.length > 80 ? '…' : '');
-          console.log(theme.dim(`  (auto-submitting queued: "${preview}")`));
-          input = next;
-        } else {
-          input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, slashPrefill);
-        }
-      } else {
-        if (queued.trim()) {
-          // Hint the user that we kept their mid-stream typing; they
-          // can paste/retype at the prompt.
-          console.log(theme.dim(`  (queued during last chain: "${queued.trim().slice(0, 80)}${queued.length > 80 ? '…' : ''}")`));
-        }
-        input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, slashPrefill);
-      }
+      const restoredDraft = normalizeTypeaheadDraftForPrompt(queued);
+      const prefill = slashPrefill || restoredDraft;
+      input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, prefill);
     } catch {
       break;
     }

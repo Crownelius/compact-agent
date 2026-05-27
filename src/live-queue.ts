@@ -16,7 +16,7 @@
  *   │  scrolling naturally as text arrives   │
  *   │                                        │
  *   ├── fixed bottom row (row N) ────────────┤
- *   │  ▶ queued: <user's typed text>         │  ← updated on each keystroke
+ *   │  ▶ type-ahead: <user's typed text>     │  ← updated on each keystroke
  *   └────────────────────────────────────────┘
  *
  * Caveats:
@@ -157,16 +157,15 @@ export function deactivate(): void {
   const stdout = process.stdout;
   const { boxRow } = active;
 
-  // Reset scroll region
+  // Reset the scroll region and clear the reserved box row without
+  // parking the cursor at the bottom of the viewport. Moving to the
+  // bottom created a large blank gap after each chain and made the
+  // visible conversation history/banner look like it disappeared.
+  stdout.write(ANSI.saveCursor);
   stdout.write(ANSI.resetScrollRegion);
-
-  // Clear the reserved row
   stdout.write(ANSI.moveTo(boxRow, 1));
   stdout.write(ANSI.clearLine);
-
-  // Park the cursor on the row above the (now-cleared) box
-  stdout.write(ANSI.moveTo(boxRow - 1, 1));
-  stdout.write('\n');   // move down one for next prompt
+  stdout.write(ANSI.restoreCursor);
 
   active = null;
 }

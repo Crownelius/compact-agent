@@ -195,8 +195,8 @@ export interface InputGuard {
   drainQueuedInput(): string;
   /**
    * Register a callback invoked when the user presses Ctrl+G (Steer).
-   * The handler is responsible for aborting the active stream / chain
-   * and treating the queued buffer as the next user message.
+   * The handler is responsible for aborting the active stream / chain;
+   * queued type-ahead is restored into the next editable prompt.
    */
   onSteer(handler: () => void): void;
   restore(): void;
@@ -222,10 +222,10 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
   // content, which makes a live-updating widget far worse than silent.
   const liveBoxActive = !screenReader && liveQueue.activate();
 
-  // Steer (Ctrl+G mid-stream cancel). Caller registers a handler via
+  // Steer/cancel (Ctrl+G mid-stream cancel). Caller registers a handler via
   // onSteer(); we invoke it when 0x07 (BEL / Ctrl+G) arrives during
   // suppression. The handler is responsible for aborting the active
-  // stream — we just route the signal.
+  // stream; queued type-ahead is restored at the prompt.
   let steerHandler: (() => void) | null = null;
 
   // Snapshot non-tagged keypress listeners. These are the ones we toggle
@@ -268,9 +268,9 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
       liveQueue.deactivate();
       process.exit(0);
     }
-    // Ctrl+G (BEL, 0x07) → Steer trigger. Fires the registered handler
-    // which aborts the active stream + uses the queued buffer as the
-    // next user turn. Doesn't append the 0x07 itself to the queue.
+    // Ctrl+G (BEL, 0x07) -> cancel trigger. Fires the registered handler
+    // which aborts the active stream; the queued buffer is restored into
+    // the next prompt. Doesn't append the 0x07 itself to the queue.
     if (chunk[0] === 0x07 && detached) {
       if (steerHandler) {
         try { steerHandler(); } catch { /* never break input on a steer error */ }
@@ -1678,12 +1678,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         break;
       }
 
-      // ── Steer path (graceful — not an error) ──────────────
-      // If the user pressed Ctrl+G / Esc during streaming, the
+      // ── User cancel path (graceful — not an error) ─────────
+      // If the user pressed Ctrl+G / Esc / F5 during streaming, the
       // AbortController fired and the OpenAI SDK threw something like
       // "Request was aborted". Treat as a controlled end-of-turn:
-      // save partial assistant text, push the queued buffer as the
-      // next user message, continue the chain.
+      // save partial assistant text, preserve the type-ahead buffer,
+      // and return to the editable prompt.
       //
       // Distinguishing USER steer from LOOP-DETECTOR abort: both fire
       // streamAbort.abort() but the loop detector sets
@@ -1694,7 +1694,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       // to fire. Now we key strictly off `wasSteered` — the only path
       // that sets it is the steerHandler closure above.
       if (wasSteered) {
-        console.log(theme.warning('  ⮌ steered — taking your queued input as the next turn'));
+        console.log(theme.warning('  ⮌ cancelled — restoring your type-ahead at the prompt'));
         // Save whatever the model managed to emit before the abort.
         // Previously this skipped the push entirely when fullText was
         // empty (user steered before any tokens streamed). Result:
@@ -1709,20 +1709,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           : '[interrupted by user steer — no response generated]';
         accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + interruptedText;
         ctx.messages.push({ role: 'assistant', content: interruptedText });
-        // Drain the queue and push as the next user turn with a marker.
-        const steerText = inputGuard.drainQueuedInput().trim();
-        if (steerText) {
-          ctx.messages.push({
-            role: 'user',
-            content: `[steer mid-turn] ${steerText}`,
-          });
-          // Don't break — continue the while loop so the new user turn
-          // gets processed in the next iteration. turns-- because the
-          // steer doesn't count against the max-turn budget.
-          turns--;
-          continue;
+        // Drain the queue and restore it as an editable draft. The old
+        // behavior silently submitted type-ahead as a new turn after an
+        // interrupt, which made cancellation feel like accidental send.
+        const steerText = inputGuard.drainQueuedInput();
+        if (steerText.trim()) {
+          (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = steerText;
         }
-        // No steer text (user hit Ctrl+G but typed nothing) — just end the chain.
+        // End the chain and let the outer REPL render the next prompt.
         break;
       }
 
@@ -2014,9 +2008,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   }
   } finally {
     // Drain any queued user input typed during streaming. Stash on
-    // globalThis for the REPL loop in index.ts to pick up — it'll
-    // pre-fill the next prompt or auto-submit if the user pressed
-    // Enter mid-stream.
+    // globalThis for the REPL loop in index.ts to restore into the
+    // next editable prompt. Enter typed mid-stream is preserved as
+    // draft spacing, not treated as a hidden submit.
     const queued = inputGuard.drainQueuedInput();
     if (queued.trim()) {
       (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = queued;

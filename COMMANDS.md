@@ -32,7 +32,7 @@ Everything in this section is typed inside the REPL after `❯ `.
 
 At an empty prompt, `/` opens the inline command selector. It stays below the prompt, keeps the widget under roughly half the terminal height, lets you type to narrow, scroll with arrows/PageUp/PageDown, jump with Home/End, and press Enter to fill the prompt with the highlighted command so you can edit it or press Enter again to run it. If a slash prefix is already typed, Tab reopens the same bounded selector with that filter instead of printing the full command list. It only erases its own prompt/dropdown rows instead of clearing the rest of the terminal.
 
-During model/tool work, typing is captured in a fixed bottom `queued next` line for the next prompt. If an OpenRouter preview/free model accepts a request but sends no stream event, Ventipus cancels after a first-token watchdog and retries once with `/fallback` (default `openrouter/free` for OpenRouter), so the prompt returns instead of appearing frozen.
+During model/tool work, typing is captured in a fixed bottom type-ahead line and restored into the next editable prompt. If an OpenRouter preview/free model accepts a request but sends no stream event, Ventipus cancels after a first-token watchdog and retries once with `/fallback` (default `openrouter/free` for OpenRouter), so the prompt returns instead of appearing frozen.
 
 ### 2.1 General & session control
 

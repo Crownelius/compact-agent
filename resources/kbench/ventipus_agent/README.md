@@ -74,6 +74,9 @@ Context-utilization evidence participates in reuse as well: concise runs whose
 inspected context was used by the eventual patch can rank higher, while
 low-utilization or pre-edit context-bloat runs are warnings rather than replay
 hints.
+Interactive type-ahead is preserved across active-turn cancellation and
+permission interruptions, so user drafts return to the prompt instead of being
+silently submitted while the harness is still running.
 
 Useful env vars:
 

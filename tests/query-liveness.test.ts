@@ -130,7 +130,7 @@ describe('runQuery provider liveness recovery', () => {
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'fallback response' });
   });
 
-  it('treats global F5 cancellation as a user steer instead of a provider failure', async () => {
+  it('treats global F5 cancellation as a user cancellation instead of a provider failure', async () => {
     process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS = '0';
 
     vi.mocked(streamChat).mockImplementation(async function* (

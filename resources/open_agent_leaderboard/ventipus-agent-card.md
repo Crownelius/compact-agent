@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.42
+version: 1.35.43
 developers:
   - Crownelius
 license: MIT
@@ -76,6 +76,8 @@ Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt
 Prior experience reuse also reads AHE change-evaluation verdicts. Confirmed manifests can rank higher, while contradicted, regression-risk, pending-verification, missing-prediction, or missing-regression-forecast manifests are emitted as warning patterns instead of replay hints.
 
 Prior experience reuse also applies ContextBench-style context discipline: concise runs whose inspected files were used by the eventual patch can rank higher, while low-utilization or pre-edit context-bloat runs are emitted as warning patterns instead of replay hints.
+
+Interactive type-ahead is preserved through active-turn cancellation and permission interruptions: text captured while the model/tool chain is running is restored into the next editable prompt instead of being emitted as a passive queued hint or silently submitted.
 
 Official results should be produced through Exgentic, HAL, Terminal-Bench, KBench, or another benchmark-owned grader before submission.
 
