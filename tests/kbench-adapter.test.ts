@@ -45,6 +45,7 @@ describe('KBench adapter packaging', () => {
     expect(runner).toContain("'roadmapbench'");
     expect(runner).toContain("'saasbench'");
     expect(runner).toContain("'swe-bench-mobile'");
+    expect(runner).toContain("'webdevbench'");
     expect(runner).toContain("'appworld'");
     expect(runner).toContain("'browsecomp'");
     expect(runner).toContain("'tau2'");

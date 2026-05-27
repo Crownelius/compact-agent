@@ -39,6 +39,8 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('roadmap-bench')).toBe('roadmapbench');
     expect(normalizeBenchmarkProfile('saas-bench')).toBe('saasbench');
     expect(normalizeBenchmarkProfile('swebenchmobile')).toBe('swe-bench-mobile');
+    expect(normalizeBenchmarkProfile('swe-webdev-bench')).toBe('webdevbench');
+    expect(normalizeBenchmarkProfile('vibe-coding')).toBe('webdevbench');
     expect(normalizeBenchmarkProfile('app-world')).toBe('appworld');
     expect(normalizeBenchmarkProfile('browsecomp-plus')).toBe('browsecomp');
     expect(normalizeBenchmarkProfile('tau-bench')).toBe('tau2');
@@ -90,6 +92,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('swe-bench-mobile implement iOS feature')).toEqual({
       profile: 'swe-bench-mobile',
       task: 'implement iOS feature',
+    });
+    expect(splitBenchmarkArgs('webdevbench build production app workflow')).toEqual({
+      profile: 'webdevbench',
+      task: 'build production app workflow',
     });
     expect(splitBenchmarkArgs('appworld update calendar records')).toEqual({
       profile: 'appworld',
@@ -217,6 +223,12 @@ describe('benchmark mode and prompt', () => {
     expect(mobile).toContain('PRDs, screenshots/Figma references');
     expect(mobile).toContain('defensive programming');
     expect(mobile).toContain('xcodebuild');
+
+    const webdev = buildBenchmarkPrompt('build full-stack web app with canary requirements', '/workspace', 'webdevbench');
+    expect(webdev).toContain('SWE-WebDevBench style full-stack app-agency task');
+    expect(webdev).toContain('canary-requirement checklist');
+    expect(webdev).toContain('frontend and backend together');
+    expect(webdev).toContain('production-readiness or security/infrastructure check');
   });
 
   it('builds Open Agent general-task prompts around actions, sources, and policy', () => {

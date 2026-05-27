@@ -17,7 +17,7 @@ invokes `ventipus --prompt "/benchmark ..."` in task mode, and emits one
 Known KBench slugs are mapped to benchmark profiles before dispatch:
 `swe`/`swe-bench`, `tb2`/`terminal-bench`, `swe-chain`,
 `ci-repair`/`ci-repair-bench`, `roadmapbench`, `saasbench`,
-`swe-bench-mobile`, `appworld`, `browsecomp`/`browsecompplus`, and
+`swe-bench-mobile`, `webdevbench`/`swe-webdev-bench`, `appworld`, `browsecomp`/`browsecompplus`, and
 `tau2`/`tau-bench` use specialized prompts; unknown slugs use
 `generic`.
 
@@ -43,7 +43,7 @@ and trajectory-quality fields are copied to
 also aliases the native usage block for cost-aware leaderboards. Native verifier
 trace previews preserve both head and tail output so final test summaries survive
 noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
-task-alignment/spec-compliance/reward-hack/long-horizon risk blocks, decision-observability predictions for edits and validation-reliability evidence
+task-alignment/spec-compliance/reward-hack/long-horizon risk blocks, including SWE-WebDevBench canary/frontend-backend/security validation signals, decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
 context-utilization precision/miss evidence for retrieval-aware scoring and
 run-efficiency action/usage/cost/time evidence for cost-aware scoring. Prior

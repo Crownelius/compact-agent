@@ -154,6 +154,9 @@ Science-backed method stack:
   older historical sources. Inspect the Source digest for hits, errors, source
   mix, and top URLs before relying on the research. For local repair tasks, the
   checkout and verifier remain authoritative.
+- For SWE-WebDevBench or full-stack app-agency tasks, keep canary business
+  requirements visible, validate frontend and backend together, and seek
+  production-readiness/security evidence before claiming completion.
 
 Core loop:
 1. Identify the task contract: issue statement, visible tests, verifier script,

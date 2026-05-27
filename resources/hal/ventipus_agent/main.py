@@ -185,6 +185,18 @@ def _profile_for_task(task: dict[str, Any]) -> str:
         or "simulator" in task_text
     ):
         return "swe-bench-mobile"
+    if (
+        "swe-webdevbench" in task_text
+        or "swe-webdev-bench" in task_text
+        or "webdevbench" in task_text
+        or "webdev-bench" in task_text
+        or "vibe coding" in task_text
+        or "virtual software agency" in task_text
+        or "canary requirement" in task_text
+        or "frontend-backend" in task_text
+        or "production readiness" in task_text
+    ):
+        return "webdevbench"
     if _is_patch_task(task):
         return "swe-bench"
     if "terminal-bench" in task_text or "terminalbench" in task_text:
@@ -250,6 +262,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         lines.append("This is a BrowseComp+-style research task. Use source-grounded browsing/retrieval evidence, cross-check claims, and return the answer with auditable attribution.")
     elif profile == "tau2":
         lines.append("This is a tau2/Tau-Bench-style policy workflow. Follow the domain policy, use only available action schemas, and verify tool observations before completing.")
+    elif profile == "webdevbench":
+        lines.append("This is a SWE-WebDevBench-style full-stack app-agency task. Preserve canary business requirements, verify frontend-backend coupling, and collect production/security evidence when feasible.")
     elif _is_usaco_task(task):
         lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
     else:

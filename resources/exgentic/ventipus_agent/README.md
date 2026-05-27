@@ -8,7 +8,7 @@ The adapter implements Exgentic's `Agent` / `AgentInstance` split. On each
 non-interactive `/benchmark` mode, asks ventipus to finish with one JSON
 action object, then maps that JSON back to an Exgentic `ActionType`.
 It auto-selects specialized `/benchmark` profiles for AppWorld, BrowseComp+,
-tau2, ARC, SaaS, roadmap, and mobile-style tasks from the task, context, and
+tau2, ARC, SaaS, roadmap, mobile, and WebDevBench-style tasks from the task, context, and
 available action schemas. It also builds a deterministic recommended action
 shortlist before the full schema list, including required argument keys and
 redacted exact latest-observation/context hints when those required values are
@@ -28,6 +28,9 @@ falling straight to a finish/message action. When a selected action is followed
 by an effectively unchanged observation, the next shortlist and deterministic
 fallback mark that action as a no-effect repeat and prefer another viable action
 with satisfiable required arguments.
+For WebDevBench-style app-agency tasks, the folded ledger keeps canary business
+requirements, frontend/backend coupling evidence, and production/security gaps
+visible across turns so an attractive UI-only action does not look complete.
 
 ## Python API use
 

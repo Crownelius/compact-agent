@@ -432,6 +432,8 @@ def _profile_for_exgentic(task: Any, context: Any, action_docs: list[dict[str, A
         return "tau2"
     if any(token in text for token in ("swe-bench mobile", "xcode", "swift", "objective-c", "simulator", "figma")):
         return "swe-bench-mobile"
+    if any(token in text for token in ("swe-webdevbench", "swe-webdev-bench", "webdevbench", "webdev-bench", "vibe coding", "virtual software agency", "canary requirement", "frontend-backend", "production readiness")):
+        return "webdevbench"
     if any(token in text for token in ("saasbench", "saas-bench", "enterprise saas", "tenant", "migration")):
         return "saasbench"
     if any(token in text for token in ("roadmapbench", "roadmap-bench", "long-horizon", "version upgrade")):
@@ -450,6 +452,8 @@ def _profile_guidance(profile: str) -> str:
         return "tau2 discipline: read policy/context first, take only policy-supported tool actions, and confirm observations before promising customer outcomes."
     if profile == "swe-bench-mobile":
         return "Mobile discipline: respect PRD/design/platform constraints and prefer platform validation evidence when the harness exposes it."
+    if profile == "webdevbench":
+        return "WebDevBench discipline: preserve canary business requirements, verify frontend-backend coupling, and seek production/security evidence before completion."
     if profile == "saasbench":
         return "SaaS discipline: preserve tenant, auth, migration, and cross-component workflow integrity."
     if profile == "roadmapbench":

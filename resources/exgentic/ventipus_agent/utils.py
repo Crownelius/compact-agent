@@ -464,6 +464,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward verified sources and unresolved search facets; do not treat snippets or stale single-source claims as final evidence."
     if profile == "tau2":
         return "Carry forward policy constraints, customer intent, tool results, and pending confirmations before selecting the next action."
+    if profile == "webdevbench":
+        return "Carry forward canary requirements, frontend/backend state, integration evidence, and production/security gaps before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
 
 
@@ -889,6 +891,13 @@ def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[fl
             return 5, "tau2 prior: check policy/customer/tool state before commitments"
         if re.search(r"\b(update|create|cancel|refund|transfer|confirm|submit|send)\b", text):
             return 3, "tau2 prior: policy-supported customer-service action"
+    elif profile == "webdevbench":
+        if re.search(r"\b(requirements?|canar(?:y|ies)|spec|product|plan|architecture|read|inspect|list|search|get|query)\b", text):
+            return 6, "WebDevBench prior: preserve product/canary requirements before building"
+        if re.search(r"\b(e2e|integration|api|browser|playwright|cypress|security|audit|build|deploy|migration|load|concurrency|health)\b", text):
+            return 5, "WebDevBench prior: verify full-stack, production, or security evidence"
+        if re.search(r"\b(create|update|modify|deploy|submit|send)\b", text):
+            return 3, "WebDevBench prior: app creation/modification action"
     else:
         if re.search(r"\b(observe|read|search|list|get|lookup|inspect|query)\b", text):
             return 4, "generic prior: inspect available state before irreversible actions"

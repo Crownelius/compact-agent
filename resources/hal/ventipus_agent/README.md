@@ -7,6 +7,7 @@ Defaults:
 - SWE-bench-like tasks return a git patch string.
 - ScienceAgentBench-like tasks return a solution/trajectory string.
 - AppWorld-like tasks return `Completed` after a successful ventipus run.
+- WebDevBench-like tasks are routed to the `webdevbench` benchmark profile, which keeps canary requirements plus frontend-backend and production/security validation evidence visible.
 - USACO and other text-response tasks return the original task dict with a `response` field.
 - Oracle-like fields such as `patch`, `test_patch`, `solution`, `answer`, `gold`, `FAIL_TO_PASS`, and `PASS_TO_PASS` are omitted from the prompt unless `VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS=1` is set.
 - Traces and logs are written under `.ventipus/hal-trace/` unless `VENTIPUS_HAL_TRACE_DIR` is set.

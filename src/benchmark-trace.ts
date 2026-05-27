@@ -748,7 +748,10 @@ export interface BenchmarkLongHorizonSignal {
     | 'incomplete_roadmap_after_validation'
     | 'missing_broad_integration_validation'
     | 'missing_mobile_platform_validation'
-    | 'missing_saas_integration_validation';
+    | 'missing_saas_integration_validation'
+    | 'missing_webdev_canary_checklist'
+    | 'missing_frontend_backend_validation'
+    | 'missing_security_production_validation';
   evidence: string;
 }
 
@@ -2023,6 +2026,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\broadmap[-_ ]?bench\b|\blong[-_ ]?horizon\b|\bversion[-_ ]?upgrade\b/i.test(text)) return 'roadmapbench';
   if (/\bsaas[-_ ]?bench\b|\benterprise\s+saas\b/i.test(text)) return 'saasbench';
   if (/\bswe[-_ ]?bench[-_ ]?mobile\b|\bmobile\s+bench\b|\bxcode\b|\bswift\b/i.test(text)) return 'swebenchmobile';
+  if (/\bswe[-_ ]?web[-_ ]?dev[-_ ]?bench\b|\bweb[-_ ]?dev[-_ ]?bench\b|\bvibe\s+coding\b|\bvirtual\s+software\s+agenc(?:y|ies)\b|\bcanary\s+requirements?\b|\bfrontend[-_\s]?backend\s+decoupling\b/i.test(text)) return 'swewebdevbench';
   if (/\bswe[-_ ]?chain\b/i.test(text)) return 'swechain';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b|\bswe[-_ ]?ci\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
@@ -2050,6 +2054,7 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'roadmap' || cleaned === 'roadmapbench' || cleaned === 'longhorizon' || cleaned === 'versionupgrade') return 'roadmapbench';
   if (cleaned === 'saas' || cleaned === 'saasbench' || cleaned === 'enterprise') return 'saasbench';
   if (cleaned === 'mobile' || cleaned === 'swebenchmobile' || cleaned === 'swemobile' || cleaned === 'ios') return 'swebenchmobile';
+  if (cleaned === 'webdev' || cleaned === 'webdevbench' || cleaned === 'swewebdev' || cleaned === 'swewebdevbench' || cleaned === 'vibecoding') return 'swewebdevbench';
   if (cleaned === 'taubench' || cleaned === 'taubench2' || cleaned === 'tau' || cleaned === 'tau2' || cleaned.startsWith('tau2') || cleaned.startsWith('taubench')) return 'tau2';
   if (cleaned === 'browsecomp' || cleaned === 'browsecompplus' || cleaned === 'deepresearch' || cleaned === 'webresearch') return 'browsecompplus';
   return cleaned || 'ventipus_agent_benchmark';
@@ -2071,6 +2076,7 @@ function formatBenchmarkName(slug: string): string {
     specbench: 'SpecBench',
     swebench: 'SWE-bench',
     swebenchmobile: 'SWE-Bench Mobile',
+    swewebdevbench: 'SWE-WebDevBench',
     swechain: 'SWE-Chain',
     swecontext: 'SWE-context',
     tau2: 'Tau Bench 2',
@@ -2829,7 +2835,7 @@ export function buildBenchmarkTrajectoryQuality(
       .slice(0, 3)
       .map((signal) => `${signal.reason}#${signal.seq} ${signal.target}`)
       .join('; ');
-    warnings.push(`long-horizon coverage risk: roadmap/SaaS/mobile completion may be under-evidenced: ${examples}. Finish the milestone checklist and run broad integration/platform validation before finalizing.`);
+    warnings.push(`long-horizon coverage risk: roadmap/SaaS/mobile/WebDevBench completion may be under-evidenced: ${examples}. Finish the milestone/canary checklist and run broad integration/platform/frontend-backend/security validation before finalizing.`);
   }
   if (editTargetEvidence.unlocalized.length > 0 && localizationBeforeFirstEdit !== false && !editAfterNoEditContract) {
     const targets = editTargetEvidence.unlocalized
@@ -3826,13 +3832,15 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
     const hasMissingValidation = input.longHorizonSignals.some((signal) =>
       signal.reason === 'missing_broad_integration_validation'
       || signal.reason === 'missing_mobile_platform_validation'
-      || signal.reason === 'missing_saas_integration_validation');
+      || signal.reason === 'missing_saas_integration_validation'
+      || signal.reason === 'missing_frontend_backend_validation'
+      || signal.reason === 'missing_security_production_validation');
     add(
       'long_horizon_coverage_risk',
       hasMissingValidation ? 'validation' : 'requirement_fidelity',
       hasIncomplete || hasMissingValidation ? 'high' : 'medium',
       input.longHorizonSignals[0]?.seq ?? null,
-      'The trajectory may be under-evidenced for a long-horizon roadmap, SaaS, or mobile task.',
+      'The trajectory may be under-evidenced for a long-horizon roadmap, SaaS, mobile, or WebDevBench task.',
       input.longHorizonSignals
         .slice(0, 5)
         .map((signal) => `${signal.reason}#${signal.seq}:${signal.target}`)
@@ -5703,7 +5711,15 @@ export function buildBenchmarkLongHorizonSignals(
     ?? firstSeq(events, (event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
     ?? 0;
 
-  if (firstEditSeq != null && taskContractChecklistAfterContext !== true) {
+  if (firstEditSeq != null && context.webdev && taskContractChecklistAfterContext !== true) {
+    signals.push({
+      seq: firstEditSeq,
+      tool: 'todo_write',
+      target: 'WebDevBench canary requirement checklist',
+      reason: 'missing_webdev_canary_checklist',
+      evidence: `SWE-WebDevBench/full-stack app-agency context detected but no post-context canary requirement checklist was recorded before edit #${firstEditSeq}; first_context_seq=${firstContextSeq}`,
+    });
+  } else if (firstEditSeq != null && taskContractChecklistAfterContext !== true) {
     signals.push({
       seq: firstEditSeq,
       tool: 'todo_write',
@@ -5764,6 +5780,30 @@ export function buildBenchmarkLongHorizonSignals(
       target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
       reason: 'missing_saas_integration_validation',
       evidence: 'SaaSBench/enterprise SaaS context detected, but no passing e2e/integration/API/migration verifier was recorded',
+    });
+  }
+
+  if (context.webdev
+    && firstPassingPostEdit
+    && !events.some((event) => event.status === 'ok' && isWebDevFullStackValidationEvent(event))) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'missing_frontend_backend_validation',
+      evidence: 'SWE-WebDevBench/full-stack app context detected, but no passing e2e/API/integration/browser validation exercised frontend-backend coupling',
+    });
+  }
+
+  if (context.webdev
+    && firstPassingPostEdit
+    && !events.some((event) => event.status === 'ok' && isWebDevSecurityProductionValidationEvent(event))) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'missing_security_production_validation',
+      evidence: 'SWE-WebDevBench/full-stack app context detected, but no passing build/lint/typecheck/audit/security/infrastructure/load/migration validation was recorded',
     });
   }
 
@@ -5870,7 +5910,7 @@ function hasSpecComplianceContext(events: BenchmarkTraceEvent[], messages: Messa
 function getLongHorizonContext(
   events: BenchmarkTraceEvent[],
   messages: Message[] = [],
-): { detected: boolean; mobile: boolean; saas: boolean } {
+): { detected: boolean; mobile: boolean; saas: boolean; webdev: boolean } {
   const messageTextBlock = messages.map(messageText).join('\n');
   const eventTextBlock = events
     .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
@@ -5879,13 +5919,16 @@ function getLongHorizonContext(
   const text = `${messageTextBlock}\n${eventTextBlock}`;
   const mobile = /\b(?:swe[-_\s]?bench[-_\s]?mobile|mobile\s+bench|ios|iphone|ipad|xcode|swift|objective[-_\s]?c|figma|prd|simulator|emulator|android)\b/i.test(text);
   const saas = /\b(?:saasbench|saas[-_\s]?bench|enterprise\s+saas|multi[-_\s]?component\s+(?:saas|app|system)|validation\s+nodes?|tenant|tenancy|migrations?|cross[-_\s]?service|e2e\s+workflow)\b/i.test(text);
+  const webdev = /\b(?:swe[-_\s]?web[-_\s]?dev[-_\s]?bench|web[-_\s]?dev[-_\s]?bench|vibe\s+coding|virtual\s+software\s+agenc(?:y|ies)|app\s+creation\s+request|app\s+modification\s+request|canary\s+requirements?|frontend[-_\s]?backend\s+decoupling|production[-_\s]?readiness|business[-_\s]?readiness|full[-_\s]?stack\s+(?:application|app|web\s+app))\b/i.test(text);
   const roadmap = /\b(?:roadmapbench|roadmap[-_\s]?bench|long[-_\s]?horizon|version[-_\s]?upgrade|multi[-_\s]?target|roadmap\s+(?:task|instruction|milestone)|target\s+version|source\s+version|release[-_\s]?level|acceptance\s+nodes?)\b/i.test(text);
-  return { detected: roadmap || saas || mobile, mobile, saas };
+  return { detected: roadmap || saas || mobile || webdev, mobile, saas, webdev };
 }
 
 function isLongHorizonValidationEvent(event: BenchmarkTraceEvent): boolean {
   return isMobilePlatformValidationEvent(event)
     || isSaasIntegrationValidationEvent(event)
+    || isWebDevFullStackValidationEvent(event)
+    || isWebDevSecurityProductionValidationEvent(event)
     || isBroadVerificationEvent(event);
 }
 
@@ -5899,6 +5942,19 @@ function isSaasIntegrationValidationEvent(event: BenchmarkTraceEvent): boolean {
   if (!event.verification || event.tool !== 'bash') return false;
   const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
   return /\b(?:e2e|integration|api[-_\s]?test|newman|playwright|cypress|selenium|docker\s+compose[\s\S]{0,80}\btest|prisma\s+migrate|sequelize\s+db:migrate|alembic\s+(?:upgrade|heads|current)|rails\s+(?:test|db:migrate)|django-admin\s+test|pytest[\s\S]{0,80}\bintegration|npm\s+(?:run\s+)?(?:test:e2e|e2e|test:integration|integration|test:api|api-test)|pnpm\s+(?:run\s+)?(?:test:e2e|e2e|test:integration|integration|test:api|api-test)|yarn\s+(?:run\s+)?(?:test:e2e|e2e|test:integration|integration|test:api|api-test))\b/i.test(command);
+}
+
+function isWebDevFullStackValidationEvent(event: BenchmarkTraceEvent): boolean {
+  if (!event.verification || event.tool !== 'bash') return false;
+  const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
+  return isSaasIntegrationValidationEvent(event)
+    || /\b(?:playwright|cypress|selenium|webdriver|puppeteer|supertest|newman|api[-_\s]?test|test:e2e|test:api|test:integration|e2e|integration|docker\s+compose[\s\S]{0,80}\b(?:up|run|test)|npm\s+(?:run\s+)?(?:test:e2e|e2e|test:api|api-test|test:integration|integration)|pnpm\s+(?:run\s+)?(?:test:e2e|e2e|test:api|api-test|test:integration|integration)|yarn\s+(?:run\s+)?(?:test:e2e|e2e|test:api|api-test|test:integration|integration))\b/i.test(command);
+}
+
+function isWebDevSecurityProductionValidationEvent(event: BenchmarkTraceEvent): boolean {
+  if (!event.verification || event.tool !== 'bash') return false;
+  const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
+  return /\b(?:(?:npm|pnpm|yarn|bun)\s+audit|npm\s+(?:run\s+)?(?:build|lint|typecheck|check|security|audit|scan)|pnpm\s+(?:run\s+)?(?:build|lint|typecheck|check|security|audit|scan)|yarn\s+(?:run\s+)?(?:build|lint|typecheck|check|security|audit|scan)|bun\s+(?:run\s+)?(?:build|lint|typecheck|check)|semgrep|bandit|trivy|snyk|gitleaks|lighthouse|k6\s+run|autocannon|wrk|docker\s+compose[\s\S]{0,80}\b(?:build|up|run|test)|prisma\s+migrate|sequelize\s+db:migrate|alembic\s+upgrade|rails\s+db:migrate)\b/i.test(command);
 }
 
 function detectTestCaseMemorizationRisk(event: BenchmarkTraceEvent): string | null {
@@ -6232,7 +6288,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones before claiming RoadmapBench/SaaSBench/mobile completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line to each non-trivial edit and verify it after the edit, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier for long-horizon SaaS/mobile/roadmap tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones and WebDevBench canaries before claiming RoadmapBench/SaaSBench/mobile/WebDevBench completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line to each non-trivial edit and verify it after the edit, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, or frontend-backend/security verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
@@ -6454,7 +6510,7 @@ function summarizeTarget(tool: string, input: Record<string, unknown>): string {
 function isVerificationTool(tool: string, input: Record<string, unknown>): boolean {
   if (tool !== 'bash') return false;
   const command = String(input.command ?? '');
-  return /\b((?:npm|pnpm|yarn)\s+(?:run\s+)?(test|build|lint|check)|bun\s+(test|run)|vitest|jest|pytest|ruff|mypy|tsc|cargo\s+(test|build|check)|go\s+test|dotnet\s+test|gradle\s+test|gradlew\s+test|mvn\s+test|mvnw\s+test|make\s+(test|check|verify)|tb\s+run|harbor\s+run)\b/i
+  return /\b((?:npm|pnpm|yarn)\s+(?:run\s+)?(test|build|lint|check|typecheck|audit|security|scan|test:e2e|e2e|test:integration|integration|test:api|api-test)|bun\s+(test|run)|vitest|jest|pytest|ruff|mypy|tsc|playwright\s+test|cypress\s+run|semgrep|bandit|trivy|snyk|gitleaks|lighthouse|k6\s+run|autocannon|cargo\s+(test|build|check)|go\s+test|dotnet\s+test|gradle\s+test|gradlew\s+test|mvn\s+test|mvnw\s+test|make\s+(test|check|verify)|tb\s+run|harbor\s+run)\b/i
     .test(command)
     || /(?:^|[\s;&|])\.\/(?:gradlew|mvnw)\s+test\b/i.test(command);
 }
@@ -6533,6 +6589,7 @@ function isBroadVerificationEvent(event: BenchmarkTraceEvent): boolean {
   return /(?:^|[;&|]\s*)(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:test|build|lint|check)\s*(?:$|[;&|])/i.test(command)
     || /(?:^|[;&|]\s*)bun\s+(?:test|run\s+(?:test|build|lint|check))\s*(?:$|[;&|])/i.test(command)
     || /(?:^|[;&|]\s*)(?:npx\s+)?(?:vitest\s+run|jest|pytest|python\s+-m\s+pytest)\s*(?:$|[;&|])/i.test(command)
+    || /(?:^|[;&|]\s*)(?:npx\s+)?(?:playwright\s+test|cypress\s+run|semgrep|bandit|trivy|snyk|gitleaks|lighthouse|k6\s+run|autocannon)\b/i.test(command)
     || /(?:^|[;&|]\s*)(?:ruff\s+check|mypy|tsc)\s+\.?\s*(?:$|[;&|])/i.test(command)
     || /(?:^|[;&|]\s*)cargo\s+(?:test|build|check)(?:\s+--workspace)?\s*(?:$|[;&|])/i.test(command)
     || /(?:^|[;&|]\s*)go\s+test(?:\s+\.\/\.\.\.)?\s*(?:$|[;&|])/i.test(command)

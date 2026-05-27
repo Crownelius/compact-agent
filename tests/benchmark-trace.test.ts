@@ -397,6 +397,11 @@ describe('benchmark trace artifacts', () => {
         benchmarkName: 'SWE-Bench Mobile',
       },
       {
+        prompt: '/benchmark webdevbench build full-stack canary workflow',
+        benchmark: 'swewebdevbench',
+        benchmarkName: 'SWE-WebDevBench',
+      },
+      {
         prompt: '/benchmark appworld complete user app workflow',
         benchmark: 'appworld',
         benchmarkName: 'AppWorld',
@@ -5525,6 +5530,132 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkCompletionReminder(events)).toContain('long-horizon coverage risk');
     expect(buildBenchmarkCompletionReminder(events)).toContain('broad integration/platform verifier');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('long_horizon_risk=yes long_horizon_signals=3');
+  });
+
+  it('flags SWE-WebDevBench canary and production validation gaps', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: SWE-WebDevBench full-stack app creation request with canary requirements.',
+          '- TASK.md: Build auth, backend persistence, frontend dashboard, and production readiness.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test -- auth',
+          '- npm run test:e2e',
+          '- npm audit',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/auth.ts' },
+        output: 'export function auth() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'edit_file',
+        input: { file_path: 'src/auth.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test -- auth' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const signals = buildBenchmarkLongHorizonSignals(events);
+    expect(signals.map((signal) => signal.reason)).toEqual([
+      'missing_webdev_canary_checklist',
+      'missing_broad_integration_validation',
+      'missing_frontend_backend_validation',
+      'missing_security_production_validation',
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.longHorizonRisk).toBe(true);
+    expect(quality.longHorizonSignalCount).toBe(4);
+    expect(quality.processDefects.map((d) => d.code)).toContain('long_horizon_coverage_risk');
+    expect(quality.warnings.join('\n')).toContain('WebDevBench completion may be under-evidenced');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('WebDevBench canaries');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('frontend-backend/security verifier');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('long_horizon_risk=yes long_horizon_signals=4');
+  });
+
+  it('accepts SWE-WebDevBench frontend-backend and production validation evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: WebDevBench app modification request with frontend-backend coupling.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: { items: [{ content: 'Preserve canary requirements.', status: 'completed' }] },
+        output: 'Todo list updated (1 item):\n- [x] Preserve canary requirements.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const app = "old";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npx playwright test' },
+        output: '2 passed',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm run build' },
+        output: 'build complete',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
+    expect(reasons).not.toContain('missing_frontend_backend_validation');
+    expect(reasons).not.toContain('missing_security_production_validation');
+    expect(reasons).not.toContain('missing_broad_integration_validation');
   });
 
   it('flags task-alignment risk when an action follows a distractor cue', () => {

@@ -265,6 +265,7 @@ export type BenchmarkProfile =
   | 'roadmapbench'
   | 'saasbench'
   | 'swe-bench-mobile'
+  | 'webdevbench'
   | 'appworld'
   | 'browsecomp'
   | 'tau2'
@@ -332,6 +333,16 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'swe-bench-mobile': 'swe-bench-mobile',
   'swe-mobile': 'swe-bench-mobile',
   ios: 'swe-bench-mobile',
+  webdev: 'webdevbench',
+  webdevbench: 'webdevbench',
+  'webdev-bench': 'webdevbench',
+  swewebdev: 'webdevbench',
+  swewebdevbench: 'webdevbench',
+  'swe-webdev': 'webdevbench',
+  'swe-webdevbench': 'webdevbench',
+  'swe-webdev-bench': 'webdevbench',
+  vibecoding: 'webdevbench',
+  'vibe-coding': 'webdevbench',
   app: 'appworld',
   appworld: 'appworld',
   'app-world': 'appworld',
@@ -463,6 +474,13 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Prefer defensive programming around lifecycle, nil/nullability, permissions, concurrency, feature flags, and backwards compatibility; avoid broad rewrites of mixed native code.
 - Validate with the narrowest relevant mobile test first, then run a platform-level build/test command such as xcodebuild, swift test, fastlane, Gradle, or the supplied emulator/simulator harness when feasible.
 - Do not claim completion from generic unit tests alone when platform build, simulator, or design-contract evidence is available.`;
+    case 'webdevbench':
+      return `Profile: SWE-WebDevBench style full-stack app-agency task
+- Treat the task as product, engineering, and ops work, not only code generation. Preserve business requirements, ambiguity decisions, architecture rationale, and deployability evidence.
+- Separate ACR-style app creation from AMR-style app modification. For modification work, preserve existing behavior and explicitly watch for context-loss regressions.
+- Build a canary-requirement checklist before editing: locale/currency/date rules, domain-specific requirements, integrations, data flows, auth/permissions, and hidden-but-verifiable business constraints.
+- Validate frontend and backend together. A polished UI is not sufficient unless data persistence, APIs, auth, integrations, and state transitions are exercised.
+- Run at least one production-readiness or security/infrastructure check when feasible: build, lint/typecheck, audit/security scan, migration, docker/service health, load/concurrency smoke, or deployment verifier.`;
     case 'appworld':
       return `Profile: AppWorld style stateful app-environment task
 - Treat the task as a grounded workflow over apps, APIs, and persistent state, not as a prose QA task.
@@ -504,6 +522,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task mentions RoadmapBench, version-upgrade roadmaps, multi-target subtasks, or long-horizon repository development, follow the RoadmapBench profile.
 - If the task mentions SaaSBench, enterprise SaaS, validation nodes, multi-component app workflows, tenants, migrations, or cross-service integration, follow the SaaSBench profile.
 - If the task mentions SWE-Bench Mobile, iOS/mobile feature work, PRDs, Figma, Swift, Objective-C, Xcode, Android, or simulator/emulator validation, follow the SWE-Bench Mobile profile.
+- If the task mentions SWE-WebDevBench, web app creation/modification, vibe coding platforms, virtual software agencies, canary requirements, frontend-backend decoupling, or production-readiness/security scoring, follow the SWE-WebDevBench profile.
 - If the task mentions AppWorld, app/API state, user records, calendars, mail, spreadsheets, or environment state transitions, follow the AppWorld profile.
 - If the task mentions BrowseComp, BrowseComp+, difficult web research, source-grounded browsing, or multi-hop search, follow the BrowseComp+ profile.
 - If the task mentions tau2, Tau-Bench, customer support, airline/retail/telecom policy workflows, or policy-bound tool use, follow the tau2 profile.
@@ -531,7 +550,7 @@ Use this workflow as the default benchmark strategy:
    - For risky or multi-file edits, inspect git state first and keep changes reviewable so failed paths can be reverted without losing unrelated user work.
    - Prefer one coherent root-cause patch over broad speculative rewrites.
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
-   - For long-horizon roadmap, SaaS, or mobile tasks, keep the checklist milestone-based so partially completed acceptance nodes stay visible.
+   - For long-horizon roadmap, SaaS, mobile, or WebDevBench tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, and production-readiness gaps stay visible.
    - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.
@@ -580,7 +599,7 @@ ${preflightSnapshot}
    - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
    - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
-   - For RoadmapBench/SaaSBench/SWE-Bench Mobile work, identify roadmap milestones, validation nodes, platform/integration verifiers, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
+   - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench work, identify roadmap milestones, validation nodes, canary requirements, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
    - For AppWorld/BrowseComp+/tau2 work, identify available actions, required source/policy evidence, finish action, and state-observation loop before taking environment actions.
    - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
 
@@ -611,7 +630,7 @@ ${preflightSnapshot}
    - For installs, model loads, training, builds, emulators, or broad test suites that can legitimately exceed the default shell timeout, call bash with \`timeoutMs\` (up to 1800000). Do not retry the exact same timed-out command without changing the timeout or strategy.
    - For services, servers, watchers, and daemons, call bash with \`background:true\`, then inspect the returned log path before assuming readiness.
    - Then run the broad verifier or build/test command available in the task.
-   - For roadmap/SaaS/mobile tasks, prefer at least one broad integration, platform, migration, e2e, or full build/test verifier after the final edit.
+   - For roadmap/SaaS/mobile/WebDevBench tasks, prefer at least one broad integration, platform, migration, e2e, frontend-backend, production-readiness, security, or full build/test verifier after the final edit.
    - For AppWorld/tau2 tasks, verify the latest observation or tool response reflects the intended state; for BrowseComp+, cross-check final claims against opened source evidence.
    - If a verifier fails, diagnose from output and iterate. Do not final-answer on unverified edits.
 
