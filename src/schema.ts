@@ -1,7 +1,7 @@
 /**
  * Schema definitions for persistent data stores.
  *
- * Each store is a JSON file under ~/.compact-agent/.
+ * Each store is a JSON file under ~/.ventipus/.
  * Schema versions are tracked to support future migrations.
  */
 

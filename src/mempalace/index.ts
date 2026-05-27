@@ -23,6 +23,8 @@ import type {
   Drawer, Tunnel, KGTriple, Scope, SearchOptions, SearchHit, WingMeta, RoomMeta,
 } from './types.js';
 
+type WriteScope = Exclude<Scope, 'both'>;
+
 // Lazily-constructed singletons — we don't want to create the global file
 // just by importing the module. They materialize on first read or write.
 let _global: JsonStore | null = null;
@@ -36,7 +38,7 @@ export function getGlobalStore(): JsonStore {
 
 /**
  * Is MemPalace enabled in the user's config? Read directly from
- * ~/.compact-agent/config.json so this can be checked at module-load
+ * ~/.ventipus/config.json so this can be checked at module-load
  * time by src/tools/index.ts without creating an import cycle through
  * src/config.ts (which imports types.ts which we import here).
  *
@@ -51,9 +53,8 @@ export function getGlobalStore(): JsonStore {
 export function isMemoryEnabled(): boolean {
   try {
     const cfgDir =
-      process.env.COMPACT_AGENT_HOME ||
-      process.env.CROWCODER_HOME ||
-      join(homedir(), '.compact-agent');
+      process.env.VENTIPUS_HOME ||
+      join(homedir(), '.ventipus');
     const cfgPath = join(cfgDir, 'config.json');
     if (!existsSync(cfgPath)) return true;
     const raw = readFileSync(cfgPath, 'utf-8');
@@ -113,16 +114,14 @@ export interface AddDrawerInput {
   content: string;
   tags?: string[];
   importance?: number;
-  scope?: Scope | 'auto';
+  scope?: WriteScope | 'auto';
   sourceSessionId?: string;
   cwd: string;            // required for project-scoped writes
 }
 
 export function addDrawer(input: AddDrawerInput): Drawer {
   const tags = input.tags || [];
-  const resolvedScope: Scope = input.scope === 'auto' || !input.scope
-    ? inferScope(input.content, tags)
-    : input.scope;
+  const resolvedScope = resolveWriteScope(input.scope, input.content, tags);
 
   const store = resolvedScope === 'global' ? getGlobalStore() : getProjectStore(input.cwd);
   return store.addDrawer({
@@ -133,6 +132,12 @@ export function addDrawer(input: AddDrawerInput): Drawer {
     importance: input.importance ?? 0.5,
     sourceSessionId: input.sourceSessionId,
   });
+}
+
+function resolveWriteScope(scope: AddDrawerInput['scope'], content: string, tags: string[]): WriteScope {
+  if (scope === undefined || scope === 'auto') return inferScope(content, tags) as WriteScope;
+  if (scope === 'global' || scope === 'project') return scope;
+  throw new Error(`Invalid memory write scope "${String(scope)}"; use "global", "project", or "auto".`);
 }
 
 export function getDrawer(id: string, cwd: string): Drawer | null {

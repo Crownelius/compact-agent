@@ -20,7 +20,7 @@ import { join } from 'node:path';
 const HOOK = join(process.cwd(), 'bin', 'ecc-hooks.cjs');
 
 // Reusable spawn helper. Sets only the env we explicitly pass; never
-// inherits HOME or COMPACT_AGENT_* from the test runner's environment.
+// inherits HOME or VENTIPUS_* from the test runner's environment.
 function runHook(check: string, env: Record<string, string>): {
   exitCode: number; stdout: string; stderr: string;
 } {
@@ -52,21 +52,21 @@ describe('gateguard hook', () => {
   });
 
   describe('yolo bypass (v1.27.1)', () => {
-    it('returns ok() when COMPACT_AGENT_PERMISSION_MODE=yolo', () => {
+    it('returns ok() when VENTIPUS_PERMISSION_MODE=yolo', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_PERMISSION_MODE: 'yolo',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: 'test-session',
+        VENTIPUS_PERMISSION_MODE: 'yolo',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: 'test-session',
       });
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toBe('');
     });
 
-    it('honors the legacy CROWCODER_PERMISSION_MODE for back-compat', () => {
+    it('keeps VENTIPUS_PERMISSION_MODE as the hook contract', () => {
       const r = runHook('gateguard', {
-        CROWCODER_PERMISSION_MODE: 'yolo',
-        CROWCODER_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        CROWCODER_SESSION_ID: 'test-session',
+        VENTIPUS_PERMISSION_MODE: 'yolo',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: 'test-session',
       });
       expect(r.exitCode).toBe(0);
     });
@@ -77,10 +77,10 @@ describe('gateguard hook', () => {
       // the gating factor. Warn mode (the new default) wouldn't block
       // — that case has its own test below.
       const r = runHook('gateguard', {
-        COMPACT_AGENT_PERMISSION_MODE: 'ask',
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_PERMISSION_MODE: 'ask',
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toContain('First Edit/Write');
@@ -89,11 +89,11 @@ describe('gateguard hook', () => {
 
   describe('env-var disable knob (v1.27.1)', () => {
     for (const val of ['off', 'OFF', 'false', '0', 'no', 'disabled']) {
-      it(`returns ok() when COMPACT_AGENT_GATEGUARD=${val}`, () => {
+      it(`returns ok() when VENTIPUS_GATEGUARD=${val}`, () => {
         const r = runHook('gateguard', {
-          COMPACT_AGENT_GATEGUARD: val,
-          COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-          COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+          VENTIPUS_GATEGUARD: val,
+          VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+          VENTIPUS_SESSION_ID: `test-${Date.now()}`,
         });
         expect(r.exitCode).toBe(0);
       });
@@ -101,10 +101,10 @@ describe('gateguard hook', () => {
 
     it('does NOT bypass on garbage env values (strict mode)', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD: 'maybe',
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_GATEGUARD: 'maybe',
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(2);
     });
@@ -113,8 +113,8 @@ describe('gateguard hook', () => {
   describe('mode selection (v1.29.1)', () => {
     it('default mode emits a warning hint and allows the edit', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toContain('[ECC hint] first edit to');
@@ -122,9 +122,9 @@ describe('gateguard hook', () => {
 
     it('block mode keeps the legacy block-first behavior', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toContain('First Edit/Write');
@@ -132,9 +132,9 @@ describe('gateguard hook', () => {
 
     it('off mode is fully silent', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'off',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_GATEGUARD_MODE: 'off',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toBe('');
@@ -143,12 +143,12 @@ describe('gateguard hook', () => {
     it('warn mode does not re-emit on second edit to same file', () => {
       const sessionId = `test-warn-${Date.now()}`;
       const r1 = runHook('gateguard', {
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: sessionId,
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: sessionId,
       });
       const r2 = runHook('gateguard', {
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: sessionId,
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: sessionId,
       });
       expect(r1.stderr).toContain('[ECC hint]');
       expect(r2.stderr).toBe('');  // already seen; no re-warn
@@ -160,8 +160,8 @@ describe('gateguard hook', () => {
   describe('non-existent file bypass (v1.27.2)', () => {
     it('returns ok() for a file that does not exist (warn mode)', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: nonExistentFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: nonExistentFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(0);
       expect(r.stderr).toBe('');  // no hint either, brand-new file is fully silent
@@ -170,18 +170,18 @@ describe('gateguard hook', () => {
 
     it('returns ok() for a file that does not exist (block mode)', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: nonExistentFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: nonExistentFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(0);
     });
 
     it('blocks first edit to an EXISTING file (strict mode only)', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: `test-${Date.now()}`,
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: `test-${Date.now()}`,
       });
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toContain('First Edit/Write');
@@ -189,10 +189,10 @@ describe('gateguard hook', () => {
   });
 
   describe('sessionId path-traversal sanitization (v1.28.1)', () => {
-    // The state file is written under ~/.compact-agent/state/gateguard/
+    // The state file is written under ~/.ventipus/state/gateguard/
     // <sessionId>.json. Without sanitization, a sessionId of
     // "../../../escape" would write outside that dir.
-    const stateDir = join(homedir(), '.compact-agent', 'state', 'gateguard');
+    const stateDir = join(homedir(), '.ventipus', 'state', 'gateguard');
 
     it('falls back to "unknown" on a path-traversal sessionId', () => {
       // Use a UNIQUE existing file so the per-file lock for "unknown"
@@ -202,15 +202,15 @@ describe('gateguard hook', () => {
       const uniqueFile = join(tmpDir, `unique-${Date.now()}.ts`);
       writeFileSync(uniqueFile, 'x');
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: uniqueFile }),
-        COMPACT_AGENT_SESSION_ID: '../../../escape',
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: uniqueFile }),
+        VENTIPUS_SESSION_ID: '../../../escape',
       });
       // Should block (block mode, existing file, no yolo) AND
       // should not have written outside the state dir.
       expect(r.exitCode).toBe(2);
       // The escape path must not have been created
-      const traversalTarget = join(homedir(), '.compact-agent', 'state', 'escape.json');
+      const traversalTarget = join(homedir(), '.ventipus', 'state', 'escape.json');
       expect(existsSync(traversalTarget)).toBe(false);
       // The "unknown" fallback path SHOULD exist
       const fallback = join(stateDir, 'unknown.json');
@@ -222,9 +222,9 @@ describe('gateguard hook', () => {
 
     it('accepts valid sessionIds (alphanumeric + dash + underscore, <=64)', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: 'abc-123_DEF',
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: 'abc-123_DEF',
       });
       // Block (existing file, no bypass) but with the real session id
       expect(r.exitCode).toBe(2);
@@ -232,9 +232,9 @@ describe('gateguard hook', () => {
 
     it('rejects shell-injection-style sessionIds', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_GATEGUARD_MODE: 'block',
-        COMPACT_AGENT_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
-        COMPACT_AGENT_SESSION_ID: 'foo;rm -rf /',
+        VENTIPUS_GATEGUARD_MODE: 'block',
+        VENTIPUS_TOOL_INPUT: JSON.stringify({ file_path: existingFile }),
+        VENTIPUS_SESSION_ID: 'foo;rm -rf /',
       });
       // Falls back to "unknown" silently; still blocks the existing-file edit
       expect(r.exitCode).toBe(2);
@@ -242,10 +242,10 @@ describe('gateguard hook', () => {
   });
 
   describe('malformed tool input (v1.28.1 fail-closed fix)', () => {
-    it('blocks when COMPACT_AGENT_TOOL_INPUT is non-empty malformed JSON', () => {
+    it('blocks when VENTIPUS_TOOL_INPUT is non-empty malformed JSON', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_TOOL_INPUT: 'not valid json {{{',
-        COMPACT_AGENT_SESSION_ID: 'test',
+        VENTIPUS_TOOL_INPUT: 'not valid json {{{',
+        VENTIPUS_SESSION_ID: 'test',
       });
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toContain('not valid JSON');
@@ -253,7 +253,7 @@ describe('gateguard hook', () => {
 
     it('allows when tool input env var is empty/unset (legitimate for SessionStart events)', () => {
       const r = runHook('gateguard', {
-        COMPACT_AGENT_SESSION_ID: 'test',
+        VENTIPUS_SESSION_ID: 'test',
       });
       // No tool input + no file_path → empty-path guard returns ok()
       expect(r.exitCode).toBe(0);

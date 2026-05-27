@@ -1,0 +1,279 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { afterEach, describe, expect, it } from 'vitest';
+import { BenchmarkContextTool } from '../src/tools/benchmark-context.js';
+import { getToolByName } from '../src/tools/index.js';
+
+const roots: string[] = [];
+
+function makeRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'ventipus-bench-'));
+  roots.push(root);
+  return root;
+}
+
+afterEach(() => {
+  delete process.env.VENTIPUS_BENCHMARK_TRACE_DIR;
+  delete process.env.VENTIPUS_BENCHMARK_EXPERIENCE;
+  for (const root of roots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+describe('benchmark_context tool', () => {
+  it('is registered as a read-only tool', () => {
+    const tool = getToolByName('benchmark_context');
+    expect(tool).toBe(BenchmarkContextTool);
+    expect(tool?.isReadOnly).toBe(true);
+    expect(tool?.isDestructive).toBe(false);
+  });
+
+  it('summarizes manifests, likely verifiers, task files, and oracle candidates', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'));
+    mkdirSync(join(root, 'tests'));
+    mkdirSync(join(root, 'oracle'));
+    mkdirSync(join(root, 'solution'));
+    mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-26-prior');
+    const failedPriorRunDir = join(traceDir, '2026-05-26-failed-prior');
+    mkdirSync(priorRunDir, { recursive: true });
+    mkdirSync(failedPriorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      scripts: {
+        test: 'vitest run',
+        build: 'tsc',
+        start: 'node src/server.js',
+      },
+    }, null, 2));
+    writeFileSync(join(root, 'pnpm-lock.yaml'), '');
+    writeFileSync(join(root, 'pyproject.toml'), '[tool.pytest.ini_options]\n');
+    writeFileSync(join(root, 'uv.lock'), '');
+    writeFileSync(join(root, 'go.mod'), 'module example.com/fixture\n');
+    writeFileSync(join(root, 'pom.xml'), '<project></project>\n');
+    writeFileSync(join(root, 'mvnw'), '#!/bin/sh\n');
+    writeFileSync(join(root, 'build.gradle.kts'), 'plugins { java }\n');
+    writeFileSync(join(root, 'gradlew'), '#!/bin/sh\n');
+    writeFileSync(join(root, 'fixture.sln'), '\n');
+    writeFileSync(join(root, 'Makefile'), 'verify:\n\tpytest\n');
+    writeFileSync(join(root, '.github', 'workflows', 'ci.yml'), [
+      'name: CI',
+      'on: [push, pull_request]',
+      'env:',
+      '  NODE_ENV: test',
+      '  DATABASE_URL: postgres://postgres:postgres@localhost:5432/app',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    container: node:20',
+      '    services:',
+      '      postgres:',
+      '        image: postgres:16',
+      '        env:',
+      '          POSTGRES_PASSWORD: postgres',
+      '        ports:',
+      '          - 5432:5432',
+      '    steps:',
+      '      - uses: actions/checkout@v4',
+      '      - uses: actions/setup-node@v4',
+      '      - uses: actions/cache@v4',
+      '      - run: pnpm install --frozen-lockfile',
+      '      - run: pnpm run test',
+      '      - run: |',
+      '          python -m pytest tests/test_app.py',
+      '          pnpm run build',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, '.gitlab-ci.yml'), [
+      'image: python:3.12',
+      'variables:',
+      '  PIP_CACHE_DIR: .cache/pip',
+      'services:',
+      '  - redis:7',
+      '  - name: mysql:8',
+      'test:',
+      '  script:',
+      '    - pytest',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      'Fix the task.',
+      '',
+      '## Acceptance Criteria',
+      '- Preserve the CSV export format exactly.',
+      '- Must show billing totals with two decimal places.',
+      '- Do not change the public API route names.',
+      '- No code changes are required if the verifier already passes.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'task.yaml'), [
+      'descriptions:',
+      '  - key: base',
+      '    description: |',
+      '      Create /app/filled_form.pdf exactly.',
+      '      Include sha256 without a hyphen in the verification output.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'task.toml'), 'schema_version = "1.1"\n');
+    writeFileSync(join(root, 'instruction.md'), 'Fix the Harbor task.\n');
+    writeFileSync(join(root, 'Dockerfile'), 'FROM ubuntu:24.04\n');
+    writeFileSync(join(root, 'docker-compose.yaml'), 'services:\n  client:\n    build: .\n');
+    writeFileSync(join(root, 'run-tests.sh'), '#!/bin/bash\npython -m pytest tests/test_outputs.py -rA\n');
+    writeFileSync(join(root, 'solution', 'solve.sh'), '#!/bin/bash\ntrue\n');
+    writeFileSync(join(root, 'src', 'index.ts'), 'export const ok = true;\n');
+    writeFileSync(join(root, 'src', 'server.js'), 'require("http").createServer().listen(3000);\n');
+    writeFileSync(join(root, 'src', 'bitcoin_service.py'), 'print("service")\n');
+    writeFileSync(join(root, 'src', 'Fixture.csproj'), '<Project Sdk="Microsoft.NET.Sdk"></Project>\n');
+    writeFileSync(join(root, 'tests', 'test_app.py'), 'def test_ok(): assert True\n');
+    writeFileSync(join(root, 'tests', 'test_outputs.py'), 'def test_output(): assert True\n');
+    writeFileSync(join(root, 'tests', 'test.sh'), '#!/bin/bash\npytest /tests/test_outputs.py\n');
+    writeFileSync(join(root, 'oracle', 'solution.txt'), 'do not read unless allowed\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-26T12:00:00.000Z',
+      verificationCommands: ['pnpm run test', 'python -m pytest'],
+      changedFiles: ['src/index.ts', 'tests/test_app.py'],
+      worktreeChangedFiles: ['src/index.ts'],
+      usage: {
+        totalTokens: 3700,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 96,
+        successfulVerificationCount: 2,
+        processDefects: [],
+      },
+    }, null, 2));
+    writeFileSync(join(failedPriorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-26T13:00:00.000Z',
+      verificationCommands: ['pnpm run test'],
+      changedFiles: ['src/index.ts'],
+      usage: {
+        totalTokens: 9000,
+        estimatedCostUsd: 0,
+      },
+      finalAnswerEvidence: {
+        claimsIncomplete: true,
+        unsupportedPassingClaim: true,
+      },
+      trajectoryQuality: {
+        processScore: 42,
+        successfulVerificationCount: 0,
+        processDefects: [
+          { code: 'blind_repair_after_failed_verifier' },
+          { code: 'no_passing_post_edit_validation' },
+        ],
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('# Benchmark Context');
+    expect(result.output).toContain('package.json');
+    expect(result.output).toContain('TASK.md');
+    expect(result.output).toContain('task.yaml');
+    expect(result.output).toContain('task.toml');
+    expect(result.output).toContain('instruction.md');
+    expect(result.output).toContain('Task Instruction Excerpts');
+    expect(result.output).toContain('task.yaml:4: description: Create /app/filled_form.pdf exactly.');
+    expect(result.output).toContain('task.yaml:5: description: Include sha256 without a hyphen in the verification output.');
+    expect(result.output).toContain('Use these exact lines as the initial task contract');
+    expect(result.output).toContain('Task Contract Signals');
+    expect(result.output).toContain('Preserve the CSV export format exactly.');
+    expect(result.output).toContain('Must show billing totals with two decimal places.');
+    expect(result.output).toContain('Include sha256 without a hyphen in the verification output.');
+    expect(result.output).toContain('Do not change the public API route names.');
+    expect(result.output).toContain('No code changes are required if the verifier already passes.');
+    expect(result.output).toContain('bash run-tests.sh');
+    expect(result.output).toContain('bash tests/test.sh');
+    expect(result.output).toContain('python -m pytest tests/test_outputs.py -rA');
+    expect(result.output).toContain('pnpm run test');
+    expect(result.output).toContain('CI Workflow Hints');
+    expect(result.output).toContain('ci workflow: .github/workflows/ci.yml');
+    expect(result.output).toContain('ci env: .github/workflows/ci.yml:4: NODE_ENV');
+    expect(result.output).toContain('ci env: .github/workflows/ci.yml:5: DATABASE_URL');
+    expect(result.output).toContain('ci env: .github/workflows/ci.yml:14: POSTGRES_PASSWORD');
+    expect(result.output).not.toContain('postgres://postgres');
+    expect(result.output).not.toContain('POSTGRES_PASSWORD: postgres');
+    expect(result.output).toContain('ci setup: .github/workflows/ci.yml:19: actions/setup-node@v4');
+    expect(result.output).toContain('ci setup: .github/workflows/ci.yml:20: actions/cache@v4');
+    expect(result.output).toContain('ci service: .github/workflows/ci.yml:11: postgres');
+    expect(result.output).toContain('ci container: .github/workflows/ci.yml:9: node:20');
+    expect(result.output).toContain('ci image: .github/workflows/ci.yml:12: postgres:16');
+    expect(result.output).toContain('ci image: .gitlab-ci.yml:1: python:3.12');
+    expect(result.output).toContain('ci env: .gitlab-ci.yml:3: PIP_CACHE_DIR');
+    expect(result.output).toContain('ci service: .gitlab-ci.yml:5: redis:7');
+    expect(result.output).toContain('ci image: .gitlab-ci.yml:5: redis:7');
+    expect(result.output).toContain('ci service: .gitlab-ci.yml:6: mysql:8');
+    expect(result.output).toContain('ci run: .github/workflows/ci.yml:21: pnpm install --frozen-lockfile');
+    expect(result.output).toContain('ci verifier: .github/workflows/ci.yml:22: pnpm run test');
+    expect(result.output).toContain('ci verifier candidates: pnpm run test | python -m pytest tests/test_app.py && pnpm run build');
+    expect(result.output).toContain('CI environment: workflow setup/env/service/container hints were detected');
+    expect(result.output).toContain('CI contract: workflow run commands were detected');
+    expect(result.output).toContain('reconstruct required CI setup/env/services');
+    expect(result.output).toContain('include relevant CI test/build/lint commands');
+    expect(result.output).toContain('uv run python -m pytest');
+    expect(result.output).toContain('python -m pytest');
+    expect(result.output).toContain('go test ./...');
+    expect(result.output).toContain('./mvnw test');
+    expect(result.output).toContain('./gradlew test');
+    expect(result.output).toContain('dotnet test');
+    expect(result.output).toContain('make verify');
+    expect(result.output).toContain('oracle/solution.txt');
+    expect(result.output).toContain('Read-With-Care Candidates');
+    expect(result.output).toContain('Benchmark Harness Artifacts');
+    expect(result.output).toContain('Benchmark Harness Hints');
+    expect(result.output).toContain('Terminal-Bench layout detected');
+    expect(result.output).toContain('Harbor task layout detected');
+    expect(result.output).toContain('solution artifact detected');
+    expect(result.output).toContain('Runtime Environment Hints');
+    expect(result.output).toContain('uv project detected');
+    expect(result.output).toContain('Go module detected');
+    expect(result.output).toContain('Maven project detected');
+    expect(result.output).toContain('Gradle project detected');
+    expect(result.output).toContain('.NET environment hint');
+    expect(result.output).toContain('network/offline hint');
+    expect(result.output).toContain('Service Persistence Hints');
+    expect(result.output).toContain('start: node src/server.js');
+    expect(result.output).toContain('src/bitcoin_service.py');
+    expect(result.output).toContain('background:true');
+    expect(result.output).toContain('detached tmux');
+    expect(result.output).toContain('Benchmark Method Hints');
+    expect(result.output).toContain('planner -> navigator -> editor -> executor');
+    expect(result.output).toContain('localization dossier');
+    expect(result.output).toContain('task instruction excerpts and full instruction files');
+    expect(result.output).toContain('source research trigger');
+    expect(result.output).toContain('github_kind:"all"');
+    expect(result.output).toContain('kind:"all"');
+    expect(result.output).toContain('kaggle_kind:"both"');
+    expect(result.output).toContain('recent_days:90');
+    expect(result.output).toContain('Prior Benchmark Experience Hints');
+    expect(result.output).toContain('previous run: 2026-05-26T12:00:00.000Z');
+    expect(result.output).toContain('process_score=96');
+    expect(result.output).toContain('success_verifiers=2');
+    expect(result.output).toContain('verifiers=pnpm run test | python -m pytest');
+    expect(result.output).toContain('changed=src/index.ts, tests/test_app.py, src/index.ts');
+    expect(result.output).toContain('usage=3700 tokens/$0.0000');
+    expect(result.output).toContain('Treat prior experience as a cost-saving heuristic only');
+    expect(result.output).toContain('Prior Benchmark Experience Warnings');
+    expect(result.output).toContain('avoid prior run: 2026-05-26T13:00:00.000Z');
+    expect(result.output).toContain('reason=no successful verifier|low process score 42|defects=blind_repair_after_failed_verifier|no_passing_post_edit_validation|final answer incomplete or blocked');
+    expect(result.output).toContain('unsupported final verification claim');
+    expect(result.output).toContain('Do not copy these prior patterns without fresh current-task evidence');
+    expect(result.output).toContain('Convert task instruction excerpts and task contract signals into a short todo checklist');
+    expect(result.output).toContain('reuse only the method-level lesson');
+    expect(result.output).toContain('avoid any prior patterns listed as warnings');
+  }, 15_000);
+
+  it('reports missing paths as errors', async () => {
+    const result = await BenchmarkContextTool.call({ path: join(tmpdir(), 'definitely-missing-ventipus') }, process.cwd());
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('path does not exist');
+  });
+});

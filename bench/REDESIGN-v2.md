@@ -1,6 +1,6 @@
-# compact-agent v2 redesign — driven by Terminal-Bench failure data
+# ventipus v2 redesign — driven by Terminal-Bench failure data
 
-This document synthesizes findings from three parallel research passes (Terminal-Bench leaderboard map, Goose architecture deep-dive, context-management literature) into a concrete redesign roadmap for compact-agent.
+This document synthesizes findings from three parallel research passes (Terminal-Bench leaderboard map, Goose architecture deep-dive, context-management literature) into a concrete redesign roadmap for ventipus.
 
 The goal: take the **43.0% baseline on terminal-bench-core v0.1.1 with deepseek-v4-flash** and push it toward the **51% Terminus 2 / claude-sonnet-4-5 mark** *without changing model*, then beat it with a model swap.
 
@@ -65,9 +65,9 @@ The system prompt tells the model: "If `timedOut: true` and you expected the com
 
 Source: Goose's `large_response_handler.rs` (80 lines).
 
-Every tool response > **threshold tokens** (start at 4K for compact-agent's budget) gets routed through a wrapper that:
+Every tool response > **threshold tokens** (start at 4K for ventipus's budget) gets routed through a wrapper that:
 
-1. Writes the full response to `/tmp/compact-agent-results/<call_id>.txt`
+1. Writes the full response to `/tmp/ventipus-results/<call_id>.txt`
 2. Replaces the in-context payload with: head 1.5K + tail 1.5K + `[middle elided — N more tokens at <path>; use head/tail/grep to read]`
 
 This runs **before** the message even hits message history — the model never sees the 200KB blob. If it later needs the middle, it can `bash` it.
@@ -154,7 +154,7 @@ if (turnHasNoToolCalls && !alreadyDidSelfCritique) {
 
 Source: not in research — just noticed empirically.
 
-Bundle compact-agent's dist/ into the adapter as a base64 tarball. Install script writes it to `/usr/local/lib/compact-agent`, symlinks `compact-agent`. No npm registry needed.
+Bundle ventipus's dist/ into the adapter as a base64 tarball. Install script writes it to `/usr/local/lib/ventipus`, symlinks `ventipus`. No npm registry needed.
 
 **Expected impact**: rescues `broken-networking` (the 1 parse_error). +1 pass.
 
@@ -172,7 +172,7 @@ Skip on small workspaces. Heuristic: `if (await glob('**/*.{py,ts,js,go,rs,java}
 
 Source: Goose's `platform_extensions/todo.rs`.
 
-A simple markdown checklist the model can update via tool call, that compact-agent **auto-injects as a system message before every assistant turn**. Survives context compaction (it's regenerated each turn from the persistent state, not stored in message history).
+A simple markdown checklist the model can update via tool call, that ventipus **auto-injects as a system message before every assistant turn**. Survives context compaction (it's regenerated each turn from the persistent state, not stored in message history).
 
 ```typescript
 // New tool:
@@ -224,13 +224,13 @@ If we then swap model to `anthropic/claude-sonnet-4-5`, expected baseline lift i
 
 ## Architecture changes (not bug fixes)
 
-Beyond the eight fixes, the research surfaced three architectural shifts compact-agent should consider for v2:
+Beyond the eight fixes, the research surfaced three architectural shifts ventipus should consider for v2:
 
 ### A. MCP-only tool surface
 
 Source: Goose, OpenHands.
 
-Currently compact-agent has hard-coded TypeScript tools. The research strongly suggests an **MCP-only** architecture where every capability is a server. Benefits:
+Currently ventipus has hard-coded TypeScript tools. The research strongly suggests an **MCP-only** architecture where every capability is a server. Benefits:
 - Tools are versioned, swappable, A/B-testable without forking the agent
 - Users can add their own tools by writing an MCP server (already standard)
 - Compact-agent's "ECC skills" surface could collapse into MCP servers

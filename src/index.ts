@@ -7,26 +7,39 @@ import { join as pathJoin } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { initDebug, emit as dbgEmit, setDebugLevel, getDebugStatus, tailDebug, type DebugLevel } from './debug.js';
 import chalk from 'chalk';
-import { loadConfig, saveConfig, configExists, getConfigDir } from './config.js';
+import { loadConfig, saveConfig, configExists, getConfigDir, loadConfigFromEnv, applyRuntimeConfigOverrides } from './config.js';
 import { resetClient } from './api.js';
+import {
+  CHATGPT_CODEX_BASE_URL,
+  getOpenAICodexAuthStatus,
+  runCodexLogin,
+} from './openai-oauth.js';
 import { runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
-import type { CrowcoderConfig, Message } from './types.js';
+import type { VentipusConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
 // New systems
 import { createSession, autoSave, listSessions, loadSession, deleteSession, saveSession, generateSessionId, resolveSessionRef, type Session } from './sessions.js';
 import { initHooksDir, runHooks, listHooks, saveHooksConfig, clearQuarantinedHooks } from './hooks.js';
 import { printUsageSummary, setBudget } from './cost-tracker.js';
 import { printSecurityWarning, scanCommand } from './security.js';
-import { getCompactionStats } from './compaction.js';
+import {
+  getCompactionStats,
+  OPENROUTER_FREE_ROUTER_SAFE_CONTEXT_WINDOW_TOKENS,
+  OPENROUTER_UNKNOWN_FREE_MODEL_CONTEXT_WINDOW_TOKENS,
+} from './compaction.js';
 import { extractPatterns, printInstinctStatus, pruneExpired, listInstincts, exportInstincts, importInstincts } from './learning.js';
 import { MODES, type Mode, listModes } from './modes.js';
 import { printModelOptions, switchModel, classifyComplexity, routeModel } from './model-router.js';
 import { buildCommitPrompt, buildPRPrompt, printDiff, printLog, isGitRepo } from './git-workflow.js';
-import { buildReviewPrompt, buildTDDPrompt, buildSecurityReviewPrompt, runAudit, printAuditReport, buildPlanPrompt, buildE2EPrompt, buildBuildFixPrompt, buildEvalPrompt, buildUpdateDocsPrompt } from './evaluation.js';
+import {
+  buildReviewPrompt, buildTDDPrompt, buildSecurityReviewPrompt, runAudit, printAuditReport,
+  buildPlanPrompt, buildE2EPrompt, buildBuildFixPrompt, buildEvalPrompt, buildUpdateDocsPrompt,
+  buildBenchmarkPrompt, splitBenchmarkArgs,
+} from './evaluation.js';
 import { printRules } from './rules.js';
 import { buildOrchestrationPrompt, runParallel, mergeResults, printOrchestrationStatus, type SubAgent } from './orchestration.js';
-import { printBanner as printThemedBanner, theme, sym, formatDuration, installScreenReaderDispatch, uninstallScreenReaderDispatch, setPalette, getPaletteId, listPalettes, isPaletteId, PALETTES, expandLastThinking } from './theme.js';
+import { printBanner as printThemedBanner, theme, sym, formatDuration, installScreenReaderDispatch, uninstallScreenReaderDispatch, setPalette, getPaletteId, listPalettes, resolvePaletteId, PALETTES, expandLastThinking } from './theme.js';
 import { saveExport, type ExportFormat } from './export.js';
 // New feature modules
 import { buildVerifyPrompt, saveCheckpoint, listCheckpoints, restoreCheckpoint } from './verification.js';
@@ -37,6 +50,7 @@ import { buildDocsUpdatePrompt, detectDocFiles } from './docs-sync.js';
 import { listSkills, findSkill, applySkill, printSkillList, evolveInstinctsToSkills } from './skills.js';
 import { onSessionStart, onSessionEnd, printMemoryStatus, searchMemory } from './memory.js';
 import { incrementCounter, decrementCounter, resetCounter, getCounter } from './counter.js';
+import { isOpenRouterFreeModelId, type OpenRouterModel } from './openrouter-models.js';
 import {
   createUser,
   listUsers,
@@ -66,7 +80,7 @@ import {
   buildMultiBackendPrompt, buildMultiFrontendPrompt, buildLoopOperatorPrompt,
 } from './autonomous-loops.js';
 // Search-first research workflow
-import { buildSearchFirstPrompt, buildDocsLookupPrompt } from './search-first.js';
+import { buildSearchFirstPrompt, buildDocsLookupPrompt, buildSourceResearchPrompt } from './search-first.js';
 // Codemaps
 import { generateCodeMap, saveCodeMap, printCodeMap, printCodemapStatus, buildCodemapContext } from './codemaps.js';
 // Skill creation from git patterns
@@ -85,7 +99,7 @@ import { buildPM2Prompt, isPM2Available, listPM2Services } from './pm2-manager.j
 import {
   installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable, reseedEccHooks, BUNDLE_VERSION as ECC_BUNDLE_VERSION, listEccCommands,
 } from './ecc.js';
-// Walkthrough — agent-led tour of Crowcoder (/walkthrough, /tour, /guide)
+// Walkthrough — agent-led tour of Ventipus (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
 // Stitch (Google's AI UI/UX design tool) — /stitch, /stitch-config, /stitch-tools
 import { buildStitchPrompt, buildStitchToolsPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
@@ -106,6 +120,8 @@ import {
 } from './voice.js';
 import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage, type RecordController } from './audio.js';
 import { applyScreenReader, summarize } from './accessibility.js';
+import { COMMAND_CATALOG, completeSlashCommandNames } from './command-palette.js';
+import { inlineSuggest } from './inline-suggest.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -120,9 +136,33 @@ function buildUnifiedPrompt(eccName: string, args: string, builtin: () => string
   return args.trim() ? `${ecc}\n\n## User Input\n\n${args}` : ecc;
 }
 
+function openRouterContextHintForModel(model: string, catalogModel?: Pick<OpenRouterModel, 'contextLength'> | null): number | undefined {
+  const id = model.trim().toLowerCase();
+  if (id === 'openrouter/free') return OPENROUTER_FREE_ROUTER_SAFE_CONTEXT_WINDOW_TOKENS;
+  if (catalogModel?.contextLength && catalogModel.contextLength > 0) return Math.floor(catalogModel.contextLength);
+  if (isOpenRouterFreeModelId(id)) return OPENROUTER_UNKNOWN_FREE_MODEL_CONTEXT_WINDOW_TOKENS;
+  return undefined;
+}
+
+function applyModelSelection(
+  config: VentipusConfig,
+  model: string,
+  catalogModel?: Pick<OpenRouterModel, 'contextLength'> | null,
+): void {
+  config.model = model;
+  if (!/openrouter/i.test(config.provider)) return;
+
+  const contextHint = openRouterContextHintForModel(model, catalogModel);
+  if (contextHint) {
+    config.contextWindowTokens = contextHint;
+  } else {
+    delete config.contextWindowTokens;
+  }
+}
+
 // ── Setup Wizard ──────────────────────────────────────────
-async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
-  console.log(chalk.bold.cyan('\n  Compact Agent — First-time Setup\n'));
+async function setupWizard(rl: readline.Interface): Promise<VentipusConfig> {
+  console.log(chalk.bold.cyan('\n  Ventipus — First-time Setup\n'));
   console.log(chalk.white('  Choose a provider:\n'));
 
   const providerKeys = Object.keys(PROVIDERS);
@@ -142,8 +182,25 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   }
 
   let apiKey = '';
+  let openaiAuth: VentipusConfig['openaiAuth'];
   if (provider.requiresKey) {
     apiKey = await rl.question(chalk.yellow(`  API Key for ${provider.name}: `));
+  }
+  if (providerKey === 'openai-codex') {
+    openaiAuth = {
+      type: 'codex_oauth',
+      useCodexAuthFile: true,
+      chatgptBaseURL: CHATGPT_CODEX_BASE_URL,
+    };
+    const status = getOpenAICodexAuthStatus({ openaiAuth } as VentipusConfig);
+    console.log('');
+    if (status.available) {
+      console.log(chalk.green(`  Codex OAuth: found ${status.source === 'env' ? 'environment token' : status.authPath}`));
+      if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
+    } else {
+      console.log(chalk.yellow('  Codex OAuth token not found yet.'));
+      console.log(chalk.dim('  After setup, run /openai-login or run "codex login". Ventipus will read ~/.codex/auth.json.'));
+    }
   }
 
   let model = provider.defaultModel;
@@ -172,13 +229,18 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   if (flakyPatterns.some((p) => lowerModel.includes(p))) {
     console.log('');
     console.log(chalk.yellow(`  ⚠  "${model}" is an experimental / free model that's been reported to return`));
-    console.log(chalk.yellow(`     empty or "ERROR" responses. Compact Agent's auto-fallback will try to`));
+    console.log(chalk.yellow(`     empty or "ERROR" responses. Ventipus's auto-fallback will try to`));
     console.log(chalk.yellow(`     recover, but on a free-tier API key the fallback may not be reachable.`));
-    console.log(chalk.dim('     More reliable free options on OpenRouter:'));
-    console.log(chalk.dim('       meta-llama/llama-3.3-70b-instruct:free'));
-    console.log(chalk.dim('       google/gemini-2.0-flash-exp:free'));
-    console.log(chalk.dim('       deepseek/deepseek-chat:free'));
+    console.log(chalk.dim('     Safer free-tier option on OpenRouter:'));
+    console.log(chalk.dim('       openrouter/free'));
     console.log(chalk.dim('     You can change this any time with /model <id> in the REPL.'));
+    console.log('');
+  }
+  if (providerKey === 'openrouter' && !isOpenRouterFreeModelId(model)) {
+    console.log('');
+    console.log(chalk.yellow(`  Note: "${model}" may require OpenRouter credits.`));
+    console.log(chalk.dim('  Free-tier-safe default: openrouter/free'));
+    console.log(chalk.dim('  Free variants usually end with :free. Switch later with /openrouter-free or /model <id>.'));
     console.log('');
   }
 
@@ -206,17 +268,19 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
   // user can make an informed choice — most users want this on.
   console.log(chalk.white('\n  MemPalace persistent memory'));
   console.log(chalk.dim('  Lets the agent remember your preferences, codebase landmarks, and lessons across sessions.'));
-  console.log(chalk.dim('  Two stores: global (~/.compact-agent/memory) for cross-project facts, project (.compact-agent/memory'));
+  console.log(chalk.dim('  Two stores: global (~/.ventipus/memory) for cross-project facts, project (.ventipus/memory'));
   console.log(chalk.dim('  in each repo) for codebase-specific knowledge. Searchable via /memory or by the agent itself.'));
   console.log(chalk.dim('  Zero external dependencies; storage is local JSON files. Can be toggled anytime via /memory disable.'));
   const memoryChoice = await rl.question(chalk.yellow('  Enable MemPalace memory? [Y/n]: '));
   const memoryEnabled = !(memoryChoice.trim().toLowerCase().startsWith('n'));
 
-  const config: CrowcoderConfig = {
+  const config: VentipusConfig = {
     apiKey,
     baseURL,
     model,
+    fallbackModel: providerKey === 'openrouter' ? PROVIDERS.openrouter.defaultModel : undefined,
     provider: provider.name,
+    ...(openaiAuth ? { openaiAuth } : {}),
     maxTokens: 8192,
     temperature: 0.3,
     permissionMode: permMode,
@@ -226,6 +290,7 @@ async function setupWizard(rl: readline.Interface): Promise<CrowcoderConfig> {
       projectScope: true,
     },
   };
+  applyModelSelection(config, model);
 
   saveConfig(config);
   console.log(chalk.green(`\n  Config saved to ${getConfigDir()}/config.json`));
@@ -316,7 +381,7 @@ function printResumedHistory(messages: Message[], sessionName: string): void {
       // Render tool_calls that came with this assistant message as
       // compact one-liners — full args + outputs would balloon the
       // replay. The full data is on disk in the session JSON if the
-      // user needs to inspect it (`cat ~/.compact-agent/sessions/<id>.json`).
+      // user needs to inspect it (`cat ~/.ventipus/sessions/<id>.json`).
       if (m.tool_calls && m.tool_calls.length > 0) {
         for (const tc of m.tool_calls) {
           const args = (tc.function.arguments || '').slice(0, 80);
@@ -399,6 +464,19 @@ async function askWithDecoratedPrompt(
   return rl.question(theme.prompt(promptGlyph));
 }
 
+function ansiVisibleLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
+function setReadlineBuffer(
+  rl: readline.Interface,
+  line: string,
+): void {
+  const rlAny = rl as unknown as { line: string; cursor: number };
+  rlAny.line = line;
+  rlAny.cursor = line.length;
+}
+
 /**
  * Parse a slash command into (cmd, args).
  *
@@ -445,7 +523,7 @@ function parseSlashCommand(input: string): { cmd: string; args: string } {
 //   { handled: false, injectPrompt } — LLM-driven, prompt ready to send
 export function handleSlashCommand(
   input: string,
-  config: CrowcoderConfig,
+  config: VentipusConfig,
   messages: Message[],
   session: Session,
   mode: { current: Mode },
@@ -479,7 +557,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/history') + d('          — message count & token estimate'));
       console.log(d('  ') + c('/export [fmt]') + d('     — export conversation (md/json/txt)'));
       console.log(d('  ') + c('/exit') + d('             — quit (alias: /quit)'));
-      console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of compact-agent (aliases: /tour, /guide)'));
+      console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of ventipus (aliases: /tour, /guide)'));
       console.log(d('  ') + c('!<cmd>') + d('            — run shell command directly'));
       console.log(h('\n  ── Productivity hotkeys ──'));
       console.log(d('  ') + c('Shift+Tab') + d('         — cycle permission modes (ask → auto → yolo)'));
@@ -491,7 +569,9 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/model [name]') + d('     — switch or show model'));
       console.log(d('  ') + c('/models') + d('           — list available models for provider'));
       console.log(d('  ') + c('/fallback [model]') + d(' — set/show the model auto-retried on cryptic provider errors'));
+      console.log(d('  ') + c('/openrouter-free') + d('  — switch to OpenRouter free-tier router'));
       console.log(d('  ') + c('/provider') + d('         — show provider info'));
+      console.log(d('  ') + c('/openai-login') + d('     — authenticate OpenAI Codex OAuth via Codex CLI'));
       console.log(d('  ') + c('/keys [add|rm]') + d('    — multi-key rotation pool (e.g. several OpenRouter accounts)'));
       console.log(d('  ') + c('/route') + d('            — auto-route model based on next message'));
       console.log(h('\n  ── Modes ──'));
@@ -526,6 +606,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/simplify') + d('         — code-simplifier agent (find + collapse incidental complexity)'));
       console.log(d('  ') + c('/e2e <feature>') + d('    — generate E2E tests'));
       console.log(d('  ') + c('/eval <criteria>') + d('  — evaluate project against criteria'));
+      console.log(d('  ') + c('/benchmark <task>') + d(' — benchmark-grade issue/terminal run'));
       console.log(h('\n  ── Tools & Config ──'));
       console.log(d('  ') + c('/tools') + d('            — list tools'));
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
@@ -544,6 +625,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoint [label]') + d(' — save git state checkpoint'));
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
+      console.log(d('  ') + c('/source-research') + d('   — arXiv/GitHub/HF/Kaggle research brief'));
       console.log(d('  ') + c('/docs-lookup <query>') + d(' — search docs for answers'));
       // /review already auto-uses ECC's high-quality language-agnostic prompt;
       // /auto-review additionally picks language-specific lens automatically.
@@ -647,12 +729,12 @@ export function handleSlashCommand(
       // before the clear. The main REPL loop replaces `messages` via
       // `newMessages`; we just nuke the side-channel globals.
       const g = globalThis as {
-        __crowcoderQueuedInput?: string;
+        __ventipusQueuedInput?: string;
         __voiceLastFullResponse?: string | null;
         __voiceLastChunk?: string | null;
         __lastToolCall?: unknown;
       };
-      g.__crowcoderQueuedInput = '';
+      g.__ventipusQueuedInput = '';
       g.__voiceLastFullResponse = null;
       g.__voiceLastChunk = null;
       g.__lastToolCall = null;
@@ -779,7 +861,7 @@ export function handleSlashCommand(
         (process.platform === 'win32' ? 'notepad' : 'nano');
       let result: string;
       try {
-        const tmpPath = pathJoin(tmpdir(), `compact-agent-prompt-${Date.now()}.md`);
+        const tmpPath = pathJoin(tmpdir(), `ventipus-prompt-${Date.now()}.md`);
         // Seed with current input buffer if any, plus a help comment.
         const seed =
           (args.trim() ? args : '') +
@@ -809,7 +891,7 @@ export function handleSlashCommand(
 
     // ── Debug — toggle instrumentation + tail event log ──
     // Surface for the NDJSON debug stream written to
-    // ~/.compact-agent/debug/<sessionId>.jsonl. Used by reviewers
+    // ~/.ventipus/debug/<sessionId>.jsonl. Used by reviewers
     // driving the agent + by users diagnosing their own issues.
     //
     //   /debug              show current level + log path + event count
@@ -875,12 +957,16 @@ export function handleSlashCommand(
 
     // ── History ───────────────────────────────────────
     case '/history': {
-      const stats = getCompactionStats(messages);
+      const stats = getCompactionStats(messages, config);
       const userMsgs = messages.filter((m) => m.role === 'user').length;
       const assistMsgs = messages.filter((m) => m.role === 'assistant').length;
       const toolMsgs = messages.filter((m) => m.role === 'tool').length;
       console.log(chalk.dim(`  Messages: ${messages.length} (${userMsgs} user, ${assistMsgs} assistant, ${toolMsgs} tool)`));
-      console.log(chalk.dim(`  Est. tokens: ~${stats.estimatedTokens.toLocaleString()}${stats.needsCompaction ? ' (compaction recommended)' : ''}`));
+      console.log(chalk.dim(
+        `  Est. tokens: ~${stats.estimatedTokens.toLocaleString()} / ` +
+        `~${stats.triggerTokens.toLocaleString()} compaction trigger` +
+        `${stats.needsCompaction ? ' (compaction recommended)' : ''}`,
+      ));
       return { handled: true };
     }
 
@@ -889,12 +975,12 @@ export function handleSlashCommand(
       if (args) {
         const newModel = switchModel(config, args);
         if (newModel) {
-          config.model = newModel;
+          applyModelSelection(config, newModel);
           saveConfig(config);
           resetClient();
           console.log(chalk.green(`  Model: ${config.model}`));
         } else {
-          config.model = args;
+          applyModelSelection(config, args);
           saveConfig(config);
           resetClient();
           console.log(chalk.green(`  Model: ${config.model} (custom)`));
@@ -944,6 +1030,19 @@ export function handleSlashCommand(
       return { handled: true };
     }
 
+    case '/openrouter-free': {
+      config.provider = PROVIDERS.openrouter.name;
+      config.baseURL = PROVIDERS.openrouter.baseURL;
+      applyModelSelection(config, PROVIDERS.openrouter.defaultModel);
+      config.fallbackModel = PROVIDERS.openrouter.defaultModel;
+      saveConfig(config);
+      resetClient();
+      console.log(chalk.green('  OpenRouter free-tier mode enabled.'));
+      console.log(chalk.dim(`  Model: ${config.model}`));
+      console.log(chalk.dim('  The free router picks a currently available zero-cost model that supports the request shape.'));
+      return { handled: true };
+    }
+
     case '/route': {
       console.log(chalk.dim('  Auto-routing enabled for next message.'));
       return { handled: true };
@@ -953,8 +1052,67 @@ export function handleSlashCommand(
       console.log(chalk.dim(`  Provider: ${config.provider}`));
       console.log(chalk.dim(`  Base URL: ${config.baseURL}`));
       console.log(chalk.dim(`  Model: ${config.model}`));
-      console.log(chalk.dim(`  API Key: ${config.apiKey ? '***' + config.apiKey.slice(-4) : '(none)'}`));
+      if (/openrouter/i.test(config.provider)) {
+        console.log(chalk.dim(`  OpenRouter tier: ${isOpenRouterFreeModelId(config.model) ? 'free-compatible' : 'may require credits'}`));
+        if (config.fallbackModel) console.log(chalk.dim(`  Fallback: ${config.fallbackModel}`));
+      }
+      if (config.openaiAuth?.type === 'codex_oauth') {
+        const status = getOpenAICodexAuthStatus(config);
+        const source = status.source === 'env' ? 'environment' : status.authPath;
+        console.log(chalk.dim(`  Auth: OpenAI Codex OAuth (${status.available ? 'available' : 'missing'})`));
+        console.log(chalk.dim(`  Token source: ${status.available ? source : status.authPath}`));
+        if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
+      } else {
+        console.log(chalk.dim(`  API Key: ${config.apiKey ? '***' + config.apiKey.slice(-4) : '(none)'}`));
+      }
       return { handled: true };
+
+    case '/openai-login': {
+      const sub = args.trim().toLowerCase();
+      if (sub === 'status') {
+        const status = getOpenAICodexAuthStatus(config);
+        console.log(chalk.dim(`  Configured: ${config.openaiAuth?.type === 'codex_oauth' ? 'yes' : 'no'}`));
+        console.log(chalk.dim(`  Auth file: ${status.authPath}`));
+        console.log(chalk.dim(`  OAuth token: ${status.available ? 'available' : 'missing'}`));
+        if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
+        if (status.error) console.log(chalk.yellow(`  ${status.error}`));
+        return { handled: true };
+      }
+
+      const wasCodexOAuth = config.openaiAuth?.type === 'codex_oauth' ||
+        config.provider === PROVIDERS['openai-codex'].name;
+      config.openaiAuth = {
+        type: 'codex_oauth',
+        useCodexAuthFile: true,
+        chatgptBaseURL: CHATGPT_CODEX_BASE_URL,
+        codexHome: config.openaiAuth?.codexHome,
+      };
+      config.provider = PROVIDERS['openai-codex'].name;
+      config.baseURL = CHATGPT_CODEX_BASE_URL;
+      if (!wasCodexOAuth || !config.model) {
+        config.model = PROVIDERS['openai-codex'].defaultModel;
+      }
+      config.apiKey = '';
+      saveConfig(config);
+      resetClient();
+
+      console.log(chalk.dim('  Launching Codex login. Complete the browser/device flow, then return here.'));
+      const result = runCodexLogin(config);
+      if (!result.ok) {
+        console.log(chalk.yellow(`  codex login did not complete${result.error ? ': ' + result.error : ''}`));
+        console.log(chalk.dim('  You can also run "codex login" manually, then /openai-login status.'));
+        return { handled: true };
+      }
+      const status = getOpenAICodexAuthStatus(config);
+      if (status.available) {
+        console.log(chalk.green('  OpenAI Codex OAuth is configured for Ventipus.'));
+        if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
+      } else {
+        console.log(chalk.yellow('  Login command finished, but no OAuth token was found.'));
+        console.log(chalk.dim(`  Expected auth file: ${status.authPath}`));
+      }
+      return { handled: true };
+    }
 
     // ── Mode ──────────────────────────────────────────
     case '/mode':
@@ -1261,7 +1419,7 @@ export function handleSlashCommand(
 
     case '/perm':
       if (args && ['ask', 'auto', 'yolo'].includes(args)) {
-        config.permissionMode = args as CrowcoderConfig['permissionMode'];
+        config.permissionMode = args as VentipusConfig['permissionMode'];
         saveConfig(config);
         console.log(chalk.green(`  Permissions: ${config.permissionMode}`));
       } else {
@@ -1365,7 +1523,7 @@ export function handleSlashCommand(
     case '/hooks': {
       const hooks = listHooks();
       if (hooks.length === 0) {
-        console.log(chalk.dim('  No hooks configured. Edit ~/.compact-agent/hooks.json'));
+        console.log(chalk.dim('  No hooks configured. Edit ~/.ventipus/hooks.json'));
       } else {
         console.log(chalk.cyan(`\n  Hooks (${hooks.length}):`));
         hooks.forEach((h, i) => {
@@ -1494,6 +1652,22 @@ export function handleSlashCommand(
       return { handled: false, injectPrompt: buildEvalPrompt(args) };
     }
 
+    case '/benchmark':
+    case '/bench':
+    case '/leaderboard': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|generic] <task>'));
+        return { handled: true };
+      }
+      const { profile, task } = splitBenchmarkArgs(args);
+      if (!task) {
+        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|generic] <task>'));
+        return { handled: true };
+      }
+      mode.current = 'benchmark';
+      return { handled: false, injectPrompt: buildBenchmarkPrompt(task, process.cwd(), profile) };
+    }
+
     case '/plan': {
       if (!args) {
         console.log(chalk.yellow('  Usage: /plan <task description>'));
@@ -1607,7 +1781,7 @@ export function handleSlashCommand(
         }
         if (items.length > 20) console.log(chalk.dim(`    … and ${items.length - 20} more`));
       }
-      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.compact-agent/skills/.\n'));
+      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.ventipus/skills/.\n'));
       return { handled: true };
     }
 
@@ -1640,7 +1814,7 @@ export function handleSlashCommand(
       const skill = listSkills().find((s) => s.name.toLowerCase() === targetName);
       if (!skill) {
         console.log(chalk.yellow(`  The "${agentSlug}" agent isn't in your bundle.`));
-        console.log(chalk.dim(`  Run /reset-hooks (forces ECC re-import) or upgrade compact-agent.`));
+        console.log(chalk.dim(`  Run /reset-hooks (forces ECC re-import) or upgrade ventipus.`));
         return { handled: true };
       }
       // Prefix with the agent prompt, then the user's task. The agent
@@ -2087,6 +2261,15 @@ export function handleSlashCommand(
       return { handled: false, injectPrompt: buildDocsLookupPrompt(args, process.cwd()) };
     }
 
+    case '/source-research':
+    case '/research-sources': {
+      if (!args) {
+        console.log(chalk.yellow('  Usage: /source-research <topic>'));
+        return { handled: true };
+      }
+      return { handled: false, injectPrompt: buildSourceResearchPrompt(args) };
+    }
+
     // ── Codemaps ─────────────────────────────────────
     case '/codemaps':
     case '/codemap': {
@@ -2305,7 +2488,7 @@ export function handleSlashCommand(
         console.log(chalk.dim('  Saved anyway. If Stitch calls fail with auth errors, double-check what you pasted.'));
       }
       saveStitchConfig(key);
-      console.log(chalk.green(`  Stitch API key saved to ~/.compact-agent/stitch.json`));
+      console.log(chalk.green(`  Stitch API key saved to ~/.ventipus/stitch.json`));
       // The stitch tool is only added to ALL_TOOLS at module-load
       // time (when src/tools/index.ts is first imported). Mid-session
       // configuration won't make it appear until the user restarts.
@@ -2315,7 +2498,7 @@ export function handleSlashCommand(
       console.log('');
       console.log(chalk.yellow.bold('  ⚠  RESTART REQUIRED'));
       console.log(chalk.yellow('     The `stitch` tool is registered only at REPL launch. Type /exit'));
-      console.log(chalk.yellow('     and re-run compact-agent to make it available to the agent.'));
+      console.log(chalk.yellow('     and re-run ventipus to make it available to the agent.'));
       console.log(chalk.dim('     Until then, /design and Stitch-related requests will see the model'));
       console.log(chalk.dim('     fall back to hand-coded HTML/CSS instead of using Stitch.'));
       return { handled: true };
@@ -2438,7 +2621,7 @@ export function handleSlashCommand(
     }
 
     // ── Reset hooks (clear stale entries from old installs) ──
-    // Wipes ~/.compact-agent/hooks.json, clears the in-memory quarantine, and
+    // Wipes ~/.ventipus/hooks.json, clears the in-memory quarantine, and
     // re-seeds the ECC default hooks against this install's bin path. Use
     // this when stale dev-machine paths from a prior install are crashing
     // every tool call.
@@ -2467,31 +2650,34 @@ export function handleSlashCommand(
         console.log(chalk.dim(`  Run /palettes to see all options.`));
         return { handled: true };
       }
-      if (!isPaletteId(target)) {
+      const resolved = resolvePaletteId(target);
+      if (!resolved) {
         console.log(chalk.yellow(`  Unknown palette: ${target}`));
         console.log(chalk.dim(`  Run /palettes to see all options.`));
         return { handled: true };
       }
-      setPalette(target);
-      config.palette = target;
+      setPalette(resolved);
+      config.palette = resolved;
       saveConfig(config);
-      console.log(theme.brandBold(`  ${sym.crow} Palette: ${target}`));
+      console.log(theme.brandBold(`  ${sym.mark} Palette: ${resolved}`));
       console.log(theme.dim('  Brand · ') + theme.brand('brand') + theme.dim(' · ') + theme.success('success') + theme.dim(' · ') + theme.warning('warning') + theme.dim(' · ') + theme.error('error') + theme.dim(' · ') + theme.command('command'));
       return { handled: true };
     }
 
     case '/palettes': {
       const cur = getPaletteId();
+      const palettes = listPalettes();
+      const idCol = Math.max(24, ...palettes.map((p) => p.id.length)) + 2;
       console.log(theme.header('\n  Available palettes:'));
-      for (const meta of listPalettes()) {
+      for (const meta of palettes) {
         const marker = meta.id === cur ? theme.brandBold('  ◀ ') : '    ';
-        // Build a tiny inline color preview using the palette so the user
-        // can see what they'd be switching to. We don't actually call
-        // setPalette here — just construct chalk-bound previews manually.
         const p = PALETTES[meta.id];
-        const dot = chalk.hex(p.cyan)('●') + chalk.hex(p.magenta)('●') + chalk.hex(p.yellow)('●') + chalk.hex(p.cyanLight)('●') + chalk.hex(p.gray)('●');
-        console.log(theme.dim(`${marker}`) + dot + theme.dim('  ') + theme.bright(meta.id.padEnd(18)) + theme.dim(meta.description));
+        const dot = p.swatches.map((color) => chalk.hex(color)('●')).join('');
+        console.log(theme.dim(`${marker}`) + dot + theme.dim('  ') + theme.bright(meta.id.padEnd(idCol)) + theme.dim(meta.description));
         console.log(theme.dim(`         source: ${meta.source}`));
+        const command = theme.syntaxCommand('/palette') + theme.dim(' ') + theme.syntaxArgument(meta.id);
+        const active = meta.id === cur ? theme.dim('  ') + theme.highlight(' current ') : '';
+        console.log(theme.dim('         use: ') + command + active);
       }
       console.log(theme.dim('\n  Switch with: /palette <id>\n'));
       return { handled: true };
@@ -2733,33 +2919,58 @@ export function handleSlashCommand(
 }
 
 // ── Main ──────────────────────────────────────────────────
+export type NonInteractivePromptResolution =
+  | { kind: 'query'; prompt: string }
+  | { kind: 'handled' }
+  | { kind: 'exit' }
+  | { kind: 'error'; message: string };
+
+export function resolveNonInteractivePrompt(
+  promptText: string,
+  config: VentipusConfig,
+  messages: Message[],
+  session: Session,
+  mode: { current: Mode },
+): NonInteractivePromptResolution {
+  const trimmed = promptText.trim();
+  if (!trimmed) {
+    return { kind: 'error', message: 'non-interactive mode requires a non-empty prompt.' };
+  }
+  if (!trimmed.startsWith('/')) {
+    return { kind: 'query', prompt: trimmed };
+  }
+
+  const result = handleSlashCommand(trimmed, config, messages, session, mode);
+  if (result.newMessages?.length) messages.push(...result.newMessages);
+  if (result.shouldExit) return { kind: 'exit' };
+  if (!result.injectPrompt) return { kind: 'handled' };
+  if (result.injectPrompt.startsWith('__')) {
+    const command = trimmed.split(/\s+/, 1)[0];
+    return {
+      kind: 'error',
+      message: `${command} is not supported in non-interactive mode.`,
+    };
+  }
+  return { kind: 'query', prompt: result.injectPrompt };
+}
+
 async function main(): Promise<void> {
-  // Slash-command completer: bash-style Tab completion. Triggered
-  // only when the typed line starts with '/' so it doesn't interfere
-  // with regular prose. When the user has typed a unique prefix, Tab
-  // completes to the full command. When multiple commands share the
-  // prefix, readline's default behavior is to print the list of
-  // candidates on the next Tab press — same UX as bash/zsh.
+  // Slash-command completer: unique-prefix fallback only. The bounded
+  // inline selector is the discovery surface; this completer must never
+  // return the full command catalog because readline prints multi-match
+  // lists directly into the terminal.
   //
   // This is COMPLEMENTARY to the '/' keypress trigger that opens the
-  // alt-screen picker: that's the "I want to browse" path; this is
+  // bounded inline selector: that's the "I want to browse" path; this is
   // the "I know what I'm typing, just save me keystrokes" path. The
-  // two coexist because pressing '/' fires the picker only at an
-  // empty buffer — once the user has typed beyond '/', Tab takes
-  // over via this completer.
-  const { COMMAND_CATALOG } = await import('./command-palette.js');
+  // two coexist because pressing '/' fires the selector at an empty
+  // buffer, and pressing Tab while a slash prefix is present reopens
+  // that selector with the typed filter preserved.
   const slashCommandNames = COMMAND_CATALOG.map((c) => c.command);
   const rl = readline.createInterface({
     input: stdin,
     output: stdout,
-    completer: (line: string): [string[], string] => {
-      if (!line.startsWith('/')) return [[], line];
-      const matches = slashCommandNames.filter((c) => c.startsWith(line));
-      // readline contract: return [matches, lineWeMatchedAgainst].
-      // If matches is empty, readline beeps; otherwise it completes
-      // to common prefix or lists candidates.
-      return [matches.length > 0 ? matches : slashCommandNames, line];
-    },
+    completer: (line: string): [string[], string] => completeSlashCommandNames(line, slashCommandNames),
   });
 
   // Initialize subsystems
@@ -2767,7 +2978,7 @@ async function main(): Promise<void> {
 
   // First-run ECC install — silent if already installed, silent if resources missing.
   // Also re-installs when the saved state's version is older than the bundle's
-  // BUNDLE_VERSION (so an `npm i -g compact-agent@latest` upgrade picks up the
+  // BUNDLE_VERSION (so an `npm i -g ventipus@latest` upgrade picks up the
   // refreshed corpus without manual /reset-hooks).
   const eccState = loadEccState();
   const needsReimport = eccState && eccState.version !== ECC_BUNDLE_VERSION;
@@ -2796,30 +3007,38 @@ async function main(): Promise<void> {
 
   // Load or create config.
   //
-  // Non-interactive mode (COMPACT_AGENT_NON_INTERACTIVE=1) requires a
-  // pre-existing config — the setup wizard would block on stdin
-  // forever in a piped/headless environment. We bail with a clear
-  // error if no config is on disk, so the caller knows to run the
-  // wizard interactively first (`compact-agent` with no args).
-  const nonInteractive = process.env.COMPACT_AGENT_NON_INTERACTIVE === '1';
-  let config: CrowcoderConfig;
+  // Non-interactive mode (VENTIPUS_NON_INTERACTIVE=1) cannot run
+  // the setup wizard because it would block on stdin in a piped/headless
+  // environment. Prefer an env-built runtime config when present; otherwise
+  // require an existing config file and fail with a clear message.
+  const nonInteractive = process.env.VENTIPUS_NON_INTERACTIVE === '1';
+  const envConfig = nonInteractive ? loadConfigFromEnv() : null;
+  let config: VentipusConfig;
   if (!configExists()) {
-    if (nonInteractive) {
+    if (nonInteractive && envConfig) {
+      config = envConfig;
+    } else if (nonInteractive) {
       process.stderr.write(
-        '[compact-agent] non-interactive mode requires a pre-existing config at ~/.compact-agent/config.json.\n' +
-        'Run `compact-agent` once interactively to walk through the setup wizard, OR write the config manually.\n'
+        '[ventipus] non-interactive mode requires a pre-existing config at ~/.ventipus/config.json.\n' +
+        'Run `ventipus` once interactively, write the config manually, OR provide env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.\n'
       );
       process.exit(2);
+      return;
+    } else {
+      config = await setupWizard(rl);
     }
-    config = await setupWizard(rl);
+  } else if (nonInteractive && process.env.VENTIPUS_ENV_CONFIG === '1' && envConfig) {
+    config = envConfig;
   } else {
     config = loadConfig();
   }
 
+  config = applyRuntimeConfigOverrides(config);
+
   // Per-invocation permission override (--perm flag). Doesn't touch
   // saved config — purely a runtime knob so harness runs can force
   // yolo without mutating the user's interactive permission setting.
-  const permOverride = process.env.COMPACT_AGENT_PERM_OVERRIDE;
+  const permOverride = process.env.VENTIPUS_PERM_OVERRIDE;
   if (permOverride === 'ask' || permOverride === 'auto' || permOverride === 'yolo') {
     config.permissionMode = permOverride;
   }
@@ -2846,12 +3065,12 @@ async function main(): Promise<void> {
   // setting. In-place ANSI repaints (used by tool/thinking spinners and
   // collapse/settle transitions) generate a flood of new content events
   // for screen readers, so they're force-off in that mode. Sighted
-  // users get them by default; the CROWCODER_ANIMATIONS=0 env var still
+  // users get them by default; the VENTIPUS_ANIMATIONS=0 env var still
   // overrides for users who specifically don't want the motion.
   {
     const { setAnimationConfig } = await import('./animations.js');
     setAnimationConfig({
-      enabled: process.env.CROWCODER_ANIMATIONS !== '0',
+      enabled: process.env.VENTIPUS_ANIMATIONS !== '0',
       screenReader: config.voice?.accessibility?.screenReader === true,
     });
   }
@@ -2862,9 +3081,9 @@ async function main(): Promise<void> {
 
   // ── Debug instrumentation ─────────────────────────────────
   // Initialize early so subsequent emit() calls land in the right file.
-  // Reads $COMPACT_AGENT_DEBUG which bin/crowcoder.js may have set from
+  // Reads $VENTIPUS_DEBUG which bin/ventipus.js may have set from
   // the --debug CLI flag. Level 'off' is a no-op; non-off opens an
-  // NDJSON log at ~/.compact-agent/debug/<sessionId>.jsonl.
+  // NDJSON log at ~/.ventipus/debug/<sessionId>.jsonl.
   initDebug(session.id);
   dbgEmit('info', 'session.start', {
     cwd: process.cwd(),
@@ -2911,7 +3130,7 @@ async function main(): Promise<void> {
     );
   } else {
     // Minimal mode: just a one-liner
-    console.log(theme.brandBold('Compact Agent') + theme.dim(' — terminal AI coding CLI'));
+    console.log(theme.brandBold('Ventipus') + theme.dim(' — terminal AI coding CLI'));
     console.log('');
   }
 
@@ -2929,10 +3148,12 @@ async function main(): Promise<void> {
   if (flakyPatterns.some((p) => lowerModelAtLaunch.includes(p))) {
     console.log(theme.warning(`  ⚠  Active model "${config.model}" is an experimental / free model known to`));
     console.log(theme.warning(`     return empty or "ERROR" responses, or get stuck in token loops.`));
-    console.log(theme.dim(`     Switch with /model <id>. Reliable free options on OpenRouter:`));
-    console.log(theme.dim(`       /model meta-llama/llama-3.3-70b-instruct:free`));
-    console.log(theme.dim(`       /model google/gemini-2.0-flash-exp:free`));
-    console.log(theme.dim(`       /model deepseek/deepseek-chat:free`));
+    console.log(theme.dim(`     Switch with /openrouter-free or /model openrouter/free.`));
+    console.log('');
+  }
+  if (/openrouter/i.test(config.provider) && !isOpenRouterFreeModelId(config.model)) {
+    console.log(theme.warning(`  Note: Active OpenRouter model "${config.model}" may require credits.`));
+    console.log(theme.dim(`     Free-tier-safe switch: /openrouter-free`));
     console.log('');
   }
 
@@ -3005,8 +3226,8 @@ async function main(): Promise<void> {
       'tab',                                   // Shift+Tab cycles perm modes
       'escape',                                // Esc-Esc rewind at empty prompt
       ',', '.',                                // Alt+, / Alt+. reasoning effort
-      'space',                                 // Space at empty prompt → command palette
-      '/',                                     // / at empty prompt → palette filtered to '/'
+      'space',                                 // Space at empty prompt → command selector
+      '/', 'slash',                           // / at empty prompt → command selector
       // Shifted F-keys carry the Tier-2 and Tier-3 a11y functions. Each
       // is checked alongside key.shift below, so a bare F1 still routes
       // to "status" while Shift+F1 routes to "queued input."
@@ -3045,7 +3266,7 @@ async function main(): Promise<void> {
       const seq = (key.sequence || '');
       const lookup = name || seq;
       if (!INTERCEPT.has(lookup)) return;
-      // While the command palette / inline-suggest is open it takes
+      // While the command selector / inline-suggest is open it takes
       // exclusive control of stdin via its own `data` listener. The
       // hotkey listener must bail entirely — otherwise Esc would
       // trigger the rewind chord, Tab/F-keys would print status
@@ -3063,17 +3284,19 @@ async function main(): Promise<void> {
       //   - bare Tab is completion; only Shift+Tab is ours
       //   - Shift+Esc / Ctrl+Esc / Alt+Esc aren't ours
       if ((lookup === ',' || lookup === '.') && !meta) return;
-      if (name === 'tab' && !shift) return;
+      const getPromptLine = (): string => (rl as unknown as { line?: string }).line ?? '';
+      if (name === 'tab' && !shift && !getPromptLine().startsWith('/')) return;
+      if (name === 'tab' && (ctrl || meta)) return;
       if (name === 'escape' && (shift || ctrl || meta)) return;
       // Space is ours ONLY when the input buffer is empty and we're
       // at a prompt (not mid-streaming). The check happens in the
       // dedicated branch below; here we just defer if there's any
       // modifier (Shift+Space, Ctrl+Space, etc. aren't us).
       if (name === 'space' && (shift || ctrl || meta)) return;
-      // Slash autocomplete: '/' at empty prompt opens the picker
+      // Slash autocomplete: '/' at empty prompt opens the selector
       // pre-filtered to '/'. Modified variants (Ctrl+/, etc.) are
       // not ours.
-      if (lookup === '/' && (shift || ctrl || meta)) return;
+      if ((lookup === '/' || lookup === 'slash') && (shift || ctrl || meta)) return;
 
       const a = getAccessibilityConfig(config);
       const tts = getTtsConfig(config);
@@ -3101,7 +3324,8 @@ async function main(): Promise<void> {
         name === 'f11' || name === 'f12' || shift ||
         // Productivity bindings (Shift+Tab, Esc, Alt+,/.) work regardless
         // of voice state — they touch config / readline, not audio.
-        name === 'tab' || name === 'escape' || lookup === ',' || lookup === '.' || lookup === '/';
+        name === 'tab' || name === 'escape' || name === 'space' ||
+        lookup === ',' || lookup === '.' || lookup === '/' || lookup === 'slash';
 
       // F5–F10 (bare) are DICTATION/PLAYBACK hotkeys — they only make
       // sense when voice features are enabled. Bail early to avoid
@@ -3133,7 +3357,7 @@ async function main(): Promise<void> {
         // hotkey: one keystroke flips the safety dial through the
         // full ask → auto → yolo cycle. Replaces /perm <mode> typing.
         if (name === 'tab') {
-          const order: CrowcoderConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
+          const order: VentipusConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
           const cur = config.permissionMode;
           const next = order[(order.indexOf(cur) + 1) % order.length];
           config.permissionMode = next;
@@ -3143,8 +3367,8 @@ async function main(): Promise<void> {
         }
         // ── Shift+F1: queued input ─────────────────────────
         if (name === 'f1') {
-          const g = globalThis as { __crowcoderQueuedInput?: string };
-          const q = (g.__crowcoderQueuedInput || '').trim();
+          const g = globalThis as { __ventipusQueuedInput?: string };
+          const q = (g.__ventipusQueuedInput || '').trim();
           announce('Shift+F1', q
             ? `Queued during last chain: ${q.slice(0, 200)}`
             : 'Nothing queued.');
@@ -3250,128 +3474,70 @@ async function main(): Promise<void> {
         return;
       }
 
-      // ── Space (bare) / '/' (bare): command palette at empty prompt ──
-      // Two distinct UX shapes that share the same trigger guards:
-      //
-      //   Space  → full-screen browse picker (alt-screen takeover).
-      //            User explicitly asked to browse every command, so
-      //            a big sortable list with descriptions, category
-      //            hints, and a footer is exactly what they want.
-      //
-      //   '/'    → inline dropdown rendered directly below the
-      //            prompt (no alt-screen). The user is in the middle
-      //            of typing a command — they need to KEEP seeing
-      //            their chat history and the prompt context, not
-      //            have a full-screen widget yanked over them. The
-      //            dropdown narrows as they type and disappears on
-      //            Esc or Backspace-to-empty.
-      //
-      // Both branches share the trigger guards (no buffer content,
-      // no active stream) and the pickerActive interlock that
-      // prevents stacking two pickers.
-      if (name === 'space' || lookup === '/') {
+      // ── Space (bare) / '/' (bare): bounded inline command selector ──
+      // The selector stays below the live prompt instead of entering
+      // alt-screen. That keeps the conversation visible, lets the user
+      // keep typing to narrow, and supports PageUp/PageDown scrolling
+      // inside a compact dropdown that never claims the full viewport.
+      const slashTrigger = lookup === '/' || lookup === 'slash';
+      const tabSuggestTrigger = name === 'tab' && !shift && getPromptLine().startsWith('/');
+      if (name === 'space' || slashTrigger || tabSuggestTrigger) {
         if (pickerActive) return;
-        const buf = (rl as unknown as { line?: string }).line ?? '';
+        const buf = getPromptLine();
         // Space is only triggered at an empty buffer (mid-typing
         // space should insert normally). '/' has a more permissive
         // trigger: it fires at empty buffer OR at exactly "/"
         // (which is the state right after the user pressed '/'
-        // and the byte landed in the buffer). Either way, only
-        // empty + single-/ states open the picker; longer buffers
-        // pass through.
+        // and the byte landed in the buffer). Tab opens the same
+        // selector for any slash-prefixed line and preserves that
+        // filter, preventing readline from dumping the whole command
+        // catalog into the terminal.
         if (name === 'space' && buf.length > 0) return;
-        if (lookup === '/' && buf !== '' && buf !== '/') return;
+        if (slashTrigger && buf !== '' && buf !== '/') return;
+        if (tabSuggestTrigger && !buf.startsWith('/')) return;
         // Mid-stream is suppressed by the input guard already;
         // this listener still fires but we shouldn't open a picker
         // on top of a streaming turn.
         const turnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
         if (turnCtl && !turnCtl.signal.aborted) return;
-        const isSlash = lookup === '/';
+        const initialFilter = tabSuggestTrigger ? buf : slashTrigger ? '/' : '';
         // Take the interlock. The async branch sets pickerActive=false
         // in a finally so any error path still releases it.
         pickerActive = true;
         // Clear the trigger char from readline's buffer so the prompt
-        // is clean. For '/' we'll re-render it ourselves at the
-        // inline-suggest anchor; for Space we don't need any
-        // character on the prompt because the alt-screen picker
-        // covers everything.
+        // is clean. inlineSuggest repaints the prompt and filter on
+        // every frame.
         try {
-          const rlAny = rl as unknown as { line: string; _refreshLine?: () => void };
-          rlAny.line = '';
-          rlAny._refreshLine?.();
+          setReadlineBuffer(rl, '');
         } catch { /* noop */ }
         void (async () => {
           try {
-            const { COMMAND_CATALOG } = await import('./command-palette.js');
-            if (isSlash) {
-              // '/' → inline dropdown below the prompt.
-              const { inlineSuggest } = await import('./inline-suggest.js');
-              const gp = globalThis as {
-                __crowcoderPromptStyled?: string;
-                __crowcoderPromptVisLen?: number;
-              };
-              const result = await inlineSuggest(
-                rl,
-                COMMAND_CATALOG.map((c) => ({
-                  command: c.command,
-                  description: c.description,
-                })),
-                '/',
-                {
-                  promptPrefix: gp.__crowcoderPromptStyled,
-                  promptVisibleLen: gp.__crowcoderPromptVisLen,
-                },
-              );
-              if (result.accepted && result.command) {
-                // Enter on highlighted item → submit. The
-                // queued-input sentinel pattern (used by the
-                // full-screen picker too) hands the command to the
-                // main loop's input drain, which prints the
-                // auto-submitting hint and runs it as if the user
-                // had typed it manually.
-                //
-                // Tab is now a navigation key (Down arrow alias) so
-                // there's no longer a "fill but don't submit"
-                // sentinel to special-case here. If the user wants
-                // to plant a partial command without submitting,
-                // they can Esc out of the dropdown and keep typing
-                // — Esc returns the current filter as result.filter,
-                // which the cancel branch restores to rl.line below.
-                (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = result.command + '\n';
-                try { rl.emit('line', ''); } catch { /* noop */ }
-              } else {
-                // Cancelled. Restore rl.line to whatever the user
-                // had typed so they can keep editing (could be '/',
-                // '/he', or '' if they backspaced all the way out).
-                try {
-                  const rlAny = rl as unknown as { line: string; cursor: number; _refreshLine?: () => void };
-                  rlAny.line = result.filter;
-                  rlAny.cursor = result.filter.length;
-                  rlAny._refreshLine?.();
-                } catch { /* noop */ }
-              }
-            } else {
-              // Space → full-screen browse picker (unchanged).
-              const { pick } = await import('./picker.js');
-              const items = COMMAND_CATALOG.map((c) => ({
-                label: c.command,
+            const gp = globalThis as {
+              __ventipusPromptStyled?: string;
+              __ventipusPromptVisLen?: number;
+            };
+            const result = await inlineSuggest(
+              rl,
+              COMMAND_CATALOG.map((c) => ({
+                command: c.command,
                 hint: c.category,
                 description: c.description,
-                value: c.command,
-              }));
-              const selected = await pick(items, {
-                title: 'compact-agent · command palette',
-                footer: 'type to filter · ↑↓ to navigate · Enter to run · Esc to cancel',
-              });
-              if (selected) {
-                (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = selected + '\n';
-                try { rl.emit('line', ''); } catch { /* noop */ }
-              } else {
-                // Cancel from space-triggered picker: prompt is
-                // clean, resolve readline with empty so the loop
-                // iterates back to a fresh prompt.
-                try { rl.emit('line', ''); } catch { /* noop */ }
-              }
+              })),
+              initialFilter,
+              {
+                promptPrefix: gp.__ventipusPromptStyled,
+                promptVisibleLen: gp.__ventipusPromptVisLen,
+              },
+            );
+            if (result.accepted && result.command) {
+              (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = result.command + '\n';
+              try { rl.emit('line', ''); } catch { /* noop */ }
+            } else {
+              try {
+                setReadlineBuffer(rl, result.filter);
+                const prefix = gp.__ventipusPromptStyled ?? theme.prompt(`${sym.prompt} `);
+                stdout.write('\r\x1b[2K' + prefix + result.filter);
+              } catch { /* noop */ }
             }
           } finally {
             pickerActive = false;
@@ -3413,7 +3579,7 @@ async function main(): Promise<void> {
           lastEscapeMs = 0;
           // Enqueue the slash command as queued input. The REPL loop
           // picks it up + dispatches /back on the next iteration.
-          (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = '/back\n';
+          (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = '/back\n';
           announce('Esc-Esc', 'Rewinding to previous user turn.');
           // Resolve the pending rl.question() so the main loop
           // actually moves on. Previously this used stdin.write('\n')
@@ -3661,7 +3827,7 @@ async function main(): Promise<void> {
     };
     // Tag so suppressInputDuringStream() can identify and preserve this
     // specific listener while detaching readline's own keypress handler.
-    (hotkeyListener as unknown as { __crowcoderHotkey__: boolean }).__crowcoderHotkey__ = true;
+    (hotkeyListener as unknown as { __ventipusHotkey__: boolean }).__ventipusHotkey__ = true;
     stdin.on('keypress', hotkeyListener);
   } catch {
     // No keypress support — accessibility users can still use /dictate.
@@ -3691,19 +3857,31 @@ async function main(): Promise<void> {
   // ── Non-interactive single-chain mode ─────────────────
   //
   // Triggered by `--prompt <text>` / `--prompt-file <path>` (parsed in
-  // bin/crowcoder.js and stashed on COMPACT_AGENT_PROMPT). We push the
+  // bin/ventipus.js and stashed on VENTIPUS_PROMPT). We push the
   // prompt as one user message, run a single runQuery to completion,
   // and exit. No REPL, no banner, no hotkey listener, no live queue.
   //
   // This is the entrypoint that lets external harnesses (Terminal-Bench,
-  // CI scripts, etc.) drive compact-agent with a single task and read
+  // CI scripts, etc.) drive ventipus with a single task and read
   // its output cleanly. Stdin is left untouched — readline never
   // attaches — so piped stdin won't confuse anything.
-  if (process.env.COMPACT_AGENT_NON_INTERACTIVE === '1') {
-    const promptText = process.env.COMPACT_AGENT_PROMPT;
+  if (process.env.VENTIPUS_NON_INTERACTIVE === '1') {
+    const promptText = process.env.VENTIPUS_PROMPT;
     if (!promptText || !promptText.trim()) {
-      process.stderr.write('[compact-agent] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
+      process.stderr.write('[ventipus] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
       process.exit(2);
+    }
+    const resolvedPrompt = resolveNonInteractivePrompt(promptText, config, messages, session, mode);
+    if (resolvedPrompt.kind === 'error') {
+      process.stderr.write(`[ventipus] ${resolvedPrompt.message}\n`);
+      process.exit(2);
+    }
+    if (resolvedPrompt.kind === 'exit' || resolvedPrompt.kind === 'handled') {
+      try {
+        await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
+      } catch { /* never fail a local command on hook errors */ }
+      try { rl.close(); } catch { /* noop */ }
+      process.exit(0);
     }
     // ── F9: Empty-engagement guard (non-interactive nudge) ──
     //
@@ -3733,7 +3911,7 @@ async function main(): Promise<void> {
         'If you lack information, USE A TOOL to investigate; do not ask the user. ' +
         'A response with no tool calls is interpreted as "I am done" and triggers final verification.',
     });
-    messages.push({ role: 'user', content: promptText.trim() });
+    messages.push({ role: 'user', content: resolvedPrompt.prompt });
     try {
       await runQuery({
         config,
@@ -3755,7 +3933,7 @@ async function main(): Promise<void> {
       process.exit(0);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[compact-agent] chain failed: ${msg}\n`);
+      process.stderr.write(`[ventipus] chain failed: ${msg}\n`);
       try { rl.close(); } catch { /* noop */ }
       process.exit(1);
     }
@@ -3786,11 +3964,11 @@ async function main(): Promise<void> {
       // repaints the prompt line on every render — it needs both the
       // styled string (to write with color) and the visible-char
       // length (to position the cursor at end-of-filter).
-      const promptStyled = theme.prompt(promptGlyph);
-      (globalThis as { __crowcoderPromptStyled?: string; __crowcoderPromptVisLen?: number })
-        .__crowcoderPromptStyled = promptStyled;
-      (globalThis as { __crowcoderPromptStyled?: string; __crowcoderPromptVisLen?: number })
-        .__crowcoderPromptVisLen = promptGlyph.length;
+      const promptStyled = sessionTag + modeTag + theme.prompt(promptGlyph);
+      (globalThis as { __ventipusPromptStyled?: string; __ventipusPromptVisLen?: number })
+        .__ventipusPromptStyled = promptStyled;
+      (globalThis as { __ventipusPromptStyled?: string; __ventipusPromptVisLen?: number })
+        .__ventipusPromptVisLen = ansiVisibleLen(promptStyled);
 
       // Queued input (Codex audit's queued_user_messages). If the user
       // typed something during the previous chain's streaming/tool
@@ -3803,9 +3981,9 @@ async function main(): Promise<void> {
       //     is unreliable — readline.write() works on POSIX but the cursor
       //     state on Windows ConHost gets weird. Hint + manual paste is
       //     more predictable than trying to pre-fill.)
-      const g = globalThis as { __crowcoderQueuedInput?: string };
-      const queued = g.__crowcoderQueuedInput || '';
-      g.__crowcoderQueuedInput = undefined;
+      const g = globalThis as { __ventipusQueuedInput?: string };
+      const queued = g.__ventipusQueuedInput || '';
+      g.__ventipusQueuedInput = undefined;
       if (queued.includes('\n')) {
         // Auto-submit the ENTIRE queued buffer as a single message —
         // preserving its internal newlines verbatim so a multi-line
@@ -3926,11 +4104,11 @@ async function main(): Promise<void> {
             value: m.id,
           }));
           const selected = await pick(items, {
-            title: `compact-agent · OpenRouter models  (current: ${config.model})`,
+            title: `ventipus · OpenRouter models  (current: ${config.model})`,
             footer: 'type to filter · ↑↓ to navigate · Enter to pick · Esc to cancel · free models float to the top',
           });
           if (selected) {
-            config.model = selected;
+            applyModelSelection(config, selected, models.find((m) => m.id === selected));
             saveConfig(config);
             resetClient();
             console.log(chalk.green(`  Model: ${config.model}`));
@@ -3984,7 +4162,7 @@ async function main(): Promise<void> {
       const route = routeModel(config, complexity);
       if (route.model !== config.model) {
         console.log(chalk.dim(`  [routing: ${route.reason}]`));
-        config.model = route.model;
+        applyModelSelection(config, route.model);
         resetClient();
       }
       autoRoute = false;
@@ -4006,7 +4184,7 @@ async function main(): Promise<void> {
     await saveWithSnapshot();
 
     // Strategic compaction check
-    const compactionHint = shouldSuggestCompaction(messages, 0);
+    const compactionHint = shouldSuggestCompaction(messages, 0, config);
     if (compactionHint) {
       console.log(chalk.yellow(`  ⚡ ${compactionHint.reason} (strategy: ${compactionHint.strategy}, ~${compactionHint.estimatedSavings.toLocaleString()} tokens saveable)`));
     }

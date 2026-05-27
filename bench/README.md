@@ -1,10 +1,10 @@
-# compact-agent × Terminal-Bench
+# ventipus × Terminal-Bench
 
-Adapter that plugs compact-agent into the [Terminal-Bench](https://www.tbench.ai/)
+Adapter that plugs ventipus into the [Terminal-Bench](https://www.tbench.ai/)
 harness for end-to-end benchmarking.
 
 **Status**: ✅ verified passing on `hello-world` (100% accuracy, 2m43s
-agent time, 0 failures) as of 2026-05-25 with compact-agent 1.33.7 +
+agent time, 0 failures) as of 2026-05-25 with ventipus 1.33.7 +
 terminal-bench 0.2.18 on Windows 11 + Docker Desktop. The full v0.1.1
 dataset (~80 tasks) is runnable; the bigger task batches need a few
 hours of wall clock.
@@ -43,7 +43,7 @@ export OPENAI_API_KEY="$OPENROUTER_API_KEY"
 **Windows-only: also set `PYTHONUTF8=1`.** terminal-bench writes agent
 output (which contains arrow chars `→`, `▶`, Braille spinner glyphs,
 etc.) to disk using the host's default encoding. Python 3 on Windows
-defaults to cp1252 which doesn't cover most of compact-agent's UI
+defaults to cp1252 which doesn't cover most of ventipus's UI
 glyphs — without UTF-8 mode, the harness crashes with
 `UnicodeEncodeError` after the agent has actually completed:
 
@@ -80,14 +80,14 @@ Bench Core task layout.
 ```bash
 tb run \
     --dataset-path tb-repo/tasks \
-    --agent-import-path compact_agent_adapter:CompactAgent \
+    --agent-import-path ventipus_agent_adapter:VentipusAgent \
     --task-id hello-world \
     --global-agent-timeout-sec 1200
 ```
 
 `--global-agent-timeout-sec 1200` (20 min) overrides the per-task
 default of 360s. The first invocation in a fresh container has to
-`apt-get install nodejs` + `npm i -g compact-agent` before the agent
+`apt-get install nodejs` + `npm i -g ventipus` before the agent
 can run; that install alone eats 1–2 minutes, leaving the 360s task
 budget too tight for anything but trivial work. 1200s gives breathing
 room for both install and agent reasoning. Bump to `1800` (30 min)
@@ -98,7 +98,7 @@ for hard tasks.
 ```bash
 tb run \
     --dataset-path tb-repo/tasks \
-    --agent-import-path compact_agent_adapter:CompactAgent \
+    --agent-import-path ventipus_agent_adapter:VentipusAgent \
     --global-agent-timeout-sec 1800
 ```
 
@@ -136,7 +136,7 @@ issues. From a WSL2 Ubuntu shell:
 
 ```bash
 sudo apt install docker.io   # or use Docker Desktop's WSL2 integration
-cd /mnt/c/Users/.../Crowcoder/bench
+cd /mnt/c/Users/.../Ventipus/bench
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install terminal-bench
@@ -144,18 +144,18 @@ git clone --depth 1 https://github.com/laude-institute/terminal-bench tb-repo
 # ...same checkout commands...
 export OPENROUTER_API_KEY=sk-or-v1-...
 export OPENAI_API_KEY="$OPENROUTER_API_KEY"
-tb run --dataset-path tb-repo/tasks --agent-import-path compact_agent_adapter:CompactAgent --task-id hello-world
+tb run --dataset-path tb-repo/tasks --agent-import-path ventipus_agent_adapter:VentipusAgent --task-id hello-world
 ```
 
 This pulls the `hello-world` task, builds its Docker container,
-installs Node 20 + `compact-agent@1.33.5` inside, and runs the agent
+installs Node 20 + `ventipus@1.33.5` inside, and runs the agent
 against the task. Logs land under `runs/<timestamp>/`.
 
 ## Run the full v2 dataset
 
 ```bash
 uv run tb run \
-    --agent-import-path compact_agent_adapter:CompactAgent \
+    --agent-import-path ventipus_agent_adapter:VentipusAgent \
     --dataset-name terminal-bench-core --dataset-version 2.0
 ```
 
@@ -169,20 +169,20 @@ Default is `openrouter/owl-alpha` (free + fast). For a quality run:
 
 ```bash
 uv run tb run \
-    --agent-import-path compact_agent_adapter:CompactAgent \
+    --agent-import-path ventipus_agent_adapter:VentipusAgent \
     --agent-kwargs-json '{"model": "deepseek/deepseek-v4-flash"}' \
     --dataset-name terminal-bench-core --dataset-version 2.0
 ```
 
 ## How it works
 
-The adapter (`compact_agent_adapter.py`) is a 130-line Python module that:
+The adapter (`ventipus_agent_adapter.py`) is a 130-line Python module that:
 
 1. **Installs** — writes a shell script the harness copies into each
-   task container. The script installs Node 20 and `npm i -g compact-agent`
-   at a pinned version, then seeds a minimal `~/.compact-agent/config.json`
+   task container. The script installs Node 20 and `npm i -g ventipus`
+   at a pinned version, then seeds a minimal `~/.ventipus/config.json`
    so the setup wizard doesn't block on stdin.
-2. **Runs** — the harness execs `compact-agent --non-interactive --perm yolo`
+2. **Runs** — the harness execs `ventipus --non-interactive --perm yolo`
    with the task description piped via heredoc on stdin. Compact-agent
    runs autonomously (yolo perms → no permission prompts, agentic loop
    until it stops calling tools).
@@ -202,9 +202,9 @@ Compact-agent v1.33.7+ ships these CLI flags for harness drivers:
 | `--non-interactive`        | Skip wizard / banner / hotkey listener (implied by --prompt)|
 | `--perm ask\|auto\|yolo`   | Per-invocation permission mode (doesn't mutate saved config)|
 
-When `--prompt-file` is set, compact-agent:
+When `--prompt-file` is set, ventipus:
 
-1. Refuses to start if `~/.compact-agent/config.json` is missing
+1. Refuses to start if `~/.ventipus/config.json` is missing
    (a wizard would block forever in a piped/headless environment).
 2. Skips the banner and the keypress hotkey listener.
 3. Pushes the prompt text as one user message.
@@ -216,7 +216,7 @@ The adapter writes the task description to `/tmp/tb_task.txt` inside
 the container, then invokes:
 
 ```
-compact-agent --prompt-file /tmp/tb_task.txt --perm yolo
+ventipus --prompt-file /tmp/tb_task.txt --perm yolo
 ```
 
 `--perm yolo` is what makes the agent actually agentic in a benchmark:

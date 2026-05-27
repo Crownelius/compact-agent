@@ -1,7 +1,7 @@
 /**
  * Debug instrumentation.
  *
- * Writes NDJSON event records to ~/.compact-agent/debug/<sessionId>.jsonl
+ * Writes NDJSON event records to ~/.ventipus/debug/<sessionId>.jsonl
  * for offline analysis. Designed so that with `level === 'off'` (the
  * default), every emit() call is a single boolean check + early return —
  * zero file I/O and negligible CPU on the hot path.
@@ -19,12 +19,12 @@
  *
  * Toggling:
  *
- *   - CLI flag:     compact-agent --debug [level]
- *   - Env var:      COMPACT_AGENT_DEBUG=trace
+ *   - CLI flag:     ventipus --debug [level]
+ *   - Env var:      VENTIPUS_DEBUG=trace
  *   - Slash cmd:    /debug on [level]   /debug off   /debug tail [n]
  *
  * The event log is append-only. Each session gets its own file so
- * concurrent compact-agent instances don't fight over a single sink.
+ * concurrent ventipus instances don't fight over a single sink.
  * Files are subject to the same 24h GC window as the gateguard state.
  *
  * Design notes:
@@ -77,15 +77,15 @@ const state: DebugState = {
 /**
  * Initialize debug at session start. Resolves level from (in priority order):
  *   1. explicit `level` arg (passed in from --debug flag parsing)
- *   2. $COMPACT_AGENT_DEBUG env var
+ *   2. $VENTIPUS_DEBUG env var
  *   3. existing state.level (typically 'off')
  *
- * Sets the log file path under ~/.compact-agent/debug/<sessionId>.jsonl
+ * Sets the log file path under ~/.ventipus/debug/<sessionId>.jsonl
  * but doesn't touch the filesystem until the first emit (lazy create).
  */
 export function initDebug(sessionId: string, explicitLevel?: DebugLevel | string): void {
   state.sessionId = sessionId;
-  const envLevel = process.env.COMPACT_AGENT_DEBUG;
+  const envLevel = process.env.VENTIPUS_DEBUG;
   const requested = (explicitLevel || envLevel || state.level || 'off').toLowerCase();
   state.level = isValidLevel(requested) ? requested : 'off';
 

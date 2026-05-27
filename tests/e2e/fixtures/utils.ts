@@ -1,4 +1,4 @@
-import { CrowcoderCLI } from './cli.js';
+import { VentipusCLI } from './cli.js';
 import { ConfigPage } from './config-page.js';
 import { UsersPage } from './users-page.js';
 
@@ -6,11 +6,11 @@ import { UsersPage } from './users-page.js';
  * Shared test utilities for login flow E2E tests.
  */
 export async function createFreshCLI(options: { cwd?: string } = {}): Promise<{
-  cli: CrowcoderCLI;
+  cli: VentipusCLI;
   config: ConfigPage;
   users: UsersPage;
 }> {
-  const cli = new CrowcoderCLI({ cwd: options.cwd });
+  const cli = new VentipusCLI({ cwd: options.cwd });
   const config = new ConfigPage(cli);
   const users = new UsersPage(cli);
 

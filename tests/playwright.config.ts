@@ -3,14 +3,14 @@ import * as path from 'node:path'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 
-const CROWCODER_BIN = path.join(process.cwd(), 'bin', 'crowcoder.js')
+const VENTIPUS_BIN = path.join(process.cwd(), 'bin', 'ventipus.js')
 
 /**
  * Generate a unique temp config directory for each test worker.
- * Sets CROWCODER_HOME so the CLI uses an isolated config.
+ * Sets VENTIPUS_HOME so the CLI uses an isolated config.
  */
 function createTestConfigDir(): string {
-  const dir = path.join(os.tmpdir(), `crowcoder-e2e-${process.pid}-${Date.now()}`)
+  const dir = path.join(os.tmpdir(), `ventipus-e2e-${process.pid}-${Date.now()}`)
   fs.mkdirSync(dir, { recursive: true })
   return dir
 }
@@ -35,7 +35,7 @@ export default defineConfig({
     navigationTimeout: 30_000,
 
     // CLI-specific defaults
-    cliBin: CROWCODER_BIN,
+    cliBin: VENTIPUS_BIN,
     testConfigDir: createTestConfigDir,
   },
   projects: [

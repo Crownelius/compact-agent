@@ -1,8 +1,8 @@
 /**
  * Smart compaction suggestions — monitors conversation and suggests compaction at optimal points.
  */
-import type { Message } from './types.js';
-import { estimateTokens } from './compaction.js';
+import type { VentipusConfig, Message } from './types.js';
+import { compactionTriggerTokens, estimateTokens } from './compaction.js';
 
 export interface CompactionSuggestion {
   reason: string;
@@ -69,15 +69,14 @@ function detectModeSwitch(messages: Message[]): boolean {
 export function shouldSuggestCompaction(
   messages: Message[],
   lastCompactionAt: number,
+  config: Pick<VentipusConfig, 'model' | 'contextWindowTokens'> = { model: '' },
 ): CompactionSuggestion | null {
   const tokens = estimateTokens(messages);
   const timeSinceLastCompaction = Date.now() - lastCompactionAt;
   const minutesSinceCompaction = timeSinceLastCompaction / (1000 * 60);
 
-  // Warn level: 60k tokens
-  const warnThreshold = 60_000;
-  // Suggest level: 80k tokens
-  const suggestThreshold = 80_000;
+  const suggestThreshold = compactionTriggerTokens(config);
+  const warnThreshold = Math.floor(suggestThreshold * 0.75);
 
   // Strategy thresholds
   const quickThreshold = 100_000;

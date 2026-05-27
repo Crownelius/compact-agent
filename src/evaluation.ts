@@ -7,6 +7,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isGitRepo, gitDiff, gitStatus } from './git-workflow.js';
+import { buildBenchmarkContextReport } from './tools/benchmark-context.js';
 
 export type CheckResult = 'pass' | 'warn' | 'fail';
 
@@ -249,7 +250,182 @@ Recommendation: [actionable improvement]
 Be specific and evidence-based in your evaluation.`;
 }
 
-// ── Documentation Update Prompt ────────────────────────────
+// Benchmark Prompt ----------------------------------------------------------
+export type BenchmarkProfile = 'auto' | 'swe-bench' | 'terminal-bench' | 'swe-context' | 'generic';
+
+const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
+  auto: 'auto',
+  swe: 'swe-bench',
+  swebench: 'swe-bench',
+  'swe-bench': 'swe-bench',
+  terminal: 'terminal-bench',
+  tbench: 'terminal-bench',
+  'terminal-bench': 'terminal-bench',
+  context: 'swe-context',
+  'swe-context': 'swe-context',
+  contextbench: 'swe-context',
+  generic: 'generic',
+};
+
+export function normalizeBenchmarkProfile(profile: string | undefined): BenchmarkProfile {
+  const key = String(profile || 'auto').trim().toLowerCase();
+  return BENCHMARK_ALIASES[key] || 'auto';
+}
+
+export function splitBenchmarkArgs(args: string): { profile: BenchmarkProfile; task: string } {
+  const trimmed = args.trim();
+  if (!trimmed) return { profile: 'auto', task: '' };
+  const [first, ...rest] = trimmed.split(/\s+/);
+  const profile = normalizeBenchmarkProfile(first);
+  if (profile !== 'auto' || first.toLowerCase() === 'auto') {
+    return { profile, task: rest.join(' ').trim() };
+  }
+  return { profile: 'auto', task: trimmed };
+}
+
+function benchmarkProfileSection(profile: BenchmarkProfile): string {
+  switch (profile) {
+    case 'swe-bench':
+      return `Profile: SWE-bench / SWE-rebench style repository issue
+- Treat the input as a real GitHub issue against a checkout.
+- Produce a source patch that resolves the stated issue; do not optimize for a prose answer.
+- Do not read, search for, or imitate gold patches, oracle patches, hidden tests, benchmark result files, or prior submitted solutions.
+- Prefer localizing with grep/glob/read_file, then inspect the smallest relevant implementation and tests before editing.
+- If a benchmark harness provides fail-to-pass tests, run the narrowest visible tests first and then the harness verifier if available.`;
+    case 'terminal-bench':
+      return `Profile: Terminal-Bench style terminal task
+- Treat success as the task verifier passing in the sandbox, not as a plausible final explanation.
+- Inspect the task files, environment, scripts, and README before acting.
+- Do not open oracle/reference solution files unless the task explicitly says they are allowed.
+- Use bash for real terminal work, keep services/processes under control, and capture verifier commands and exit status.
+- If the task has a test script, that script is the completion oracle. Run it before finalizing.`;
+    case 'swe-context':
+      return `Profile: SWE-ContextBench style context-learning task
+- Search project/global memory for prior related issues, patches, conventions, and verification commands.
+- Treat recalled memory as a hypothesis, not truth. Re-read current files and verify every reused pattern.
+- Prefer concise, accurate summaries of prior experience over dumping unfiltered memory into the working context.
+- Track whether memory helped, hurt, or was irrelevant so useful experience can be persisted after the task.`;
+    case 'generic':
+      return `Profile: generic benchmark task
+- Identify the benchmark contract from local files and task text.
+- Optimize for verified end state, reproducibility, and minimal uncontrolled assumptions.
+- Record the commands and evidence that prove completion.`;
+    case 'auto':
+    default:
+      return `Profile: auto-detect
+- If the task looks like a repository issue or patch challenge, follow the SWE-bench profile.
+- If the task drops you into a sandbox with a verifier/test script, follow the Terminal-Bench profile.
+- If related prior cases or memory are part of the challenge, follow the SWE-ContextBench profile.
+- Otherwise follow the generic benchmark profile.`;
+  }
+}
+
+function benchmarkMethodologySection(): string {
+  return `## Source-Grounded Method Stack
+
+Use this workflow as the default benchmark strategy:
+
+1. Localize with issue-relevance.
+   - Build a small candidate set of files/functions before editing.
+   - Traverse imports, call sites, stack traces, and tests depth-first only while they stay relevant to the issue.
+   - Keep a short localization dossier: suspected files, evidence, and why unrelated areas were ruled out.
+
+2. Reproduce before repair.
+   - Run the narrowest visible failing command or create a minimal local reproduction when no test is provided.
+   - Capture exact command, exit status, and the failing assertion/error.
+   - If reproduction is impossible, state what was attempted and fall back to a targeted static diagnosis.
+
+3. Plan the patch with checkpoints.
+   - Write/update a todo list before the first edit.
+   - For risky or multi-file edits, inspect git state first and keep changes reviewable so failed paths can be reverted without losing unrelated user work.
+   - Prefer one coherent root-cause patch over broad speculative rewrites.
+
+4. Validate like a verifier.
+   - After each patch, run the narrowest relevant test again.
+   - Then run the broad verifier/build/test command available in the task.
+   - Treat failures as feedback for the next localization loop; do not final-answer on plausible-but-unverified changes.
+
+5. Use current science only when it helps the task.
+   - For benchmark-methodology, agent-improvement, model, dataset, or leaderboard work, call \`research_sources\` before synthesis with source-specific coverage: arXiv papers; GitHub \`github_kind:"all"\` for repos/issues/PRs/code; Hugging Face \`kind:"all"\` for papers/models/datasets; Kaggle \`kaggle_kind:"both"\` for datasets/competitions; and \`recent_days:90\` unless older historical evidence is explicitly needed.
+   - For local repository repair, prioritize the checkout and verifier over external popularity signals.
+
+6. Guard against contamination.
+   - Fresh local task evidence beats memory or recalled benchmark patterns.
+   - Do not inspect gold/oracle/answer/hidden-result files unless explicitly allowed.
+   - Record evidence, not benchmark claims, in the final answer.`;
+}
+
+export function buildBenchmarkPrompt(task: string, cwd: string, profile: BenchmarkProfile = 'auto'): string {
+  const normalizedProfile = normalizeBenchmarkProfile(profile);
+  const preflight = buildBenchmarkContextReport({ path: cwd, max_files: 400 }, cwd);
+  const preflightSnapshot = preflight.isError
+    ? `Preflight snapshot unavailable: ${preflight.output}`
+    : preflight.output.slice(0, 9000);
+  return `# Benchmark-Grade Agent Run
+
+Working directory: ${cwd}
+
+Task:
+${task}
+
+${benchmarkProfileSection(normalizedProfile)}
+
+${benchmarkMethodologySection()}
+
+## Automatic Preflight Snapshot
+
+The launcher gathered this read-only snapshot before the agent loop to save early environment-discovery turns. Treat it as orientation, not proof: re-read task-relevant files before editing.
+
+${preflightSnapshot}
+
+## Operating Loop
+
+1. Establish the success oracle.
+   - Use the automatic preflight snapshot above. Call \`benchmark_context\` only if the environment changes or the snapshot is incomplete.
+   - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
+   - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
+
+2. Localize before editing.
+   - Map relevant files with glob/list_dir/grep.
+   - Read the current implementation and nearby tests.
+   - Follow issue-relevant dependency/call-site paths; stop traversing when the evidence no longer connects to the task.
+   - Keep a short localization dossier before the first edit.
+   - Separate task-relevant instructions from distractors before following environmental cues.
+   - Avoid broad rewrites until the fault is localized.
+
+3. Reproduce and use memory carefully.
+   - Run the narrowest failing command, visible test, or local reproduction before patching when feasible.
+   - Search memory for related project conventions or prior fixes when relevant.
+   - Use recalled context only after validating it against current files.
+   - Do not use memory as a substitute for reading the present checkout.
+
+4. Patch minimally with checkpoint discipline.
+   - Update the todo list before the first edit and after verification milestones.
+   - Inspect git state before risky edits; preserve unrelated user changes.
+   - Change production code unless the issue is truly in tests/docs/config.
+   - Do not weaken tests, skip verifiers, hardcode benchmark answers, or special-case hidden cases.
+   - Preserve public APIs and user compatibility unless the task requires a breaking change.
+
+5. Verify under benchmark pressure.
+   - Run the narrowest meaningful test first.
+   - For installs, model loads, training, builds, emulators, or broad test suites that can legitimately exceed the default shell timeout, call bash with \`timeoutMs\` (up to 1800000). Do not retry the exact same timed-out command without changing the timeout or strategy.
+   - For services, servers, watchers, and daemons, call bash with \`background:true\`, then inspect the returned log path before assuming readiness.
+   - Then run the broad verifier or build/test command available in the task.
+   - If a verifier fails, diagnose from output and iterate. Do not final-answer on unverified edits.
+
+6. Final response.
+   - State changed files and the behavioral fix.
+   - List exact verification commands and pass/fail status.
+   - Call out unresolved risks honestly if any verifier could not be run.
+
+## Anti-Leakage Rules
+
+- Do not inspect gold patches, oracle solutions, hidden tests, benchmark answer keys, result JSONL from prior submissions, or upstream PR diffs unless the benchmark task explicitly permits it.
+- Do not claim leaderboard performance from this run unless the official harness output proves it.
+- Do not rely on remembered benchmark solutions. Treat all prior knowledge as potentially contaminated until verified locally.`;
+}
+
+// Documentation Update Prompt ----------------------------------------------
 export function buildUpdateDocsPrompt(cwd: string): string {
   return `Update project documentation at ${cwd}.
 

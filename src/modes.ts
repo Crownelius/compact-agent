@@ -3,7 +3,7 @@
  * Each mode injects specialized system prompt additions and behavior.
  */
 
-export type Mode = 'dev' | 'review' | 'tdd' | 'research' | 'plan' | 'debug' | 'architect' | 'hermes' | 'design';
+export type Mode = 'dev' | 'review' | 'tdd' | 'research' | 'plan' | 'debug' | 'benchmark' | 'architect' | 'hermes' | 'design';
 
 export interface ModeConfig {
   name: Mode;
@@ -125,6 +125,57 @@ Never guess — always verify with evidence.`,
     temperature: 0.2,
   },
 
+  benchmark: {
+    name: 'benchmark',
+    label: 'Benchmark',
+    description: 'SWE-bench/Terminal-Bench style runs: localize, patch, verify, and report harness-grade evidence',
+    systemPromptAddition: `
+# Mode: Benchmark
+You are in benchmark mode for coding-agent evaluations and terminal harnesses.
+Optimize for verified completion, not persuasive prose.
+
+Science-backed method stack:
+- Emulate specialized roles in one loop: planner (success oracle), navigator
+  (issue-relevant localization), editor (minimal patch), and executor
+  (narrow then broad verification).
+- Keep a localization dossier before editing: candidate files/functions,
+  evidence, reproduction command, and ruled-out distractors.
+- Use checkpoint discipline for risky edits: inspect git state, update todos,
+  and keep failed paths revertible without touching unrelated user work.
+- For benchmark-methodology, agent-improvement, model, dataset, or leaderboard
+  work, call research_sources before synthesis with source-specific coverage:
+  arXiv papers; GitHub github_kind:"all" for repos/issues/PRs/code; Hugging
+  Face kind:"all" for papers/models/datasets; Kaggle kaggle_kind:"both" for
+  datasets/competitions; and recent_days:90 unless the task explicitly needs
+  older historical sources. For local repair tasks, the checkout and verifier
+  remain authoritative.
+
+Core loop:
+1. Identify the task contract: issue statement, visible tests, verifier script,
+   required artifact, hidden-test boundary, and forbidden files. Start with
+   benchmark_context when available so the first turn has manifests, likely
+   verifiers, package scripts, and read-with-care candidates.
+2. Reproduce and localize before editing: map the repo, read relevant code/tests,
+   run the narrowest failing command when feasible, distinguish task-relevant
+   environmental instructions from distractors, and avoid broad rewrites.
+3. Patch minimally: fix the root cause without weakening tests, hardcoding
+   benchmark answers, or altering verifier/oracle files.
+4. Verify: run the narrowest relevant test first, then the benchmark verifier or
+   broad build/test command. Iterate on failing output.
+5. Report evidence: changed files, commands run, pass/fail status, and residual
+   risks. Never claim a leaderboard score without official harness output.
+
+Anti-leakage rules:
+- Do not inspect gold patches, oracle solutions, hidden tests, answer keys,
+  prior result JSONL, or upstream PR diffs unless the task explicitly permits it.
+- Do not rely on remembered benchmark solutions. Treat memory as a hypothesis
+  and verify against the current checkout.
+- Use source-specific research only for benchmark selection or current context;
+  concrete local tasks should prioritize the local repo and verifier.`,
+    suggestedTools: ['bash', 'benchmark_context', 'todo_write', 'read_file', 'edit_file', 'apply_patch', 'grep', 'glob', 'list_dir', 'memory_search', 'research_sources'],
+    temperature: 0.2,
+  },
+
   architect: {
     name: 'architect',
     label: 'Architect',
@@ -215,7 +266,7 @@ what you bank for the next one. Inspired by nousresearch/hermes-agent.
   knowledge to persist (or explicitly noting "nothing worth keeping").
 - Don't sequentialize work that can be parallelized.
 
-## compact-agent commands you should reach for in this mode
+## ventipus commands you should reach for in this mode
 
 \`/memory\`, \`/instincts\`, \`/skills\`, \`/learn\`, \`/skill-create\`, \`/evolve\`,
 \`/orchestrate\`, \`/multi-plan\`, \`/multi-execute\`, \`/checkpoint\`, \`/checkpoints\`,

@@ -1,20 +1,20 @@
-# Installing Compact Agent
+# Installing Ventipus
 
-Compact Agent is a universal AI coding CLI for the terminal. After install you
-get a `compact-agent` command that drops you into an interactive REPL with
+Ventipus is a universal AI coding CLI for the terminal. After install you
+get a `ventipus` command that drops you into an interactive REPL with
 80+ slash commands, multi-agent orchestration, a bundled
 [everything-claude-code][ecc] skill library, and Hermes self-improving mode.
 
 This guide covers installation, first-run setup, and the basics of pointing
-Compact Agent at any OpenAI-compatible API.
+Ventipus at any OpenAI-compatible API.
 
 ## TL;DR
 
 **Single command** (Node 18+ required):
 
 ```bash
-npm install -g compact-agent
-compact-agent
+npm install -g ventipus
+ventipus
 ```
 
 First run launches the setup wizard.
@@ -30,29 +30,29 @@ reference of every slash command. `Ctrl+C` exits.
   one key works across hundreds of models (including free ones). See the
   [Providers](#providers) section below for alternatives.
 - **A POSIX-like shell** (macOS, Linux, WSL, or Git Bash on Windows). PowerShell
-  and CMD work too — Compact Agent spawns Git Bash for shell commands on Windows.
+  and CMD work too — Ventipus spawns Git Bash for shell commands on Windows.
 
 ## Install from npm
 
 ```bash
-npm install -g compact-agent
+npm install -g ventipus
 ```
 
 Verify:
 
 ```bash
-compact-agent --help     # show help
-compact-agent            # launch the REPL
+ventipus --help     # show help
+ventipus            # launch the REPL
 ```
 
-To uninstall later: `npm uninstall -g compact-agent`.
+To uninstall later: `npm uninstall -g ventipus`.
 
 ### Pre-publish alternative: install from GitHub
 
 If you want the latest commit before it lands on the registry:
 
 ```bash
-npm install -g github:Crownelius/Crowcoder
+npm install -g github:Crownelius/Ventipus
 ```
 
 Same package, fetched from the repo's default branch. npm runs the
@@ -60,37 +60,37 @@ Same package, fetched from the repo's default branch. npm runs the
 
 ## Install from source (for development)
 
-If you want to hack on Compact Agent itself, clone and link:
+If you want to hack on Ventipus itself, clone and link:
 
 ```bash
-git clone https://github.com/Crownelius/Crowcoder.git
-cd Crowcoder
+git clone https://github.com/Crownelius/Ventipus.git
+cd Ventipus
 npm install            # also runs prepare/tsc automatically
-npm link               # global `compact-agent` points at this checkout
+npm link               # global `ventipus` points at this checkout
 ```
 
 Now edits in `src/` take effect after `npx tsc` (or `npm run build`). To
-uninstall the global shim: `npm unlink -g compact-agent`.
+uninstall the global shim: `npm unlink -g ventipus`.
 
 ### Without `npm link`
 
 If you prefer not to touch your global bin:
 
 ```bash
-node ./bin/crowcoder.js                                   # always run from here
-alias crowcoder='node /full/path/to/Crowcoder/bin/crowcoder.js'   # or alias it
+node ./bin/ventipus.js                                   # always run from here
+alias ventipus='node /full/path/to/Ventipus/bin/ventipus.js'   # or alias it
 ```
 
 ## First-run setup
 
-The first time you run `compact-agent`, the setup wizard fires. It asks for:
+The first time you run `ventipus`, the setup wizard fires. It asks for:
 
 1. **Provider.** OpenRouter is the recommended default — one key, hundreds of
    models, including free tiers. Other options: OpenAI, GLM (ZhipuAI), Ollama,
    LM Studio, DeepSeek, or a custom OpenAI-compatible endpoint.
 2. **Base URL.** Pre-filled per provider. Only override if you're using a
    custom endpoint or a proxy.
-3. **API key.** Stored plaintext in `~/.compact-agent/config.json` — keep that
+3. **API key.** Stored plaintext in `~/.ventipus/config.json` — keep that
    file private (it's only readable by you on POSIX).
 4. **Model.** Pre-filled with a sensible default; you can paste any model
    slug the provider supports. For OpenRouter free tier, try
@@ -99,14 +99,14 @@ The first time you run `compact-agent`, the setup wizard fires. It asks for:
    non-destructive ops), or `yolo` (approve everything — fastest, riskiest).
    Default is `ask`. You can change later with `/perm <mode>`.
 
-Your config is saved to `~/.compact-agent/config.json` and Compact Agent drops
+Your config is saved to `~/.ventipus/config.json` and Ventipus drops
 into the REPL.
 
 To re-run the wizard later: type `/config` inside the REPL.
 
 ## Providers
 
-Compact Agent talks to anything that speaks the OpenAI Chat Completions API.
+Ventipus talks to anything that speaks the OpenAI Chat Completions API.
 Suggested setups:
 
 | Provider | Base URL | Notes |
@@ -128,7 +128,7 @@ proxy.
 After setup, try:
 
 ```
-compact-agent
+ventipus
 ```
 
 You should see the splash, banner, and a `❯ ` prompt. Then:
@@ -141,14 +141,14 @@ You should see the splash, banner, and a `❯ ` prompt. Then:
 ❯ /exit
 ```
 
-If `compact-agent` isn't found after `npm link`, see [Troubleshooting](#troubleshooting).
+If `ventipus` isn't found after `npm link`, see [Troubleshooting](#troubleshooting).
 
 ## What gets installed
 
-Compact Agent is local-first:
+Ventipus is local-first:
 
 ```
-~/.compact-agent/
+~/.ventipus/
   config.json          API key, provider, model, permissions
   usage.json           token counts, cost estimates (local only)
   hooks.json           PreToolUse / PostToolUse hook config
@@ -171,14 +171,14 @@ see the install state.
 
 ## ECC: zero-configuration skill bundle
 
-The first time you run Compact Agent, you'll see this line during startup:
+The first time you run Ventipus, you'll see this line during startup:
 
 ```
 ECC ready: 33 skills, 16 agents, 9 commands, 7 rule sets.
 ```
 
 That's the bundled [everything-claude-code][ecc] library being installed into
-`~/.compact-agent/`. It adds:
+`~/.ventipus/`. It adds:
 
 - High-quality prompts for `/tdd`, `/review`, `/security-review`, `/plan`,
   `/refactor`, `/build-fix` (these use the ECC version automatically when ECC
@@ -190,18 +190,18 @@ That's the bundled [everything-claude-code][ecc] library being installed into
   suggest tmux for dev servers.
 
 Refresh anytime with `/ecc-install`. Disable a specific hook by editing
-`~/.compact-agent/hooks.json`.
+`~/.ventipus/hooks.json`.
 
 ## Updating
 
 ```bash
-npm install -g compact-agent@latest          # re-fetches the latest published version
+npm install -g ventipus@latest          # re-fetches the latest published version
 ```
 
 If you installed from a source clone:
 
 ```bash
-cd Crowcoder
+cd Ventipus
 git pull
 npm install            # in case dependencies changed
 npx tsc                # rebuild
@@ -210,24 +210,24 @@ npx tsc                # rebuild
 ## Uninstall
 
 ```bash
-npm uninstall -g compact-agent         # if installed via npm install -g
-npm unlink -g compact-agent            # if installed via `npm link` from a source clone
-rm -rf ~/.compact-agent                # local state (config, sessions, instincts, etc.)
+npm uninstall -g ventipus         # if installed via npm install -g
+npm unlink -g ventipus            # if installed via `npm link` from a source clone
+rm -rf ~/.ventipus                # local state (config, sessions, instincts, etc.)
 ```
 
-If you set up hooks or wrote skills, back up `~/.compact-agent/skills/` and
-`~/.compact-agent/hooks.json` first.
+If you set up hooks or wrote skills, back up `~/.ventipus/skills/` and
+`~/.ventipus/hooks.json` first.
 
 ## Troubleshooting
 
-### `compact-agent: command not found`
+### `ventipus: command not found`
 
 `npm link` didn't put the bin shim on PATH. Verify:
 
 ```bash
 npm prefix -g          # this dir should be on PATH
-ls "$(npm prefix -g)/bin/crowcoder*"   # POSIX
-ls "$(npm prefix -g)/crowcoder*"       # Windows
+ls "$(npm prefix -g)/bin/ventipus*"   # POSIX
+ls "$(npm prefix -g)/ventipus*"       # Windows
 ```
 
 If it's there but not on PATH, add `npm prefix -g`'s bin dir to your shell's
@@ -235,7 +235,7 @@ PATH. On Windows that's `%APPDATA%\npm` by default.
 
 ### `DEP0040 DeprecationWarning: punycode`
 
-Cosmetic. Crowcoder's bin already includes a filter that drops this one
+Cosmetic. Ventipus's bin already includes a filter that drops this one
 specific deprecation. If you still see it, you're running an older build —
 `npx tsc` again and retry.
 
@@ -249,7 +249,7 @@ web_search`) and the model self-corrects on the next iteration.
 ### Free-tier rate limits (429)
 
 OpenRouter free tier is 20 requests/minute and 200 requests/day. The model
-provider sometimes lower-bounds further. Crowcoder retries 429s up to 3
+provider sometimes lower-bounds further. Ventipus retries 429s up to 3
 times with backoff. If you're hitting limits often, switch to a paid tier
 or use a local Ollama model — both are configured via `/config`.
 
@@ -261,12 +261,12 @@ asking — fine for sandboxes, dangerous for your main checkout.
 
 ### Where do I report bugs?
 
-[github.com/Crownelius/Crowcoder/issues](https://github.com/Crownelius/Crowcoder/issues).
+[github.com/Crownelius/Ventipus/issues](https://github.com/Crownelius/Ventipus/issues).
 Include your Node version, OS, the slash command you ran, and the model.
 
 ## Next steps
 
-- Run `/walkthrough` inside Crowcoder for an interactive tour.
+- Run `/walkthrough` inside Ventipus for an interactive tour.
 - See [README.md](README.md) for the feature reference and slash-command list.
 - Try `/mode hermes` for self-improving learning-loop mode (search past
   sessions, distill skills from experience, propose what's worth banking

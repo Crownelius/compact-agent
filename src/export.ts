@@ -125,7 +125,7 @@ function getExtension(format: ExportFormat): string {
 export function saveExport(messages: Message[], format: ExportFormat): string {
   const formatted = formatMessages(messages, format);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  const filename = `compact-agent-export-${timestamp}.${getExtension(format)}`;
+  const filename = `ventipus-export-${timestamp}.${getExtension(format)}`;
   const filepath = path.join(process.cwd(), filename);
 
   fs.writeFileSync(filepath, formatted, 'utf-8');

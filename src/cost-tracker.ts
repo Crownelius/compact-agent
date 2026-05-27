@@ -1,6 +1,6 @@
 /**
  * Cost/token tracker — tracks usage per session and cumulative.
- * Stores data in ~/.compact-agent/usage.json
+ * Stores data in ~/.ventipus/usage.json
  * Supports budget limits and alerts.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -12,6 +12,8 @@ const USAGE_FILE = join(getConfigDir(), 'usage.json');
 
 // Cost per 1M tokens (input/output) for common models via OpenRouter
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+  // OpenRouter free tier/router
+  'openrouter/free': { input: 0, output: 0 },
   // Anthropic
   'anthropic/claude-sonnet-4': { input: 3.0, output: 15.0 },
   'anthropic/claude-opus-4': { input: 15.0, output: 75.0 },
@@ -82,6 +84,7 @@ function saveUsage(data: UsageData): void {
 }
 
 export function getModelCost(model: string): { input: number; output: number } {
+  if (model === 'openrouter/free' || model.endsWith(':free')) return { input: 0, output: 0 };
   // Try exact match first, then partial
   if (MODEL_COSTS[model]) return MODEL_COSTS[model];
   for (const [key, cost] of Object.entries(MODEL_COSTS)) {

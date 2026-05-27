@@ -1,0 +1,84 @@
+import { describe, expect, it } from 'vitest';
+import { messagesToResponsesInput, shouldRequestChatStreamUsage, toolsToResponsesTools } from '../src/api.js';
+import type { Message } from '../src/types.js';
+import type { Tool } from '../src/tools/types.js';
+
+describe('Responses API conversion', () => {
+  it('preserves function call continuity across assistant and tool messages', () => {
+    const messages: Message[] = [
+      { role: 'system', content: 'Be concise.' },
+      { role: 'user', content: 'Read the file.' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_123',
+          type: 'function',
+          function: { name: 'read_file', arguments: '{"file_path":"README.md"}' },
+        }],
+      },
+      { role: 'tool', tool_call_id: 'call_123', content: 'file contents' },
+    ];
+
+    expect(messagesToResponsesInput(messages)).toEqual([
+      { type: 'message', role: 'system', content: 'Be concise.' },
+      { type: 'message', role: 'user', content: 'Read the file.' },
+      {
+        type: 'function_call',
+        call_id: 'call_123',
+        name: 'read_file',
+        arguments: '{"file_path":"README.md"}',
+      },
+      {
+        type: 'function_call_output',
+        call_id: 'call_123',
+        output: 'file contents',
+      },
+    ]);
+  });
+
+  it('emits Responses API function tools with non-strict schemas', () => {
+    const tools: Tool[] = [{
+      name: 'grep',
+      description: 'Search text',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string' },
+        },
+        required: ['pattern'],
+      },
+      call: async () => ({ output: '', isError: false }),
+    }];
+
+    expect(toolsToResponsesTools(tools)).toEqual([{
+      type: 'function',
+      name: 'grep',
+      description: 'Search text',
+      parameters: tools[0].parameters,
+      strict: false,
+    }]);
+  });
+});
+
+describe('Chat Completions stream usage request', () => {
+  it('requests usage for OpenRouter cloud endpoints', () => {
+    expect(shouldRequestChatStreamUsage({ baseURL: 'https://openrouter.ai/api/v1' }, {})).toBe(true);
+  });
+
+  it('does not send stream_options to local OpenAI-compatible servers by default', () => {
+    expect(shouldRequestChatStreamUsage({ baseURL: 'http://localhost:11434/v1' }, {})).toBe(false);
+    expect(shouldRequestChatStreamUsage({ baseURL: 'http://127.0.0.1:1234/v1' }, {})).toBe(false);
+  });
+
+  it('supports explicit env override', () => {
+    expect(shouldRequestChatStreamUsage(
+      { baseURL: 'http://localhost:11434/v1' },
+      { VENTIPUS_STREAM_USAGE: '1' },
+    )).toBe(true);
+    expect(shouldRequestChatStreamUsage(
+      { baseURL: 'https://openrouter.ai/api/v1' },
+      { VENTIPUS_STREAM_USAGE: '0' },
+    )).toBe(false);
+  });
+});

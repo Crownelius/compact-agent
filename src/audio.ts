@@ -58,15 +58,15 @@ export function setFfmpegPath(p: string): void {
  *   Windows : -f dshow -i audio="<first input device>"
  *             We can't enumerate without listing — but ffmpeg's "default"
  *             alias works on most systems via dshow. If it doesn't, the user
- *             can override via env var COMPACT_AGENT_AUDIO_INPUT.
+ *             can override via env var VENTIPUS_AUDIO_INPUT.
  *   macOS   : -f avfoundation -i ":0"         (":0" = default audio input)
  *   Linux   : -f pulse -i default              (PulseAudio default sink)
  *
- * Env override: COMPACT_AGENT_AUDIO_INPUT="-f dshow -i audio=\"My Mic\""
+ * Env override: VENTIPUS_AUDIO_INPUT="-f dshow -i audio=\"My Mic\""
  *               (raw argv, split by spaces — anything in quotes preserved)
  */
 function getMicInputArgs(): string[] {
-  const override = process.env.COMPACT_AGENT_AUDIO_INPUT;
+  const override = process.env.VENTIPUS_AUDIO_INPUT;
   if (override) {
     // Quote-aware split so `audio="My Mic"` survives as one token
     return tokenize(override);
@@ -182,7 +182,7 @@ export async function probeMic(force = false): Promise<MicProbeResult> {
 export function micProbeMessage(r: MicProbeResult): string {
   switch (r) {
     case 'ok':        return 'Microphone ready.';
-    case 'no-mic':    return 'No microphone detected. Plug one in or set COMPACT_AGENT_AUDIO_INPUT to a specific device.';
+    case 'no-mic':    return 'No microphone detected. Plug one in or set VENTIPUS_AUDIO_INPUT to a specific device.';
     case 'no-ffmpeg': return 'ffmpeg is not installed. Install ffmpeg to enable dictation.';
     case 'error':     return 'Microphone probe failed.';
   }
@@ -217,7 +217,7 @@ export async function recordAudio(maxSeconds: number): Promise<Buffer | null> {
     child.on('error', () => resolve(null));
     child.on('close', (code) => {
       if (code !== 0 && chunks.length === 0) {
-        if (process.env.COMPACT_AGENT_AUDIO_DEBUG) {
+        if (process.env.VENTIPUS_AUDIO_DEBUG) {
           // eslint-disable-next-line no-console
           console.error('[audio] record failed:', errBuf.slice(0, 400));
         }

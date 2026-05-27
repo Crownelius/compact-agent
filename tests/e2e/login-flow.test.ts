@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { CrowcoderCLI } from './fixtures/cli.js';
+import { VentipusCLI } from './fixtures/cli.js';
 import { ConfigPage } from './fixtures/config-page.js';
 import { LoginPage } from './fixtures/login-page.js';
 import {
@@ -38,12 +38,12 @@ import {
 // covered by tests/smoke-commands.test.ts (88 tests, in-process —
 // no child-process overhead, no prompt-string drift).
 describe.skip('Login Flow — Setup Wizard', () => {
-  let cli: CrowcoderCLI;
+  let cli: VentipusCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new CrowcoderCLI();
+    cli = new VentipusCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -62,7 +62,7 @@ describe.skip('Login Flow — Setup Wizard', () => {
       const output = await login.completeSetup({
         providerKey: 'openrouter',
         apiKey: 'sk-test-key-12345',
-        model: 'anthropic/claude-sonnet-4',
+        model: 'openrouter/free',
         permissionMode: 'ask',
       });
 
@@ -372,7 +372,7 @@ describe.skip('Login Flow — Setup Wizard', () => {
       });
 
       // Wait for main prompt
-      await cli.waitForOutput(/crowcoder|▶|session/i, { timeout: 5_000 });
+      await cli.waitForOutput(/ventipus|▶|session/i, { timeout: 5_000 });
 
       // Trigger reconfig
       await login.triggerReconfig();
@@ -527,6 +527,7 @@ describe.skip('Login Flow — Setup Wizard', () => {
     }> = [
       { key: 'anthropic', requiresKey: true, expectedName: 'Anthropic (Claude)' },
       { key: 'openai', requiresKey: true, expectedName: 'OpenAI (GPT)' },
+      { key: 'openai-codex', requiresKey: false, expectedName: 'OpenAI Codex (OAuth)' },
       { key: 'openrouter', requiresKey: true, expectedName: 'OpenRouter (Any Model)' },
       { key: 'google', requiresKey: true, expectedName: 'Google (Gemini)' },
       { key: 'deepseek', requiresKey: true, expectedName: 'DeepSeek' },
@@ -561,12 +562,12 @@ describe.skip('Login Flow — Setup Wizard', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Config File Management', () => {
-  let cli: CrowcoderCLI;
+  let cli: VentipusCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new CrowcoderCLI();
+    cli = new VentipusCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
   });
@@ -580,7 +581,7 @@ describe.skip('Login Flow — Config File Management', () => {
       config.seedConfig({
         apiKey: 'sk-preseeded',
         baseURL: 'https://openrouter.ai/api/v1',
-        model: 'anthropic/claude-sonnet-4',
+        model: 'openrouter/free',
         provider: 'OpenRouter (Any Model)',
         maxTokens: 8192,
         temperature: 0.3,
@@ -589,9 +590,9 @@ describe.skip('Login Flow — Config File Management', () => {
 
       await cli.spawn();
       // With a valid config, should go straight to main prompt (no wizard).
-      // The banner prints "Crowcoder" — wait for it with a longer timeout
+      // The banner prints "Ventipus" — wait for it with a longer timeout
       // because ECC install may run on first real-config launch.
-      await cli.waitForOutput(/Crowcoder|▶|session|ECC/i, { timeout: 30_000 });
+      await cli.waitForOutput(/Ventipus|▶|session|ECC/i, { timeout: 30_000 });
       expect(await login.isShowingWizard()).toBe(false);
     });
 
@@ -644,12 +645,12 @@ describe.skip('Login Flow — Config File Management', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Permission Mode Management', () => {
-  let cli: CrowcoderCLI;
+  let cli: VentipusCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new CrowcoderCLI();
+    cli = new VentipusCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -658,7 +659,7 @@ describe.skip('Login Flow — Permission Mode Management', () => {
       model: 'test-model',
       permissionMode: 'ask',
     });
-    await cli.waitForOutput(/crowcoder|▶|session/i, { timeout: 5_000 });
+    await cli.waitForOutput(/ventipus|▶|session/i, { timeout: 5_000 });
   });
 
   afterEach(() => {
@@ -717,19 +718,19 @@ describe.skip('Login Flow — Permission Mode Management', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Provider Info', () => {
-  let cli: CrowcoderCLI;
+  let cli: VentipusCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new CrowcoderCLI();
+    cli = new VentipusCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
     await login.completeSetup({
       providerKey: 'openrouter',
       apiKey: 'sk-info-test-12345',
-      model: 'anthropic/claude-sonnet-4',
+      model: 'openrouter/free',
       permissionMode: 'ask',
     });
     // Wait for setup to fully complete (Config saved + banner)
@@ -755,7 +756,7 @@ describe.skip('Login Flow — Provider Info', () => {
   it('shows model via /provider', async () => {
     const output = await config.checkProvider();
     assertOutputContains(output, 'Model:');
-    assertOutputContains(output, 'claude-sonnet-4');
+    assertOutputContains(output, 'openrouter/free');
   });
 
   it('masks API key in /provider output', async () => {
@@ -773,12 +774,12 @@ describe.skip('Login Flow — Provider Info', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Model Switching', () => {
-  let cli: CrowcoderCLI;
+  let cli: VentipusCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new CrowcoderCLI();
+    cli = new VentipusCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -787,7 +788,7 @@ describe.skip('Login Flow — Model Switching', () => {
       model: 'initial-model',
       permissionMode: 'ask',
     });
-    await cli.waitForOutput(/crowcoder|▶|session/i, { timeout: 5_000 });
+    await cli.waitForOutput(/ventipus|▶|session/i, { timeout: 5_000 });
   });
 
   afterEach(() => {

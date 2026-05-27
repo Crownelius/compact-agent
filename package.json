@@ -1,21 +1,21 @@
 {
-  "name": "compact-agent",
+  "name": "ventipus",
   "version": "1.35.0",
   "description": "Terminal AI coding CLI. Speaks any OpenAI-compatible API (OpenRouter, OpenAI, NVIDIA, Ollama, LM Studio, DeepSeek). Modes, slash commands, multi-agent swarming, key-rotation pool, optional voice + screen-reader, sandbox + permission gates, persistent input box, bundled everything-claude-code skills.",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/Crownelius/compact-agent#readme",
-  "bugs": "https://github.com/Crownelius/compact-agent/issues",
+  "homepage": "https://github.com/Crownelius/ventipus#readme",
+  "bugs": "https://github.com/Crownelius/ventipus/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Crownelius/compact-agent.git"
+    "url": "git+https://github.com/Crownelius/ventipus.git"
   },
   "keywords": [
     "ai",
     "agent",
     "cli",
     "coding-assistant",
-    "compact-agent",
+    "ventipus",
     "claude",
     "openrouter",
     "openai",
@@ -40,7 +40,7 @@
     "knowledge-graph"
   ],
   "bin": {
-    "compact-agent": "./bin/crowcoder.js"
+    "ventipus": "./bin/ventipus.js"
   },
   "files": [
     "bin/",

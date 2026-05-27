@@ -29,7 +29,7 @@
  * surfaces this so it isn't surprising.
  */
 
-import type { CrowcoderConfig } from './types.js';
+import type { VentipusConfig } from './types.js';
 import { streamChat } from './api.js';
 import { findEccSkillByName } from './ecc.js';
 
@@ -84,7 +84,7 @@ export function resolveAgents(slugs: string[]): SwarmAgent[] {
 export async function runSwarm(
   agents: SwarmAgent[],
   task: string,
-  config: CrowcoderConfig,
+  config: VentipusConfig,
 ): Promise<SwarmResult[]> {
   const results = await Promise.allSettled(
     agents.map(async (agent): Promise<SwarmResult> => {

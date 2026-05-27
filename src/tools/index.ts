@@ -7,6 +7,8 @@ import { GrepTool } from './grep.js';
 import { GlobTool } from './glob.js';
 import { WebFetchTool } from './web-fetch.js';
 import { WebSearchTool } from './web-search.js';
+import { ResearchSourcesTool } from './research-sources.js';
+import { BenchmarkContextTool } from './benchmark-context.js';
 import { ListDirTool } from './list-dir.js';
 import { StitchTool } from './stitch.js';
 import { stitchConfigured } from '../stitch.js';
@@ -14,6 +16,7 @@ import { MEMORY_TOOLS } from './memory.js';
 import { isMemoryEnabled } from '../mempalace/index.js';
 import { SkillViewTool } from './skill.js';
 import { ApplyPatchTool } from './apply-patch.js';
+import { TodoWriteTool } from './todo.js';
 
 // Stitch is only listed in the tool registry when configured — otherwise
 // free models hallucinate calls to it and waste turns on auth errors.
@@ -40,6 +43,9 @@ export const ALL_TOOLS: Tool[] = [
   ListDirTool,
   WebFetchTool,
   WebSearchTool,
+  ResearchSourcesTool,
+  BenchmarkContextTool,
+  TodoWriteTool,
   ...MEMORY_TOOLS_IF_ENABLED,
   // skill_view — Level-1 of the progressive-disclosure skill schema.
   // Always available; the system prompt only injects skill NAMES at

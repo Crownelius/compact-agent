@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-compact-agent incorporates concepts, design, and (where noted) adapted code
+ventipus incorporates concepts, design, and (where noted) adapted code
 from the following open-source projects. The original copyright notices and
 license terms are preserved below as required by their respective licenses.
 
@@ -52,4 +52,4 @@ from the everything-claude-code project.
 
 ---
 
-If you adapt or redistribute compact-agent, please retain this file.
+If you adapt or redistribute ventipus, please retain this file.

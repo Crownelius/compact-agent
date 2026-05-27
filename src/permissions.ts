@@ -12,7 +12,7 @@
 import * as readline from 'node:readline/promises';
 import chalk from 'chalk';
 import type { Tool } from './tools/types.js';
-import type { CrowcoderConfig } from './types.js';
+import type { VentipusConfig } from './types.js';
 import { saveConfig } from './config.js';
 import { evaluateCommand } from './execpolicy.js';
 
@@ -22,14 +22,14 @@ import { evaluateCommand } from './execpolicy.js';
  *
  * @param tool - The tool being invoked
  * @param input - The tool's input arguments
- * @param config - Current Crowcoder configuration (may be mutated if user types "always")
+ * @param config - Current Ventipus configuration (may be mutated if user types "always")
  * @param rl - Readline interface for prompting the user
  * @returns True if the tool call is allowed, false if denied
  */
 export async function checkPermission(
   tool: Tool,
   input: Record<string, unknown>,
-  config: CrowcoderConfig,
+  config: VentipusConfig,
   rl: readline.Interface,
 ): Promise<boolean> {
   // ── Execpolicy intent-gate (runs BEFORE other checks) ──

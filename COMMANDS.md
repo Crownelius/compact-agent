@@ -1,21 +1,21 @@
-# Compact Agent — Command Reference
+# Ventipus — Command Reference
 
-Every command Compact Agent exposes, organized by purpose. Two surfaces:
+Every command Ventipus exposes, organized by purpose. Two surfaces:
 
-1. **Shell command** — what you type at your OS terminal (`compact-agent`)
+1. **Shell command** — what you type at your OS terminal (`ventipus`)
 2. **Slash commands** — what you type inside the REPL once it's running
 3. **Tools** — what the underlying LLM calls automatically; not invoked by you
 
-If you're new, run `compact-agent` then type `/walkthrough` for an agent-led tour.
+If you're new, run `ventipus` then type `/walkthrough` for an agent-led tour.
 
 ---
 
 ## 1. Shell invocation
 
-After `npm install -g compact-agent`, you have one binary:
+After `npm install -g ventipus`, you have one binary:
 
 ```bash
-compact-agent
+ventipus
 ```
 
 That's the whole shell surface. It launches the REPL. There are no subcommands at the OS level — everything else happens via slash commands inside the REPL.
@@ -27,6 +27,8 @@ First run also fires the setup wizard (provider, API key, model, permission mode
 ## 2. Slash commands
 
 Everything in this section is typed inside the REPL after `❯ `.
+
+At an empty prompt, `/` opens the inline command selector. It stays below the prompt, keeps the widget under roughly half the terminal height, lets you type to narrow, scroll with arrows/PageUp/PageDown, jump with Home/End, and press Enter to run the highlighted command. If a slash prefix is already typed, Tab reopens the same bounded selector with that filter instead of printing the full command list. It only erases its own prompt/dropdown rows instead of clearing the rest of the terminal.
 
 ### 2.1 General & session control
 
@@ -40,7 +42,11 @@ Everything in this section is typed inside the REPL after `❯ `.
 | `/exit` / `/quit` | Quit the REPL. |
 | `/config` | Re-run the setup wizard (change provider/key/model/permissions). |
 | `/theme [full\|compact\|minimal]` | Toggle startup display verbosity. `full` shows splash + banner; `minimal` is a single line. |
+| `/palette <id>` | Switch to one of 12 Coolors trending color schemes. |
+| `/palettes` | List palette IDs with color swatch previews. |
 | `!<cmd>` | Run a shell command directly without involving the AI. Example: `!ls -la`. |
+
+Palette IDs: `olive-garden-feast`, `fiery-ocean`, `refreshing-summer-fun`, `ocean-blue-serenity`, `pastel-dreamland-adventure`, `sunny-beach-day`, `dark-sunset`, `fiery-red-sunset`, `fiery-palette`, `rustic-earthy-tones`, `golden-summer-fields`, `vibrant-tones`.
 
 ### 2.2 Modes
 
@@ -54,6 +60,7 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 | `/mode research` | Research | Read-only exploration. Won't modify files. |
 | `/mode plan` | Planning | Designs implementation plans, no edits. |
 | `/mode debug` | Debug | Systematic root-cause hunt with hypothesis tracking. |
+| `/mode benchmark` | Benchmark | SWE-bench/Terminal-Bench-style runs: localize, patch, verify, and report harness-grade evidence. |
 | `/mode architect` | Architect | System-level design, component boundaries, trade-offs. |
 | `/mode hermes` | Hermes | Self-improving learning loop — recalls prior memory, models the user, parallelizes, distills skills, persists knowledge. Inspired by nousresearch/hermes-agent. |
 | `/mode design` | Design | Stitch-powered UI generation. Agent uses Google Stitch automatically for any visual work and integrates the generated HTML into your code. Requires `/stitch-config`. |
@@ -72,7 +79,7 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 
 ### 2.4 Sessions
 
-Sessions are JSON snapshots stored in `~/.compact-agent/sessions/`.
+Sessions are JSON snapshots stored in `~/.ventipus/sessions/`.
 
 | Command | What it does |
 |---|---|
@@ -107,6 +114,7 @@ These trigger an LLM workflow with an injected prompt. `/tdd`, `/review`, `/secu
 | `/refactor-clean` | Alias of `/refactor` — same dispatch. |
 | `/e2e <feature>` | Generate E2E tests (Playwright/Cypress/Puppeteer, auto-detected). |
 | `/eval <criteria> [target]` | Evaluate the project against custom criteria. |
+| `/benchmark [profile] <task>` | Benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `generic`. Aliases: `/bench`, `/leaderboard`. |
 | `/plan <task>` | Structured implementation planning, no edits. |
 | `/update-docs` | Sync documentation files with current code. |
 
@@ -206,7 +214,7 @@ The learning system extracts patterns from your sessions and decays unused ones.
 | `/instinct-import <file>` | Import instincts from JSON. |
 | `/evolve` | Cluster high-confidence instincts into reusable skills. |
 | `/prune` | Delete instincts whose confidence has decayed below threshold. |
-| `/memory` | Show cross-session memory status (`~/.compact-agent/memory/`). |
+| `/memory` | Show cross-session memory status (`~/.ventipus/memory/`). |
 
 ### 2.17 Detection
 
@@ -237,7 +245,7 @@ A tiny stateful demo command useful for testing/learning:
 
 ### 2.20 Stitch (Google AI UI/UX design)
 
-Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX design + code generation tool. Ports the [gemini-cli-extensions/stitch](https://github.com/gemini-cli-extensions/stitch) extension to Compact Agent.
+Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX design + code generation tool. Ports the [gemini-cli-extensions/stitch](https://github.com/gemini-cli-extensions/stitch) extension to Ventipus.
 
 | Command | What it does |
 |---|---|
@@ -248,11 +256,11 @@ Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX desi
 | `/stitch` | Show config status (masked key, configured-at timestamp, server URL). |
 | `/stitch tools` | Live verification — calls `tools/list` against the server and renders the discovered tool catalog as a Markdown table. Confirms auth + endpoint reachability. |
 | `/stitch <query>` | Direct Stitch assistant (intent-routed: `enhance: <prompt>` improves a prompt; anything else hits the assistant). Less useful now that design mode does this automatically. |
-| `/stitch-config <api-key>` | Save your Stitch API key to `~/.compact-agent/stitch.json`. |
+| `/stitch-config <api-key>` | Save your Stitch API key to `~/.ventipus/stitch.json`. |
 
 **Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
 
-**Or via env var (no file written):** `$env:STITCH_API_KEY = "..."` (PowerShell) / `export STITCH_API_KEY="..."` (POSIX) before launching `compact-agent`.
+**Or via env var (no file written):** `$env:STITCH_API_KEY = "..."` (PowerShell) / `export STITCH_API_KEY="..."` (POSIX) before launching `ventipus`.
 
 Once configured, the `stitch` tool appears in `/tools` and the agent can call it directly. Common invocations:
 
@@ -295,7 +303,7 @@ ECC is the bundled skill / agent / hook library from [Crownelius/everything-clau
 How it works:
 
 - **Built-in commands use ECC prompts automatically** — `/tdd`, `/review`, `/security-review`, `/plan`, `/refactor`, `/build-fix` all run ECC's high-quality prompts under the hood.
-- **ECC skills + agents auto-inject** — the highest-scoring skill matching your query is added to the system prompt for that turn. You never type `/ecc-skills` or pick a skill manually.
+- **ECC skills use progressive disclosure** — the system prompt shows the top matching skill names and short descriptions, and the agent calls `skill_view` for the full prompt only after checking that the skill fits the current task, repo evidence, and version context.
 - **ECC-only workflows auto-trigger by keyword** — say "add a database migration", "implement a feature for CSV export", or "add typescript rules" and the relevant workflow prompt injects itself. No `/ecc-*` command needed.
 - **Default security hooks fire automatically** — block `git --no-verify`, warn on reading `.env`/`.key`/`.pem`, console-log warnings on edits.
 
@@ -318,6 +326,9 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `grep` | Search file contents (ripgrep, falls back to grep). | Yes |
 | `glob` | Find files by glob pattern. | Yes |
 | `list_dir` | List directory entries (type, size, name). | Yes |
+| `benchmark_context` | Read-only benchmark preflight: cwd snapshot, manifests, likely verifier commands, CI workflow run commands plus setup/env-key/service/container hints from GitHub Actions/GitLab/CircleCI/Azure/Jenkins configs, Terminal-Bench/Harbor harness artifacts, package scripts, task files, concise task-instruction excerpts with exact line references, task-contract signals from visible acceptance criteria/requirements/success criteria/no-edit clauses, runtime/toolchain hints, service-persistence hints, method hints, relevant prior local benchmark trace summaries, prior low-quality/unsafe experience warnings, and read-with-care candidates; CI env values are not printed; benchmark traces also score run-level usage/cost, cost-efficiency risk when high usage lacks strong evidence, invalid tool-action count/percent/events for unknown tools, malformed JSON, schema failures, security/hook blocks, permission denial, and loop/streak aborts, task-instruction/task-contract checklist use, no-edit/no-op contract compliance, test/harness/verifier edit risk, localization/failing-reproduction/validation quality, per-target edit localization and unlocalized edit-target events, large edit-surface scope checks, scratch/probe artifact checks, redundant read/search tool loops, redundant failing-verifier reruns, blind repair after failed verifier signals, post-edit pass/fail/pass regression cycles, environment setup commands and unresolved missing-dependency/toolchain/build-artifact verifier failures, skill-view fit/timing signals, latest post-edit verifier status, post-edit and final-state diff/status review, final-edit validation stability/lucky-pass risk, narrow-to-broad post-edit validation, CI-derived verifier command coverage, final-state validation after the last edit, failing reproduction before repair, parsed verifier pass/fail evidence and compact failure signatures across common JS, Python, Rust, Go, JVM, and .NET runners with verifier head/tail previews for noisy logs, final-answer verification-claim and incomplete/blocked completion evidence, incomplete/inconclusive timeout or truncation markers, source research coverage with parsed hit/error/recency evidence including Kaggle competition fallback, structured `research_sources` trace previews that preserve source headings, URLs, coverage notes, and tail endpoint/auth errors, structured process defects with a 0-100 process score, and leakage-risk artifacts. | Yes |
+| `todo_write` | Update the working todo list; reinjected before each turn and preserved across compaction. | No |
+| `research_sources` | Query arXiv, GitHub repositories/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions for source-grounded research; output includes coverage/auth/recency notes, applies `recent_days` to supported source date fields, caveats GitHub code freshness, and reports Kaggle competition fallback. | Yes |
 | `web_fetch` | Fetch a URL and return text (HTML→text). | Yes |
 | `web_search` | Search the web by keyword (DuckDuckGo, no API key). | Yes |
 | `stitch` | Call Google Stitch's MCP server (`tools/list`, `tools/call`). Only present when `/stitch-config` has been run. | No |
@@ -328,24 +339,94 @@ Any tool name you see in error output other than these (e.g. `web_search_exa`, `
 
 ## 4. Environment variables
 
-These affect the REPL's runtime behavior. Set in your shell before launching `compact-agent`.
+These affect the REPL's runtime behavior. Set in your shell before launching `ventipus`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CROWCODER_HOME` | `~/.compact-agent` | Override config/state directory (useful for tests and sandboxes). |
-| `CROWCODER_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
-| `CROWCODER_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
-| `OPENROUTER_API_KEY` | (unset) | Picked up by the LLM driver test (`tests/llm-drive-all.mjs`) if your real `config.json` isn't available. |
-| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.compact-agent/stitch.json`. |
+| `VENTIPUS_HOME` | `~/.ventipus` | Override config/state directory (useful for tests, sandboxes, and harnesses). |
+| `VENTIPUS_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
+| `VENTIPUS_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
+| `VENTIPUS_ENV_CONFIG` | (unset) | In non-interactive mode, prefer provider settings from env even if `config.json` exists. |
+| `VENTIPUS_PROVIDER` | inferred | Provider key such as `openrouter`, `openai`, `deepseek`, `nvidia`, `google`, `glm`, `ollama`, `lmstudio`, `openai-codex`, or `custom`. |
+| `VENTIPUS_API_KEY` | provider-specific env | Generic API key override for env-built configs. |
+| `VENTIPUS_BASE_URL` | provider default | OpenAI-compatible endpoint for env-built configs. |
+| `VENTIPUS_MODEL` | provider default | Model name for env-built configs. |
+| `VENTIPUS_MODEL_OVERRIDE` | (unset) | Per-run model override applied after loading config; used by `--model`. |
+| `VENTIPUS_FALLBACK_MODEL` | provider default | Optional fallback model used by the API retry path. |
+| `VENTIPUS_FALLBACK_MODEL_OVERRIDE` | (unset) | Per-run fallback override used by `--fallback-model`. |
+| `VENTIPUS_MAX_TOKENS` | `8192` | Max output tokens for env-built configs. |
+| `VENTIPUS_MAX_TOKENS_OVERRIDE` | (unset) | Per-run max-token override used by `--max-tokens`. |
+| `VENTIPUS_CONTEXT_WINDOW_TOKENS` | provider/client default | Optional context budget cap. |
+| `VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE` | (unset) | Per-run context-window override used by `--context-window-tokens`. |
+| `VENTIPUS_COMPACTION_TRIGGER_TOKENS` | `min(60000, 50% context)` | Override the automatic rolling-compaction trigger. |
+| `VENTIPUS_COMPACTION_MODEL` | OpenRouter fallback or main model | Model used for LLM conversation summaries; keep this cheap/free for long runs. |
+| `VENTIPUS_COMPACTION_MAX_TOKENS` | `2048` | Max output tokens for LLM compaction summaries. |
+| `VENTIPUS_COMPACTION_USE_FALLBACK` | auto for OpenRouter | Set `0` to prevent OpenRouter compaction from using `fallbackModel`; set `1` to force fallback use when available. |
+| `VENTIPUS_LLM_COMPACTION` | `1` | Set `0` to skip the summarizer model call and use deterministic local compaction. |
+| `VENTIPUS_COMPACTION_MODE` | `llm` | Set `local` for deterministic no-provider-call compaction. |
+| `VENTIPUS_LOCAL_COMPACTION_FALLBACK` | `1` | Set `0` to disable the deterministic fallback summary used when model summarization fails. |
+| `VENTIPUS_MAX_TURNS` | config default | Optional tool-loop turn cap. |
+| `VENTIPUS_MAX_TURNS_OVERRIDE` | (unset) | Per-run tool-loop cap override used by `--max-turns`. |
+| `VENTIPUS_TEMPERATURE` | `0.3` | Sampling temperature for env-built configs. |
+| `VENTIPUS_TEMPERATURE_OVERRIDE` | (unset) | Per-run temperature override used by `--temperature`. |
+| `VENTIPUS_PERMISSION` | `ask` | Startup permission mode for env-built configs: `ask`, `auto`, or `yolo`. |
+| `VENTIPUS_MEMORY` | `1` | Set `0`/`false`/`off` to disable MemPalace for headless runs. |
+| `VENTIPUS_SHOW_THINKING` | `1` | Set `0`/`false`/`off` to suppress streamed thinking display. |
+| `VENTIPUS_THEME` | config default | Startup display theme: `full`, `compact`, or `minimal`. |
+| `VENTIPUS_BASH_TIMEOUT_MS` | `120000` | Default `bash` tool timeout. Harness adapters default this to `300000`; individual tool calls can pass `timeoutMs` or `timeoutSec` up to 30 minutes. Timed-out or truncated foreground output is saved under `.ventipus/bash-output/`. |
+| `VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS` | `5000` | Archive large non-bash tool outputs under `.ventipus/tool-output/` before adding them to model history. |
+| `VENTIPUS_REPO_MAP` | `1` | Set `0` to disable automatic bounded repo-map context injection for larger codebases. |
+| `VENTIPUS_STREAM_USAGE` | auto | Force streamed token-usage accounting on/off (`1` or `0`). Auto enables it for known cloud OpenAI-compatible endpoints and skips local endpoints. |
+| `VENTIPUS_BENCHMARK_TRACE` | (unset) | Set `1` to write redacted benchmark-style trace artifacts even outside benchmark mode. |
+| `VENTIPUS_BENCHMARK_TRACE_DIR` | `~/.ventipus/benchmark-runs` | Directory for benchmark `summary.json`, `trace.jsonl`, `open-agent-leaderboard-draft.json`, and git `worktree.patch` / `git-status.txt` artifacts. Patch output includes unstaged, staged, and untracked file diffs where git can render them. |
+| `VENTIPUS_BENCHMARK_EXPERIENCE` | `1` | Set `0` to disable prior local benchmark trace summaries in `benchmark_context`. Current task files and verifier output always override prior experience; similar failed/unsafe prior runs are shown as warnings to avoid copying. |
+| `VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE` | `2` in benchmark, `1` otherwise | Non-interactive empty-engagement guard; set `0` to allow immediate no-tool final answers. |
+| `VENTIPUS_API_KEY_ENV` | (unset) | Name of an env var whose value should be used as the per-run API key; used by `--api-key-env`. |
+| `VENTIPUS_INSTALL_SPEC` | `ventipus@latest` | Terminal-Bench adapter npm install spec; pin to a version, tag, or tarball for reproducibility. If `ventipus` is already on `PATH`, setup skips network install. |
+| `VENTIPUS_BUNDLE_ROOT` | (unset) | Terminal-Bench offline install source: unpacked ventipus tree with `bin/`, `dist/`, and preferably `node_modules/`. |
+| `VENTIPUS_BUNDLE_TARBALL` | (unset) | Terminal-Bench offline/local install source: path to a ventipus `.tgz` checked before the npm registry. |
+| `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `NVIDIA_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GLM_API_KEY`, `ZHIPUAI_API_KEY` | (unset) | Provider-specific key env vars used by env-built configs. |
+| `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HUGGINGFACE_TOKEN`, `HUGGINGFACE_API_KEY`, `HF_API_KEY` | token file fallback | Optional Hugging Face auth for `research_sources` papers/models/datasets; also checks `HF_TOKEN_PATH`, `HF_HOME/token`, and the default Hugging Face token cache. |
+| `KAGGLE_API_TOKEN`, `KAGGLE_TOKEN` | token file fallback | Optional Kaggle bearer auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/access_token`. |
+| `KAGGLE_USERNAME` + `KAGGLE_KEY` | `kaggle.json` fallback | Optional legacy Kaggle auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/kaggle.json` or `~/.kaggle/kaggle.json`. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Local Ollama endpoint for env-built configs. |
+| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.ventipus/stitch.json`. |
+
+OpenRouter free-tier context is intentionally conservative for compatibility. `openrouter/free` plans around a 128k window because the router can select different available free models; manually typed unknown `:free` model IDs plan around 32k unless `VENTIPUS_CONTEXT_WINDOW_TOKENS` is set. The interactive OpenRouter `/model` picker reads the live catalog and saves the selected exact model's context hint when available.
+
+`--prompt` and `--prompt-file` imply non-interactive mode. If the prompt begins with a slash command such as `/benchmark terminal-bench ...`, ventipus dispatches that command first and sends the expanded prompt to the model.
+
+Benchmark-friendly per-run CLI flags: `--model`, `--fallback-model`, `--provider`, `--base-url`, `--api-key`, `--api-key-env`, `--max-turns`, `--max-tokens`, `--context-window-tokens`, `--temperature`, `--output-format`, and `--benchmark-trace-dir`. They do not modify `config.json`.
+
+Adapter path helpers:
+
+- `ventipus --print-terminal-bench-adapter` prints the packaged Terminal-Bench Python adapter path.
+- `ventipus --print-kbench-adapter` prints the packaged KBench custom-adapter directory.
+- `ventipus --print-hal-agent` prints the packaged HAL custom-agent directory.
+- `ventipus --print-exgentic-agent` prints the packaged Exgentic/Open Agent Leaderboard custom-agent directory.
+- Benchmark adapters export redacted artifacts: Terminal-Bench writes `.ventipus/benchmark-summary.json`, `.ventipus/benchmark-trace.jsonl`, `.ventipus/benchmark.patch`, and `.ventipus/git-status.txt` when available; KBench returns redacted `instruction`, `stdout`, `stderr`, `patch`, and `git-status` artifact refs. Patch output includes unstaged, staged, and untracked file diffs where git can render them. KBench also exposes compact native trace data, including usage/cost telemetry, Open Agent Leaderboard draft rows marked `submissionReady:false` until an official harness score exists, final-answer verification-claim and incomplete/blocked completion evidence, cost-efficiency risk, invalid tool-action telemetry, task-contract checklist completion/no-edit/test-edit, incomplete/inconclusive verifier, environment setup/reconstruction, per-target edit-localization, large edit-surface, scratch/probe artifact, redundant tool-call, redundant failing-verifier rerun, blind-repair, post-edit regression-cycle signals, latest post-edit verifier, post-edit and final-state diff-review, final-edit validation stability/lucky-pass signals, broad-validation signals, and CI-derived validation signals, under `benchmarkResult.traceSummary` when `summary.json` is available; `benchmarkResult.usage` aliases the compact usage block.
+  HAL returns SWE-bench-style patch strings, ScienceAgentBench-style trajectory strings, AppWorld `Completed` markers, and USACO/general task dictionaries with `response` fields. Exgentic returns benchmark-native `ActionType` instances selected from ventipus's final action JSON and stores prompt/stdout/stderr/trace artifacts under the Exgentic session agent directory.
+
+HAL-specific adapter env:
+
+- `VENTIPUS_HAL_COMMAND` overrides the command used by the HAL adapter; default `ventipus`.
+- `VENTIPUS_HAL_TRACE_DIR` controls HAL adapter logs/traces; default `.ventipus/hal-trace`.
+- `VENTIPUS_HAL_TIMEOUT_SEC` controls the per-task adapter timeout; default `1800`.
+- `VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS=1` disables the default oracle-field filter for harnesses that intentionally expose those fields.
+
+Exgentic-specific adapter env:
+
+- `VENTIPUS_EXGENTIC_COMMAND` overrides the command used by the Exgentic adapter; default `ventipus`.
+- `VENTIPUS_INSTALL_SPEC` controls Exgentic `setup.sh`; default `ventipus@latest`.
 
 ---
 
 ## 5. Files & state
 
-Compact Agent is local-first. Everything lives in `~/.compact-agent/` (or `$CROWCODER_HOME` if set):
+Ventipus is local-first. Everything lives in `~/.ventipus/` (or `$VENTIPUS_HOME` if set):
 
 ```
-~/.compact-agent/
+~/.ventipus/
   config.json          # provider, model, key, theme, perms
   usage.json           # token counts, cost estimates (LOCAL ONLY)
   hooks.json           # hook definitions
@@ -362,13 +443,13 @@ Compact Agent is local-first. Everything lives in `~/.compact-agent/` (or `$CROW
   ecc-agents/          # bundled agent prompts
 ```
 
-**To wipe all state:** `rm -rf ~/.compact-agent`.
+**To wipe all state:** `rm -rf ~/.ventipus`.
 
 ---
 
 ## 6. Hooks
 
-Default ECC-bundled hooks (configured in `~/.compact-agent/hooks.json`):
+Default ECC-bundled hooks (configured in `~/.ventipus/hooks.json`):
 
 | Event | Match | What fires |
 |---|---|---|
@@ -376,9 +457,9 @@ Default ECC-bundled hooks (configured in `~/.compact-agent/hooks.json`):
 | PreToolUse | `read_file` | Warn when reading `.env` / `.key` / `.pem` / credential paths. |
 | PostToolUse | `edit_file` / `write_file` | Warn when an edit leaves `console.*` statements in `.ts`/`.js`. |
 
-Disable individual hooks by editing the `enabled` field in `~/.compact-agent/hooks.json`, or set `CROWCODER_HOOK_PROFILE=minimal` to silence all but the most critical.
+Disable individual hooks by editing the `enabled` field in `~/.ventipus/hooks.json`, or set `VENTIPUS_HOOK_PROFILE=minimal` to silence all but the most critical.
 
-Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool name glob), `command` (shell), and optional `blocking`/`timeout`. The hook receives `CROWCODER_TOOL`, `CROWCODER_TOOL_INPUT`, `CROWCODER_CWD` in its env.
+Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool name glob), `command` (shell), and optional `blocking`/`timeout`. The hook receives `VENTIPUS_TOOL`, `VENTIPUS_TOOL_INPUT`, `VENTIPUS_CWD` in its env.
 
 ---
 

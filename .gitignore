@@ -5,7 +5,8 @@ node_modules/
 dist/
 
 # Config (contains API keys)
-# ~/.compact-agent/ is the runtime config dir, not in repo
+# ~/.ventipus/ is the runtime config dir, not in repo
+.ventipus/
 
 # OS files
 .DS_Store

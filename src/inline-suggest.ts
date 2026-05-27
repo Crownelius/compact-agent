@@ -29,7 +29,7 @@
  * Per-frame sequence:
  *   1. Up `_dropdownRows` lines     → back to the filter row
  *   2. `\r`                          → col 0 of that row
- *   3. `\x1b[J`                      → clear from cursor to end of screen
+ *   3. clear prompt/dropdown rows     → erase only rows previously painted
  *   4. promptPrefix + filter         → repaint the prompt line
  *   5. `\r\n` + each dropdown row    → fill the rows below
  *   6. Up `rowsDrawn` + `\r` + right (promptVisLen + filter.length)
@@ -50,16 +50,15 @@
  *   Enter (CR or LF)      accept current selection
  *   Up / Down             move selection
  *   Backspace             delete last filter char; dismiss if empty
- *   Tab                   accept without submitting (sentinel:
- *                         trailing space on command)
+ *   Tab / Shift+Tab       move selection down/up
  *   Printable ASCII       append to filter, reset selection to 0
  */
 import { stdin, stdout } from 'node:process';
 import type { Interface as RLInterface } from 'node:readline';
+import { theme } from './theme.js';
 
 const ANSI = {
-  clearToEnd: '\x1b[J',
-  clearLine: '\x1b[K',
+  clearLine: '\x1b[2K',
   reverse: '\x1b[7m',
   dim: '\x1b[2m',
   reset: '\x1b[0m',
@@ -67,11 +66,47 @@ const ANSI = {
 
 /** Cap visible dropdown rows. Trades discoverability for keeping the
  * surrounding chat output visible. Matches Claude Code's behavior. */
-const MAX_ROWS = 8;
+const MAX_ROWS = 6;
+
+/**
+ * Keep the selector compact even in short terminals. The footer may add one
+ * extra row, so this intentionally uses roughly half of the terminal height
+ * instead of every available row.
+ */
+export function maxVisibleSuggestRows(termRows: number = stdout.rows || 24): number {
+  const rows = Number.isFinite(termRows) ? Math.max(1, Math.floor(termRows)) : 24;
+  // The prompt row plus the optional scroll footer count against the visual
+  // budget. Keep the whole widget below roughly half the viewport so it reads
+  // as an inline helper instead of a screen-covering picker.
+  const ownedRowsBudget = Math.max(3, Math.floor(rows * 0.45));
+  return Math.max(1, Math.min(MAX_ROWS, ownedRowsBudget - 2));
+}
+
+export function buildInlineSuggestEraseSequence(dropdownRows: number): string {
+  const rows = Math.max(0, Math.floor(dropdownRows));
+  let seq = `\r${ANSI.clearLine}`;
+  for (let i = 0; i < rows; i++) {
+    seq += `\x1b[1B\r${ANSI.clearLine}`;
+  }
+  if (rows > 0) seq += `\x1b[${rows}A\r`;
+  return seq;
+}
+
+export function buildInlineSuggestDropdownEraseSequence(dropdownRows: number): string {
+  const rows = Math.max(0, Math.floor(dropdownRows));
+  let seq = '';
+  for (let i = 0; i < rows; i++) {
+    seq += `\x1b[1B\r${ANSI.clearLine}`;
+  }
+  if (rows > 0) seq += `\x1b[${rows}A\r`;
+  return seq;
+}
 
 export interface SuggestItem {
   /** The slash command, e.g. "/help". */
   command: string;
+  /** Short syntax/category label, e.g. "Git" or "Model". */
+  hint?: string;
   /** One-line description shown in the second column. */
   description: string;
 }
@@ -94,19 +129,117 @@ export interface InlineSuggestOptions {
 export interface InlineSuggestResult {
   /** True if the user picked an item (Enter); false on Esc / Ctrl+C / Backspace-to-empty. */
   accepted: boolean;
-  /** The chosen command, only set when accepted=true. Trailing space
-   * means "fill but don't submit" (Tab pathway). */
+  /** The chosen command, only set when accepted=true. */
   command?: string;
   /** The filter string at exit. Caller restores rl.line to this on
    * cancel so the user can keep typing the partial command. */
   filter: string;
 }
 
-type TaggedListener = ((...args: unknown[]) => void) & { __crowcoderHotkey__?: boolean };
+type TaggedListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
 
 /** Strip ANSI SGR escape sequences for visible-width math. */
 function ansiVisibleLen(s: string): number {
   return s.replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
+export function filterSuggestItems(items: SuggestItem[], filter: string): SuggestItem[] {
+  let f = filter.replace(/^\//, '').toLowerCase();
+  const spaceIdx = f.indexOf(' ');
+  const hasArgs = spaceIdx >= 0;
+  if (hasArgs) f = f.slice(0, spaceIdx);
+  if (!f) return items.slice();
+  return items.filter((it) => {
+    const cmdMatch = it.command.toLowerCase().includes(f);
+    const hintMatch = !hasArgs && (it.hint ?? '').toLowerCase().includes(f);
+    const descMatch = !hasArgs && it.description.toLowerCase().includes(f);
+    return cmdMatch || hintMatch || descMatch;
+  });
+}
+
+export function visibleSuggestWindow<T>(
+  items: T[],
+  selected: number,
+  maxRows: number = MAX_ROWS,
+): { startIdx: number; endIdx: number; items: T[] } {
+  if (items.length === 0) return { startIdx: 0, endIdx: 0, items: [] };
+  const safeSelected = Math.max(0, Math.min(items.length - 1, selected));
+  const size = Math.max(1, Math.min(maxRows, items.length));
+  const maxStart = Math.max(0, items.length - size);
+  const startIdx = Math.min(maxStart, Math.max(0, safeSelected - Math.floor(size / 2)));
+  const endIdx = Math.min(items.length, startIdx + size);
+  return { startIdx, endIdx, items: items.slice(startIdx, endIdx) };
+}
+
+type InlineSuggestInput =
+  | { type: 'accept' }
+  | { type: 'append'; text: string }
+  | { type: 'backspace' }
+  | { type: 'cancel' }
+  | { type: 'ignore' }
+  | { type: 'jump'; target: 'start' | 'end' }
+  | { type: 'move'; delta: number };
+
+export function parseInlineSuggestInput(buf: Buffer): InlineSuggestInput {
+  // Ctrl+C / bare Esc cancel the selector.
+  if (buf.length === 1 && (buf[0] === 0x03 || buf[0] === 0x1B)) return { type: 'cancel' };
+  if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) return { type: 'accept' };
+  if (buf.length === 1 && (buf[0] === 0x7F || buf[0] === 0x08)) return { type: 'backspace' };
+  if (buf.length === 1 && buf[0] === 0x09) return { type: 'move', delta: 1 };
+  if (buf.length === 3 && buf[0] === 0x1B && buf[1] === 0x5B && buf[2] === 0x5A) {
+    return { type: 'move', delta: -1 };
+  }
+  if (buf.length >= 3 && buf[0] === 0x1B && buf[1] === 0x5B) {
+    const code = buf[2];
+    if (code === 0x41) return { type: 'move', delta: -1 };
+    if (code === 0x42) return { type: 'move', delta: 1 };
+    if (code === 0x48) return { type: 'jump', target: 'start' };
+    if (code === 0x46) return { type: 'jump', target: 'end' };
+    if (buf.length >= 4 && (code === 0x35 || code === 0x36) && buf[3] === 0x7E) {
+      return { type: 'move', delta: code === 0x35 ? -5 : 5 };
+    }
+    if (buf.length >= 4 && (code === 0x31 || code === 0x34) && buf[3] === 0x7E) {
+      return { type: 'jump', target: code === 0x31 ? 'start' : 'end' };
+    }
+    return { type: 'ignore' };
+  }
+  if (buf.length === 1 && buf[0] < 0x20) return { type: 'ignore' };
+
+  const printable = buf.toString('utf-8').replace(/[\x00-\x1F\x7F]/g, '');
+  return printable.length > 0 ? { type: 'append', text: printable } : { type: 'ignore' };
+}
+
+function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max <= 1) return text.slice(0, max);
+  return text.slice(0, max - 1) + '…';
+}
+
+export function formatInlineSuggestFilterForPrompt(
+  filter: string,
+  promptVisibleLen: number,
+  termCols: number = stdout.columns || 80,
+): { text: string; visibleLen: number } {
+  const cols = Number.isFinite(termCols) ? Math.max(20, Math.floor(termCols)) : 80;
+  const promptCols = Number.isFinite(promptVisibleLen) ? Math.max(0, Math.floor(promptVisibleLen)) : 0;
+  // Leave one spare column so the cursor never lands at the wrap boundary.
+  const room = Math.max(1, cols - promptCols - 1);
+  if (filter.length <= room) return { text: filter, visibleLen: filter.length };
+  if (room <= 1) return { text: filter.slice(-1), visibleLen: 1 };
+  return { text: '…' + filter.slice(-(room - 1)), visibleLen: room };
+}
+
+function colorCommand(command: string, filter: string): string {
+  const slash = command.startsWith('/') ? theme.syntaxPunctuation('/') : '';
+  const body = command.startsWith('/') ? command.slice(1) : command;
+  const query = filter.replace(/^\//, '').split(/\s+/, 1)[0].toLowerCase();
+  if (!query) return slash + theme.syntaxCommand(body);
+  const idx = body.toLowerCase().indexOf(query);
+  if (idx < 0) return slash + theme.syntaxCommand(body);
+  return slash +
+    theme.syntaxCommand(body.slice(0, idx)) +
+    theme.highlight(body.slice(idx, idx + query.length)) +
+    theme.syntaxCommand(body.slice(idx + query.length));
 }
 
 /**
@@ -130,6 +263,7 @@ export async function inlineSuggest(
     // the filter row). The next frame goes up by this many to land
     // back on the filter row.
     let dropdownRows = 0;
+    let displayedFilterVisibleLen = initialFilter.length;
 
     const promptPrefix = opts.promptPrefix ?? '  ❯ ';
     const promptVisLen = opts.promptVisibleLen ?? ansiVisibleLen(promptPrefix);
@@ -141,36 +275,14 @@ export async function inlineSuggest(
 
     // Detach readline's keypress listeners so the line editor doesn't
     // also process input. The hotkey listener (tagged
-    // __crowcoderHotkey__) stays attached because it has its own
+    // __ventipusHotkey__) stays attached because it has its own
     // bail for `pickerActive`; the others get pulled.
     const allKeypress = stdin.listeners('keypress').slice() as TaggedListener[];
-    const togglable = allKeypress.filter((l) => !l.__crowcoderHotkey__);
+    const togglable = allKeypress.filter((l) => !l.__ventipusHotkey__);
     for (const l of togglable) stdin.removeListener('keypress', l);
 
     function visibleItems(): SuggestItem[] {
-      // Strip leading '/' for matching — the filter starts with '/'
-      // (since that's the trigger) but the commands also start with
-      // '/', so the slash is implicit and we want to match on the
-      // letters that come after.
-      let f = filter.replace(/^\//, '').toLowerCase();
-      // If the filter contains a space, the user is typing ARGS for a
-      // command (e.g. "/perm auto"). Match only on the first word so
-      // the dropdown still highlights /perm — without this slice,
-      // typing space dropped the match count to zero and made the
-      // dropdown look broken. Enter then submits the FULL filter with
-      // args attached (see the Enter handler below).
-      const spaceIdx = f.indexOf(' ');
-      const hasArgs = spaceIdx >= 0;
-      if (hasArgs) f = f.slice(0, spaceIdx);
-      if (!f) return items.slice();
-      return items.filter((it) => {
-        const cmdMatch = it.command.toLowerCase().includes(f);
-        // Description matching is only useful when the user is still
-        // searching — once they've typed past the command name into
-        // args, description matches would surface irrelevant items.
-        const descMatch = !hasArgs && it.description.toLowerCase().includes(f);
-        return cmdMatch || descMatch;
-      });
+      return filterSuggestItems(items, filter);
     }
 
     function render(): void {
@@ -178,32 +290,32 @@ export async function inlineSuggest(
       if (selected >= visible.length) selected = Math.max(0, visible.length - 1);
       if (selected < 0) selected = 0;
 
-      const shown = visible.slice(0, MAX_ROWS);
+      const win = visibleSuggestWindow(visible, selected, maxVisibleSuggestRows(stdout.rows || 24));
+      const shown = win.items;
 
       // Column widths — command col sized to longest visible command,
       // clamped to a reasonable range so the description col gets
       // enough space on narrow terminals.
+      const termCols = Math.max(20, stdout.columns || 80);
       const cmdCol = Math.min(
         20,
         Math.max(10, shown.reduce((m, it) => Math.max(m, it.command.length), 0)),
       );
-      const termCols = stdout.columns || 80;
-      const descMax = Math.max(20, termCols - cmdCol - 6);
+      const hintCol = shown.some((it) => it.hint) ? 12 : 0;
+      const descMax = Math.max(20, termCols - cmdCol - hintCol - 10);
+      const displayFilter = formatInlineSuggestFilterForPrompt(filter, promptVisLen, termCols);
+      displayedFilterVisibleLen = displayFilter.visibleLen;
 
-      // ── Reposition to the filter row ──
-      // Up by however many dropdown rows we left on screen last
-      // frame. Then \r to col 0. Then clear from cursor to end of
-      // screen — that erases the rest of the filter row AND every
-      // dropdown row below.
-      if (dropdownRows > 0) {
-        stdout.write(`\x1b[${dropdownRows}A`);
-      }
-      stdout.write('\r');
-      stdout.write(ANSI.clearToEnd);
+      // ── Repaint only the rows the selector owns ──
+      // Earlier versions used ESC[J (clear-to-end-of-screen), which
+      // made the selector feel like it blanked the whole terminal.
+      // Keep the surrounding chat and scrollback intact by erasing only
+      // the prompt row and the dropdown rows emitted by the last frame.
+      stdout.write(buildInlineSuggestEraseSequence(dropdownRows));
 
       // Repaint the prompt line: styled prefix + filter chars. We
       // own this line now (the clear above wiped whatever was here).
-      stdout.write(promptPrefix + filter);
+      stdout.write(promptPrefix + displayFilter.text);
 
       // Draw dropdown rows beneath. Each row gets a "\r\n" prefix
       // so it lands on a fresh line at col 0 regardless of where the
@@ -218,28 +330,32 @@ export async function inlineSuggest(
         const hint = filter.length > 1 && filter.startsWith('/')
           ? '(no match — Enter submits as-is, Backspace narrows, Esc cancels)'
           : '(no matches — Backspace to clear, Esc to dismiss)';
-        stdout.write(`\r\n  ${ANSI.dim}${hint}${ANSI.reset}`);
+        stdout.write(`\r\n  ${theme.dim(clipText(hint, Math.max(10, termCols - 4)))}`);
         rowsDrawn = 1;
       } else {
         for (let i = 0; i < shown.length; i++) {
           const it = shown[i];
-          const isSel = i === selected;
+          const itemIndex = win.startIdx + i;
+          const isSel = itemIndex === selected;
 
-          let cmd = it.command;
-          if (cmd.length > cmdCol) cmd = cmd.slice(0, cmdCol - 1) + '…';
-          else cmd = cmd.padEnd(cmdCol, ' ');
+          const cmdText = clipText(it.command, cmdCol);
+          const cmdPad = ' '.repeat(Math.max(0, cmdCol - cmdText.length));
+          const cmd = colorCommand(cmdText, filter) + cmdPad;
 
-          let desc = it.description;
-          if (desc.length > descMax) desc = desc.slice(0, descMax - 1) + '…';
+          const desc = clipText(it.description, descMax);
+          const indicator = isSel ? theme.selection(' > ') : theme.syntaxPunctuation('   ');
+          const hint = it.hint
+            ? theme.syntaxOption(clipText(`[${it.hint}]`, Math.max(8, hintCol)).padEnd(hintCol, ' '))
+            : '';
+          const description = isSel ? theme.syntaxString(desc) : theme.dim(desc);
 
-          const line = isSel
-            ? `${ANSI.reverse}  ${cmd}  ${desc}${ANSI.reset}`
-            : `  ${cmd}  ${ANSI.dim}${desc}${ANSI.reset}`;
-          stdout.write(`\r\n${line}`);
+          stdout.write(`\r\n${indicator}${cmd}  ${hint}${description}`);
           rowsDrawn++;
         }
         if (visible.length > shown.length) {
-          stdout.write(`\r\n  ${ANSI.dim}… ${visible.length - shown.length} more · type to narrow${ANSI.reset}`);
+          const range = `${win.startIdx + 1}-${win.endIdx}/${visible.length}`;
+          const footer = `${range} · PgUp/PgDn scroll · Home/End jump · type narrows`;
+          stdout.write(`\r\n  ${theme.syntaxPunctuation('…')} ${theme.dim(clipText(footer, Math.max(10, termCols - 4)))}`);
           rowsDrawn++;
         }
       }
@@ -249,7 +365,7 @@ export async function inlineSuggest(
       // go up `rowsDrawn` lines, \r to col 0, then advance to the
       // visible column of end-of-filter.
       stdout.write(`\x1b[${rowsDrawn}A\r`);
-      const endCol = promptVisLen + filter.length;
+      const endCol = promptVisLen + displayedFilterVisibleLen;
       if (endCol > 0) {
         stdout.write(`\x1b[${endCol}C`);
       }
@@ -260,19 +376,12 @@ export async function inlineSuggest(
       stdin.removeListener('data', onData);
       for (const l of togglable) stdin.on('keypress', l);
       try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
-      // Wipe the dropdown area. We're at end-of-filter; go down +
-      // \r + clear-to-end clears everything we drew below the
-      // prompt row. Leave the filter on screen — the caller decides
-      // whether to overwrite (on accept) or restore rl.line + redraw
-      // (on cancel).
+      // Wipe only the dropdown area. Leave the filter on screen — the
+      // caller decides whether to overwrite (on accept) or restore
+      // rl.line + redraw (on cancel).
       if (dropdownRows > 0) {
-        stdout.write('\r\n');
-        stdout.write(ANSI.clearToEnd);
-        // Cursor is now at col 0 of the row after the filter.
-        // Move back up + to end of filter so caller sees a clean
-        // single-row state.
-        stdout.write(`\x1b[1A\r`);
-        const endCol = promptVisLen + filter.length;
+        stdout.write(buildInlineSuggestDropdownEraseSequence(dropdownRows));
+        const endCol = promptVisLen + displayedFilterVisibleLen;
         if (endCol > 0) {
           stdout.write(`\x1b[${endCol}C`);
         }
@@ -292,15 +401,9 @@ export async function inlineSuggest(
       // dropdown to silently freeze. Restore listeners so the user
       // can keep typing.
       try {
-        // Ctrl+C — cancel.
-        if (buf.length === 1 && buf[0] === 0x03) {
-          teardown();
-          resolve({ accepted: false, filter });
-          return;
-        }
-        // Esc (bare) — cancel. Multi-byte chunks starting with 0x1B
-        // are arrow keys / function keys (handled below).
-        if (buf.length === 1 && buf[0] === 0x1B) {
+        const input = parseInlineSuggestInput(buf);
+
+        if (input.type === 'cancel') {
           teardown();
           resolve({ accepted: false, filter });
           return;
@@ -320,16 +423,16 @@ export async function inlineSuggest(
         //      something past "/" → submit the raw filter and let
         //      handleSlashCommand say "unknown command". Better than
         //      silently swallowing the Enter.
-        if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) {
+        if (input.type === 'accept') {
           let toSubmit: string;
           if (filter.includes(' ')) {
-            toSubmit = filter;
+            toSubmit = filter.startsWith('/') ? filter : `/${filter}`;
           } else {
             const visible = visibleItems();
             if (visible.length > 0) {
               toSubmit = visible[selected].command;
             } else if (filter.length > 1) {
-              toSubmit = filter;
+              toSubmit = filter.startsWith('/') ? filter : `/${filter}`;
             } else {
               // Filter is "/" alone or empty — nothing to submit. Stay
               // open so the user can keep typing.
@@ -348,7 +451,7 @@ export async function inlineSuggest(
         // see the full list when they backspace past the trigger '/'
         // — previous behavior dismissed on filter='/' which felt
         // jumpy when the user just wanted to clear their typing).
-        if (buf.length === 1 && (buf[0] === 0x7F || buf[0] === 0x08)) {
+        if (input.type === 'backspace') {
           if (filter.length === 0) {
             teardown();
             resolve({ accepted: false, filter });
@@ -359,48 +462,18 @@ export async function inlineSuggest(
           render();
           return;
         }
-        // Tab — navigate to the next item (alias for Down arrow).
-        // The previous "Tab = fill but don't submit" sentinel was
-        // confusing and never matched user muscle memory; treating
-        // Tab as navigation matches what most CLI completers do and
-        // pairs naturally with Shift+Tab below.
-        if (buf.length === 1 && buf[0] === 0x09) {
-          moveSelection(1);
+        if (input.type === 'move') {
+          moveSelection(input.delta);
           return;
         }
-        // Shift+Tab — navigate to the previous item. Delivered as
-        // the CSI back-tab sequence `\x1b[Z` (3 bytes) on most
-        // modern terminals including Windows Terminal + ConHost
-        // with VT100 enabled.
-        if (buf.length === 3 && buf[0] === 0x1B && buf[1] === 0x5B && buf[2] === 0x5A) {
-          moveSelection(-1);
+        if (input.type === 'jump') {
+          const visible = visibleItems();
+          if (visible.length === 0) return;
+          selected = input.target === 'start' ? 0 : visible.length - 1;
+          render();
           return;
         }
-        // Arrow keys: `Esc [ <code>` (3 bytes). Up/Down navigate;
-        // Page Up / Page Down skip by 5 (also reachable via the 4-
-        // byte forms `\x1b[5~` and `\x1b[6~`).
-        if (buf.length >= 3 && buf[0] === 0x1B && buf[1] === 0x5B) {
-          const code = buf[2];
-          if (code === 0x41) { moveSelection(-1); return; }    // Up
-          if (code === 0x42) { moveSelection(1);  return; }    // Down
-          if (buf.length >= 4 && (code === 0x35 || code === 0x36) && buf[3] === 0x7E) {
-            moveSelection(code === 0x35 ? -5 : 5);              // Page Up/Down
-            return;
-          }
-          // Left/Right/Home/End and other unhandled CSI escapes:
-          // swallow them silently rather than letting their bytes
-          // fall through to the printable-char branch (which would
-          // see e.g. "[D" and start appending '[' + 'D' to the
-          // filter). Anything starting with ESC [ is some terminal
-          // sequence — definitely not user-intended filter text.
-          return;
-        }
-        // Any other bare control byte (Ctrl+A..Ctrl+Z minus the ones
-        // we explicitly handled above): silently ignore. The user
-        // expects Ctrl+letter to do SOMETHING, but we don't have a
-        // mapping for most of them in this context — better to do
-        // nothing than to dump a 0x01 into the filter.
-        if (buf.length === 1 && buf[0] < 0x20) return;
+        if (input.type === 'ignore') return;
 
         // Printable input — extend filter and re-render. Robust
         // against mixed chunks: instead of all-or-nothing, strip
@@ -411,10 +484,8 @@ export async function inlineSuggest(
         //
         // This is the per-char update path: every printable byte
         // lands here and triggers render() with the new filter.
-        const s = buf.toString('utf-8');
-        const printable = s.replace(/[\x00-\x1F\x7F]/g, '');
-        if (printable.length > 0) {
-          filter += printable;
+        if (input.type === 'append') {
+          filter += input.text;
           selected = 0;
           render();
         }

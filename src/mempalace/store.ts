@@ -22,11 +22,11 @@ import { searchDrawers } from './search.js';
 import { getHomeStateDir, getProjectStateDir } from '../config.js';
 
 // ── Paths ─────────────────────────────────────────────────
-/** ~/.compact-agent/memory/store.json — cross-project knowledge */
+/** ~/.ventipus/memory/store.json — cross-project knowledge */
 export function globalStorePath(): string {
   return join(getHomeStateDir(), 'memory', 'store.json');
 }
-/** <cwd>/.compact-agent/memory/store.json — per-repo knowledge */
+/** <cwd>/.ventipus/memory/store.json — per-repo knowledge */
 export function projectStorePath(cwd: string): string {
   return join(getProjectStateDir(cwd), 'memory', 'store.json');
 }

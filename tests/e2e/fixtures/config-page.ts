@@ -1,20 +1,20 @@
-import { CrowcoderCLI } from './cli.js';
+import { VentipusCLI } from './cli.js';
 
 /**
  * Config Page Object — encapsulates all configuration/login operations.
  * Maps to the setup wizard (/config command) and config file state.
  */
 export class ConfigPage {
-  private cli: CrowcoderCLI;
+  private cli: VentipusCLI;
 
-  constructor(cli: CrowcoderCLI) {
+  constructor(cli: VentipusCLI) {
     this.cli = cli;
   }
 
   /**
    * Get the current config from the file system.
    */
-  async getConfig(): Promise<Record<string, unknown> | null> {
+  getConfig(): Record<string, unknown> | null {
     return this.cli.readConfig();
   }
 
@@ -49,13 +49,16 @@ export class ConfigPage {
 
   /**
    * Send /provider to check current provider info.
+   * Clears the stdout buffer before sending so we capture only new output.
    */
   async checkProvider(): Promise<string> {
     if (!this.cli.process) throw new Error('CLI not spawned');
-    const before = this.cli.stdout.length;
+    // Reset stdout capture to isolate the /provider output
+    this.cli.clearStdout();
     this.cli.process.stdin.write('/provider\n');
-    await this.cli.waitForOutput(/Provider:|Base URL:|Model:|API Key:/i, { timeout: 5_000 });
-    return this.cli.stdoutSince(before);
+    // Wait for the API Key line which is the last line of /provider output
+    await this.cli.waitForOutput(/API Key:/i, { timeout: 5_000 });
+    return this.cli.stdout;
   }
 
   /**

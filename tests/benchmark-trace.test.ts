@@ -1,0 +1,4201 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  buildBenchmarkCompletionReminder,
+  buildBenchmarkBlindRepairEvents,
+  buildBenchmarkEnvironmentSetupEvents,
+  buildBenchmarkEnvironmentSetupFailureEvents,
+  buildBenchmarkIncompleteVerifierEvents,
+  buildBenchmarkInvalidToolActionEvents,
+  buildBenchmarkLeakageRiskEvents,
+  buildBenchmarkRedundantVerifierEvents,
+  buildBenchmarkRedundantToolCallEvents,
+  buildBenchmarkScratchArtifactEvents,
+  buildBenchmarkSkillViewEvents,
+  buildBenchmarkTestHarnessEditEvents,
+  buildBenchmarkUnlocalizedEditEvents,
+  buildBenchmarkTraceSummary,
+  buildBenchmarkTrajectoryQuality,
+  buildBenchmarkTrajectorySystemBlock,
+  buildBenchmarkUsageSummary,
+  buildBenchmarkFinalAnswerEvidence,
+  buildBenchmarkVerificationEvidence,
+  buildSourceResearchCoverage,
+  countTaskContractSignals,
+  makeBenchmarkInvalidToolActionEvent,
+  makeBenchmarkTraceEvent,
+  redactTraceText,
+  writeBenchmarkTrace,
+} from '../src/benchmark-trace.js';
+import type { VentipusConfig, Message } from '../src/types.js';
+
+const dirs: string[] = [];
+
+function tmpRoot(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ventipus-trace-'));
+  dirs.push(dir);
+  return dir;
+}
+
+const config: VentipusConfig = {
+  apiKey: 'sk-test-should-not-appear',
+  baseURL: 'https://example.invalid/v1',
+  model: 'test-model',
+  provider: 'TestProvider',
+  maxTokens: 8192,
+  temperature: 0,
+  permissionMode: 'yolo',
+};
+
+afterEach(() => {
+  delete process.env.VENTIPUS_BENCHMARK_TRACE;
+  delete process.env.VENTIPUS_BENCHMARK_TRACE_DIR;
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe('benchmark trace artifacts', () => {
+  it('redacts common provider tokens from text', () => {
+    const redacted = redactTraceText('OPENROUTER_API_KEY=sk-or-v1-secretvalue and hf_abcdefghijklmnop');
+    expect(redacted).toContain('OPENROUTER_API_KEY=[REDACTED]');
+    expect(redacted).toContain('hf_[REDACTED]');
+    expect(redacted).not.toContain('sk-or-v1-secretvalue');
+    expect(redacted).not.toContain('hf_abcdefghijklmnop');
+  });
+
+  it('summarizes tool events, verification commands, and changed files', () => {
+    const event = makeBenchmarkTraceEvent({
+      seq: 1,
+      tool: 'bash',
+      input: { command: 'npm test' },
+      output: 'PASS with OPENAI_API_KEY=sk-secret-secret-secret',
+      isError: false,
+      elapsedMs: 1234,
+    });
+    const messages: Message[] = [
+      {
+        role: 'user',
+        content: '/benchmark swe-bench fix the app',
+      },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'tc1',
+          type: 'function',
+          function: {
+            name: 'edit_file',
+            arguments: JSON.stringify({ file_path: 'src/app.ts', old_string: 'a', new_string: 'b' }),
+          },
+        }],
+      },
+    ];
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-1',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages,
+      events: [event],
+    });
+
+    expect(summary.toolCallCount).toBe(1);
+    expect(summary.usage).toEqual({
+      callCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      estimatedCostUsd: 0,
+      byModel: [],
+    });
+    expect(summary.openAgentLeaderboardDraft).toMatchObject({
+      submissionReady: false,
+      agent: 'ventipus_agent',
+      agent_name: 'Ventipus',
+      benchmark: 'swebench',
+      benchmark_name: 'SWE-bench',
+      model: 'test-model',
+      model_name: 'test-model',
+      total_sessions: 1,
+      planned_sessions: 1,
+      successful_sessions: null,
+      benchmark_score: null,
+      average_action_count: 1,
+      average_invalid_action_count: 0,
+      average_agent_cost: 0,
+      total_agent_cost: 0,
+      compact_latest_verification_status: 'ok',
+      compact_verification_count: 1,
+      missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
+    });
+    expect(summary.openAgentLeaderboardDraft.reason).toContain('official benchmark_score');
+    expect(summary.verificationCount).toBe(1);
+    expect(summary.verificationCommands).toEqual(['npm test']);
+    expect(summary.verificationEvidence.lastVerificationStatus).toBe('ok');
+    expect(summary.verificationEvidence.extracted).toEqual([]);
+    expect(summary.verificationEvidence.failureSignatures).toEqual([]);
+    expect(summary.verificationEvidence.incompleteRuns).toEqual([]);
+    expect(summary.finalAnswerEvidence).toMatchObject({
+      mentionsVerification: false,
+      claimsPassingVerification: false,
+      claimsNoVerificationRun: false,
+      claimsIncomplete: false,
+      claimsBlocked: false,
+      finalAnswerCompletion: 'unknown',
+      unsupportedPassingClaim: false,
+      contradictedPassingClaim: false,
+      staleNoVerificationClaim: false,
+      latestVerificationStatus: 'ok',
+      lastSuccessfulVerificationSeq: 1,
+      verificationCount: 1,
+      warnings: [],
+    });
+    expect(summary.changedFiles).toContain('src/app.ts');
+    expect(summary.trajectoryQuality.usageCallCount).toBe(0);
+    expect(summary.trajectoryQuality.usageTotalTokens).toBe(0);
+    expect(summary.trajectoryQuality.usageEstimatedCostUsd).toBe(0);
+    expect(summary.trajectoryQuality.costEfficiencyRisk).toBe(false);
+    expect(summary.trajectoryQuality.invalidToolActionCount).toBe(0);
+    expect(summary.trajectoryQuality.invalidToolActionPercent).toBe(0);
+    expect(summary.trajectoryQuality.invalidToolActionEvents).toEqual([]);
+    expect(summary.trajectoryQuality.validationAfterFirstEdit).toBeNull();
+    expect(summary.trajectoryQuality.validationAfterLastEdit).toBeNull();
+    expect(summary.trajectoryQuality.successfulVerificationCount).toBe(1);
+    expect(summary.trajectoryQuality.failedVerificationCount).toBe(0);
+    expect(summary.trajectoryQuality.incompleteVerifierCount).toBe(0);
+    expect(summary.trajectoryQuality.incompleteVerifierEvents).toEqual([]);
+    expect(summary.trajectoryQuality.inconclusiveVerifierEvents).toEqual([]);
+    expect(summary.trajectoryQuality.environmentSetupFailureCount).toBe(0);
+    expect(summary.trajectoryQuality.environmentSetupFailureEvents).toEqual([]);
+    expect(summary.trajectoryQuality.unresolvedEnvironmentSetupFailureCount).toBe(0);
+    expect(summary.trajectoryQuality.unresolvedEnvironmentSetupFailureEvents).toEqual([]);
+    expect(summary.trajectoryQuality.environmentSetupCount).toBe(0);
+    expect(summary.trajectoryQuality.successfulEnvironmentSetupCount).toBe(0);
+    expect(summary.trajectoryQuality.environmentSetupEvents).toEqual([]);
+    expect(summary.trajectoryQuality.skillViewCount).toBe(0);
+    expect(summary.trajectoryQuality.skillViewEvents).toEqual([]);
+    expect(summary.trajectoryQuality.skillNames).toEqual([]);
+    expect(summary.trajectoryQuality.skillLoadedBeforeLocalContext).toBe(false);
+    expect(summary.trajectoryQuality.excessiveSkillViewCount).toBe(false);
+    expect(summary.trajectoryQuality.passingValidationAfterFirstEdit).toBeNull();
+    expect(summary.trajectoryQuality.passingValidationAfterLastEdit).toBeNull();
+    expect(summary.trajectoryQuality.failingReproductionBeforeFirstEdit).toBeNull();
+    expect(summary.trajectoryQuality.sourceResearchCoverage.callCount).toBe(0);
+    expect(summary.trajectoryQuality.taskContractSignalCount).toBe(0);
+    expect(summary.trajectoryQuality.taskContractChecklistAfterContext).toBeNull();
+    expect(summary.trajectoryQuality.noEditContractDetected).toBe(false);
+    expect(summary.trajectoryQuality.editAfterNoEditContract).toBe(false);
+    expect(summary.trajectoryQuality.editTargetCount).toBe(0);
+    expect(summary.trajectoryQuality.localizedEditTargetCount).toBe(0);
+    expect(summary.trajectoryQuality.unlocalizedEditTargetEvents).toEqual([]);
+    expect(summary.trajectoryQuality.redundantToolCallCount).toBe(0);
+    expect(summary.trajectoryQuality.redundantToolCallEvents).toEqual([]);
+    expect(summary.trajectoryQuality.redundantVerifierCount).toBe(0);
+    expect(summary.trajectoryQuality.redundantVerifierEvents).toEqual([]);
+    expect(summary.trajectoryQuality.blindRepairCount).toBe(0);
+    expect(summary.trajectoryQuality.blindRepairEvents).toEqual([]);
+    expect(summary.trajectoryQuality.postEditRegressionCycleCount).toBe(0);
+    expect(summary.trajectoryQuality.postEditRegressionCycleEvents).toEqual([]);
+    expect(summary.trajectoryQuality.scratchArtifactPermissionDetected).toBe(false);
+    expect(summary.trajectoryQuality.scratchArtifactEvents).toEqual([]);
+    expect(summary.trajectoryQuality.postEditDiffReview).toBeNull();
+    expect(summary.trajectoryQuality.diffReviewAfterLastEdit).toBeNull();
+    expect(summary.trajectoryQuality.firstPostEditDiffReviewSeq).toBeNull();
+    expect(summary.trajectoryQuality.firstDiffReviewAfterLastEditSeq).toBeNull();
+    expect(summary.trajectoryQuality.broadValidationAfterFirstEdit).toBeNull();
+    expect(summary.trajectoryQuality.passingBroadValidationAfterFirstEdit).toBeNull();
+    expect(summary.trajectoryQuality.broadValidationAfterLastEdit).toBeNull();
+    expect(summary.trajectoryQuality.passingBroadValidationAfterLastEdit).toBeNull();
+    expect(summary.trajectoryQuality.firstBroadValidationAfterFirstEditSeq).toBeNull();
+    expect(summary.trajectoryQuality.lastPostEditVerificationSeq).toBeNull();
+    expect(summary.trajectoryQuality.lastPostEditVerificationStatus).toBeNull();
+    expect(summary.trajectoryQuality.lastPostEditVerificationConclusiveFailure).toBeNull();
+    expect(summary.trajectoryQuality.finalEditVerificationCount).toBe(0);
+    expect(summary.trajectoryQuality.finalEditPassingVerificationCount).toBe(0);
+    expect(summary.trajectoryQuality.stableValidationAfterLastEdit).toBeNull();
+    expect(summary.trajectoryQuality.firstConclusiveFailedVerificationSeq).toBeNull();
+    expect(summary.trajectoryQuality.testEditPermissionDetected).toBe(false);
+    expect(summary.trajectoryQuality.testHarnessEditEvents).toEqual([]);
+    expect(summary.trajectoryQuality.leakageRiskEvents).toEqual([]);
+    expect(summary.trajectoryQuality.processScore).toBe(90);
+    expect(summary.trajectoryQuality.processDefects.map((d) => d.code)).toContain('missing_benchmark_context');
+    expect(summary.trajectoryQuality.warnings).toContain('benchmark_context was not used; early environment/task discovery may be weaker.');
+    expect(JSON.stringify(summary)).not.toContain('sk-secret-secret-secret');
+  });
+
+  it('summarizes benchmark token and cost usage by model', () => {
+    const usage = buildBenchmarkUsageSummary([
+      {
+        model: 'openrouter/free',
+        promptTokens: 1000,
+        completionTokens: 200,
+        totalTokens: 1200,
+        estimatedCostUsd: 0,
+      },
+      {
+        model: 'openai/gpt-4o',
+        promptTokens: 2000,
+        completionTokens: 500,
+        totalTokens: 2500,
+        estimatedCostUsd: 0.01,
+      },
+      {
+        model: 'openrouter/free',
+        promptTokens: 300,
+        completionTokens: 100,
+        totalTokens: 400,
+        estimatedCostUsd: 0,
+      },
+    ]);
+
+    expect(usage).toEqual({
+      callCount: 3,
+      promptTokens: 3300,
+      completionTokens: 800,
+      totalTokens: 4100,
+      estimatedCostUsd: 0.01,
+      byModel: [
+        {
+          model: 'openai/gpt-4o',
+          calls: 1,
+          promptTokens: 2000,
+          completionTokens: 500,
+          totalTokens: 2500,
+          estimatedCostUsd: 0.01,
+        },
+        {
+          model: 'openrouter/free',
+          calls: 2,
+          promptTokens: 1300,
+          completionTokens: 300,
+          totalTokens: 1600,
+          estimatedCostUsd: 0,
+        },
+      ],
+    });
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-usage',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2000,
+      messages: [],
+      events: [],
+      usageEvents: [
+        {
+          model: 'openrouter/free',
+          promptTokens: 100,
+          completionTokens: 20,
+          totalTokens: 120,
+          estimatedCostUsd: 0,
+        },
+      ],
+    });
+    expect(summary.usage).toMatchObject({
+      callCount: 1,
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+      estimatedCostUsd: 0,
+    });
+    expect(summary.trajectoryQuality).toMatchObject({
+      usageCallCount: 1,
+      usageTotalTokens: 120,
+      usageEstimatedCostUsd: 0,
+      costEfficiencyRisk: false,
+    });
+  });
+
+  it('flags unsupported final answer verification claims', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+    const verificationEvidence = buildBenchmarkVerificationEvidence(events);
+
+    expect(buildBenchmarkFinalAnswerEvidence('All tests passed after the fix.', verificationEvidence, events)).toMatchObject({
+      mentionsVerification: true,
+      claimsPassingVerification: true,
+      claimsNoVerificationRun: false,
+      claimsIncomplete: false,
+      claimsBlocked: false,
+      finalAnswerCompletion: 'unknown',
+      unsupportedPassingClaim: true,
+      contradictedPassingClaim: true,
+      staleNoVerificationClaim: false,
+      latestVerificationStatus: 'error',
+      lastSuccessfulVerificationSeq: null,
+      verificationCount: 1,
+      warnings: [
+        'final answer claims passing verification, but the latest recorded verifier failed.',
+        'final answer claims passing verification, but no passing verifier event was recorded.',
+      ],
+    });
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-final-claims',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 1500,
+      messages: [{ role: 'assistant', content: 'All tests passed after the fix.' }],
+      events,
+    });
+
+    expect(summary.finalAnswerEvidence.unsupportedPassingClaim).toBe(true);
+    expect(summary.finalAnswerEvidence.contradictedPassingClaim).toBe(true);
+    expect(summary.finalAnswerEvidence.warnings.join('\n')).toContain('latest recorded verifier failed');
+  });
+
+  it('flags incomplete or blocked final answers', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+    const verificationEvidence = buildBenchmarkVerificationEvidence(events);
+
+    expect(
+      buildBenchmarkFinalAnswerEvidence(
+        'I could not finish this; tests still fail. Remaining work: fix the parser edge case.',
+        verificationEvidence,
+        events,
+      ),
+    ).toMatchObject({
+      mentionsVerification: true,
+      claimsPassingVerification: false,
+      claimsIncomplete: true,
+      claimsBlocked: false,
+      finalAnswerCompletion: 'incomplete',
+      latestVerificationStatus: 'error',
+      warnings: ['final answer indicates the task is incomplete or blocked.'],
+    });
+
+    expect(
+      buildBenchmarkFinalAnswerEvidence(
+        'I am blocked by missing service credentials and need access to continue.',
+        verificationEvidence,
+        events,
+      ),
+    ).toMatchObject({
+      claimsIncomplete: true,
+      claimsBlocked: true,
+      finalAnswerCompletion: 'blocked',
+      warnings: ['final answer indicates the task is incomplete or blocked.'],
+    });
+
+    expect(buildBenchmarkFinalAnswerEvidence('Done with no remaining work.', verificationEvidence, events)).toMatchObject({
+      claimsIncomplete: false,
+      claimsBlocked: false,
+      finalAnswerCompletion: 'unknown',
+      warnings: [],
+    });
+  });
+
+  it('flags high-cost benchmark trajectories that still lack core evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'bug', path: 'src' },
+        output: 'src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+    const usageEvents = [
+      { model: 'openrouter/free', promptTokens: 9000, completionTokens: 1000, totalTokens: 10000, estimatedCostUsd: 0 },
+      { model: 'openrouter/free', promptTokens: 9000, completionTokens: 1000, totalTokens: 10000, estimatedCostUsd: 0 },
+      { model: 'openrouter/free', promptTokens: 9000, completionTokens: 1000, totalTokens: 10000, estimatedCostUsd: 0 },
+      { model: 'openrouter/free', promptTokens: 9000, completionTokens: 1000, totalTokens: 10000, estimatedCostUsd: 0 },
+      { model: 'openrouter/free', promptTokens: 9000, completionTokens: 1000, totalTokens: 10000, estimatedCostUsd: 0 },
+      { model: 'openrouter/free', promptTokens: 9000, completionTokens: 1000, totalTokens: 10000, estimatedCostUsd: 0 },
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events, buildBenchmarkUsageSummary(usageEvents));
+    expect(quality.usageCallCount).toBe(6);
+    expect(quality.usageTotalTokens).toBe(60000);
+    expect(quality.usageEstimatedCostUsd).toBe(0);
+    expect(quality.costEfficiencyRisk).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['costly_under_evidenced_trajectory']);
+    expect(quality.warnings.join('\n')).toContain('cost-efficiency risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events, usageEvents)).toContain('usage_calls=6 usage_tokens=60000 usage_cost=$0.0000 cost_risk=yes');
+    expect(buildBenchmarkCompletionReminder(events, usageEvents)).toContain('cost-efficiency risk');
+  });
+
+  it('tracks invalid tool actions as first-class trajectory evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkInvalidToolActionEvent({
+        seq: 2,
+        tool: 'web_search_exa',
+        reason: 'unknown_tool',
+        input: { argumentsPreview: '{"query":"agent leaderboard"}' },
+        evidence: 'tool "web_search_exa" is not registered',
+      }),
+      makeBenchmarkInvalidToolActionEvent({
+        seq: 3,
+        tool: 'write_file',
+        reason: 'malformed_json',
+        input: { argumentsPreview: '{"file_path":"index.html", bad' },
+        evidence: 'could not parse tool arguments as JSON: Unexpected token',
+      }),
+    ];
+
+    const invalid = buildBenchmarkInvalidToolActionEvents(events);
+    expect(invalid).toEqual([
+      expect.objectContaining({ seq: 2, tool: 'web_search_exa', reason: 'unknown_tool' }),
+      expect.objectContaining({ seq: 3, tool: 'write_file', reason: 'malformed_json' }),
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.invalidToolActionCount).toBe(2);
+    expect(quality.invalidToolActionPercent).toBe(66.67);
+    expect(quality.invalidToolActionEvents).toEqual(invalid);
+    expect(quality.warnings.join('\n')).toContain('invalid tool action(s) occurred');
+    expect(quality.processDefects.map((d) => d.code)).toContain('invalid_tool_actions');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('invalid_actions=2 invalid_action_pct=66.67');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('invalid tool action(s) occurred');
+  });
+
+  it('preserves verifier output tails for count and failure evidence', () => {
+    const noisyHead = Array.from({ length: 260 }, (_, i) => `install log line ${i} compiling dependency`).join('\n');
+    const output = [
+      noisyHead,
+      'FAIL  tests/long-output.test.ts > long output > keeps final summary',
+      'AssertionError: expected final summary to be visible',
+      'Tests  1 failed | 99 passed (100)',
+    ].join('\n');
+    const event = makeBenchmarkTraceEvent({
+      seq: 1,
+      tool: 'bash',
+      input: { command: 'npx vitest run tests/long-output.test.ts' },
+      output,
+      isError: true,
+      elapsedMs: 1234,
+    });
+
+    expect(output.length).toBeGreaterThan(4000);
+    expect(event.outputPreview).toContain('tail follows');
+    expect(event.outputPreview).toContain('Tests  1 failed | 99 passed (100)');
+    expect(event.outputPreview).toContain('tests/long-output.test.ts > long output > keeps final summary');
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-long-verifier',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages: [],
+      events: [event],
+    });
+
+    expect(summary.events[0].outputPreview).toContain('Tests  1 failed | 99 passed (100)');
+    expect(summary.verificationEvidence.extracted[0]).toMatchObject({
+      framework: 'vitest',
+      failed: 1,
+      passed: 99,
+      total: 100,
+    });
+    expect(summary.verificationEvidence.failureSignatures[0]).toMatchObject({
+      seq: 1,
+      tests: ['tests/long-output.test.ts > long output > keeps final summary'],
+      files: ['tests/long-output.test.ts'],
+      errors: ['AssertionError: expected final summary to be visible'],
+    });
+  });
+
+  it('treats timeout-only verifier failures as inconclusive reproduction evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: [
+          '(no output)',
+          '[command timed out after 1000ms. Try a different strategy.]',
+          '[bash status: timedOut=true truncated=false omittedLines=0 omittedChars=0 fullLog=C:\\repo\\.ventipus\\bash-output\\timeout.log]',
+        ].join('\n'),
+        isError: true,
+        elapsedMs: 1000,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const incomplete = buildBenchmarkIncompleteVerifierEvents(events);
+    expect(incomplete).toEqual([
+      {
+        seq: 3,
+        command: 'npm test -- app',
+        timedOut: true,
+        truncated: false,
+        omittedLines: 0,
+        omittedChars: 0,
+        fullLog: 'C:\\repo\\.ventipus\\bash-output\\timeout.log',
+        conclusiveFailureEvidence: false,
+        reason: 'verifier timed out without parsed failure evidence',
+      },
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.firstFailedVerificationSeq).toBe(3);
+    expect(quality.firstConclusiveFailedVerificationSeq).toBeNull();
+    expect(quality.failingReproductionBeforeFirstEdit).toBe(false);
+    expect(quality.incompleteVerifierCount).toBe(1);
+    expect(quality.incompleteVerifierEvents).toEqual(incomplete);
+    expect(quality.inconclusiveVerifierEvents).toEqual(incomplete);
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'no_failing_reproduction',
+      'inconclusive_verifier_failure',
+    ]);
+    expect(quality.warnings.join('\n')).toContain('inconclusive verifier failure(s)');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('incomplete=1 inconclusive=1');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Verifier evidence: last=ok#7');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('incomplete=1 inconclusive=1, latest_failure=#3');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('timeout/truncation makes evidence inconclusive');
+  });
+
+  it('keeps timed-out verifier failures conclusive when failure evidence is visible', () => {
+    const event = makeBenchmarkTraceEvent({
+      seq: 1,
+      tool: 'bash',
+      input: { command: 'npx vitest run tests/app.test.ts' },
+      output: [
+        'FAIL  tests/app.test.ts > app > handles edge case',
+        'AssertionError: expected true to be false',
+        'Tests  1 failed | 9 passed (10)',
+        '[command timed out after 1000ms. Try a different strategy.]',
+        '[bash status: timedOut=true truncated=false omittedLines=0 omittedChars=0 fullLog=C:\\repo\\.ventipus\\bash-output\\timeout-with-failure.log]',
+      ].join('\n'),
+      isError: true,
+      elapsedMs: 1000,
+    });
+
+    const incomplete = buildBenchmarkIncompleteVerifierEvents([event]);
+    expect(incomplete[0]).toMatchObject({
+      seq: 1,
+      timedOut: true,
+      truncated: false,
+      conclusiveFailureEvidence: true,
+      reason: 'verifier timed out after parsed failure evidence was visible',
+    });
+    const evidence = buildBenchmarkVerificationEvidence([event]);
+    expect(evidence.incompleteRuns[0]).toMatchObject({ conclusiveFailureEvidence: true });
+    expect(evidence.extracted[0]).toMatchObject({ framework: 'vitest', failed: 1, passed: 9, total: 10 });
+    expect(buildBenchmarkTrajectoryQuality([event]).firstConclusiveFailedVerificationSeq).toBe(1);
+  });
+
+  it('scores benchmark trajectories and builds completion reminders', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'bug', path: 'src' },
+        output: 'src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'failing',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'passing narrow',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'passing broad',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.benchmarkContextUsed).toBe(true);
+    expect(quality.localizationBeforeFirstEdit).toBe(true);
+    expect(quality.reproductionBeforeFirstEdit).toBe(true);
+    expect(quality.failingReproductionBeforeFirstEdit).toBe(true);
+    expect(quality.validationAfterFirstEdit).toBe(true);
+    expect(quality.passingValidationAfterFirstEdit).toBe(true);
+    expect(quality.validationAfterLastEdit).toBe(true);
+    expect(quality.passingValidationAfterLastEdit).toBe(true);
+    expect(quality.broadValidationAfterFirstEdit).toBe(true);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(true);
+    expect(quality.broadValidationAfterLastEdit).toBe(true);
+    expect(quality.passingBroadValidationAfterLastEdit).toBe(true);
+    expect(quality.firstBroadValidationAfterFirstEditSeq).toBe(7);
+    expect(quality.lastEditSeq).toBe(4);
+    expect(quality.successfulVerificationCount).toBe(2);
+    expect(quality.failedVerificationCount).toBe(1);
+    expect(quality.incompleteVerifierCount).toBe(0);
+    expect(quality.incompleteVerifierEvents).toEqual([]);
+    expect(quality.inconclusiveVerifierEvents).toEqual([]);
+    expect(quality.ciWorkflowCommandCount).toBe(0);
+    expect(quality.ciVerifierCommands).toEqual([]);
+    expect(quality.ciValidationAfterFirstEdit).toBeNull();
+    expect(quality.passingCiValidationAfterFirstEdit).toBeNull();
+    expect(quality.ciValidationAfterLastEdit).toBeNull();
+    expect(quality.passingCiValidationAfterLastEdit).toBeNull();
+    expect(quality.firstCiValidationAfterFirstEditSeq).toBeNull();
+    expect(quality.firstSuccessfulVerificationSeq).toBe(5);
+    expect(quality.firstFailedVerificationSeq).toBe(3);
+    expect(quality.firstConclusiveFailedVerificationSeq).toBe(3);
+    expect(quality.postEditDiffReview).toBe(true);
+    expect(quality.diffReviewAfterLastEdit).toBe(true);
+    expect(quality.firstPostEditDiffReviewSeq).toBe(6);
+    expect(quality.firstDiffReviewAfterLastEditSeq).toBe(6);
+    expect(quality.lastPostEditVerificationSeq).toBe(7);
+    expect(quality.lastPostEditVerificationStatus).toBe('ok');
+    expect(quality.lastPostEditVerificationConclusiveFailure).toBe(false);
+    expect(quality.finalEditVerificationCount).toBe(2);
+    expect(quality.finalEditPassingVerificationCount).toBe(2);
+    expect(quality.stableValidationAfterLastEdit).toBe(true);
+    expect(quality.processScore).toBe(100);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.taskContractSignalCount).toBe(0);
+    expect(quality.taskContractChecklistAfterContext).toBeNull();
+    expect(quality.noEditContractDetected).toBe(false);
+    expect(quality.editAfterNoEditContract).toBe(false);
+    expect(quality.editTargetCount).toBe(1);
+    expect(quality.localizedEditTargetCount).toBe(1);
+    expect(quality.unlocalizedEditTargetEvents).toEqual([]);
+    expect(quality.redundantToolCallCount).toBe(0);
+    expect(quality.redundantToolCallEvents).toEqual([]);
+    expect(quality.redundantVerifierCount).toBe(0);
+    expect(quality.redundantVerifierEvents).toEqual([]);
+    expect(quality.scratchArtifactPermissionDetected).toBe(false);
+    expect(quality.scratchArtifactEvents).toEqual([]);
+    expect(quality.testEditPermissionDetected).toBe(false);
+    expect(quality.testHarnessEditEvents).toEqual([]);
+    expect(quality.warnings).toEqual([]);
+    expect(buildBenchmarkCompletionReminder(events)).toBeNull();
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('localize_before_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('ok=2 fail=1');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('incomplete=0 inconclusive=0');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('failing_reproduce_before_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('broad_validate_after_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('latest_post_edit_verifier=ok');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_validate_after_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_verifiers=2 final_ok=2 stable_final=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('stable_final_validate=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_broad_validate_after_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('ci_verifiers=0');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('ci_validate_after_edit=n/a');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('diff_review_after_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_diff_review_after_edit=yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('redundant_calls=0');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('regression_cycles=0');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Process score: 100/100, defects=0');
+  });
+
+  it('flags single narrow passing validation as lucky-pass risk', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const value = "old";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.passingValidationAfterLastEdit).toBe(true);
+    expect(quality.finalEditVerificationCount).toBe(1);
+    expect(quality.finalEditPassingVerificationCount).toBe(1);
+    expect(quality.stableValidationAfterLastEdit).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toContain('single_pass_post_edit_validation');
+    expect(quality.warnings.join('\n')).toContain('lucky-pass risk');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('lucky-pass risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_verifiers=1 final_ok=1 stable_final=no');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('stable_final_validate=no');
+  });
+
+  it('flags post-edit pass-fail-pass verifier regression cycles', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 failed, 99 passed, 100 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.postEditRegressionCycleCount).toBe(1);
+    expect(quality.postEditRegressionCycleEvents).toEqual([{
+      firstPassingSeq: 5,
+      failingSeq: 6,
+      recoveryPassingSeq: 7,
+      failingCommand: 'npm test',
+      recoveryCommand: 'npm test',
+      broadFailure: true,
+    }]);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(true);
+    expect(quality.stableValidationAfterLastEdit).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['post_edit_regression_cycle']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'low',
+      seq: 6,
+    });
+    expect(quality.processScore).toBe(95);
+    expect(quality.warnings.join('\n')).toContain('post-edit regression cycle detected');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('post-edit regression cycle');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('regression_cycles=1');
+  });
+
+  it('recognizes CI-derived verifier commands from benchmark_context output', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '## CI Workflow Hints',
+          '- ci verifier: .github/workflows/ci.yml:9: pnpm run test',
+          '- ci verifier candidates: pnpm run test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'pnpm run test' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'pnpm test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.ciWorkflowCommandCount).toBe(1);
+    expect(quality.ciVerifierCommands).toEqual(['pnpm run test']);
+    expect(quality.ciValidationAfterFirstEdit).toBe(true);
+    expect(quality.passingCiValidationAfterFirstEdit).toBe(true);
+    expect(quality.ciValidationAfterLastEdit).toBe(true);
+    expect(quality.passingCiValidationAfterLastEdit).toBe(true);
+    expect(quality.firstCiValidationAfterFirstEditSeq).toBe(5);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.processScore).toBe(100);
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('ci_verifiers=1');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('ci_validate_after_edit=yes');
+    expect(buildBenchmarkCompletionReminder(events)).toBeNull();
+  });
+
+  it('flags missing CI-derived validation after narrow and broad validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: '## CI Workflow Hints\n- ci verifier: .github/workflows/ci.yml:12: pnpm run lint',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'pnpm run test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'pnpm run test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(true);
+    expect(quality.ciWorkflowCommandCount).toBe(1);
+    expect(quality.ciValidationAfterFirstEdit).toBe(false);
+    expect(quality.passingCiValidationAfterFirstEdit).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['missing_ci_post_edit_validation']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'medium',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('CI verifier command(s) were discovered');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('ci_validate_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('CI-derived test/build/lint commands');
+  });
+
+  it('flags CI-derived validation that runs but does not pass', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: '## CI Workflow Hints\n- ci verifier: .github/workflows/ci.yml:12: pnpm run lint',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'pnpm run test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'pnpm run lint' },
+        output: 'lint failed',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'pnpm run test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.ciValidationAfterFirstEdit).toBe(true);
+    expect(quality.passingCiValidationAfterFirstEdit).toBe(false);
+    expect(quality.firstCiValidationAfterFirstEditSeq).toBe(5);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['no_passing_ci_post_edit_validation']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'high',
+      seq: 5,
+    });
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).toContain('CI-derived post-edit verifier ran but did not pass');
+  });
+
+  it('flags later edits that are not followed by final CI-derived validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: '## CI Workflow Hints\n- ci verifier: .github/workflows/ci.yml:12: pnpm run lint',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'pnpm run test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'pnpm run lint' },
+        output: 'lint passed',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'pnpm run test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'new', new_string: 'newer' },
+        output: 'edited again',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'bash',
+        input: { command: 'pnpm run test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 10,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.passingCiValidationAfterFirstEdit).toBe(true);
+    expect(quality.ciValidationAfterLastEdit).toBe(false);
+    expect(quality.passingCiValidationAfterLastEdit).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['missing_final_ci_post_edit_validation']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'medium',
+      seq: 8,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('no matching CI verifier ran after the final edit');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_ci_validate_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('CI-derived test/build/lint commands');
+  });
+
+  it('flags later edits that are not followed by final validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'new', new_string: 'newer' },
+        output: 'edited again',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.validationAfterFirstEdit).toBe(true);
+    expect(quality.passingValidationAfterFirstEdit).toBe(true);
+    expect(quality.validationAfterLastEdit).toBe(false);
+    expect(quality.passingValidationAfterLastEdit).toBe(false);
+    expect(quality.lastEditSeq).toBe(8);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['missing_final_post_edit_validation']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'high',
+      seq: 8,
+    });
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).toContain('final edit was not followed by a verifier');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_validate_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('run a verifier after the final edit');
+  });
+
+  it('flags later validated edits without final diff review', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'new', new_string: 'newer' },
+        output: 'edited again',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 10,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.postEditDiffReview).toBe(true);
+    expect(quality.diffReviewAfterLastEdit).toBe(false);
+    expect(quality.firstPostEditDiffReviewSeq).toBe(6);
+    expect(quality.firstDiffReviewAfterLastEditSeq).toBeNull();
+    expect(quality.passingValidationAfterLastEdit).toBe(true);
+    expect(quality.passingBroadValidationAfterLastEdit).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['missing_final_post_edit_diff_review']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'execution_control',
+      severity: 'low',
+      seq: 8,
+    });
+    expect(quality.processScore).toBe(95);
+    expect(quality.warnings.join('\n')).toContain('no diff/status review ran after the final edit');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_diff_review_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('git diff or git status');
+  });
+
+  it('flags later edits after broad validation without final broad validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'new', new_string: 'newer' },
+        output: 'edited again',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 10,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(true);
+    expect(quality.passingValidationAfterLastEdit).toBe(true);
+    expect(quality.passingBroadValidationAfterLastEdit).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'missing_final_broad_post_edit_validation',
+      'single_pass_post_edit_validation',
+    ]);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'medium',
+      seq: 8,
+    });
+    expect(quality.processScore).toBe(85);
+    expect(quality.warnings.join('\n')).toContain('no passing broad verifier ran after the final edit');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_broad_validate_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('broad harness/build/test command');
+  });
+
+  it('flags repeated read/search calls before edit or verification progress', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'bug', path: 'src' },
+        output: 'src/app.ts:1:bug',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'grep',
+        input: { path: 'src', pattern: 'bug' },
+        output: 'src/app.ts:1:bug',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'grep',
+        input: { pattern: 'bug', path: 'src' },
+        output: 'src/app.ts:1:bug',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 10,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const redundant = buildBenchmarkRedundantToolCallEvents(events);
+    expect(redundant).toEqual([
+      {
+        seq: 4,
+        tool: 'grep',
+        target: '/bug/ in src',
+        repeatOfSeq: 2,
+        repeatCount: 1,
+        reason: 'same read/search tool input repeated without intervening edit or verification progress',
+      },
+      {
+        seq: 5,
+        tool: 'grep',
+        target: '/bug/ in src',
+        repeatOfSeq: 2,
+        repeatCount: 2,
+        reason: 'same read/search tool input repeated without intervening edit or verification progress',
+      },
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.redundantToolCallCount).toBe(2);
+    expect(quality.redundantToolCallEvents).toEqual(redundant);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['redundant_tool_calls']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'execution_control',
+      severity: 'low',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(95);
+    expect(quality.warnings.join('\n')).toContain('redundant tool calls repeated the same read/search inputs');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('redundant_calls=2');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('repeating identical read/search calls');
+  });
+
+  it('flags repeated failing verifier commands without intervening progress', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm   test   -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const redundant = buildBenchmarkRedundantVerifierEvents(events);
+    expect(redundant).toEqual([
+      {
+        seq: 4,
+        command: 'npm   test   -- app',
+        repeatOfSeq: 3,
+        repeatCount: 1,
+        reason: 'same failing verifier command repeated without intervening edit or inspection progress',
+      },
+      {
+        seq: 5,
+        command: 'npm test -- app',
+        repeatOfSeq: 3,
+        repeatCount: 2,
+        reason: 'same failing verifier command repeated without intervening edit or inspection progress',
+      },
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.redundantVerifierCount).toBe(2);
+    expect(quality.redundantVerifierEvents).toEqual(redundant);
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'repeated_tool_errors',
+      'redundant_verifier_reruns',
+    ]);
+    expect(quality.processDefects.find((d) => d.code === 'redundant_verifier_reruns')).toMatchObject({
+      category: 'execution_control',
+      severity: 'low',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(85);
+    expect(quality.warnings.join('\n')).toContain('redundant verifier reruns repeated the same failing command');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('redundant_verifiers=2');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('repeating identical failing verifier commands');
+  });
+
+  it('flags blind repair edits after post-edit failed verifiers without inspection', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'almost' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'almost', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const blindRepairs = buildBenchmarkBlindRepairEvents(events);
+    expect(blindRepairs).toEqual([
+      {
+        failedVerificationSeq: 5,
+        editSeq: 6,
+        command: 'npm test -- app',
+        editTarget: 'src/app.ts',
+        reason: 'failed verifier was followed by an edit before read/search inspection and without parsed failure-file evidence',
+      },
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.blindRepairCount).toBe(1);
+    expect(quality.blindRepairEvents).toEqual(blindRepairs);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['blind_repair_after_failed_verifier']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'localization',
+      severity: 'low',
+      seq: 6,
+    });
+    expect(quality.warnings.join('\n')).toContain('blind repair after failed verifier');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('blind_repairs=1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('inspect failed verifier output');
+  });
+
+  it('does not flag the first repair after a pre-edit failing reproduction', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+
+    expect(buildBenchmarkBlindRepairEvents(events)).toEqual([]);
+    expect(buildBenchmarkTrajectoryQuality(events).blindRepairCount).toBe(0);
+  });
+
+  it('does not flag failed-verifier repairs after inspection or matching failure-file evidence', () => {
+    const inspectedEvents = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'almost' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'grep',
+        input: { pattern: 'almost', path: 'src/app.ts' },
+        output: 'src/app.ts:1:almost',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'almost', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+
+    expect(buildBenchmarkBlindRepairEvents(inspectedEvents)).toEqual([]);
+
+    const failureFileEvents = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'almost' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'FAIL src/app.ts\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'almost', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+
+    expect(buildBenchmarkBlindRepairEvents(failureFileEvents)).toEqual([]);
+  });
+
+  it('flags verifier failures that look like unresolved environment setup failures', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'package.json' },
+        output: '{ "scripts": { "test": "vitest run" } }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: [
+          '> test',
+          'Error: Cannot find module \'vitest\'',
+          'Require stack:',
+          '- /repo/node_modules/.bin/vitest',
+        ].join('\n'),
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const failures = buildBenchmarkEnvironmentSetupFailureEvents(events);
+    expect(failures).toEqual([{
+      seq: 3,
+      command: 'npm test',
+      reason: 'javascript dependency or build artifact missing',
+      evidence: "Error: Cannot find module 'vitest'",
+    }]);
+    expect(buildBenchmarkEnvironmentSetupEvents(events)).toEqual([]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.environmentSetupFailureCount).toBe(1);
+    expect(quality.unresolvedEnvironmentSetupFailureCount).toBe(1);
+    expect(quality.environmentSetupCount).toBe(0);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['unresolved_environment_setup_failure']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'execution_control',
+      severity: 'medium',
+      seq: 3,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('unprepared environment or missing dependency/build artifact');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('env_setup_failures=1 unresolved_env=1 env_setup=0');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('project-native setup/restore/install');
+  });
+
+  it('treats successful setup after a dependency verifier failure as environment reconstruction evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'package.json' },
+        output: '{ "scripts": { "test": "vitest run" } }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Error: Cannot find module \'vitest\'',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm ci' },
+        output: 'added 120 packages',
+        isError: false,
+        elapsedMs: 1000,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests  3 passed (3)',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const setupEvents = buildBenchmarkEnvironmentSetupEvents(events);
+    expect(setupEvents).toEqual([{
+      seq: 4,
+      command: 'npm ci',
+      status: 'ok',
+      kind: 'node package install',
+    }]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.environmentSetupFailureCount).toBe(1);
+    expect(quality.unresolvedEnvironmentSetupFailureCount).toBe(0);
+    expect(quality.environmentSetupCount).toBe(1);
+    expect(quality.successfulEnvironmentSetupCount).toBe(1);
+    expect(quality.environmentSetupEvents).toEqual(setupEvents);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings.join('\n')).not.toContain('unprepared environment');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('env_setup_failures=1 unresolved_env=0 env_setup=1 env_setup_ok=1');
+  });
+
+  it('warns when full skills are loaded before local context or in bulk', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'skill_view',
+        input: { name: 'python-patterns' },
+        output: '# Python Patterns\nUse modern Python packaging guidance.',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'skill_view',
+        input: { name: 'python-testing' },
+        output: '# Python Testing\nPrefer pytest unless repo evidence differs.',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'skill_view',
+        input: { name: 'pytest' },
+        output: '# Pytest\nTest guidance.',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'benchmark_context',
+        input: {},
+        output: '# Benchmark Context\nmanifests: package.json\n',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    expect(buildBenchmarkSkillViewEvents(events)).toEqual([
+      { seq: 1, name: 'Python Patterns' },
+      { seq: 2, name: 'Python Testing' },
+      { seq: 3, name: 'Pytest' },
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.skillViewCount).toBe(3);
+    expect(quality.skillNames).toEqual(['Python Patterns', 'Python Testing', 'Pytest']);
+    expect(quality.skillLoadedBeforeLocalContext).toBe(true);
+    expect(quality.excessiveSkillViewCount).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toContain('skill_loaded_before_local_context');
+    expect(quality.processDefects.map((d) => d.code)).toContain('excessive_skill_loading');
+    expect(quality.warnings.join('\n')).toContain('skill prompt loaded before local task/repo context');
+    expect(quality.warnings.join('\n')).toContain('multiple full skill prompts');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('skill_views=3');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('verify skill domain/version fit');
+  });
+
+  it('flags scratch/probe artifacts left in a benchmark patch', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'write_file',
+        input: { file_path: 'debug_repro.py', content: 'print("probe")\n' },
+        output: 'created debug_repro.py',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts debug_repro.py' },
+        output: 'diff --git a/src/app.ts b/src/app.ts\ndiff --git a/debug_repro.py b/debug_repro.py',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const scratchEvents = buildBenchmarkScratchArtifactEvents(events);
+    expect(scratchEvents).toEqual([
+      {
+        seq: 5,
+        tool: 'write_file',
+        target: 'debug_repro.py',
+        reason: 'file name resembles a temporary scratch/probe/debug/repro artifact',
+      },
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.scratchArtifactPermissionDetected).toBe(false);
+    expect(quality.scratchArtifactEvents).toEqual(scratchEvents);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['scratch_artifact_left_in_patch']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'requirement_fidelity',
+      severity: 'low',
+      seq: 5,
+    });
+    expect(quality.processScore).toBe(95);
+    expect(quality.warnings.join('\n')).toContain('scratch/probe artifact(s) were edited without task-contract permission');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('scratch_artifacts=1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('remove or justify scratch/probe artifacts');
+  });
+
+  it('allows scratch artifacts when the task contract asks for a reproduction script', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          'context',
+          '## Task Contract Signals',
+          '- TASK.md: Create a minimal reproduction script for the parser crash.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: { items: [{ text: 'Create a minimal reproduction script for the parser crash.', status: 'pending' }] },
+        output: 'Todo list updated (1 item)',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'write_file',
+        input: { file_path: 'repro_parser.py', content: 'print("repro")\n' },
+        output: 'created repro_parser.py',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- repro_parser.py' },
+        output: 'diff --git a/repro_parser.py b/repro_parser.py',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Create a minimal reproduction script for the parser crash.', status: 'completed' },
+          ],
+        },
+        output: 'Todo list updated (1 item):\n- [x] Create a minimal reproduction script for the parser crash.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.taskContractChecklistAfterContext).toBe(true);
+    expect(quality.scratchArtifactPermissionDetected).toBe(true);
+    expect(quality.scratchArtifactEvents).toEqual([
+      {
+        seq: 4,
+        tool: 'write_file',
+        target: 'repro_parser.py',
+        reason: 'file name resembles a temporary scratch/probe/debug/repro artifact',
+      },
+    ]);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.processScore).toBe(100);
+    expect(quality.warnings).toEqual([]);
+    expect(buildBenchmarkCompletionReminder(events)).toBeNull();
+  });
+
+  it('flags validated source edits without a post-edit diff review', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.postEditDiffReview).toBe(false);
+    expect(quality.firstPostEditDiffReviewSeq).toBeNull();
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'missing_post_edit_diff_review',
+      'single_pass_post_edit_validation',
+    ]);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'execution_control',
+      severity: 'low',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('no post-edit diff/status review was recorded');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('diff_review_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('git diff or git status');
+  });
+
+  it('flags diff-reviewed repairs without broad post-edit validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git status --short' },
+        output: ' M src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.postEditDiffReview).toBe(true);
+    expect(quality.broadValidationAfterFirstEdit).toBe(false);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(false);
+    expect(quality.firstBroadValidationAfterFirstEditSeq).toBeNull();
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'missing_broad_post_edit_validation',
+      'single_pass_post_edit_validation',
+    ]);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'medium',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(85);
+    expect(quality.warnings.join('\n')).toContain('no broad post-edit verifier was recorded');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('broad_validate_after_edit=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('broad harness/build/test command');
+  });
+
+  it('flags broad post-edit validation that still fails', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 failed, 99 passed, 100 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.broadValidationAfterFirstEdit).toBe(true);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(false);
+    expect(quality.firstBroadValidationAfterFirstEditSeq).toBe(7);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['no_passing_broad_post_edit_validation']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'high',
+      seq: 7,
+    });
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).toContain('broad post-edit verifier ran but did not pass');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('broad post-edit verifier');
+  });
+
+  it('flags latest post-edit verifier failure after earlier passing validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.passingValidationAfterFirstEdit).toBe(true);
+    expect(quality.passingBroadValidationAfterFirstEdit).toBe(true);
+    expect(quality.lastPostEditVerificationSeq).toBe(8);
+    expect(quality.lastPostEditVerificationStatus).toBe('error');
+    expect(quality.lastPostEditVerificationConclusiveFailure).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['latest_post_edit_verifier_failed']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'validation',
+      severity: 'high',
+      seq: 8,
+    });
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).toContain('latest verifier after editing failed');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('latest_post_edit_verifier=error');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('latest verifier failure');
+  });
+
+  it('scores task-contract checklist handling from benchmark_context output', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: Preserve the CSV export format exactly.',
+          '- TASK.md: Must show billing totals with two decimal places.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Preserve the CSV export format exactly.', status: 'pending' },
+            { content: 'Show billing totals with two decimal places.', status: 'pending' },
+          ],
+        },
+        output: 'Todo list updated (2 items):\n- [ ] Preserve the CSV export format exactly.\n- [ ] Show billing totals with two decimal places.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    expect(countTaskContractSignals(events)).toBe(2);
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.taskContractSignalCount).toBe(2);
+    expect(quality.taskContractChecklistUsed).toBe(true);
+    expect(quality.taskContractChecklistAfterContext).toBe(true);
+    expect(quality.firstTaskContractSeq).toBe(1);
+    expect(quality.firstTodoSeq).toBe(2);
+    expect(quality.processScore).toBe(100);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings).toEqual([]);
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Task contract: signals=2, checklist=yes, complete=no, incomplete=2, no_edit=no, edited=no');
+    expect(buildBenchmarkCompletionReminder(events)).toBeNull();
+  });
+
+  it('treats task instruction excerpts as task-contract signal evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Instruction Excerpts',
+          '- task.yaml:4: description: Create /app/filled_form.pdf exactly.',
+          '- task.yaml:5: description: Include sha256 without a hyphen in the verification output.',
+          'Use these exact lines as the initial task contract, then verify them against the full instruction file before editing.',
+          '',
+          '## Task Contract Signals',
+          '(no explicit acceptance criteria, requirements, success criteria, or expected-output lines found in visible task files)',
+          '',
+          '## Likely Verification Commands',
+          '- bash run-tests.sh',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(countTaskContractSignals(events)).toBe(2);
+    expect(quality.taskContractSignalCount).toBe(2);
+    expect(quality.taskContractChecklistAfterContext).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toContain('missing_task_contract_checklist');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('task contract signals were detected');
+  });
+
+  it('warns when task-contract signals are not converted into a todo checklist', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: Must preserve the public API route names.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'route', path: 'src' },
+        output: 'src/routes.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.taskContractSignalCount).toBe(1);
+    expect(quality.taskContractChecklistUsed).toBe(false);
+    expect(quality.taskContractChecklistAfterContext).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['missing_task_contract_checklist']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'requirement_fidelity',
+      severity: 'medium',
+      seq: 1,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('task contract signals were detected');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Task contract: signals=1, checklist=no, complete=no, incomplete=0, no_edit=no, edited=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('todo_write checklist');
+  });
+
+  it('flags validated task-contract checklists left incomplete', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: Preserve the public API route names.',
+          '- TASK.md: Show billing totals with two decimal places.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Preserve the public API route names.', status: 'pending' },
+            { content: 'Show billing totals with two decimal places.', status: 'in_progress' },
+          ],
+        },
+        output: 'Todo list updated (2 items):\n- [ ] Preserve the public API route names.\n- [-] Show billing totals with two decimal places.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.taskContractChecklistAfterContext).toBe(true);
+    expect(quality.taskContractChecklistComplete).toBe(false);
+    expect(quality.latestTodoSeq).toBe(2);
+    expect(quality.todoIncompleteCount).toBe(2);
+    expect(quality.todoIncompleteItems.map((item) => item.status)).toEqual(['pending', 'in_progress']);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['incomplete_task_contract_checklist']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'requirement_fidelity',
+      severity: 'medium',
+      seq: 2,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('task contract checklist still has incomplete');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Task contract: signals=2, checklist=yes, complete=no, incomplete=2');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('todo_write');
+  });
+
+  it('treats no-edit contracts as a valid success path when no edits occur', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: No code changes are required if the verifier already passes.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Verify the issue is already resolved.', status: 'pending' },
+            { content: 'Do not edit code if the verifier already passes.', status: 'pending' },
+          ],
+        },
+        output: 'Todo list updated (2 items):\n- [ ] Verify the issue is already resolved.\n- [ ] Do not edit code if the verifier already passes.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Verify the issue is already resolved.', status: 'completed' },
+            { content: 'Do not edit code if the verifier already passes.', status: 'completed' },
+          ],
+        },
+        output: 'Todo list updated (2 items):\n- [x] Verify the issue is already resolved.\n- [x] Do not edit code if the verifier already passes.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.noEditContractDetected).toBe(true);
+    expect(quality.editAfterNoEditContract).toBe(false);
+    expect(quality.firstNoEditContractSeq).toBe(1);
+    expect(quality.successfulVerificationCount).toBe(1);
+    expect(quality.processScore).toBe(100);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings).toEqual([]);
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Task contract: signals=1, checklist=yes, complete=yes, incomplete=0, no_edit=yes, edited=no');
+    expect(buildBenchmarkCompletionReminder(events)).toBeNull();
+  });
+
+  it('flags edits after a no-edit task contract', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: The issue is already fixed; no patch is needed.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Confirm the issue is already fixed.', status: 'pending' },
+            { content: 'Avoid code edits unless a failing reproduction appears.', status: 'pending' },
+          ],
+        },
+        output: 'Todo list updated (2 items):\n- [ ] Confirm the issue is already fixed.\n- [ ] Avoid code edits unless a failing reproduction appears.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.noEditContractDetected).toBe(true);
+    expect(quality.editAfterNoEditContract).toBe(true);
+    expect(quality.failingReproductionBeforeFirstEdit).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['edit_despite_no_edit_contract']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'requirement_fidelity',
+      severity: 'high',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).not.toContain('no failing reproduction was observed');
+    expect(quality.warnings.join('\n')).toContain('no-edit/no-op task contract was detected');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Task contract: signals=1, checklist=yes, complete=no, incomplete=2, no_edit=yes, edited=yes');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('avoid edit tools when a no-edit/no-op contract is verified');
+  });
+
+  it('flags edits to tests or benchmark harness files unless the task contract permits them', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: Fix the production parser bug.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [{ content: 'Fix the production parser bug.', status: 'pending' }],
+        },
+        output: 'Todo list updated (1 item):\n- [ ] Fix the production parser bug.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'tests/parser.test.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'apply_patch',
+        input: { patch: '*** Begin Patch\n*** Update File: run-tests.sh\n@@\n- pytest\n+ pytest -q\n*** End Patch\n' },
+        output: 'patched',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const risks = buildBenchmarkTestHarnessEditEvents(events);
+    expect(risks.map((risk) => risk.target)).toEqual(['tests/parser.test.ts', 'run-tests.sh']);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.testEditPermissionDetected).toBe(false);
+    expect(quality.testHarnessEditEvents).toHaveLength(2);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['test_harness_edit_without_contract']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'benchmark_validity',
+      severity: 'high',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).toContain('test/harness/verifier file(s) were edited');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('test_harness_edits=2');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('revert or justify test/harness edits');
+  });
+
+  it('allows test edits when the task contract explicitly asks for tests', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: Add regression tests for the parser failure.',
+          '- TASK.md: Fix the production parser bug.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Add regression tests for the parser failure.', status: 'pending' },
+            { content: 'Fix the production parser bug.', status: 'pending' },
+          ],
+        },
+        output: 'Todo list updated (2 items):\n- [ ] Add regression tests for the parser failure.\n- [ ] Fix the production parser bug.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'tests/parser.test.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.testEditPermissionDetected).toBe(true);
+    expect(quality.testHarnessEditEvents).toHaveLength(1);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings).toEqual([]);
+  });
+
+  it('flags source edits whose target was not localized before patching', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'parser', path: 'src' },
+        output: 'src/other.ts:10:parser helper',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const unlocalized = buildBenchmarkUnlocalizedEditEvents(events);
+    expect(unlocalized).toEqual([{
+      seq: 4,
+      tool: 'edit_file',
+      target: 'src/parser.ts',
+      reason: 'edited source target was not read or found in prior search/verifier output',
+    }]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.editTargetCount).toBe(1);
+    expect(quality.localizedEditTargetCount).toBe(0);
+    expect(quality.unlocalizedEditTargetEvents).toHaveLength(1);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['unlocalized_edit_target']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'localization',
+      severity: 'medium',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('edited target(s) lacked prior file-level localization evidence');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('edit_targets=1 localized=0 unlocalized=1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('Read or search the target file');
+  });
+
+  it('flags large source edit surfaces without a broad-change task contract', () => {
+    const files = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts', 'src/f.ts'];
+    const patch = [
+      '*** Begin Patch',
+      ...files.flatMap((file) => [
+        `*** Update File: ${file}`,
+        '@@',
+        '-old',
+        '+new',
+      ]),
+      '*** End Patch',
+    ].join('\n');
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'parser', path: 'src' },
+        output: files.join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'apply_patch',
+        input: { patch },
+        output: 'patched',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'git diff -- src' },
+        output: 'diff --git a/src/a.ts b/src/a.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.broadEditContractDetected).toBe(false);
+    expect(quality.largeEditSurfaceTargetCount).toBe(6);
+    expect(quality.largeEditSurfaceTargets).toEqual(files);
+    expect(quality.unlocalizedEditTargetEvents).toEqual([]);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['large_edit_surface_without_contract']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'requirement_fidelity',
+      severity: 'low',
+      seq: 4,
+    });
+    expect(quality.processScore).toBe(95);
+    expect(quality.warnings.join('\n')).toContain('large edit surface without an explicit broad-change task contract');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('large_edit_targets=6 broad_contract=no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('reduce or explicitly justify a large edit surface');
+  });
+
+  it('allows large edit surfaces when task contract explicitly asks for broad changes', () => {
+    const files = ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts', 'src/f.ts'];
+    const patch = [
+      '*** Begin Patch',
+      ...files.flatMap((file) => [
+        `*** Update File: ${file}`,
+        '@@',
+        '-old',
+        '+new',
+      ]),
+      '*** End Patch',
+    ].join('\n');
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: Refactor all parser modules across the src package.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: { items: [{ content: 'Refactor all parser modules across the src package.', status: 'pending' }] },
+        output: 'Todo list updated (1 item):\n- [ ] Refactor all parser modules across the src package.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'grep',
+        input: { pattern: 'parser', path: 'src' },
+        output: files.join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'apply_patch',
+        input: { patch },
+        output: 'patched',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git status --short' },
+        output: files.map((file) => ` M ${file}`).join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 9,
+        tool: 'todo_write',
+        input: {
+          items: [
+            { content: 'Refactor all parser modules across the src package.', status: 'completed' },
+          ],
+        },
+        output: 'Todo list updated (1 item):\n- [x] Refactor all parser modules across the src package.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.broadEditContractDetected).toBe(true);
+    expect(quality.largeEditSurfaceTargetCount).toBe(6);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings).toEqual([]);
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('large_edit_targets=6 broad_contract=yes');
+  });
+
+  it('extracts common verifier pass/fail counts from outputs', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'bash',
+        input: { command: 'npx vitest run' },
+        output: 'Test Files  35 passed | 1 skipped (36)\nTests  388 passed | 62 skipped (450)',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'python -m pytest' },
+        output: '================ 2 failed, 10 passed, 1 skipped in 3.21s ================',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests:       1 failed, 2 skipped, 7 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'cargo test' },
+        output: 'test result: ok. 12 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const evidence = buildBenchmarkVerificationEvidence(events);
+    expect(evidence.lastVerificationSeq).toBe(4);
+    expect(evidence.lastVerificationStatus).toBe('ok');
+    expect(evidence.lastSuccessfulVerificationSeq).toBe(4);
+    expect(evidence.lastFailedVerificationSeq).toBe(3);
+    expect(evidence.extracted.map((item) => item.framework)).toEqual(['vitest', 'pytest', 'jest', 'cargo']);
+    expect(evidence.extracted[0]).toMatchObject({ passed: 388, skipped: 62, total: 450 });
+    expect(evidence.extracted[1]).toMatchObject({ failed: 2, passed: 10, skipped: 1, total: 13 });
+    expect(evidence.extracted[2]).toMatchObject({ failed: 1, passed: 7, skipped: 2, total: 10 });
+    expect(evidence.extracted[3]).toMatchObject({ passed: 12, failed: 0, skipped: 1, total: 13 });
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('framework=cargo');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('passed=12');
+  });
+
+  it('extracts compact failure signatures from verifier outputs', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'bash',
+        input: { command: 'npx vitest run tests/parser.test.ts' },
+        output: [
+          'FAIL  tests/parser.test.ts > parser > handles escaped delimiters',
+          'AssertionError: expected "a" to equal "b"',
+          'Tests  1 failed | 9 passed (10)',
+        ].join('\n'),
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'python -m pytest tests/test_parser.py' },
+        output: [
+          'FAILED tests/test_parser.py::test_handles_escape - AssertionError: expected escaped delimiter',
+          'E   AssertionError: expected escaped delimiter',
+          'src/parser.py:42: AssertionError',
+          '================ 1 failed, 10 passed in 3.21s ================',
+        ].join('\n'),
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const evidence = buildBenchmarkVerificationEvidence(events);
+    expect(evidence.failureSignatures).toHaveLength(2);
+    expect(evidence.failureSignatures[0]).toMatchObject({
+      seq: 1,
+      command: 'npx vitest run tests/parser.test.ts',
+      framework: 'vitest',
+      tests: ['tests/parser.test.ts > parser > handles escaped delimiters'],
+      files: ['tests/parser.test.ts'],
+      errors: ['AssertionError: expected "a" to equal "b"'],
+    });
+    expect(evidence.failureSignatures[1]).toMatchObject({
+      seq: 2,
+      framework: 'pytest',
+      tests: ['tests/test_parser.py::test_handles_escape'],
+      files: ['tests/test_parser.py', 'src/parser.py'],
+      errors: ['AssertionError: expected escaped delimiter'],
+    });
+    const systemBlock = buildBenchmarkTrajectorySystemBlock(events);
+    expect(systemBlock).toContain('latest_failure=#2');
+    expect(systemBlock).toContain('tests=tests/test_parser.py::test_handles_escape');
+    expect(systemBlock).toContain('files=tests/test_parser.py|src/parser.py');
+  });
+
+  it('extracts verifier counts from Go, Maven, Gradle, dotnet, and generic outputs', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'bash',
+        input: { command: 'go test ./...' },
+        output: '--- PASS: TestAlpha (0.00s)\n--- FAIL: TestBeta (0.00s)\n--- SKIP: TestGamma (0.00s)\nFAIL\tmodule/pkg\t0.123s',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'mvn test' },
+        output: '[INFO] Tests run: 12, Failures: 1, Errors: 2, Skipped: 3, Time elapsed: 1.23 s',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: './gradlew test' },
+        output: '10 tests completed, 2 failed, 1 skipped',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'dotnet test' },
+        output: 'Passed!  - Failed: 0, Passed: 17, Skipped: 1, Total: 18, Duration: 2 s',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'make test' },
+        output: 'unit tests: 8 passing, 1 failing, 2 skipped',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const evidence = buildBenchmarkVerificationEvidence(events);
+    expect(evidence.extracted.map((item) => item.framework)).toEqual(['go', 'maven', 'gradle', 'dotnet', 'generic']);
+    expect(evidence.extracted[0]).toMatchObject({ passed: 1, failed: 1, skipped: 1, total: 3 });
+    expect(evidence.extracted[1]).toMatchObject({ passed: 6, failed: 1, errors: 2, skipped: 3, total: 12 });
+    expect(evidence.extracted[2]).toMatchObject({ passed: 7, failed: 2, skipped: 1, total: 10 });
+    expect(evidence.extracted[3]).toMatchObject({ passed: 17, failed: 0, skipped: 1, total: 18 });
+    expect(evidence.extracted[4]).toMatchObject({ passed: 8, failed: 1, skipped: 2, total: 11 });
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('framework=generic');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('total=11');
+  });
+
+  it('records complete targeted source research coverage', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent benchmark repair trajectory',
+          source: 'all',
+          github_kind: 'all',
+          kind: 'all',
+          kaggle_kind: 'both',
+          recent_days: 90,
+        },
+        output: [
+          'Research source results for "coding agent benchmark repair trajectory"',
+          '',
+          '## arXiv: Agent Repair Trajectories',
+          'https://arxiv.org/abs/2601.00001',
+          '2026-01-01 | cs.SE',
+          '',
+          '## GitHub: owner/agent-bench',
+          'https://github.com/owner/agent-bench',
+          'TypeScript | 1,000 stars',
+          '',
+          '## HF paper: Coding Agent Verification',
+          'https://huggingface.co/papers/2601.00002',
+          'published 2026-01-02',
+          '',
+          '## Kaggle competition: Coding Agent Leaderboard',
+          'https://www.kaggle.com/competitions/coding-agent-leaderboard',
+          '42 teams | metric Accuracy',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.callCount).toBe(1);
+    expect(coverage.arxiv).toBe(true);
+    expect(coverage.github).toBe(true);
+    expect(coverage.huggingface).toBe(true);
+    expect(coverage.kaggle).toBe(true);
+    expect(coverage.githubKinds).toEqual(['all']);
+    expect(coverage.huggingFaceKinds).toEqual(['all']);
+    expect(coverage.kaggleKinds).toEqual(['both']);
+    expect(coverage.sourceHitCount).toBe(4);
+    expect(coverage.sourceErrorCount).toBe(0);
+    expect(coverage.resultSources).toEqual(['arxiv', 'github', 'hf_paper', 'kaggle_competition']);
+    expect(coverage.topUrls).toContain('https://arxiv.org/abs/2601.00001');
+    expect(coverage.recentDays).toEqual([90]);
+    expect(coverage.kaggleCompetitionsSkipped).toBe(false);
+    expect(coverage.completeTargetedCoverage).toBe(true);
+    expect(coverage.freshTargetedCoverage).toBe(true);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.sourceResearchCoverage.completeTargetedCoverage).toBe(true);
+    expect(quality.sourceResearchCoverage.freshTargetedCoverage).toBe(true);
+    expect(quality.processDefects).toEqual([]);
+    expect(quality.warnings).not.toContain('source research was partial; targeted benchmark research should cover arXiv, GitHub github_kind:"all", Hugging Face kind:"all", and Kaggle kaggle_kind:"both" when external research is relevant.');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('targeted:yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('fresh_targeted:yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('recent_days:90');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('hits:4');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('result_sources:arxiv|github|hf_paper|kaggle_competition');
+  });
+
+  it('warns when complete targeted source research omits a recency window', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent benchmark repair trajectory',
+          source: 'all',
+          github_kind: 'all',
+          kind: 'all',
+          kaggle_kind: 'both',
+        },
+        output: [
+          'Research source results for "coding agent benchmark repair trajectory"',
+          '## arXiv: Agent Repair Trajectories',
+          'https://arxiv.org/abs/2601.00001',
+          '## GitHub: owner/agent-bench',
+          'https://github.com/owner/agent-bench',
+          '## HF paper: Coding Agent Verification',
+          'https://huggingface.co/papers/2601.00002',
+          '## Kaggle competition: Coding Agent Leaderboard',
+          'https://www.kaggle.com/competitions/coding-agent-leaderboard',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.completeTargetedCoverage).toBe(true);
+    expect(coverage.freshTargetedCoverage).toBe(false);
+    expect(coverage.recentDays).toEqual([]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.warnings.join('\n')).toContain('targeted source research omitted recent_days');
+    expect(quality.processDefects.map((d) => d.code)).toContain('source_research_missing_recency');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('fresh_targeted:no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('targeted source research omitted recent_days');
+  });
+
+  it('does not count Kaggle both as complete when competitions were skipped', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent benchmark repair trajectory',
+          source: 'all',
+          github_kind: 'all',
+          kind: 'all',
+          kaggle_kind: 'both',
+          recent_days: 90,
+        },
+        output: [
+          'Research source results for "coding agent benchmark repair trajectory"',
+          '## Coverage notes',
+          '- arXiv papers requested.',
+          '- GitHub all requested.',
+          '- Hugging Face all requested.',
+          '- Kaggle both requested; competitions require auth.',
+          '- Kaggle unauthenticated fallback: competitions skipped, datasets queried only.',
+          '- Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.kaggleKinds).toEqual(['both']);
+    expect(coverage.kaggleCompetitionsSkipped).toBe(true);
+    expect(coverage.coverageNotes).toContain('kaggle competitions skipped');
+    expect(coverage.completeTargetedCoverage).toBe(false);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.warnings.join('\n')).toContain('Kaggle competition research was requested but skipped');
+    expect(quality.processDefects.map((d) => d.code)).toContain('partial_source_research');
+    expect(quality.processDefects.map((d) => d.code)).toContain('kaggle_competitions_skipped');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('kaggle_competitions:skipped');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('targeted:no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('Kaggle competition research was requested but skipped');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('complete targeted research_sources coverage');
+  });
+
+  it('warns when source research only covers repository search', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'research_sources',
+        input: { query: 'agent benchmark repair', source: 'github' },
+        output: 'research',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.sourceResearchCoverage.githubKinds).toEqual(['repositories']);
+    expect(quality.sourceResearchCoverage.completeTargetedCoverage).toBe(false);
+    expect(quality.warnings.join('\n')).toContain('source research was partial');
+    expect(quality.processDefects.map((d) => d.code)).toContain('partial_source_research');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('targeted:no');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('source research was partial');
+  });
+
+  it('warns when targeted source research returns no parsed hits or source errors', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent leaderboard current science',
+          source: 'all',
+          github_kind: 'all',
+          kind: 'all',
+          kaggle_kind: 'both',
+          recent_days: 90,
+        },
+        output: [
+          'Research source results for "coding agent leaderboard current science"',
+          '',
+          '## Coverage notes',
+          '- arXiv papers requested.',
+          '- GitHub all requested.',
+          '- Hugging Face all requested.',
+          '- Kaggle both requested; competitions enabled by auth.',
+          '- Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
+          '',
+          '## Source errors',
+          '- github: GitHub code HTTP 403',
+          '- kaggle: Kaggle competitions HTTP 401',
+        ].join('\n'),
+        isError: true,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.completeTargetedCoverage).toBe(true);
+    expect(coverage.freshTargetedCoverage).toBe(true);
+    expect(coverage.sourceHitCount).toBe(0);
+    expect(coverage.sourceErrorCount).toBe(2);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['source_research_no_hits', 'source_research_errors']);
+    expect(quality.processScore).toBe(80);
+    expect(quality.warnings.join('\n')).toContain('source research produced no parsed source hits');
+    expect(quality.warnings.join('\n')).toContain('source research reported 2 source error(s)');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('hits:0');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('errors:2');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('source research produced no parsed source hits');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('source research reported 2 source error(s)');
+  });
+
+  it('preserves long research_sources evidence instead of dropping tail errors', () => {
+    const filler = Array.from({ length: 140 }, (_, i) =>
+      `implementation detail ${i}: long repository and paper summary text that should not crowd out source accounting evidence.`,
+    ).join('\n');
+    const event = makeBenchmarkTraceEvent({
+      seq: 1,
+      tool: 'research_sources',
+      input: {
+        query: 'coding agent leaderboard current science with a deliberately long query that should not break trace parsing',
+        source: 'all',
+        github_kind: 'all',
+        kind: 'all',
+        kaggle_kind: 'both',
+        recent_days: 90,
+      },
+      output: [
+        'Research source results for "coding agent leaderboard current science"',
+        '',
+        '## Coverage notes',
+        '- arXiv papers requested.',
+        '- GitHub all requested.',
+        '- Hugging Face all requested.',
+        '- Kaggle both requested; competitions require auth.',
+        '- Kaggle unauthenticated fallback: competitions skipped, datasets queried only.',
+        '- Recency filter requested: recent_days=90.',
+        '- Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
+        '',
+        '## arXiv: SWE-CI',
+        'https://arxiv.org/abs/2603.03823',
+        filler,
+        '',
+        '## Source errors',
+        '- github: GitHub code HTTP 403',
+        '- kaggle: Kaggle competitions HTTP 401',
+      ].join('\n'),
+      isError: true,
+      elapsedMs: 1,
+    });
+
+    expect(event.outputPreview).toContain('## Source errors');
+    expect(event.outputPreview).toContain('- kaggle: Kaggle competitions HTTP 401');
+    expect(event.outputPreview).not.toContain('implementation detail 100');
+
+    const coverage = buildSourceResearchCoverage([event]);
+    expect(coverage.sourceHitCount).toBe(1);
+    expect(coverage.sourceErrorCount).toBe(2);
+    expect(coverage.recentDays).toEqual([90]);
+    expect(coverage.kaggleCompetitionsSkipped).toBe(true);
+    expect(coverage.topUrls).toContain('https://arxiv.org/abs/2603.03823');
+
+    const quality = buildBenchmarkTrajectoryQuality([event]);
+    expect(quality.processDefects.map((d) => d.code)).toContain('source_research_errors');
+    expect(quality.processDefects.map((d) => d.code)).toContain('kaggle_competitions_skipped');
+    expect(quality.warnings.join('\n')).toContain('source research reported 2 source error(s)');
+  });
+
+  it('flags read-with-care benchmark artifacts in trajectories', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'oracle/solution.txt' },
+        output: 'answer',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'web_search',
+        input: { query: 'benchmark solution leakage papers' },
+        output: 'research',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const risks = buildBenchmarkLeakageRiskEvents(events);
+    expect(risks).toHaveLength(1);
+    expect(risks[0]).toMatchObject({
+      seq: 2,
+      tool: 'read_file',
+      target: 'oracle/solution.txt',
+    });
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.leakageRiskEvents).toHaveLength(1);
+    expect(quality.processDefects.map((d) => d.code)).toContain('benchmark_leakage_risk');
+    expect(quality.processDefects.find((d) => d.code === 'benchmark_leakage_risk')?.severity).toBe('critical');
+    expect(quality.warnings.join('\n')).toContain('potential benchmark leakage risk');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('potential benchmark leakage risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('leakage_risks=1');
+  });
+
+  it('warns when benchmark runs edit before localization and validation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.localizationBeforeFirstEdit).toBe(false);
+    expect(quality.reproductionBeforeFirstEdit).toBe(false);
+    expect(quality.failingReproductionBeforeFirstEdit).toBe(false);
+    expect(quality.validationAfterFirstEdit).toBe(false);
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'missing_benchmark_context',
+      'edit_before_localization',
+      'edit_before_reproduction',
+      'missing_post_edit_validation',
+    ]);
+    expect(quality.processScore).toBe(30);
+    expect(quality.warnings.join('\n')).toContain('first edit happened before');
+
+    const reminder = buildBenchmarkCompletionReminder(events);
+    expect(reminder).toContain('Benchmark trajectory is under-evidenced');
+    expect(reminder).toContain('run benchmark_context');
+  });
+
+  it('warns when pre-edit verification does not reproduce a failure', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'bug', path: 'src' },
+        output: 'src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'already passing',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'passing',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.reproductionBeforeFirstEdit).toBe(true);
+    expect(quality.failingReproductionBeforeFirstEdit).toBe(false);
+    expect(quality.passingValidationAfterFirstEdit).toBe(true);
+    expect(quality.successfulVerificationCount).toBe(2);
+    expect(quality.failedVerificationCount).toBe(0);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['no_failing_reproduction']);
+    expect(quality.warnings.join('\n')).toContain('no failing reproduction');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('no failing reproduction');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('failing_reproduce_before_edit=no');
+  });
+
+  it('warns when edits are followed only by failing verifier commands', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'grep',
+        input: { pattern: 'bug', path: 'src' },
+        output: 'src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'failing before patch',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'a', new_string: 'b' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'still failing',
+        isError: true,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.validationAfterFirstEdit).toBe(true);
+    expect(quality.passingValidationAfterFirstEdit).toBe(false);
+    expect(quality.successfulVerificationCount).toBe(0);
+    expect(quality.failedVerificationCount).toBe(2);
+    expect(quality.processDefects.map((d) => d.code)).toEqual(['no_passing_post_edit_validation']);
+    expect(quality.warnings.join('\n')).toContain('failing verifier commands');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('failing verifier commands');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('passing_validate_after_edit=no');
+  });
+
+  it('writes summary.json and trace.jsonl only for benchmark traces', () => {
+    const dir = tmpRoot();
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = dir;
+    const event = makeBenchmarkTraceEvent({
+      seq: 1,
+      tool: 'bash',
+      input: { command: 'pytest' },
+      output: 'ok',
+      isError: false,
+      elapsedMs: 10,
+    });
+
+    const skipped = writeBenchmarkTrace({
+      sessionId: 'session-2',
+      mode: 'dev',
+      cwd: dir,
+      config,
+      startedAtMs: Date.now(),
+      messages: [],
+      events: [event],
+    });
+    expect(skipped).toBeNull();
+
+    const written = writeBenchmarkTrace({
+      sessionId: 'session-2',
+      mode: 'benchmark',
+      cwd: dir,
+      config,
+      startedAtMs: Date.now(),
+      messages: [],
+      events: [event],
+    });
+    expect(written).not.toBeNull();
+    const summary = readFileSync(written!.summaryPath, 'utf-8');
+    const jsonl = readFileSync(written!.jsonlPath, 'utf-8');
+    expect(summary).toContain('"mode": "benchmark"');
+    expect(summary).toContain('"openAgentLeaderboardDraft"');
+    expect(jsonl).toContain('"tool":"bash"');
+    expect(summary).not.toContain(config.apiKey);
+    const parsedSummary = JSON.parse(summary);
+    const draftArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'open-agent-leaderboard-draft');
+    expect(draftArtifact).toBeTruthy();
+    const draftText = readFileSync(draftArtifact.path, 'utf-8');
+    expect(draftText).toContain('"submissionReady": false');
+    expect(draftText).toContain('"missingOfficialFields"');
+  });
+
+  it('writes redacted git patch artifacts for benchmark worktrees', () => {
+    const root = tmpRoot();
+    const traceRoot = tmpRoot();
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceRoot;
+    const filePath = join(root, 'fixture.txt');
+
+    spawnSync('git', ['init'], { cwd: root, encoding: 'utf-8' });
+    writeFileSync(filePath, 'before\n', 'utf-8');
+    spawnSync('git', ['add', 'fixture.txt'], { cwd: root, encoding: 'utf-8' });
+    spawnSync('git', ['-c', 'user.email=test@example.invalid', '-c', 'user.name=Test User', 'commit', '-m', 'baseline'], { cwd: root, encoding: 'utf-8' });
+    writeFileSync(filePath, 'after\nOPENAI_API_KEY=sk-secret-secret-secret\n', 'utf-8');
+    writeFileSync(join(root, 'staged.txt'), 'staged content\n', 'utf-8');
+    spawnSync('git', ['add', 'staged.txt'], { cwd: root, encoding: 'utf-8' });
+    writeFileSync(join(root, 'untracked.txt'), 'untracked content\n', 'utf-8');
+
+    const event = makeBenchmarkTraceEvent({
+      seq: 1,
+      tool: 'bash',
+      input: { command: 'npm test' },
+      output: 'passing',
+      isError: false,
+      elapsedMs: 10,
+    });
+
+    const written = writeBenchmarkTrace({
+      sessionId: 'session-git',
+      mode: 'benchmark',
+      cwd: root,
+      config,
+      startedAtMs: Date.now(),
+      messages: [],
+      events: [event],
+    });
+
+    expect(written).not.toBeNull();
+    const summary = JSON.parse(readFileSync(written!.summaryPath, 'utf-8'));
+    expect(summary.worktreeChangedFiles).toContain('fixture.txt');
+    expect(summary.worktreeChangedFiles).toContain('staged.txt');
+    expect(summary.worktreeChangedFiles).toContain('untracked.txt');
+    expect(summary.artifacts.map((a: { kind: string }) => a.kind)).toContain('patch');
+    expect(summary.artifacts.map((a: { kind: string }) => a.kind)).toContain('git-status');
+    const patch = summary.artifacts.find((a: { kind: string; path: string }) => a.kind === 'patch');
+    const patchText = readFileSync(patch.path, 'utf-8');
+    expect(patchText).toContain('+after');
+    expect(patchText).toContain('staged content');
+    expect(patchText).toContain('untracked content');
+    expect(patchText).toContain('OPENAI_API_KEY=[REDACTED]');
+    expect(patchText).not.toContain('sk-secret-secret-secret');
+  });
+});

@@ -1,22 +1,21 @@
 /**
- * TUI theme — Crowcoder terminal styling.
+ * TUI theme — Ventipus terminal styling.
  *
  * Inspired by Gemini CLI and Claude Code design patterns:
  *   - Semantic color tokens (not raw hex everywhere)
  *   - Unicode symbols for status indicators
  *   - Clean typography with proper contrast
- *   - 8 swappable palettes sourced from popular community themes
+ *   - 12 swappable palettes sourced from Coolors trending schemes
  *
  * The active palette is a module-level mutable record. setPalette() rebuilds
  * every chalk-bound token in the exported `theme` object in place, so any
  * code holding a reference to `theme.brand`, `theme.dim`, etc. picks up the
  * new colors on the next call — no re-import or restart required.
  *
- * Palettes intentionally share the same 13 named slots (cyan / magenta /
- * yellow + 5 neutrals + dimmed variants). Theme authors map their colors
- * into those slots; UI code reads only the semantic tokens. This trades a
- * small loss of fidelity (a Dracula "purple" gets stored in the `cyanLight`
- * slot because that's where the accent goes) for a single uniform API.
+ * Palettes intentionally share the same named slots (accent, danger,
+ * warning + neutrals). The public palette IDs map to Coolors trending
+ * schemes; UI code reads semantic tokens so color placement can evolve
+ * without spreading raw hex values through the app.
  */
 import chalk from 'chalk';
 
@@ -34,17 +33,22 @@ export interface ColorPalette {
   yellow: string; yellowDim: string;
   key: string;
   white: string; light: string; mid: string; gray: string; darkGray: string;
+  swatches: string[];
 }
 
 export type PaletteId =
-  | 'compact-cmyk'
-  | 'dracula'
-  | 'nord'
-  | 'solarized-dark'
-  | 'gruvbox'
-  | 'tokyo-night'
-  | 'catppuccin'
-  | 'high-contrast';
+  | 'olive-garden-feast'
+  | 'fiery-ocean'
+  | 'refreshing-summer-fun'
+  | 'ocean-blue-serenity'
+  | 'pastel-dreamland-adventure'
+  | 'sunny-beach-day'
+  | 'dark-sunset'
+  | 'fiery-red-sunset'
+  | 'fiery-palette'
+  | 'rustic-earthy-tones'
+  | 'golden-summer-fields'
+  | 'vibrant-tones';
 
 export interface PaletteMeta {
   id: PaletteId;
@@ -53,97 +57,140 @@ export interface PaletteMeta {
   description: string;
 }
 
+interface PaletteSlots {
+  primary: number;
+  secondary: number;
+  dim: number;
+  danger: number;
+  dangerDim: number;
+  warning: number;
+  warningDim: number;
+}
+
+const READABLE_NEUTRALS = {
+  key: '#101114',
+  white: '#F7F7F8',
+  light: '#DADDE2',
+  mid: '#B4BBC6',
+  gray: '#7F8793',
+  darkGray: '#515966',
+};
+
+function coolorsPalette(swatches: string[], slots: PaletteSlots): ColorPalette {
+  const pick = (idx: number): string => swatches[Math.max(0, Math.min(swatches.length - 1, idx))];
+  return {
+    cyan: pick(slots.primary),
+    cyanLight: pick(slots.secondary),
+    cyanDim: pick(slots.dim),
+    magenta: pick(slots.danger),
+    magentaDim: pick(slots.dangerDim),
+    yellow: pick(slots.warning),
+    yellowDim: pick(slots.warningDim),
+    ...READABLE_NEUTRALS,
+    swatches,
+  };
+}
+
 export const PALETTES: Record<PaletteId, ColorPalette> = {
-  // Default. The original Compact Agent CMYK theme.
-  'compact-cmyk': {
-    cyan: '#00BCD4', cyanLight: '#4DD0E1', cyanDim: '#00838F',
-    magenta: '#E91E63', magentaDim: '#AD1457',
-    yellow: '#FFEB3B', yellowDim: '#F9A825',
-    key: '#212121',
-    white: '#ECEFF1', light: '#CFD8DC', mid: '#B0BEC5', gray: '#90A4AE', darkGray: '#607D8B',
-  },
-  // draculatheme.com — most-installed VS Code theme on earth
-  'dracula': {
-    cyan: '#8be9fd', cyanLight: '#bd93f9', cyanDim: '#6272a4',
-    magenta: '#ff79c6', magentaDim: '#bd93f9',
-    yellow: '#f1fa8c', yellowDim: '#ffb86c',
-    key: '#282a36',
-    white: '#f8f8f2', light: '#f8f8f2', mid: '#bbbbbb', gray: '#6272a4', darkGray: '#44475a',
-  },
-  // nordtheme.com — cool arctic palette
-  'nord': {
-    cyan: '#88c0d0', cyanLight: '#8fbcbb', cyanDim: '#5e81ac',
-    magenta: '#b48ead', magentaDim: '#d08770',
-    yellow: '#ebcb8b', yellowDim: '#d08770',
-    key: '#2e3440',
-    white: '#eceff4', light: '#d8dee9', mid: '#a3be8c', gray: '#81a1c1', darkGray: '#4c566a',
-  },
-  // ethanschoonover.com/solarized — designed for prolonged terminal reading
-  'solarized-dark': {
-    cyan: '#2aa198', cyanLight: '#268bd2', cyanDim: '#073642',
-    magenta: '#d33682', magentaDim: '#6c71c4',
-    yellow: '#b58900', yellowDim: '#cb4b16',
-    key: '#002b36',
-    white: '#fdf6e3', light: '#eee8d5', mid: '#93a1a1', gray: '#839496', darkGray: '#586e75',
-  },
-  // morhetz/gruvbox — warm earthy retro
-  'gruvbox': {
-    cyan: '#83a598', cyanLight: '#8ec07c', cyanDim: '#458588',
-    magenta: '#d3869b', magentaDim: '#b16286',
-    yellow: '#fabd2f', yellowDim: '#fe8019',
-    key: '#282828',
-    white: '#ebdbb2', light: '#d5c4a1', mid: '#bdae93', gray: '#a89984', darkGray: '#665c54',
-  },
-  // enkia.github.io/tokyo-night — high-saturation modern dark
-  'tokyo-night': {
-    cyan: '#7dcfff', cyanLight: '#7aa2f7', cyanDim: '#414868',
-    magenta: '#bb9af7', magentaDim: '#ff007c',
-    yellow: '#e0af68', yellowDim: '#ff9e64',
-    key: '#1a1b26',
-    white: '#c0caf5', light: '#a9b1d6', mid: '#9aa5ce', gray: '#565f89', darkGray: '#414868',
-  },
-  // catppuccin.com — pastel "mocha" variant
-  'catppuccin': {
-    cyan: '#94e2d5', cyanLight: '#89dceb', cyanDim: '#74c7ec',
-    magenta: '#f5c2e7', magentaDim: '#cba6f7',
-    yellow: '#f9e2af', yellowDim: '#fab387',
-    key: '#1e1e2e',
-    white: '#cdd6f4', light: '#bac2de', mid: '#a6adc8', gray: '#9399b2', darkGray: '#6c7086',
-  },
-  // Pure-saturation accessibility palette for users with low vision who
-  // still see some color. Maximum contrast against terminal black.
-  'high-contrast': {
-    cyan: '#00ffff', cyanLight: '#80ffff', cyanDim: '#008080',
-    magenta: '#ff00ff', magentaDim: '#800080',
-    yellow: '#ffff00', yellowDim: '#cccc00',
-    key: '#000000',
-    white: '#ffffff', light: '#ffffff', mid: '#cccccc', gray: '#aaaaaa', darkGray: '#888888',
-  },
+  'olive-garden-feast': coolorsPalette(
+    ['#606C38', '#283618', '#FEFAE0', '#DDA15E', '#BC6C25'],
+    { primary: 3, secondary: 2, dim: 0, danger: 4, dangerDim: 1, warning: 3, warningDim: 4 },
+  ),
+  'fiery-ocean': coolorsPalette(
+    ['#780000', '#C1121F', '#FDF0D5', '#003049', '#669BBC'],
+    { primary: 4, secondary: 2, dim: 3, danger: 1, dangerDim: 0, warning: 2, warningDim: 4 },
+  ),
+  'refreshing-summer-fun': coolorsPalette(
+    ['#8ECAE6', '#219EBC', '#023047', '#FFB703', '#FB8500'],
+    { primary: 1, secondary: 0, dim: 2, danger: 4, dangerDim: 2, warning: 3, warningDim: 4 },
+  ),
+  'ocean-blue-serenity': coolorsPalette(
+    ['#03045E', '#023E8A', '#0077B6', '#0096C7', '#00B4D8', '#48CAE4', '#90E0EF', '#ADE8F4', '#CAF0F8'],
+    { primary: 5, secondary: 6, dim: 2, danger: 8, dangerDim: 3, warning: 7, warningDim: 4 },
+  ),
+  'pastel-dreamland-adventure': coolorsPalette(
+    ['#CDB4DB', '#FFC8DD', '#FFAFCC', '#BDE0FE', '#A2D2FF'],
+    { primary: 4, secondary: 3, dim: 0, danger: 2, dangerDim: 0, warning: 1, warningDim: 2 },
+  ),
+  'sunny-beach-day': coolorsPalette(
+    ['#264653', '#2A9D8F', '#E9C46A', '#F4A261', '#E76F51'],
+    { primary: 1, secondary: 2, dim: 0, danger: 4, dangerDim: 0, warning: 2, warningDim: 3 },
+  ),
+  'dark-sunset': coolorsPalette(
+    ['#335C67', '#FFF3B0', '#E09F3E', '#9E2A2B', '#540B0E'],
+    { primary: 0, secondary: 1, dim: 3, danger: 4, dangerDim: 3, warning: 2, warningDim: 1 },
+  ),
+  'fiery-red-sunset': coolorsPalette(
+    ['#03071E', '#370617', '#6A040F', '#9D0208', '#D00000', '#DC2F02', '#E85D04', '#F48C06', '#FAA307', '#FFBA08'],
+    { primary: 8, secondary: 9, dim: 2, danger: 4, dangerDim: 1, warning: 9, warningDim: 7 },
+  ),
+  'fiery-palette': coolorsPalette(
+    ['#5F0F40', '#9A031E', '#FB8B24', '#E36414', '#0F4C5C'],
+    { primary: 2, secondary: 4, dim: 0, danger: 1, dangerDim: 0, warning: 2, warningDim: 3 },
+  ),
+  'rustic-earthy-tones': coolorsPalette(
+    ['#7F5539', '#A68A64', '#EDE0D4', '#656D4A', '#414833'],
+    { primary: 3, secondary: 2, dim: 1, danger: 0, dangerDim: 4, warning: 2, warningDim: 1 },
+  ),
+  'golden-summer-fields': coolorsPalette(
+    ['#CCD5AE', '#E9EDC9', '#FEFAE0', '#FAEDCD', '#D4A373'],
+    { primary: 0, secondary: 1, dim: 4, danger: 4, dangerDim: 0, warning: 3, warningDim: 4 },
+  ),
+  'vibrant-tones': coolorsPalette(
+    ['#F94144', '#F3722C', '#F8961E', '#F9844A', '#F9C74F', '#90BE6D', '#43AA8B', '#4D908E', '#577590', '#277DA1'],
+    { primary: 6, secondary: 9, dim: 8, danger: 0, dangerDim: 1, warning: 4, warningDim: 2 },
+  ),
 };
 
 export const PALETTE_META: Record<PaletteId, PaletteMeta> = {
-  'compact-cmyk':   { id: 'compact-cmyk',   name: 'Compact CMYK (default)', source: 'in-house',            description: 'Cyan/Magenta/Yellow on dark — the original.' },
-  'dracula':        { id: 'dracula',        name: 'Dracula',                source: 'draculatheme.com',     description: 'Purple/pink/cyan — the most popular dark theme.' },
-  'nord':           { id: 'nord',           name: 'Nord',                   source: 'nordtheme.com',        description: 'Cool arctic blues + soft greens.' },
-  'solarized-dark': { id: 'solarized-dark', name: 'Solarized Dark',         source: 'ethanschoonover.com',  description: 'Designed for prolonged terminal reading.' },
-  'gruvbox':        { id: 'gruvbox',        name: 'Gruvbox Dark',           source: 'github.com/morhetz',   description: 'Warm earthy retro tones.' },
-  'tokyo-night':    { id: 'tokyo-night',    name: 'Tokyo Night',            source: 'enkia.github.io',      description: 'High-saturation modern dark.' },
-  'catppuccin':     { id: 'catppuccin',     name: 'Catppuccin Mocha',       source: 'catppuccin.com',       description: 'Pastel pinks + blues.' },
-  'high-contrast':  { id: 'high-contrast',  name: 'High Contrast (a11y)',   source: 'WCAG-friendly',        description: 'Pure saturated colors. For low-vision users.' },
+  'olive-garden-feast': { id: 'olive-garden-feast', name: 'Olive Garden Feast', source: 'Coolors trending', description: 'Olive greens with cream and copper.' },
+  'fiery-ocean': { id: 'fiery-ocean', name: 'Fiery Ocean', source: 'Coolors trending', description: 'Red accents against cream and navy.' },
+  'refreshing-summer-fun': { id: 'refreshing-summer-fun', name: 'Refreshing Summer Fun', source: 'Coolors trending', description: 'Sky blues with amber and orange.' },
+  'ocean-blue-serenity': { id: 'ocean-blue-serenity', name: 'Ocean Blue Serenity', source: 'Coolors trending', description: 'A deep-to-bright blue ramp.' },
+  'pastel-dreamland-adventure': { id: 'pastel-dreamland-adventure', name: 'Pastel Dreamland Adventure', source: 'Coolors trending', description: 'Soft lavender, pink, and blue.' },
+  'sunny-beach-day': { id: 'sunny-beach-day', name: 'Sunny Beach Day', source: 'Coolors trending', description: 'Teal, sand, and warm coral.' },
+  'dark-sunset': { id: 'dark-sunset', name: 'Dark Sunset', source: 'Coolors trending', description: 'Petrol blue, cream, amber, and deep red.' },
+  'fiery-red-sunset': { id: 'fiery-red-sunset', name: 'Fiery Red Sunset', source: 'Coolors trending', description: 'Deep red ramp into orange and gold.' },
+  'fiery-palette': { id: 'fiery-palette', name: 'Fiery Palette', source: 'Coolors trending', description: 'Wine, orange, and deep teal.' },
+  'rustic-earthy-tones': { id: 'rustic-earthy-tones', name: 'Rustic Earthy Tones', source: 'Coolors trending', description: 'Brown clay, warm beige, and muted olive.' },
+  'golden-summer-fields': { id: 'golden-summer-fields', name: 'Golden Summer Fields', source: 'Coolors trending', description: 'Muted green and cream with a gold accent.' },
+  'vibrant-tones': { id: 'vibrant-tones', name: 'Vibrant Tones', source: 'Coolors trending', description: 'Saturated warm tones into green and blue.' },
 };
 
 // Active palette — mutable. Starts on the default; index.ts calls
 // setPalette() with the user's choice during startup.
-let palette: ColorPalette = PALETTES['compact-cmyk'];
-let activePaletteId: PaletteId = 'compact-cmyk';
+let palette: ColorPalette = PALETTES['olive-garden-feast'];
+let activePaletteId: PaletteId = 'olive-garden-feast';
+
+const PALETTE_ALIASES: Record<string, PaletteId> = {
+  'compact-cmyk': 'ocean-blue-serenity',
+  dracula: 'pastel-dreamland-adventure',
+  nord: 'ocean-blue-serenity',
+  'solarized-dark': 'dark-sunset',
+  gruvbox: 'sunny-beach-day',
+  'tokyo-night': 'ocean-blue-serenity',
+  catppuccin: 'pastel-dreamland-adventure',
+  'high-contrast': 'fiery-red-sunset',
+  'vibrant-color-fiesta': 'vibrant-tones',
+  'pastel-dreamland': 'pastel-dreamland-adventure',
+  'deep-sea': 'ocean-blue-serenity',
+  'soft-sand': 'rustic-earthy-tones',
+  'watermelon-sorbet': 'refreshing-summer-fun',
+  'soft-lavender': 'pastel-dreamland-adventure',
+};
 
 export function getPaletteId(): PaletteId { return activePaletteId; }
 export function listPalettes(): PaletteMeta[] { return Object.values(PALETTE_META); }
-export function isPaletteId(s: string): s is PaletteId { return s in PALETTES; }
+export function resolvePaletteId(s: string): PaletteId | null {
+  const id = s.trim().toLowerCase();
+  if (id in PALETTES) return id as PaletteId;
+  return PALETTE_ALIASES[id] ?? null;
+}
+export function isPaletteId(s: string): s is PaletteId { return resolvePaletteId(s) !== null; }
 
 // ── Symbols (matching Gemini/Claude patterns) ───────────
 export const sym = {
-  crow:      '◆',           // Brand mark (filled diamond)
+  mark:      '◈',           // Ventipus brand mark
   prompt:    '❯',           // User input prompt
   assistant: '✦',           // Assistant message prefix
   success:   '✓',           // Tool success
@@ -168,6 +215,8 @@ interface Theme {
   success: ChalkFn; warning: ChalkFn; error: ChalkFn; info: ChalkFn;
   primary: ChalkFn; secondary: ChalkFn; dim: ChalkFn; muted: ChalkFn; bright: ChalkFn; italic: ChalkFn;
   header: ChalkFn; subheader: ChalkFn; command: ChalkFn; cost: ChalkFn; link: ChalkFn;
+  highlight: ChalkFn; selection: ChalkFn;
+  syntaxCommand: ChalkFn; syntaxOption: ChalkFn; syntaxArgument: ChalkFn; syntaxPath: ChalkFn; syntaxString: ChalkFn; syntaxPunctuation: ChalkFn;
   prompt: ChalkFn; assistant: ChalkFn; user: ChalkFn;
   toolName: ChalkFn; toolArgs: ChalkFn; toolStatus: ChalkFn; toolError: ChalkFn; toolTime: ChalkFn;
   thinkBorder: ChalkFn; thinkText: ChalkFn; thinkLabel: ChalkFn;
@@ -197,18 +246,27 @@ function buildTheme(p: ColorPalette): Theme {
     italic:      chalk.hex(p.mid).italic,
 
     header:      chalk.hex(p.cyan).bold,
-    subheader:   chalk.hex(p.cyanLight),
-    command:     chalk.hex(p.yellow),
+    subheader:   chalk.hex(p.yellow),
+    command:     chalk.hex(p.cyanLight).bold,
     cost:        chalk.hex(p.gray),
     link:        chalk.hex(p.cyanLight).underline,
 
-    prompt:      chalk.hex(p.cyan).bold,
+    highlight:   chalk.bgHex(p.cyanLight).hex(p.key).bold,
+    selection:   chalk.bgHex(p.yellow).hex(p.key).bold,
+    syntaxCommand: chalk.hex(p.cyanLight).bold,
+    syntaxOption: chalk.hex(p.yellow),
+    syntaxArgument: chalk.hex(p.magenta),
+    syntaxPath: chalk.hex(p.cyan).underline,
+    syntaxString: chalk.hex(p.light),
+    syntaxPunctuation: chalk.hex(p.gray),
+
+    prompt:      chalk.hex(p.yellow).bold,
     assistant:   chalk.hex(p.cyanLight).bold,
     user:        chalk.hex(p.white),
 
-    toolName:    chalk.hex(p.cyan).bold,
+    toolName:    chalk.hex(p.cyanLight).bold,
     toolArgs:    chalk.hex(p.mid),
-    toolStatus:  chalk.hex(p.cyanLight),
+    toolStatus:  chalk.hex(p.yellow),
     toolError:   chalk.hex(p.magenta),
     toolTime:    chalk.hex(p.gray),
 
@@ -218,8 +276,8 @@ function buildTheme(p: ColorPalette): Theme {
     // brand-cyan styling on the thinking section. Final assistant
     // text streams in terminal default (white) for contrast.
     thinkBorder: chalk.hex(p.cyanDim),
-    thinkText:   chalk.hex(p.cyan).italic,
-    thinkLabel:  chalk.hex(p.cyan),
+    thinkText:   chalk.hex(p.cyanLight).italic,
+    thinkLabel:  chalk.hex(p.yellow),
 
     modeBadge: (mode: string): string => {
       const colors: Record<string, ChalkFn> = {
@@ -257,9 +315,10 @@ export const theme: Theme = buildTheme(palette);
  * was found and applied; false if id was unknown.
  */
 export function setPalette(id: string): boolean {
-  if (!isPaletteId(id)) return false;
-  palette = PALETTES[id];
-  activePaletteId = id;
+  const resolved = resolvePaletteId(id);
+  if (!resolved) return false;
+  palette = PALETTES[resolved];
+  activePaletteId = resolved;
   Object.assign(theme, buildTheme(palette));
   return true;
 }
@@ -269,8 +328,8 @@ export function setPalette(id: string): boolean {
 // Layout (per the user-supplied mock):
 //
 //   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀         ← heavy top bar
-//   ◆  C O M P A C T   A G E N T                    ← brand line
-//        A dense, feature-rich AI coding agent      ← tagline
+//   ◈  V E N T I P U S                              ← brand line
+//        Multimodel terminal AI workbench           ← tagline
 //                                                   ← blank
 //     ────────────────────────────────────────      ← thin divider
 //     Provider  X  │  Model  Y                      ← provider/model row
@@ -318,8 +377,8 @@ export function printBanner(
   // ── render ──
   console.log('');
   console.log(brand(heavyBar));
-  console.log(b(`${sym.crow}  C O M P A C T   A G E N T`));
-  console.log(d('     A dense, feature-rich AI coding agent'));
+  console.log(b(`${sym.mark}  V E N T I P U S`));
+  console.log(d('     Multimodel terminal AI workbench'));
   console.log('');
   console.log(d('  ' + sym.divider.repeat(BAR_WIDTH - 2)));
   console.log(s('  Provider  ') + w(provider) + s('  ') + d('│') + s('  Model  ') + w(model));
@@ -332,7 +391,7 @@ export function printBanner(
   const sessLeft = s('  Session   ') + d(sessText);
   const sessLeftVisible = '  Session   ' + sessText;     // for length math only
   const padding = Math.max(1, BAR_WIDTH - sessLeftVisible.length - 1);
-  console.log(sessLeft + ' '.repeat(padding) + brand(sym.crow));
+  console.log(sessLeft + ' '.repeat(padding) + brand(sym.mark));
   console.log('');
   console.log(brand(heavyBar));
   console.log('');
@@ -645,7 +704,7 @@ export async function printThinkingClose(opts: { collapse?: boolean } = {}): Pro
   // Stash for /think to re-expand on demand. Even when we don't
   // collapse, this lets the user re-read the thinking later via the
   // slash command without scrolling back.
-  (globalThis as { __crowcoderLastThinking?: string }).__crowcoderLastThinking = _thinkingBuffer;
+  (globalThis as { __ventipusLastThinking?: string }).__ventipusLastThinking = _thinkingBuffer;
 
   const collapse = opts.collapse !== false;
   if (!collapse || _thinkingBuffer.length === 0) return;
@@ -710,7 +769,7 @@ function _thinkingElapsed(): string {
  * thinking captured yet" message instead.
  */
 export function expandLastThinking(): boolean {
-  const text = (globalThis as { __crowcoderLastThinking?: string }).__crowcoderLastThinking;
+  const text = (globalThis as { __ventipusLastThinking?: string }).__ventipusLastThinking;
   if (!text) return false;
   // Pass collapse: false so the printThinkingClose at the end doesn't
   // try to ANSI-up + clear the expansion we just rendered.
@@ -869,7 +928,7 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
       category: 'auth-bad-key', status: status ?? 401, provider, severity: 'auth',
       title: 'Authentication failed',
       why: `${provider} rejected the API key. It's missing, malformed, or revoked.`,
-      fix: 'Re-set your key with /config. Check ~/.compact-agent/config.json if /config doesn\'t catch it.',
+      fix: 'Re-set your key with /config. Check ~/.ventipus/config.json if /config doesn\'t catch it.',
     };
   }
 
@@ -1000,7 +1059,7 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
       category: 'unknown', status, provider, severity: 'unknown',
       title: `${provider} returned an empty / cryptic error`,
       why: 'The model returned no detail — usually means the model itself is broken or deprecated on the provider\'s end.',
-      fix: `Switch with /model <name>. Common reliable choices: anthropic/claude-sonnet-4, deepseek-chat, google/gemini-2.5-flash. Set /fallback <model> to auto-retry on the next failure.`,
+      fix: `Switch with /model <name>. Free-tier-safe OpenRouter choice: openrouter/free. Paid reliable choices include anthropic/claude-sonnet-4, deepseek-chat, google/gemini-2.5-flash. Set /fallback <model> to auto-retry on the next failure.`,
     };
   }
 
@@ -1009,7 +1068,7 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
     category: 'unknown', status, provider, severity: 'unknown',
     title: 'Request failed',
     why: 'The provider returned an error not matching any known pattern.',
-    fix: 'Try /clear and retry. Report the full message at https://github.com/Crownelius/compact-agent/issues if it persists.',
+    fix: 'Try /clear and retry. Report the full message at https://github.com/Crownelius/ventipus/issues if it persists.',
   };
 }
 

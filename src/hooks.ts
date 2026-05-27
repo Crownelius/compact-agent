@@ -1,12 +1,12 @@
 /**
- * Hook system — configurable pre/post tool execution hooks.
- * Hooks are scripts in ~/.compact-agent/hooks/ that fire on events:
+ * Hook system â€” configurable pre/post tool execution hooks.
+ * Hooks are scripts in ~/.ventipus/hooks/ that fire on events:
  *   - PreToolUse:  before a tool runs (can block)
  *   - PostToolUse: after a tool runs (can log/alert)
  *   - SessionStart: when a session begins
  *   - SessionStop:  when a session ends
  *
- * Hook config in ~/.compact-agent/hooks.json:
+ * Hook config in ~/.ventipus/hooks.json:
  * {
  *   "hooks": [
  *     { "event": "PreToolUse", "match": "bash", "command": "node guard.js" },
@@ -48,7 +48,7 @@ export interface HookContext {
   cwd: string;
   /**
    * Current permission mode at the time the hook fires. Passed to the
-   * hook script as $COMPACT_AGENT_PERMISSION_MODE / $CROWCODER_PERMISSION_MODE
+   * hook script as $VENTIPUS_PERMISSION_MODE
    * so checks like GateGuard can no-op in 'yolo' (where the user has
    * explicitly opted in to "approve everything" and pedantic gates
    * contradict that contract).
@@ -80,7 +80,7 @@ export function initHooksDir(): void {
         {
           event: 'PostToolUse',
           match: '*',
-          command: 'echo "Tool $CROWCODER_TOOL used"',
+          command: 'echo "Tool $VENTIPUS_TOOL used"',
           blocking: false,
           enabled: false,
         },
@@ -98,19 +98,19 @@ function matchesTool(pattern: string, toolName: string): boolean {
   return false;
 }
 
-// ── Broken-hook quarantine ───────────────────────────────
+// â”€â”€ Broken-hook quarantine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // When a hook's command can't be found or crashes due to a system error
 // (ENOENT, ETIMEDOUT, MODULE_NOT_FOUND, etc.) we add it to this set and
 // skip it for the rest of the session. Otherwise a single bad hook will
 // crash every tool call. Logged ONCE on first quarantine so the user
-// knows to clean up ~/.compact-agent/hooks.json.
+// knows to clean up ~/.ventipus/hooks.json.
 const quarantinedHooks = new Set<string>();
 
 function hookSignature(h: HookDef): string {
   return `${h.event}::${h.match}::${h.command}`;
 }
 
-// System-level error codes from execSync — these mean the hook's command
+// System-level error codes from execSync â€” these mean the hook's command
 // couldn't run at all (file missing, shell missing, timed out). They are
 // NOT "the hook intentionally returned non-zero to block the tool". When
 // we see one, the hook is broken and we should never block on it.
@@ -146,29 +146,19 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       continue;
     }
 
-    // Hooks receive the active context as env vars. Both the legacy
-    // CROWCODER_* names AND the new COMPACT_AGENT_* names are exported
-    // so user-written hooks that read either form keep working. The
-    // permission mode is new — added so GateGuard (and any future
-    // mode-aware hook) can no-op in 'yolo' instead of fighting the
-    // user's explicit trust setting.
+    // Hooks receive the active context as env vars. The permission mode lets
+    // GateGuard and other mode-aware hooks no-op in 'yolo' instead of
+    // fighting the user's explicit trust setting.
     const perm = ctx.permissionMode || '';
     const env = {
       ...process.env,
-      CROWCODER_EVENT: ctx.event,
-      CROWCODER_TOOL: ctx.toolName || '',
-      CROWCODER_TOOL_INPUT: ctx.toolInput ? JSON.stringify(ctx.toolInput) : '',
-      CROWCODER_TOOL_OUTPUT: ctx.toolOutput || '',
-      CROWCODER_SESSION_ID: ctx.sessionId || '',
-      CROWCODER_CWD: ctx.cwd,
-      CROWCODER_PERMISSION_MODE: perm,
-      COMPACT_AGENT_EVENT: ctx.event,
-      COMPACT_AGENT_TOOL: ctx.toolName || '',
-      COMPACT_AGENT_TOOL_INPUT: ctx.toolInput ? JSON.stringify(ctx.toolInput) : '',
-      COMPACT_AGENT_TOOL_OUTPUT: ctx.toolOutput || '',
-      COMPACT_AGENT_SESSION_ID: ctx.sessionId || '',
-      COMPACT_AGENT_CWD: ctx.cwd,
-      COMPACT_AGENT_PERMISSION_MODE: perm,
+      VENTIPUS_EVENT: ctx.event,
+      VENTIPUS_TOOL: ctx.toolName || '',
+      VENTIPUS_TOOL_INPUT: ctx.toolInput ? JSON.stringify(ctx.toolInput) : '',
+      VENTIPUS_TOOL_OUTPUT: ctx.toolOutput || '',
+      VENTIPUS_SESSION_ID: ctx.sessionId || '',
+      VENTIPUS_CWD: ctx.cwd,
+      VENTIPUS_PERMISSION_MODE: perm,
     };
 
     const isBlocking = hook.blocking ?? (ctx.event === 'PreToolUse');
@@ -179,7 +169,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       //   - Windows: omit the `shell` option so execSync uses cmd.exe
       //     (the documented default on win32). Previously we passed
       //     'bash', which routed through Git Bash / WSL bash and mangled
-      //     Windows absolute paths like C:\… into /mnt/c/…/C:\….
+      //     Windows absolute paths like C:\â€¦ into /mnt/c/â€¦/C:\â€¦.
       //   - Other platforms: keep /bin/bash because hook commands typically
       //     rely on POSIX shell features.
       const execOpts: Parameters<typeof execSync>[1] = {
@@ -199,7 +189,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       }
     } catch (err: unknown) {
       // A SYSTEM-level error (file missing, timeout, MODULE_NOT_FOUND)
-      // means the hook is broken — quarantine it and DO NOT block the
+      // means the hook is broken â€” quarantine it and DO NOT block the
       // tool call. Stale hooks shouldn't be able to brick the agent.
       if (isSystemError(err)) {
         const sig = hookSignature(hook);
@@ -216,7 +206,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
         continue;  // do NOT block on a broken hook
       }
       // A non-system error (the hook ran but exited non-zero) is treated
-      // per the hook's blocking flag — that's the intentional "block this
+      // per the hook's blocking flag â€” that's the intentional "block this
       // tool call" path.
       if (isBlocking) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -232,7 +222,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
 }
 
 /**
- * Reset the quarantine list — used by /reset-config when the user has
+ * Reset the quarantine list â€” used by /reset-config when the user has
  * fixed their hooks.json and wants to re-enable hooks without restarting.
  */
 export function clearQuarantinedHooks(): void {

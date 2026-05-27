@@ -3,7 +3,7 @@
  * Routes to cheaper models for simple tasks, expensive for complex ones.
  */
 import chalk from 'chalk';
-import type { CrowcoderConfig } from './types.js';
+import type { VentipusConfig } from './types.js';
 import { getModelCost } from './cost-tracker.js';
 
 export interface ModelOption {
@@ -15,15 +15,9 @@ export interface ModelOption {
 // Provider-specific model tiers
 const MODEL_TIERS: Record<string, ModelOption[]> = {
   openrouter: [
-    { id: 'anthropic/claude-haiku-4', tier: 'fast', description: 'Claude Haiku — fast, cheap' },
-    { id: 'anthropic/claude-sonnet-4', tier: 'balanced', description: 'Claude Sonnet — balanced' },
-    { id: 'anthropic/claude-opus-4', tier: 'powerful', description: 'Claude Opus — most capable' },
-    { id: 'openai/gpt-4o-mini', tier: 'fast', description: 'GPT-4o Mini — fast, cheap' },
-    { id: 'openai/gpt-4o', tier: 'balanced', description: 'GPT-4o — balanced' },
-    { id: 'google/gemini-2.5-flash', tier: 'fast', description: 'Gemini Flash — fast, cheap' },
-    { id: 'google/gemini-2.5-pro', tier: 'powerful', description: 'Gemini Pro — powerful' },
-    { id: 'deepseek/deepseek-chat', tier: 'fast', description: 'DeepSeek V3 — very cheap' },
-    { id: 'meta-llama/llama-4-maverick', tier: 'balanced', description: 'Llama 4 Maverick — open' },
+    { id: 'openrouter/free', tier: 'fast', description: 'Free Models Router - zero-cost, auto-selected' },
+    { id: 'openrouter/free', tier: 'balanced', description: 'Free Models Router - zero-cost, tool-aware' },
+    { id: 'openrouter/free', tier: 'powerful', description: 'Free Models Router - zero-cost, best available' },
   ],
   openai: [
     { id: 'gpt-4o-mini', tier: 'fast', description: 'GPT-4o Mini' },
@@ -97,6 +91,10 @@ function getProviderKey(displayName: string): string {
   };
 
   const key = displayName.toLowerCase();
+  if (key.includes('openrouter')) return 'openrouter';
+  if (key.includes('openai')) return 'openai';
+  if (key.includes('deepseek')) return 'deepseek';
+  if (key.includes('ollama')) return 'ollama';
   return map[key] || key.replace(/[^a-z]/g, '');
 }
 
@@ -104,7 +102,7 @@ function getProviderKey(displayName: string): string {
  * Suggest the best model for a given complexity and provider.
  */
 export function routeModel(
-  config: CrowcoderConfig,
+  config: VentipusConfig,
   complexity: TaskComplexity,
 ): { model: string; reason: string } {
   const provider = getProviderKey(config.provider);
@@ -134,7 +132,7 @@ export function routeModel(
   };
 }
 
-export function printModelOptions(config: CrowcoderConfig): void {
+export function printModelOptions(config: VentipusConfig): void {
   const provider = getProviderKey(config.provider);
   const tiers = MODEL_TIERS[provider] || [];
 
@@ -155,7 +153,7 @@ export function printModelOptions(config: CrowcoderConfig): void {
 /**
  * Switch to a model by name or tier.
  */
-export function switchModel(config: CrowcoderConfig, nameOrTier: string): string | null {
+export function switchModel(config: VentipusConfig, nameOrTier: string): string | null {
   const provider = getProviderKey(config.provider);
   const tiers = MODEL_TIERS[provider] || [];
 

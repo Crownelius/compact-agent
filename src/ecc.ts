@@ -2,14 +2,14 @@
  * ECC (everything-claude-code) integration.
  *
  * Imports skills, agents, slash commands, rules, and hook behaviors from the
- * bundled `resources/ecc/` directory into Crowcoder's runtime stores:
- *   ~/.compact-agent/skills/        — JSON skills generated from SKILL.md
- *   ~/.compact-agent/rules/         — language rule files
- *   ~/.compact-agent/ecc-commands/  — markdown prompt templates for /ecc-<cmd>
- *   ~/.compact-agent/ecc-agents/    — agent prompt templates
- *   ~/.compact-agent/hooks.json     — augmented with ECC hook entries
+ * bundled `resources/ecc/` directory into Ventipus's runtime stores:
+ *   ~/.ventipus/skills/        — JSON skills generated from SKILL.md
+ *   ~/.ventipus/rules/         — language rule files
+ *   ~/.ventipus/ecc-commands/  — markdown prompt templates for /ecc-<cmd>
+ *   ~/.ventipus/ecc-agents/    — agent prompt templates
+ *   ~/.ventipus/hooks.json     — augmented with ECC hook entries
  *
- * Each ECC skill becomes a Crowcoder Skill (skills.ts schema) with id
+ * Each ECC skill becomes a Ventipus Skill (skills.ts schema) with id
  * `ecc-<slug>`, triggers derived from name + description keywords, and the
  * SKILL.md body as the prompt template.
  *
@@ -287,8 +287,8 @@ function importSkills(): { count: number; errors: string[] } {
  *   <name>.json  — { name, description, prompt, allowedTools, ... }
  *   <name>.md    — frontmatter (name, description, allowedTools) + body prompt
  *
- * We materialize each as a markdown file in ~/.compact-agent/ecc-agents/<name>.md
- * (canonical prompt for /ecc-agent <name>) and ALSO register a Crowcoder Skill
+ * We materialize each as a markdown file in ~/.ventipus/ecc-agents/<name>.md
+ * (canonical prompt for /ecc-agent <name>) and ALSO register a Ventipus Skill
  * with id `ecc-agent-<name>` so it surfaces in /skills and trigger search.
  */
 function importAgents(): { count: number; errors: string[] } {
@@ -383,7 +383,7 @@ function importAgents(): { count: number; errors: string[] } {
 /**
  * .claude/commands/<name>.md and .github/prompts/<name>.prompt.md are both
  * frontmatter+body prompt templates. We copy them verbatim into
- * ~/.compact-agent/ecc-commands/ so /ecc-<name> can read them at runtime.
+ * ~/.ventipus/ecc-commands/ so /ecc-<name> can read them at runtime.
  */
 // Commands whose prompts are already loaded by built-in slash commands
 // (/tdd, /review, /security-review, /plan, /refactor, /build-fix all call
@@ -527,7 +527,7 @@ export function getEccCommandPrompt(name: string): string | null {
  * sections (security, testing, patterns, hooks plus a few new ones like
  * coding-style). We detect which layout is present and load accordingly.
  *
- * Both produce the same output: one `~/.compact-agent/rules/<language>.md`
+ * Both produce the same output: one `~/.ventipus/rules/<language>.md`
  * file per language, with all sections concatenated. Existing user
  * content in those files is preserved by appending under a clearly-marked
  * ECC section.
@@ -603,11 +603,11 @@ function importRules(): { count: number; errors: string[] } {
 
 // ── Hook seeding ────────────────────────────────────────
 /**
- * Seeds Crowcoder's hooks.json with ECC-compatible default hooks.
+ * Seeds Ventipus's hooks.json with ECC-compatible default hooks.
  *
  * The cursor hook scripts have a dense in-repo dependency tree (scripts/lib/,
  * scripts/hooks/) and require their original directory layout — we don't try
- * to run them from Crowcoder. Instead we install native equivalents for the
+ * to run them from Ventipus. Instead we install native equivalents for the
  * highest-value ECC hook behaviors: block-no-verify, secret-in-prompt detection,
  * console.log warnings post-edit, dev-server tmux reminder.
  *
@@ -690,7 +690,7 @@ function seedHooks(): number {
     // the agent investigate (read + grep) before proceeding. Upstream
     // reports a 2.25-point quality lift in A/B tests. Simplified port
     // of the 878-line ECC original — per-session-per-file state in
-    // ~/.compact-agent/state/gateguard/<sessionId>.json. Subsequent edits
+    // ~/.ventipus/state/gateguard/<sessionId>.json. Subsequent edits
     // to the same file pass through normally.
     {
       event: 'PreToolUse',
@@ -730,7 +730,7 @@ function seedHooks(): number {
     // ── New in 1.17: format-typecheck-hint ───────────────
     // Session-end-ish reminder to run typecheck (tsc / mypy / go vet
     // / cargo check). Fires at most once per session per project,
-    // tracked at ~/.compact-agent/state/quality-hint/<sessionId>.json.
+    // tracked at ~/.ventipus/state/quality-hint/<sessionId>.json.
     {
       event: 'PostToolUse',
       match: 'edit_file',
@@ -889,6 +889,45 @@ export function findEccSkillForQuery(query: string): Skill | null {
   return hits[0] ?? null;
 }
 
+let bundledSkillCache: Skill[] | null = null;
+
+function loadBundledEccSkills(): Skill[] {
+  if (bundledSkillCache) return bundledSkillCache;
+  const skills: Skill[] = [];
+  for (const dir of listSkillDirs()) {
+    const slug = basename(dir);
+    try {
+      const doc = readSkillMd(dir);
+      if (!doc) continue;
+      const { frontmatter, body } = parseFrontmatter(doc.raw);
+      const name = String(frontmatter.name || slug);
+      const description = String(frontmatter.description || `ECC skill: ${slug}`);
+      const prompt = doc.references.length
+        ? body + '\n\n---\n\n' + doc.references.join('\n\n---\n\n')
+        : body;
+      skills.push({
+        id: eccSkillId(slug),
+        name,
+        description,
+        prompt: prompt.trim(),
+        triggers: deriveTriggers(name, description, [slug]),
+        category: 'ecc',
+        createdAt: new Date(0).toISOString(),
+        useCount: 0,
+      });
+    } catch {
+      // A malformed bundled skill should not break prompt construction.
+    }
+  }
+  bundledSkillCache = skills;
+  return skills;
+}
+
+function listAvailableEccSkills(): Skill[] {
+  const installed = listSkills().filter((s) => s.id.startsWith(ECC_SKILL_ID_PREFIX));
+  return installed.length > 0 ? installed : loadBundledEccSkills();
+}
+
 /**
  * Same scoring as findEccSkillForQuery but returns the top-K hits.
  * Used by the progressive-disclosure system prompt injection to surface
@@ -898,7 +937,7 @@ export function findEccSkillForQuery(query: string): Skill | null {
 export function findEccSkillsForQuery(query: string, limit = 3): Skill[] {
   if (!query) return [];
   const q = query.toLowerCase();
-  const candidates = listSkills().filter((s) => s.id.startsWith(ECC_SKILL_ID_PREFIX));
+  const candidates = listAvailableEccSkills();
   const scored: { skill: Skill; score: number }[] = [];
   for (const s of candidates) {
     let score = 0;
@@ -919,7 +958,7 @@ export function findEccSkillsForQuery(query: string, limit = 3): Skill[] {
 export function findEccSkillByName(name: string): Skill | null {
   if (!name) return null;
   const target = name.toLowerCase().trim();
-  const all = listSkills().filter((s) => s.id.startsWith(ECC_SKILL_ID_PREFIX));
+  const all = listAvailableEccSkills();
   return (
     all.find((s) => s.name.toLowerCase() === target)
     ?? all.find((s) => s.name.toLowerCase().includes(target))

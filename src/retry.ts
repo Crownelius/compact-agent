@@ -1,13 +1,28 @@
+/**
+ * Retry utility — exponential backoff for API calls.
+ * Retries on rate limits (429), server errors (500/502/503), and network failures.
+ */
 import chalk from 'chalk';
 
+/**
+ * Configuration for retry behavior.
+ */
 export interface RetryConfig {
+  /** Maximum number of retry attempts (default: 3) */
   maxRetries?: number;
+  /** Base delay in ms before first retry (default: 1000) */
   baseDelay?: number;
+  /** Maximum delay in ms between retries (default: 30000) */
   maxDelay?: number;
 }
 
 /**
- * Determines if an error is retryable
+ * Determines if an error is retryable.
+ * Retries on: HTTP 429 (rate limit), 500/502/503 (server errors),
+ * and common network errors (ECONNREFUSED, ETIMEDOUT, etc.).
+ *
+ * @param error - The error to evaluate
+ * @returns True if the error is transient and the request should be retried
  */
 function isRetryableError(error: unknown): boolean {
   // Handle OpenAI APIError and similar error objects

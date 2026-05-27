@@ -321,6 +321,34 @@ Please use these findings to answer the query.`;
 }
 
 /**
+ * Build a prompt for source-grounded external research before implementation.
+ */
+export function buildSourceResearchPrompt(topic: string): string {
+  return `# Source-Grounded Research Brief
+
+## Topic
+${topic}
+
+Use the \`research_sources\` tool before answering. Query at least:
+- \`source:"arxiv"\`, \`recent_days:90\` for recent papers and methods
+- \`source:"github"\`, \`github_kind:"all"\`, \`recent_days:90\` for repos, issues, PRs, and code patterns
+- \`source:"huggingface"\`, \`kind:"all"\`, \`recent_days:90\` for papers, models, and datasets
+- \`source:"kaggle"\`, \`kaggle_kind:"both"\` for datasets and competitions
+
+Then synthesize a brief with:
+1. The strongest current ideas or artifacts relevant to the topic.
+2. What is directly applicable to this codebase.
+3. Compatibility or operational risks.
+4. A concrete implementation plan with verification steps.
+
+Rules:
+- Cite URLs returned by the tool.
+- Prefer recent and maintained sources over stale popularity.
+- Do not invent papers, repos, datasets, or benchmark claims.
+- If a source fails, say which one failed and continue with the others.`;
+}
+
+/**
  * Print a summary of the research workflow
  */
 export function printSearchFirstSummary(): void {

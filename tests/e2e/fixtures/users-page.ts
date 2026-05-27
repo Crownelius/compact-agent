@@ -1,13 +1,13 @@
-import { CrowcoderCLI } from './cli.js';
+import { VentipusCLI } from './cli.js';
 
 /**
  * User Page Object — encapsulates all user management operations.
  * Maps to the /users slash command and the users.json file.
  */
 export class UsersPage {
-  private cli: CrowcoderCLI;
+  private cli: VentipusCLI;
 
-  constructor(cli: CrowcoderCLI) {
+  constructor(cli: VentipusCLI) {
     this.cli = cli;
   }
 

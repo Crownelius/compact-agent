@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * ECC-native hook dispatcher for Crowcoder.
+ * ECC-native hook dispatcher for Ventipus.
  *
- * Reads Crowcoder's hook env vars (CROWCODER_EVENT, CROWCODER_TOOL,
- * CROWCODER_TOOL_INPUT, CROWCODER_TOOL_OUTPUT) and runs a single named check.
+ * Reads Ventipus's hook env vars (VENTIPUS_EVENT, VENTIPUS_TOOL,
+ * VENTIPUS_TOOL_INPUT, VENTIPUS_TOOL_OUTPUT) and runs a single named check.
  *
  * Exit codes:
  *   0  — allow (PreToolUse) or success (PostToolUse)
@@ -26,7 +26,7 @@ const checkName = process.argv[2] || '';
 // don't carry input, like SessionStart); a NON-empty payload that
 // fails to parse is treated as a security event and the hook
 // blocks. Fail closed > fail open.
-const rawToolInput = process.env.COMPACT_AGENT_TOOL_INPUT || process.env.CROWCODER_TOOL_INPUT || '';
+const rawToolInput = process.env.VENTIPUS_TOOL_INPUT || '';
 let toolInput = {};
 if (rawToolInput.length > 0) {
   try {
@@ -37,13 +37,8 @@ if (rawToolInput.length > 0) {
   }
 }
 
-// Both env-var names accepted. COMPACT_AGENT_* is the post-rebrand
-// primary; CROWCODER_* is the legacy alias kept for back-compat with
-// user-written wrappers that haven't migrated. The parent process
-// exports both via src/hooks.ts so either form works regardless of
-// which the user's shell or wrapper set.
-const tool = process.env.COMPACT_AGENT_TOOL || process.env.CROWCODER_TOOL || '';
-const cwd = process.env.COMPACT_AGENT_CWD || process.env.CROWCODER_CWD || process.cwd();
+const tool = process.env.VENTIPUS_TOOL || '';
+const cwd = process.env.VENTIPUS_CWD || process.cwd();
 
 // ── Helpers ─────────────────────────────────────────────
 function bashCommand() {
@@ -179,7 +174,7 @@ const checks = {
 
   /**
    * GateGuard — surface "first Edit/Write to this file" as a hint or a
-   * block, depending on COMPACT_AGENT_GATEGUARD_MODE.
+   * block, depending on VENTIPUS_GATEGUARD_MODE.
    *
    * Modes:
    *   warn  (default) — print the investigation hint, allow the edit.
@@ -202,9 +197,9 @@ const checks = {
    *     succeeded on retry, so the block was friction without
    *     proportional safety benefit.
    *   - Strict users who actually want block-first can opt back in
-   *     via COMPACT_AGENT_GATEGUARD_MODE=block.
+   *     via VENTIPUS_GATEGUARD_MODE=block.
    *
-   * State lives at ~/.compact-agent/state/gateguard/<sessionId>.json
+   * State lives at ~/.ventipus/state/gateguard/<sessionId>.json
    * even in warn mode — tracking per-file means we only emit the hint
    * once per file per session (don't nag).
    *
@@ -214,23 +209,13 @@ const checks = {
    */
   'gateguard': () => {
     // ── Disable knob ─────────────────────────────────────
-    // Documented in the hint/block message below. Accepts the
-    // COMPACT_AGENT_GATEGUARD env var primarily, with the legacy
-    // CROWCODER_GATEGUARD as alias.
-    const disableEnv = (
-      process.env.COMPACT_AGENT_GATEGUARD ||
-      process.env.CROWCODER_GATEGUARD ||
-      ''
-    ).trim();
+    // Documented in the hint/block message below.
+    const disableEnv = (process.env.VENTIPUS_GATEGUARD || '').trim();
     if (/^(off|false|0|no|disabled?)$/i.test(disableEnv)) return ok();
 
     // ── Mode selection ───────────────────────────────────
     // Pick warn (new default) vs block (legacy strict) vs off.
-    const modeEnv = (
-      process.env.COMPACT_AGENT_GATEGUARD_MODE ||
-      process.env.CROWCODER_GATEGUARD_MODE ||
-      'warn'
-    ).toLowerCase().trim();
+    const modeEnv = (process.env.VENTIPUS_GATEGUARD_MODE || 'warn').toLowerCase().trim();
     if (modeEnv === 'off') return ok();
     const strict = modeEnv === 'block' || modeEnv === 'strict';
 
@@ -238,14 +223,10 @@ const checks = {
     // Permission mode 'yolo' is the user's explicit "trust the agent,
     // skip the speed bumps" contract. GateGuard's investigate-first
     // intervention directly contradicts that — letting it fire in
-    // yolo would mean the safest setting in compact-agent is more
+    // yolo would mean the safest setting in ventipus is more
     // pedantic than the most-cautious, which is backwards. Silent
     // no-op so the user gets the unblocked flow they asked for.
-    const perm = (
-      process.env.COMPACT_AGENT_PERMISSION_MODE ||
-      process.env.CROWCODER_PERMISSION_MODE ||
-      ''
-    ).toLowerCase().trim();
+    const perm = (process.env.VENTIPUS_PERMISSION_MODE || '').toLowerCase().trim();
     if (perm === 'yolo') return ok();
 
     const fs = require('fs');
@@ -275,9 +256,9 @@ const checks = {
     // model-controlled file paths). Allow only [A-Za-z0-9_-], length
     // <=64. Anything else falls back to "unknown" — degraded UX
     // (gateguard tracking won't persist), not a security breach.
-    const rawSessionId = process.env.COMPACT_AGENT_SESSION_ID || process.env.CROWCODER_SESSION_ID || '';
+    const rawSessionId = process.env.VENTIPUS_SESSION_ID || '';
     const sessionId = /^[A-Za-z0-9_-]{1,64}$/.test(rawSessionId) ? rawSessionId : 'unknown';
-    const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'gateguard');
+    const stateDir = pathMod.join(os.homedir(), '.ventipus', 'state', 'gateguard');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
 
     // GC: drop any state files older than 24h. Best-effort, never throws.
@@ -319,7 +300,7 @@ const checks = {
         `First Edit/Write to ${targetPath} this session. Before proceeding, ` +
         `investigate: (1) Read the file. (2) Grep for importers. ` +
         `(3) If schema/type, check existing data. After investigating, ` +
-        `retry the edit. Set COMPACT_AGENT_GATEGUARD_MODE=warn to switch ` +
+        `retry the edit. Set VENTIPUS_GATEGUARD_MODE=warn to switch ` +
         `to non-blocking hints, or =off to disable. /perm yolo also bypasses.`,
       );
     }
@@ -327,7 +308,7 @@ const checks = {
     process.stderr.write(
       `[ECC hint] first edit to ${targetPath} this session — make sure ` +
       `you've read it + checked for callers. (set ` +
-      `COMPACT_AGENT_GATEGUARD_MODE=block to enforce, =off to silence)\n`,
+      `VENTIPUS_GATEGUARD_MODE=block to enforce, =off to silence)\n`,
     );
     return ok();
   },
@@ -408,14 +389,14 @@ const checks = {
 
   /**
    * Session-end format/typecheck reminder. PostToolUse for now (since
-   * compact-agent doesn't have a Stop hook event yet). Fires once per
+   * ventipus doesn't have a Stop hook event yet). Fires once per
    * tool call but the body batches reminders rather than spam each one.
    *
    * Goal: surface "you should run `npm run typecheck` (or equivalent)
    * before considering this session done" at the end of substantial
    * work. Detects the right command via package.json scripts.
    *
-   * Tracks per-session state at ~/.compact-agent/state/quality-hint/<id>.json
+   * Tracks per-session state at ~/.ventipus/state/quality-hint/<id>.json
    * so we only nudge once per session (per project).
    */
   'format-typecheck-hint': () => {
@@ -428,12 +409,9 @@ const checks = {
     const fs = require('fs');
     const pathMod = require('path');
     const os = require('os');
-    // Read both env-var names + sanitize, same pattern as gateguard.
-    // Previously only read the legacy CROWCODER_SESSION_ID, which broke
-    // for any wrapper that exported only the new COMPACT_AGENT_* names.
-    const rawSessionId = process.env.COMPACT_AGENT_SESSION_ID || process.env.CROWCODER_SESSION_ID || '';
+    const rawSessionId = process.env.VENTIPUS_SESSION_ID || '';
     const sessionId = /^[A-Za-z0-9_-]{1,64}$/.test(rawSessionId) ? rawSessionId : 'unknown';
-    const stateDir = pathMod.join(os.homedir(), '.compact-agent', 'state', 'quality-hint');
+    const stateDir = pathMod.join(os.homedir(), '.ventipus', 'state', 'quality-hint');
     const stateFile = pathMod.join(stateDir, `${sessionId}.json`);
 
     // Already nudged this session — silent

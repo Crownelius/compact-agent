@@ -14,7 +14,7 @@ export interface Message {
 }
 
 // ── Config ────────────────────────────────────────────────
-export interface CrowcoderConfig {
+export interface VentipusConfig {
   apiKey: string;
   // Optional pool of API keys (e.g. multiple OpenRouter free-tier accounts).
   // When present, the client rotates through them on 429/401, isolating
@@ -26,7 +26,9 @@ export interface CrowcoderConfig {
   model: string;
   fallbackModel?: string;  // tried automatically once when the primary model errors with an empty/unknown provider error
   provider: string;        // display name: "OpenRouter", "GLM", "Ollama", etc.
+  openaiAuth?: OpenAIAuthConfig; // OpenAI API key vs ChatGPT/Codex OAuth
   maxTokens: number;
+  contextWindowTokens?: number; // optional prompt+completion window override for context capping
   temperature: number;
   // Optional per-chain tool-call iteration cap. Default behavior (when
   // omitted or 0) is unlimited — the chain runs until the model stops
@@ -38,11 +40,21 @@ export interface CrowcoderConfig {
   alwaysAllowedTools?: string[];           // per-tool persistent allowlist populated when user types "always"
   dryRun?: boolean;        // when true, show what tools WOULD execute without running them
   theme?: 'full' | 'compact' | 'minimal';   // startup display mode (layout density)
-  palette?: string;        // color palette id (compact-cmyk, dracula, nord, etc.) — see src/theme.ts
+  palette?: string;        // color palette id (Coolors trending schemes) — see src/theme.ts
   showThinking?: boolean;  // when true, display model reasoning/thinking tokens
   voice?: VoiceConfig;     // accessibility: STT (Whisper) + TTS (ElevenLabs) + screen-reader mode
   memory?: MemoryConfig;   // MemPalace-style persistent memory (wings/rooms/drawers/tunnels/KG)
   sandbox?: SandboxConfig; // OS-native sandbox wrap for bash tool (Seatbelt/bwrap)
+}
+
+export interface OpenAIAuthConfig {
+  type: 'api_key' | 'codex_oauth';
+  /** CODEX_HOME override for reading Codex CLI auth; defaults to $CODEX_HOME or ~/.codex. */
+  codexHome?: string;
+  /** Codex OAuth calls use the ChatGPT Codex Responses backend. */
+  chatgptBaseURL?: string;
+  /** Read tokens from Codex CLI auth.json at request time instead of storing them here. */
+  useCodexAuthFile?: boolean;
 }
 
 // ── Sandbox config ───────────────────────────────────────
@@ -57,8 +69,8 @@ export interface SandboxConfig {
 }
 
 // ── MemPalace memory config ──────────────────────────────
-// Lives at ~/.compact-agent/memory/store.json (global) and
-// <cwd>/.compact-agent/memory/store.json (project). When disabled, the
+// Lives at ~/.ventipus/memory/store.json (global) and
+// <cwd>/.ventipus/memory/store.json (project). When disabled, the
 // memory_* tools are NOT registered with the model (no wasted tokens)
 // and the system prompt's memory section is omitted.
 export interface MemoryConfig {
@@ -130,10 +142,16 @@ export const PROVIDERS: Record<string, ProviderPreset> = {
     defaultModel: 'gpt-4o',
     requiresKey: true,
   },
+  'openai-codex': {
+    name: 'OpenAI Codex (OAuth)',
+    baseURL: 'https://chatgpt.com/backend-api/codex',
+    defaultModel: 'gpt-5.5',
+    requiresKey: false,
+  },
   openrouter: {
     name: 'OpenRouter (Any Model)',
     baseURL: 'https://openrouter.ai/api/v1',
-    defaultModel: 'anthropic/claude-sonnet-4',
+    defaultModel: 'openrouter/free',
     requiresKey: true,
   },
   google: {

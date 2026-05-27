@@ -9,15 +9,15 @@ const __dirname = path.dirname(__filename);
 
 // Use a temp config dir so commands like /dry-run that call saveConfig() can't
 // clobber the user's real config. MUST be set BEFORE dist is imported.
-const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'crowcoder-smoke-'));
-process.env.CROWCODER_HOME = TMP_HOME;
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ventipus-smoke-'));
+process.env.VENTIPUS_HOME = TMP_HOME;
 
 const dist = path.join(__dirname, '..', 'dist', 'index.js');
 if (!fs.existsSync(dist)) {
   throw new Error('dist/index.js missing. Run: npx tsc');
 }
 const mod = await import(pathToFileURL(dist).href);
-const { handleSlashCommand } = mod;
+const { handleSlashCommand, resolveNonInteractivePrompt } = mod;
 
 describe('Smoke Tests — handleSlashCommand', () => {
   const config = {
@@ -54,9 +54,15 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/model', 'local'],
     ['/models', 'local'],
     ['/provider', 'local'],
+    ['/openrouter-free', 'local'],
+    // Theme & palettes
+    ['/palette', 'local'],
+    ['/palettes', 'local'],
+    ['/palette dark-sunset', 'local'],
     // Modes
     ['/mode dev', 'local'],
     ['/mode hermes', 'local'],
+    ['/mode benchmark', 'local'],
     ['/mode dev', 'local'],
     ['/modes', 'local'],
     ['/hermes', 'local'],
@@ -73,6 +79,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/refactor', 'llm'],
     ['/e2e checkout flow', 'llm'],
     ['/eval correctness', 'llm'],
+    ['/benchmark swe-bench fix parser regression', 'llm'],
     ['/plan add user profiles', 'llm'],
     ['/verify', 'llm'],
     ['/test-coverage', 'llm'],
@@ -92,6 +99,8 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/checkpoints', 'local'],
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
+    ['/source-research coding agent verification', 'llm'],
+    ['/bench terminal-bench complete sandbox verifier', 'llm'],
     // Language reviews
     ['/auto-review', 'llm'],
     ['/ts-review', 'llm'],
@@ -186,4 +195,54 @@ describe('Smoke Tests — handleSlashCommand', () => {
       }
     });
   }
+});
+
+describe('Non-interactive slash dispatch', () => {
+  const config = {
+    apiKey: '',
+    baseURL: 'http://localhost:8080/v1',
+    model: 'test-model',
+    provider: 'OpenRouter',
+    maxTokens: 8192,
+    temperature: 0.3,
+    permissionMode: 'yolo' as const,
+    dryRun: false,
+    theme: 'full' as const,
+    showThinking: false,
+  };
+  const session = {
+    id: 'noninteractive-session',
+    cwd: process.cwd(),
+    model: 'test-model',
+    provider: 'OpenRouter',
+    mode: 'dev' as const,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tokenCount: 0,
+    turnCount: 0,
+    messages: [],
+  };
+
+  it('routes --prompt slash commands through the command handler before runQuery', () => {
+    const localMessages: never[] = [];
+    const localMode = { current: 'dev' as const };
+    const res = resolveNonInteractivePrompt(
+      '/benchmark terminal-bench fix the sandbox task',
+      config,
+      localMessages,
+      session,
+      localMode,
+    );
+
+    expect(res.kind).toBe('query');
+    expect(res.prompt).toContain('Benchmark-Grade Agent Run');
+    expect(res.prompt).toContain('Terminal-Bench style terminal task');
+    expect(res.prompt).toContain('Automatic Preflight Snapshot');
+    expect(localMode.current).toBe('benchmark');
+  });
+
+  it('leaves ordinary non-interactive prompts unchanged', () => {
+    const res = resolveNonInteractivePrompt('fix the parser', config, [], session, { current: 'dev' as const });
+    expect(res).toEqual({ kind: 'query', prompt: 'fix the parser' });
+  });
 });

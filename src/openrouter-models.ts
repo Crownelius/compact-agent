@@ -26,8 +26,20 @@ export interface OpenRouterModel {
   promptPerM: number;
   /** USD per million output tokens. */
   completionPerM: number;
-  /** True when the model is free (both prompt + completion = 0). */
+  /** USD per request. Usually 0 for chat models. */
+  requestCost: number;
+  /** True when the model is usable through a zero-cost route. */
   isFree: boolean;
+  /** True for OpenRouter's dynamic zero-cost router. */
+  isFreeRouter: boolean;
+  /** Supported request parameters from the catalog, e.g. "tools". */
+  supportedParameters: string[];
+  /** Output modalities from the catalog architecture block. */
+  outputModalities: string[];
+  /** True when the model can be used for normal text chat. */
+  isTextModel: boolean;
+  /** True when the model advertises tool/function calling support. */
+  supportsTools: boolean;
 }
 
 interface RawModel {
@@ -37,6 +49,14 @@ interface RawModel {
   pricing?: {
     prompt?: string | number;
     completion?: string | number;
+    request?: string | number;
+  };
+  supported_parameters?: string[];
+  architecture?: {
+    output_modalities?: string[];
+  };
+  top_provider?: {
+    context_length?: number;
   };
 }
 
@@ -64,7 +84,7 @@ export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
       // request. If the network is slow the user can use /model <id>
       // directly.
       signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'compact-agent/1.x' },
+      headers: { 'User-Agent': 'ventipus/1.x' },
     });
     if (!resp.ok) return [];
     const json = await resp.json() as { data?: RawModel[] };
@@ -75,22 +95,43 @@ export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
       if (!r.id) continue;
       const prompt = parsePrice(r.pricing?.prompt);
       const completion = parsePrice(r.pricing?.completion);
+      const request = parsePrice(r.pricing?.request);
+      const supportedParameters = Array.isArray(r.supported_parameters) ? r.supported_parameters : [];
+      const outputModalities = Array.isArray(r.architecture?.output_modalities)
+        ? r.architecture.output_modalities
+        : [];
+      const isFreeRouter = r.id === 'openrouter/free';
+      const isTextModel = outputModalities.length === 0 || outputModalities.includes('text');
+      const supportsTools = supportedParameters.includes('tools') || supportedParameters.includes('tool_choice');
       models.push({
         id: r.id,
         name: r.name ?? r.id,
-        contextLength: typeof r.context_length === 'number' ? r.context_length : null,
+        contextLength: typeof r.context_length === 'number'
+          ? r.context_length
+          : (typeof r.top_provider?.context_length === 'number' ? r.top_provider.context_length : null),
         promptPerM: prompt * 1_000_000,
         completionPerM: completion * 1_000_000,
-        isFree: prompt === 0 && completion === 0,
+        requestCost: request,
+        isFree: isFreeRouter || (prompt === 0 && completion === 0 && request === 0 && isTextModel),
+        isFreeRouter,
+        supportedParameters,
+        outputModalities,
+        isTextModel,
+        supportsTools,
       });
     }
 
-    // Sort: free first, then alphabetical by ID. Cheaper paid
-    // models float to the top within each group implicitly because
-    // ID alphabetical happens to put well-known cheap-tier vendors
-    // (anthropic, deepseek, google) near the top.
+    // Sort: OpenRouter's free router first, then free text+tool models,
+    // then other free text models, then paid. Within each bucket prefer
+    // larger context and then alphabetical ID. Free availability changes
+    // often, so the catalog decides the actual ordering at runtime.
     models.sort((a, b) => {
-      if (a.isFree !== b.isFree) return a.isFree ? -1 : 1;
+      const ar = openRouterFreeRank(a);
+      const br = openRouterFreeRank(b);
+      if (ar !== br) return ar - br;
+      const ac = a.contextLength ?? 0;
+      const bc = b.contextLength ?? 0;
+      if (ac !== bc) return bc - ac;
       return a.id.localeCompare(b.id);
     });
 
@@ -100,6 +141,26 @@ export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
   } catch {
     return [];
   }
+}
+
+export function isOpenRouterFreeModelId(model: string | undefined): boolean {
+  const id = (model ?? '').trim().toLowerCase();
+  return id === 'openrouter/free' || id.endsWith(':free');
+}
+
+export function getCachedOpenRouterModelContextLength(model: string | undefined): number | null {
+  const id = (model ?? '').trim().toLowerCase();
+  if (!id || !_cache) return null;
+  const found = _cache.find((m) => m.id.toLowerCase() === id);
+  return found?.contextLength ?? null;
+}
+
+function openRouterFreeRank(model: OpenRouterModel): number {
+  if (model.isFreeRouter) return 0;
+  if (model.isFree && model.isTextModel && model.supportsTools) return 1;
+  if (model.isFree && model.isTextModel) return 2;
+  if (model.isFree) return 3;
+  return 4;
 }
 
 function parsePrice(p: string | number | undefined): number {

@@ -1,33 +1,23 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, cpSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { CrowcoderConfig } from './types.js';
+import { PROVIDERS, type VentipusConfig } from './types.js';
 
-// State dir names. The legacy name shipped under the "Crowcoder" brand;
-// new installs use ".compact-agent". Resolution priority for CONFIG_DIR:
-//
-//   1. $COMPACT_AGENT_HOME    — explicit override (tests / sandboxes)
-//   2. $CROWCODER_HOME        — legacy alias, still honored
-//   3. ~/.compact-agent       — new default
-//
-// A one-shot migration runs the first time loadConfig() executes after an
-// upgrade: if the new dir doesn't exist but the legacy ~/.crowcoder does,
-// it gets renamed in place so existing users keep their config, sessions,
-// skills, memory etc. without any manual step.
-export const CONFIG_DIR_NAME = '.compact-agent';
-export const LEGACY_CONFIG_DIR_NAME = '.crowcoder';
+// Ventipus keeps config, sessions, skills, memory, and benchmark artifacts
+// under ~/.ventipus by default. VENTIPUS_HOME can point tests, sandboxes, or
+// harnesses at an isolated state directory.
+export const CONFIG_DIR_NAME = '.ventipus';
 
 // Resolve the config dir LAZILY (every call) instead of caching at
 // module-load time. The cached form prevented tests + sandboxed runs
-// from overriding via COMPACT_AGENT_HOME after the first import: the
+// from overriding via VENTIPUS_HOME after the first import: the
 // first module to load would freeze the path at the user's real
 // home, and all subsequent overrides were ignored. The resolution
 // is cheap (env lookup + one join) so calling per access has no
 // observable cost on the hot path.
 function resolveConfigDir(): string {
   return (
-    process.env.COMPACT_AGENT_HOME ||
-    process.env.CROWCODER_HOME ||
+    process.env.VENTIPUS_HOME ||
     join(homedir(), CONFIG_DIR_NAME)
   );
 }
@@ -36,92 +26,35 @@ function resolveConfigFile(): string {
   return join(resolveConfigDir(), 'config.json');
 }
 
-// Tracks whether we've already attempted the legacy-dir migration this
-// process. Migration is idempotent (existsSync guard) but we still cache
-// the decision so loadConfig() can be called repeatedly without re-stat'ing.
-let _legacyMigrationChecked = false;
-
-/**
- * One-shot rename of ~/.crowcoder → ~/.compact-agent for users upgrading
- * across the rebrand. Runs lazily from loadConfig() so tests that point
- * COMPACT_AGENT_HOME at a temp dir don't trigger it.
- *
- * Skipped if:
- *   - The new dir already exists (already migrated, or fresh install).
- *   - The legacy dir doesn't exist (fresh install — nothing to migrate).
- *   - CONFIG_DIR is overridden via env (tests / sandboxes).
- *
- * Strategy: prefer `rename` (atomic on same filesystem). If that fails
- * (e.g. EXDEV cross-device link), fall back to recursive copy + remove.
- * On any error, log a warning and proceed — the user's data is untouched
- * and they can rename manually.
- */
-function migrateLegacyHomeDir(): void {
-  if (_legacyMigrationChecked) return;
-  _legacyMigrationChecked = true;
-
-  // Env override → don't touch the user's real home dir.
-  if (process.env.COMPACT_AGENT_HOME || process.env.CROWCODER_HOME) return;
-
-  const newDir = join(homedir(), CONFIG_DIR_NAME);
-  const legacyDir = join(homedir(), LEGACY_CONFIG_DIR_NAME);
-
-  if (existsSync(newDir) || !existsSync(legacyDir)) return;
-
-  try {
-    renameSync(legacyDir, newDir);
-    console.warn(
-      `Note: migrated ~/${LEGACY_CONFIG_DIR_NAME} → ~/${CONFIG_DIR_NAME} (rebrand from Crowcoder to compact-agent).`,
-    );
-  } catch {
-    // rename failed — most likely cross-device or permission. Fall back
-    // to copy + remove. cpSync with recursive lands on Node 16.7+.
-    try {
-      cpSync(legacyDir, newDir, { recursive: true });
-      rmSync(legacyDir, { recursive: true, force: true });
-      console.warn(
-        `Note: migrated ~/${LEGACY_CONFIG_DIR_NAME} → ~/${CONFIG_DIR_NAME} (copy mode).`,
-      );
-    } catch (err) {
-      console.warn(
-        `Warning: could not auto-migrate ~/${LEGACY_CONFIG_DIR_NAME} → ~/${CONFIG_DIR_NAME}: ${err instanceof Error ? err.message : err}. Move it manually if you want to keep your existing state.`,
-      );
-    }
-  }
-}
-
 /**
  * Resolve the per-project state dir (codemap cache, project memory,
- * package-manager pref). Prefers `<cwd>/.compact-agent`; falls back to
- * the legacy `<cwd>/.crowcoder` only if it exists and the new one
- * doesn't. Project dirs are NOT auto-renamed — they often live inside
+ * package-manager pref). Prefers `<cwd>/.ventipus`; falls back to
+ * the legacy `<cwd>/.ventipus` only if it exists and the new one
+ * doesn't. Project dirs are NOT auto-renamed â€” they often live inside
  * repos and migrating them silently could surprise teammates / CI.
  */
 export function getProjectStateDir(cwd: string): string {
-  const newDir = join(cwd, CONFIG_DIR_NAME);
-  const legacyDir = join(cwd, LEGACY_CONFIG_DIR_NAME);
-  if (!existsSync(newDir) && existsSync(legacyDir)) return legacyDir;
-  return newDir;
+  return join(cwd, CONFIG_DIR_NAME);
 }
 
-const DEFAULT_CONFIG: CrowcoderConfig = {
+const DEFAULT_CONFIG: VentipusConfig = {
   apiKey: '',
   baseURL: 'https://openrouter.ai/api/v1',
-  model: 'anthropic/claude-sonnet-4',
+  model: 'openrouter/free',
   // When the primary model returns a cryptic/empty provider error
   // (common for free / experimental OpenRouter models like owl-alpha
   // returning literally "ERROR"), runQuery retries ONCE with this
-  // fallback. anthropic/claude-sonnet-4 is paid but rarely fails this
-  // way — chosen as a safe escape hatch, not a default model.
-  fallbackModel: 'anthropic/claude-sonnet-4',
+  // fallback. The setup wizard writes an OpenRouter-specific free fallback;
+  // keep the base default unset so non-OpenRouter providers don't inherit a
+  // model name their endpoint cannot serve.
   provider: 'OpenRouter',
   maxTokens: 8192,
   temperature: 0.3,
   permissionMode: 'ask',
   // Default color palette. Users switch with /palette <name>; available
-  // palettes are listed via /palettes. compact-cmyk is the original look.
-  palette: 'compact-cmyk',
-  // Thinking / reasoning shown by default — gives users live "the model isn't
+  // palettes are listed via /palettes. IDs come from Coolors trending schemes.
+  palette: 'olive-garden-feast',
+  // Thinking / reasoning shown by default â€” gives users live "the model isn't
   // dead" feedback during long turns. Toggle off with /thinking.
   showThinking: true,
   // Sandbox config. Default off: most workflows don't want the
@@ -131,7 +64,7 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
   sandbox: {
     level: 'off',
   },
-  // MemPalace persistent memory. ON by default — it's a featured capability,
+  // MemPalace persistent memory. ON by default â€” it's a featured capability,
   // zero overhead until something is written, and the agent only uses the
   // tools when it sees a durable fact worth keeping. User can opt out during
   // the setup wizard or anytime via /memory disable.
@@ -147,7 +80,7 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
   voice: {
     enabled: false,
     stt: {
-      // apiKey unset — falls back to top-level apiKey for OpenAI-compatible
+      // apiKey unset â€” falls back to top-level apiKey for OpenAI-compatible
       // providers. Whisper specifically requires a real OpenAI key; users
       // configure a separate one via /voice config when their main provider
       // isn't OpenAI.
@@ -157,13 +90,13 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
       autoSubmit: false,
     },
     tts: {
-      // apiKey unset — no fallback (ElevenLabs is a distinct provider). User
+      // apiKey unset â€” no fallback (ElevenLabs is a distinct provider). User
       // must run /voice config to provide it.
       baseURL: 'https://api.elevenlabs.io/v1',
       model: 'eleven_turbo_v2_5',
-      // Rachel + Domi — both available on every ElevenLabs free tier; using
+      // Rachel + Domi â€” both available on every ElevenLabs free tier; using
       // two distinct presets gives instant blind-accessibility benefit
-      // (assistant ≠ user voice).
+      // (assistant â‰  user voice).
       assistantVoiceId: '21m00Tcm4TlvDq8ikWAM',
       userVoiceId: 'AZnzlk1XvdvUeBnXmlld',
       echoUser: true,
@@ -173,7 +106,7 @@ const DEFAULT_CONFIG: CrowcoderConfig = {
       similarityBoost: 0.75,
     },
     accessibility: {
-      // screenReader OFF by default — it's lossy for sighted users (no ANSI
+      // screenReader OFF by default â€” it's lossy for sighted users (no ANSI
       // means no syntax highlight). Blind users turn it on via /accessibility
       // screenReader on.
       screenReader: false,
@@ -199,9 +132,7 @@ export function getHomeStateDir(): string {
   return resolveConfigDir();
 }
 
-export function loadConfig(): CrowcoderConfig {
-  // Try to migrate legacy ~/.crowcoder → ~/.compact-agent before reading.
-  migrateLegacyHomeDir();
+export function loadConfig(): VentipusConfig {
   const configFile = resolveConfigFile();
   if (!existsSync(configFile)) {
     return { ...DEFAULT_CONFIG };
@@ -218,15 +149,225 @@ export function loadConfig(): CrowcoderConfig {
   }
 }
 
+type ProviderKey = keyof typeof PROVIDERS;
+
+const ENV_KEYS = [
+  'VENTIPUS_PROVIDER',
+  'VENTIPUS_API_KEY',
+  'VENTIPUS_BASE_URL',
+  'VENTIPUS_MODEL',
+  'VENTIPUS_FALLBACK_MODEL',
+  'VENTIPUS_MAX_TOKENS',
+  'VENTIPUS_CONTEXT_WINDOW_TOKENS',
+  'VENTIPUS_MAX_TURNS',
+  'VENTIPUS_TEMPERATURE',
+  'VENTIPUS_PERMISSION',
+  'VENTIPUS_MEMORY',
+  'VENTIPUS_THEME',
+  'VENTIPUS_SHOW_THINKING',
+  'OPENROUTER_API_KEY',
+  'OPENAI_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'NVIDIA_API_KEY',
+  'GOOGLE_API_KEY',
+  'GEMINI_API_KEY',
+  'GLM_API_KEY',
+  'ZHIPUAI_API_KEY',
+  'OLLAMA_BASE_URL',
+] as const;
+
+function normalizeProviderKey(value: string | undefined): ProviderKey | null {
+  const key = String(value || '').trim().toLowerCase();
+  if (!key) return null;
+  const compact = key.replace(/[^a-z0-9]/g, '');
+  if (compact in PROVIDERS) return compact as ProviderKey;
+  if (compact.includes('openrouter')) return 'openrouter';
+  if (compact.includes('openaicodex') || compact === 'codex') return 'openai-codex';
+  if (compact.includes('openai')) return 'openai';
+  if (compact.includes('deepseek')) return 'deepseek';
+  if (compact.includes('nvidia') || compact.includes('nim')) return 'nvidia';
+  if (compact.includes('google') || compact.includes('gemini')) return 'google';
+  if (compact.includes('ollama')) return 'ollama';
+  if (compact.includes('lmstudio')) return 'lmstudio';
+  if (compact.includes('glm') || compact.includes('zhipu')) return 'glm';
+  if (compact.includes('custom')) return 'custom';
+  return null;
+}
+
+function firstEnv(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } | null {
+  const explicit = normalizeProviderKey(firstEnv('VENTIPUS_PROVIDER'));
+  if (explicit) {
+    return { providerKey: explicit, apiKey: apiKeyForProvider(explicit) };
+  }
+  if (firstEnv('OPENROUTER_API_KEY')) return { providerKey: 'openrouter', apiKey: firstEnv('OPENROUTER_API_KEY') };
+  if (firstEnv('OPENAI_API_KEY')) return { providerKey: 'openai', apiKey: firstEnv('OPENAI_API_KEY') };
+  if (firstEnv('DEEPSEEK_API_KEY')) return { providerKey: 'deepseek', apiKey: firstEnv('DEEPSEEK_API_KEY') };
+  if (firstEnv('NVIDIA_API_KEY')) return { providerKey: 'nvidia', apiKey: firstEnv('NVIDIA_API_KEY') };
+  if (firstEnv('GOOGLE_API_KEY', 'GEMINI_API_KEY')) return { providerKey: 'google', apiKey: firstEnv('GOOGLE_API_KEY', 'GEMINI_API_KEY') };
+  if (firstEnv('GLM_API_KEY', 'ZHIPUAI_API_KEY')) return { providerKey: 'glm', apiKey: firstEnv('GLM_API_KEY', 'ZHIPUAI_API_KEY') };
+  if (firstEnv('OLLAMA_BASE_URL')) return { providerKey: 'ollama' };
+  return null;
+}
+
+function apiKeyForProvider(providerKey: ProviderKey): string | undefined {
+  const explicit = firstEnv('VENTIPUS_API_KEY');
+  if (explicit) return explicit;
+  switch (providerKey) {
+    case 'openrouter': return firstEnv('OPENROUTER_API_KEY');
+    case 'openai': return firstEnv('OPENAI_API_KEY');
+    case 'deepseek': return firstEnv('DEEPSEEK_API_KEY');
+    case 'nvidia': return firstEnv('NVIDIA_API_KEY');
+    case 'google': return firstEnv('GOOGLE_API_KEY', 'GEMINI_API_KEY');
+    case 'glm': return firstEnv('GLM_API_KEY', 'ZHIPUAI_API_KEY');
+    default: return undefined;
+  }
+}
+
+function envWasProvided(): boolean {
+  return ENV_KEYS.some((key) => !!process.env[key]?.trim());
+}
+
+function envNumber(name: string, min?: number): number | undefined {
+  const raw = firstEnv(name);
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return undefined;
+  if (min !== undefined && value < min) return undefined;
+  return value;
+}
+
+function envFlag(name: string): boolean | undefined {
+  const raw = firstEnv(name);
+  if (!raw) return undefined;
+  if (/^(1|true|yes|on)$/i.test(raw)) return true;
+  if (/^(0|false|no|off)$/i.test(raw)) return false;
+  return undefined;
+}
+
+/**
+ * Build a runtime config from environment variables for headless harnesses.
+ * This intentionally does not write config.json; it lets benchmark containers
+ * run ventipus with `--prompt` from API-key env vars only.
+ */
+export function loadConfigFromEnv(): VentipusConfig | null {
+  if (!envWasProvided()) return null;
+
+  const inferred = inferProviderFromEnv();
+  const explicitBaseURL = firstEnv('VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL');
+  const explicitModel = firstEnv('VENTIPUS_MODEL');
+  const providerKey = inferred?.providerKey ?? (explicitBaseURL || explicitModel ? 'custom' : null);
+  if (!providerKey) return null;
+
+  const preset = PROVIDERS[providerKey];
+  const baseURL = explicitBaseURL || preset.baseURL;
+  const model = explicitModel || preset.defaultModel;
+  const apiKey = inferred?.apiKey || apiKeyForProvider(providerKey) || '';
+  const keyRequired = preset.requiresKey && !baseURL.includes('localhost') && !baseURL.includes('127.0.0.1');
+  if (keyRequired && !apiKey && providerKey !== 'openai-codex') return null;
+
+  const config: VentipusConfig = {
+    ...DEFAULT_CONFIG,
+    apiKey,
+    baseURL,
+    model,
+    provider: preset.name,
+    fallbackModel: firstEnv('VENTIPUS_FALLBACK_MODEL'),
+  };
+
+  const maxTokens = envNumber('VENTIPUS_MAX_TOKENS', 1);
+  if (maxTokens) config.maxTokens = Math.floor(maxTokens);
+  const contextWindowTokens = envNumber('VENTIPUS_CONTEXT_WINDOW_TOKENS', 1);
+  if (contextWindowTokens) config.contextWindowTokens = Math.floor(contextWindowTokens);
+  const maxTurns = envNumber('VENTIPUS_MAX_TURNS', 1);
+  if (maxTurns) config.maxTurns = Math.floor(maxTurns);
+  const temperature = envNumber('VENTIPUS_TEMPERATURE', 0);
+  if (temperature !== undefined) config.temperature = temperature;
+
+  const permission = firstEnv('VENTIPUS_PERMISSION');
+  if (permission === 'ask' || permission === 'auto' || permission === 'yolo') {
+    config.permissionMode = permission;
+  }
+  const memoryEnabled = envFlag('VENTIPUS_MEMORY');
+  if (memoryEnabled !== undefined) {
+    config.memory = { ...(config.memory || {}), enabled: memoryEnabled };
+  }
+  const showThinking = envFlag('VENTIPUS_SHOW_THINKING');
+  if (showThinking !== undefined) config.showThinking = showThinking;
+  const theme = firstEnv('VENTIPUS_THEME');
+  if (theme === 'full' || theme === 'compact' || theme === 'minimal') config.theme = theme;
+
+  if (providerKey === 'openrouter' && !config.fallbackModel) {
+    config.fallbackModel = PROVIDERS.openrouter.defaultModel;
+  }
+  if (providerKey === 'openai-codex') {
+    config.openaiAuth = {
+      type: 'codex_oauth',
+      useCodexAuthFile: true,
+      chatgptBaseURL: preset.baseURL,
+    };
+  }
+
+  validateConfig(config);
+  return config;
+}
+
+/**
+ * Apply per-invocation overrides from CLI/env without mutating config.json.
+ * These are intentionally separate from loadConfigFromEnv(): env bootstrap
+ * builds a full config for fresh headless containers, while runtime overrides
+ * tweak an already-loaded config for harness adapters (`--model`, `--max-turns`,
+ * `--base-url`, etc.).
+ */
+export function applyRuntimeConfigOverrides(config: VentipusConfig): VentipusConfig {
+  const next: VentipusConfig = {
+    ...config,
+    memory: config.memory ? { ...config.memory } : config.memory,
+    sandbox: config.sandbox ? { ...config.sandbox } : config.sandbox,
+    voice: config.voice ? { ...config.voice } : config.voice,
+    openaiAuth: config.openaiAuth ? { ...config.openaiAuth } : config.openaiAuth,
+  };
+
+  const model = firstEnv('VENTIPUS_MODEL_OVERRIDE');
+  if (model) next.model = model;
+  const fallbackModel = firstEnv('VENTIPUS_FALLBACK_MODEL_OVERRIDE');
+  if (fallbackModel) next.fallbackModel = fallbackModel;
+  const baseURL = firstEnv('VENTIPUS_BASE_URL_OVERRIDE');
+  if (baseURL) next.baseURL = baseURL;
+  const apiKey = firstEnv('VENTIPUS_API_KEY_OVERRIDE');
+  if (apiKey) next.apiKey = apiKey;
+  const apiKeyEnv = firstEnv('VENTIPUS_API_KEY_ENV');
+  if (apiKeyEnv && process.env[apiKeyEnv]?.trim()) next.apiKey = process.env[apiKeyEnv]!.trim();
+
+  const maxTokens = envNumber('VENTIPUS_MAX_TOKENS_OVERRIDE', 1);
+  if (maxTokens) next.maxTokens = Math.floor(maxTokens);
+  const contextWindowTokens = envNumber('VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE', 1);
+  if (contextWindowTokens) next.contextWindowTokens = Math.floor(contextWindowTokens);
+  const maxTurns = envNumber('VENTIPUS_MAX_TURNS_OVERRIDE', 1);
+  if (maxTurns) next.maxTurns = Math.floor(maxTurns);
+  const temperature = envNumber('VENTIPUS_TEMPERATURE_OVERRIDE', 0);
+  if (temperature !== undefined) next.temperature = temperature;
+
+  validateConfig(next);
+  return next;
+}
+
 // Track which fields we've already warned about this process. loadConfig()
 // is called both from configExists() and from main(), and each invocation
-// validates — so without this set we'd print "Warning: Unexpected config
+// validates â€” so without this set we'd print "Warning: Unexpected config
 // field: X" twice on every startup. Per-process is the right scope; cross-
 // process spam would require persisting the set to disk which isn't worth
 // the complexity for a defensive log message.
 const _alreadyWarnedFields = new Set<string>();
 
-function validateConfig(config: CrowcoderConfig): void {
+function validateConfig(config: VentipusConfig): void {
   // Validate baseURL
   if (config.baseURL && typeof config.baseURL === 'string') {
     try {
@@ -244,14 +385,14 @@ function validateConfig(config: CrowcoderConfig): void {
   }
 
   // Validate permissionMode
-  const validModes: CrowcoderConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
+  const validModes: VentipusConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
   if (!validModes.includes(config.permissionMode)) {
     console.warn(`Warning: Invalid permissionMode: ${config.permissionMode}, using 'ask'`);
     config.permissionMode = 'ask';
   }
 
   // Warn on unexpected fields
-  const expectedFields = new Set(['apiKey', 'apiKeys', 'baseURL', 'model', 'fallbackModel', 'provider', 'maxTokens', 'maxTurns', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory', 'sandbox']);
+  const expectedFields = new Set(['apiKey', 'apiKeys', 'baseURL', 'model', 'fallbackModel', 'provider', 'openaiAuth', 'maxTokens', 'contextWindowTokens', 'maxTurns', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory', 'sandbox']);
   for (const key in config) {
     if (!expectedFields.has(key) && !_alreadyWarnedFields.has(key)) {
       _alreadyWarnedFields.add(key);
@@ -260,7 +401,7 @@ function validateConfig(config: CrowcoderConfig): void {
   }
 }
 
-export function saveConfig(config: CrowcoderConfig): void {
+export function saveConfig(config: VentipusConfig): void {
   mkdirSync(resolveConfigDir(), { recursive: true });
   writeFileSync(resolveConfigFile(), JSON.stringify(config, null, 2), 'utf-8');
 }
@@ -270,7 +411,8 @@ export function configExists(): boolean {
   return !!(cfg.apiKey || !requiresKey(cfg));
 }
 
-function requiresKey(cfg: CrowcoderConfig): boolean {
+function requiresKey(cfg: VentipusConfig): boolean {
+  if (cfg.openaiAuth?.type === 'codex_oauth') return false;
   // Local providers don't need API keys
   return !cfg.baseURL.includes('localhost') && !cfg.baseURL.includes('127.0.0.1');
 }

@@ -1,6 +1,6 @@
 import { readdirSync, existsSync } from 'node:fs';
 import { platform, release, homedir } from 'node:os';
-import type { CrowcoderConfig } from './types.js';
+import type { VentipusConfig } from './types.js';
 import { getModePromptAddition, type Mode } from './modes.js';
 import { buildRulesPrompt } from './rules.js';
 import { getRelevantInstincts } from './learning.js';
@@ -31,7 +31,7 @@ function buildDesignHint(mode: Mode): string {
 }
 
 export function buildSystemPrompt(
-  config: CrowcoderConfig,
+  config: VentipusConfig,
   cwd: string,
   mode: Mode = 'dev',
   userQuery?: string,
@@ -41,7 +41,7 @@ export function buildSystemPrompt(
   // The bash tool picks cmd.exe on Windows by default (was a major source
   // of "$USERPROFILE is empty" bugs when we used bash). Keep this in sync
   // with src/tools/bash.ts:pickShell().
-  const shell = process.env.COMPACT_AGENT_SHELL
+  const shell = process.env.VENTIPUS_SHELL
     || (process.platform === 'win32' ? 'cmd.exe' : '/bin/bash');
 
   // Detect if cwd is a git repo
@@ -101,9 +101,13 @@ export function buildSystemPrompt(
           const desc = s.description.length > 90 ? s.description.slice(0, 87) + '…' : s.description;
           return `- **${s.name}** — ${desc}`;
         });
+        const skillUseGate = mode === 'benchmark'
+          ? 'Benchmark mode: inspect `benchmark_context` and local repo evidence before loading a full skill, load at most one strongly domain/version-matched skill unless the task clearly spans multiple domains, and ignore skill guidance that conflicts with current files or verifier output.\n'
+          : 'Before loading a full skill, check that the name and description strongly fit the current task and repo evidence; skip weak keyword matches.\n';
         eccSkillAddition =
           '\n# Relevant skills (Level 0 — names only)\n' +
-          'These bundled skills match the current request by keyword. Call `skill_view("<name>")` to load the full prompt body for one that applies. If none look relevant, ignore this list.\n' +
+          'These bundled skills match the current request by keyword. Call `skill_view("<name>")` to load the full prompt body only when one clearly applies. If none look relevant, ignore this list.\n' +
+          skillUseGate +
           lines.join('\n') + '\n';
       }
     } catch { /* skill matching is best-effort */ }
@@ -154,7 +158,7 @@ export function buildSystemPrompt(
   // User context
   const userAddition = buildUserContext();
 
-  return `You are compact-agent, a terminal AI coding assistant running in the user's shell.
+  return `You are ventipus, a terminal AI coding assistant running in the user's shell.
 You help with software engineering tasks: writing code, fixing bugs, refactoring, explaining code, running commands, and more.
 
 # Environment
@@ -173,9 +177,9 @@ ${buildToolList()}
 ${config.memory?.enabled !== false ? `# Memory (MemPalace) — when to use the memory_* tools
 
 This agent has a persistent memory subsystem with two scopes:
-  - **global** memory at ~/.compact-agent/memory/ — cross-project: user preferences,
+  - **global** memory at ~/.ventipus/memory/ — cross-project: user preferences,
     style choices, recurring patterns, identity
-  - **project** memory at <cwd>/.compact-agent/memory/ — this-codebase-specific:
+  - **project** memory at <cwd>/.ventipus/memory/ — this-codebase-specific:
     landmarks ("auth lives in src/auth"), gotchas, decisions
 
 You have these memory tools available:
@@ -215,6 +219,8 @@ IMPORTANT — tool-call rules:
 - The exact, allowed tool names are the bullet keys above. Calling any other name (e.g. \`web_search_exa\`, \`google_search\`, \`shell_exec\`) is an error and the call will fail.
 - For web discovery: use \`web_search\` (returns title/URL/snippet for a keyword query).
 - For reading a known URL: use \`web_fetch\`.
+- For source-specific research/code/data discovery: use \`research_sources\` before generic web search when arXiv, GitHub, Hugging Face, or Kaggle is relevant. For benchmark/leaderboard work, prefer targeted coverage: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, and Kaggle \`kaggle_kind:"both"\`.
+- For multi-step work, uncertain scope, or benchmark tasks: use \`todo_write\` to keep a short working checklist current. Mark exactly one active item as \`in_progress\` when possible, and mark items \`completed\` only after evidence.
 - For shell-only operations: use \`bash\`. Do not use bash for tasks any other tool already covers.
 - If a capability you want isn't in the list, work around it with the tools that exist. Don't pretend a tool exists.
 

@@ -15,7 +15,7 @@ export interface HookControlConfig {
  * Defaults to 'standard' if not set or invalid.
  */
 export function getHookProfile(): HookProfile {
-  const profile = process.env.CROWCODER_HOOK_PROFILE?.toLowerCase();
+  const profile = process.env.VENTIPUS_HOOK_PROFILE?.toLowerCase();
   if (profile === 'minimal' || profile === 'strict') {
     return profile;
   }
@@ -27,7 +27,7 @@ export function getHookProfile(): HookProfile {
  * Format: comma-separated hook IDs (e.g., "hook1,hook2,hook3")
  */
 export function getDisabledHooks(): string[] {
-  const disabled = process.env.CROWCODER_DISABLED_HOOKS || '';
+  const disabled = process.env.VENTIPUS_DISABLED_HOOKS || '';
   return disabled
     .split(',')
     .map((h) => h.trim())

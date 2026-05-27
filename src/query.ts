@@ -1,15 +1,26 @@
 import chalk from 'chalk';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import * as readline from 'node:readline/promises';
-import type { Message, CrowcoderConfig } from './types.js';
+import type { Message, VentipusConfig } from './types.js';
 import type { Tool } from './tools/types.js';
 import { ALL_TOOLS, getToolByName } from './tools/index.js';
+import { resolveUserPath } from './tools/path-utils.js';
 import { streamChat, resetClient } from './api.js';
 import { checkPermission } from './permissions.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runHooks } from './hooks.js';
 import { scanToolCall, printSecurityWarning } from './security.js';
 import { trackUsage } from './cost-tracker.js';
-import { shouldCompact, compactMessages, quickCompact, DEFAULT_COMPACTION } from './compaction.js';
+import {
+  shouldCompact,
+  compactMessages,
+  quickCompact,
+  buildCompactionConfig,
+  contextCapTokens,
+  enforceContextCap,
+  inferContextWindowTokens,
+} from './compaction.js';
 import type { Mode } from './modes.js';
 import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost, printApiError, formatDuration, categorizeApiError } from './theme.js';
 import {
@@ -22,6 +33,19 @@ import { setStatus } from './status.js';
 import { collapseCompletedTurns } from './turn-context.js';
 import * as liveQueue from './live-queue.js';
 import { emit as dbgEmit } from './debug.js';
+import {
+  buildBenchmarkCompletionReminder,
+  buildBenchmarkTrajectorySystemBlock,
+  makeBenchmarkInvalidToolActionEvent,
+  makeBenchmarkTraceEvent,
+  writeBenchmarkTrace,
+  type BenchmarkUsageEvent,
+  type BenchmarkTraceEvent,
+} from './benchmark-trace.js';
+import { buildTodoStateBlock } from './tools/todo.js';
+import { buildRuntimeInfoBlock } from './runtime-info.js';
+import { buildAutoRepoMapBlock } from './codemaps.js';
+import { archiveLargeToolOutput } from './tool-output-archive.js';
 
 // Per-session set: once we've told the user "this model didn't emit
 // reasoning tokens" we don't repeat it on every turn. Cleared per process,
@@ -62,7 +86,7 @@ export function countTailRepetitions(
 }
 
 export interface QueryContext {
-  config: CrowcoderConfig;
+  config: VentipusConfig;
   messages: Message[];
   cwd: string;
   rl: readline.Interface;
@@ -81,7 +105,7 @@ export interface QueryContext {
  * prompt so rl.question() can read Y/n input cleanly.
  *
  * Mechanism: detach every 'keypress' listener on stdin that isn't tagged
- * with __crowcoderHotkey__ (the F-key listener from index.ts). That stops
+ * with __ventipusHotkey__ (the F-key listener from index.ts). That stops
  * readline from echoing typed chars or buffering them into its next-line
  * state, while keeping F1–F10 status hotkeys live.
  *
@@ -90,7 +114,7 @@ export interface QueryContext {
  *   resume()  — detach again to re-suppress
  *   restore() — final cleanup: re-attach, drop data listener, restore raw mode
  */
-type TaggedListener = ((...args: unknown[]) => void) & { __crowcoderHotkey__?: boolean };
+type TaggedListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
 
 export interface InputGuard {
   pause(): void;
@@ -137,7 +161,7 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
   // attached unconditionally so status keys work during streaming and
   // tool execution alike.
   const allKeypressListeners = stdin.listeners('keypress').slice() as TaggedListener[];
-  const togglableListeners = allKeypressListeners.filter((l) => !l.__crowcoderHotkey__);
+  const togglableListeners = allKeypressListeners.filter((l) => !l.__ventipusHotkey__);
 
   let detached = false;
 
@@ -306,13 +330,13 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
  *     Not persisted; it's purely a derived view.
  *   - Skipped on very short chains (< 3 messages) where there's
  *     nothing to recap.
- *   - Opt-out via COMPACT_AGENT_STATE_BLOCK=0.
+ *   - Opt-out via VENTIPUS_STATE_BLOCK=0.
  */
 const STATE_BLOCK_RECENT_ACTIONS = 8;
 const STATE_BLOCK_GOAL_MAX_CHARS = 400;
 
 export function buildStateBlock(messages: Message[]): string | null {
-  if (process.env.COMPACT_AGENT_STATE_BLOCK === '0') return null;
+  if (process.env.VENTIPUS_STATE_BLOCK === '0') return null;
   if (messages.length < 3) return null;
 
   // GOAL = the first user-role message. This is the original task
@@ -393,12 +417,283 @@ export function buildStateBlock(messages: Message[]): string | null {
  * Conservative for our model class — the paper's Qwen3-32B run
  * regressed -11.8% with overly aggressive masking, while Gemini-Flash
  * gained +8.5%. Deepseek-v4-flash is in that capability band, so we
- * pick a generous window. Override with COMPACT_AGENT_MASK_WINDOW.
+ * pick a generous window. Override with VENTIPUS_MASK_WINDOW.
  *
  * Threshold: we only bother masking when the total estimated payload
  * exceeds ~60K characters (rough proxy for ~15K tokens). Below that,
  * masking adds noise without saving anything material.
  */
+/**
+ * GoalAct-style global planning block.
+ *
+ * Source: arxiv 2504.16563 ("Enhancing LLM-Based Agents via Global
+ * Planning and Hierarchical Execution") and the later HiPlan line of
+ * global-local planning work. This is intentionally not another LLM call:
+ * it derives coarse phase signals from the transcript and injects a small
+ * planning policy before each turn.
+ */
+export function buildGlobalPlanBlock(messages: Message[]): string | null {
+  if (process.env.VENTIPUS_GLOBAL_PLAN === '0') return null;
+
+  const firstUser = messages.find((m) => m.role === 'user');
+  if (!firstUser || typeof firstUser.content !== 'string') return null;
+  const goal = firstUser.content.replace(/\s+/g, ' ').trim();
+  if (!goal) return null;
+
+  const actions = collectPlanActions(messages);
+  const complexEnough = isComplexGoal(goal) || actions.total >= 2;
+  if (!complexEnough) return null;
+
+  const phase = inferPlanPhase(actions);
+  const nextMove = recommendNextMove(actions, phase);
+  const signals = [
+    `inspect=${actions.inspect}`,
+    `research=${actions.research}`,
+    `edit=${actions.edit}`,
+    `execute=${actions.execute}`,
+    `verify=${actions.verify}`,
+    `errors=${actions.errors}`,
+  ].join(', ');
+
+  return [
+    '<global_plan>',
+    `Current phase: ${phase}`,
+    `Progress signals: ${signals}`,
+    `Next best move: ${nextMove}`,
+    'Execution policy:',
+    '  1. Keep a 3-7 step plan in working memory and update it after each tool result.',
+    '  2. Work on one active subgoal at a time; avoid branching into unrelated tasks.',
+    '  3. Prefer inspect -> edit -> verify -> summarize. After edits, run the narrowest useful verification.',
+    '  4. If a command fails or times out, change strategy instead of retrying the same call.',
+    '</global_plan>',
+  ].join('\n');
+}
+
+interface PlanActions {
+  total: number;
+  inspect: number;
+  research: number;
+  edit: number;
+  execute: number;
+  verify: number;
+  errors: number;
+}
+
+function collectPlanActions(messages: Message[]): PlanActions {
+  const actions: PlanActions = {
+    total: 0,
+    inspect: 0,
+    research: 0,
+    edit: 0,
+    execute: 0,
+    verify: 0,
+    errors: 0,
+  };
+
+  for (const m of messages) {
+    if (m.role === 'assistant' && m.tool_calls) {
+      for (const tc of m.tool_calls) {
+        actions.total++;
+        const name = tc.function.name;
+        const args = String(tc.function.arguments ?? '');
+        if (isInspectTool(name)) actions.inspect++;
+        if (isResearchTool(name)) actions.research++;
+        if (isEditTool(name)) actions.edit++;
+        if (name === 'bash') actions.execute++;
+        if (isVerificationToolCall(name, args)) actions.verify++;
+      }
+    }
+    if (m.role === 'tool' && typeof m.content === 'string' && isErrorObservation(m.content)) {
+      actions.errors++;
+    }
+  }
+
+  return actions;
+}
+
+function isComplexGoal(goal: string): boolean {
+  const lower = goal.toLowerCase();
+  if (goal.length >= 140) return true;
+  return /\b(benchmark|leaderboard|architecture|refactor|debug|implement|integrate|migrate|optimi[sz]e|research|verify|multi-step|end-to-end|capabilit(?:y|ies))\b/.test(lower);
+}
+
+function isInspectTool(name: string): boolean {
+  return ['read_file', 'grep', 'glob', 'list_dir', 'benchmark_context', 'memory_search', 'memory_recall', 'skill_view', 'todo_write'].includes(name);
+}
+
+function isResearchTool(name: string): boolean {
+  return ['web_search', 'web_fetch', 'research_sources'].includes(name);
+}
+
+function isEditTool(name: string): boolean {
+  return ['write_file', 'edit_file', 'apply_patch'].includes(name);
+}
+
+export function isVerificationToolCall(name: string, rawArgs: string): boolean {
+  if (name !== 'bash') return false;
+  let command = rawArgs;
+  try {
+    const parsed = JSON.parse(rawArgs) as { command?: unknown };
+    if (typeof parsed.command === 'string') command = parsed.command;
+  } catch {
+    /* use raw args */
+  }
+  return /\b(npm\s+(run\s+)?(test|build|lint|check)|pnpm\s+(test|build|lint)|yarn\s+(test|build|lint)|vitest|jest|pytest|ruff|mypy|tsc|cargo\s+(test|build|check)|go\s+test|dotnet\s+test|gradle\s+test|mvn\s+test)\b/i.test(command);
+}
+
+export function editedTargetsFromToolCall(toolName: string, rawArgs: string): string[] {
+  if (!isEditTool(toolName)) return [];
+  try {
+    const parsed = JSON.parse(rawArgs ?? '{}') as Record<string, unknown>;
+    if (typeof parsed.file_path === 'string') return [parsed.file_path];
+    if (typeof parsed.path === 'string') return [parsed.path];
+    if (toolName === 'apply_patch' && typeof parsed.patch === 'string') {
+      const targets: string[] = [];
+      const re = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(parsed.patch)) !== null) {
+        targets.push(match[1].trim());
+      }
+      const moveRe = /^\*\*\* Move to: (.+)$/gm;
+      while ((match = moveRe.exec(parsed.patch)) !== null) {
+        targets.push(match[1].trim());
+      }
+      return Array.from(new Set(targets)).slice(0, 20);
+    }
+  } catch {
+    return [toolName];
+  }
+  return [toolName];
+}
+
+export interface FileEditState {
+  key: string;
+  displayPath: string;
+  hash: string;
+  sizeBytes: number;
+}
+
+function normalizeTrackedPath(absPath: string): string {
+  const normalized = absPath.replace(/\\/g, '/');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+export function snapshotFileEditState(cwd: string, target: string): FileEditState | null {
+  const displayPath = String(target ?? '').trim();
+  if (!displayPath) return null;
+  let absPath: string;
+  try {
+    absPath = resolveUserPath(cwd, displayPath);
+    if (!existsSync(absPath)) return null;
+    const stat = statSync(absPath);
+    if (!stat.isFile()) return null;
+    const data = readFileSync(absPath);
+    return {
+      key: normalizeTrackedPath(absPath),
+      displayPath,
+      hash: createHash('sha256').update(data).digest('hex'),
+      sizeBytes: data.byteLength,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function snapshotFileEditStates(cwd: string, targets: Iterable<string>): Map<string, FileEditState> {
+  const states = new Map<string, FileEditState>();
+  for (const target of targets) {
+    const state = snapshotFileEditState(cwd, target);
+    if (state) states.set(state.key, state);
+  }
+  return states;
+}
+
+export function buildUnchangedFileEditReminder(
+  filePath: string,
+  reason: 'pre' | 'previous',
+  sizeBytes: number,
+): string {
+  const signal = reason === 'pre'
+    ? `Recovery signal: edit to "${filePath}" completed, but the file content hash is unchanged from before the edit.`
+    : `Recovery signal: "${filePath}" was edited again, but its resulting content hash matches a previous successful edit.`;
+  return [
+    signal,
+    `File size: ${sizeBytes} bytes.`,
+    'Next move: do not rewrite/regenerate the same file unchanged. Inspect the current file, run the verifier, or change strategy before editing it again.',
+  ].join('\n');
+}
+
+export function recordFileEditStates(
+  cwd: string,
+  targets: Iterable<string>,
+  lastStates: Map<string, FileEditState>,
+  beforeStates: Map<string, FileEditState> = new Map(),
+): string[] {
+  const reminders: string[] = [];
+  const seen = new Set<string>();
+  for (const target of targets) {
+    const current = snapshotFileEditState(cwd, target);
+    if (!current || seen.has(current.key)) continue;
+    seen.add(current.key);
+
+    const before = beforeStates.get(current.key);
+    const previous = lastStates.get(current.key);
+    if (before?.hash === current.hash) {
+      reminders.push(buildUnchangedFileEditReminder(current.displayPath, 'pre', current.sizeBytes));
+    } else if (previous?.hash === current.hash) {
+      reminders.push(buildUnchangedFileEditReminder(current.displayPath, 'previous', current.sizeBytes));
+    }
+    lastStates.set(current.key, current);
+  }
+  return reminders;
+}
+
+export function buildEditVerificationReminder(
+  pendingFiles: Iterable<string>,
+  editCount: number,
+): string | null {
+  const files = Array.from(new Set(Array.from(pendingFiles).map((f) => f.trim()).filter(Boolean)));
+  if (files.length === 0 || editCount <= 0) return null;
+  const shown = files.slice(0, 8);
+  const extra = files.length > shown.length ? ` (+${files.length - shown.length} more)` : '';
+  return [
+    '<system-reminder>',
+    `Verification needed: ${editCount} successful edit${editCount === 1 ? '' : 's'} have not been verified yet.`,
+    `Changed files: ${shown.join(', ')}${extra}`,
+    'Before a final answer, run the narrowest useful verification command with bash (test, build, typecheck, lint, or targeted script).',
+    'If no automated verification exists, inspect the changed files or explain the concrete reason verification is unavailable.',
+    '</system-reminder>',
+  ].join('\n');
+}
+
+function isErrorObservation(content: string): boolean {
+  return /(^|\n)(error:|blocked by|permission denied|command timed out|\[command exited with error|failed\b)/i.test(content);
+}
+
+function inferPlanPhase(actions: PlanActions): string {
+  if (actions.errors > 0 && actions.verify > 0) return 'diagnose failing verification';
+  if (actions.edit > 0 && actions.verify === 0) return 'verify edits';
+  if (actions.edit > 0 && actions.verify > 0) return 'refine or summarize';
+  if (actions.inspect > 0 || actions.research > 0) return 'inspect and choose edit';
+  return 'orient and plan';
+}
+
+function recommendNextMove(actions: PlanActions, phase: string): string {
+  if (phase === 'diagnose failing verification') {
+    return 'read the failing output, inspect the implicated files, then make the smallest targeted fix';
+  }
+  if (phase === 'verify edits') {
+    return 'run the narrowest relevant test/build/check before declaring completion';
+  }
+  if (phase === 'refine or summarize') {
+    return 'if verification passed, summarize concrete evidence; if not, fix the remaining failure';
+  }
+  if (actions.inspect === 0 && actions.research === 0) {
+    return 'inspect the repository and identify the files or commands that prove the next step';
+  }
+  return 'select one concrete edit or experiment that advances the original goal';
+}
+
 const MASKING_WINDOW_DEFAULT = 12;
 const MASKING_TRIGGER_BYTES = 60_000;
 
@@ -408,7 +703,7 @@ export function maskOldToolResults(messages: Message[]): Message[] {
 
   const window = Math.max(
     1,
-    parseInt(process.env.COMPACT_AGENT_MASK_WINDOW ?? '', 10) || MASKING_WINDOW_DEFAULT,
+    parseInt(process.env.VENTIPUS_MASK_WINDOW ?? '', 10) || MASKING_WINDOW_DEFAULT,
   );
 
   // Find indices of tool-result messages (newest first).
@@ -481,8 +776,9 @@ export function critiquePromptFor(stage: 'decompose' | 'critique' | 'refine'): s
       'Before you finalize: re-read the ORIGINAL task description (the very first user message in this conversation).\n\n' +
       'List every concrete verifiable requirement it contains, as a numbered Markdown list. For each item:\n' +
       '  - Quote the exact words from the task that express the requirement, where possible.\n' +
-      '  - Note how a third party could verify the requirement is met (which file would they check? which command would they run? what output would they look for?).\n\n' +
-      'Be exhaustive. Include format requirements, file names, output structure, and any "should also" clauses. ' +
+      '  - Note how a third party could verify the requirement is met (which file would they check? which command would they run? what output would they look for?).\n' +
+      '  - Call out exact file names, exact output paths, output wording/sections, service/process names, long-running service expectations, and any required runtime/toolchain behavior.\n\n' +
+      'Be exhaustive. Include format requirements, file names, output paths, output structure, environment/toolchain constraints, network/offline assumptions, and any "should also" clauses. ' +
       'Do not paraphrase — quote. Do not add requirements the task did not state. ' +
       'This list is just for grounding; you will judge each item in the next step.'
     );
@@ -497,6 +793,8 @@ export function critiquePromptFor(stage: 'decompose' | 'critique' | 'refine'): s
       '  - Mark PASS only if you have concrete evidence right now (a file on disk, an output you can paste).\n' +
       '  - "I implemented it" is NOT evidence. "I ran `ls /app/x.txt` and the file exists, with content `Hello`" IS evidence.\n' +
       '  - "It should work" is NOT evidence. "I ran the failing command and it now exits 0" IS evidence.\n' +
+      '  - Check that your evidence used the project/runtime the task will use: package manager, virtualenv/interpreter, compiler, network/offline state, working directory, and relevant service process state.\n' +
+      '  - If the task needs a server or daemon to keep running after you finish, verify it was launched persistently (not only `cmd &` inside a short-lived shell).\n' +
       '  - If you skipped a step, mark FAIL.\n' +
       '  - If you are uncertain, mark FAIL.\n\n' +
       'Be honest. The user prefers an honest "I left these 2 items undone" over a confident "all done" that fails the test. ' +
@@ -506,9 +804,33 @@ export function critiquePromptFor(stage: 'decompose' | 'critique' | 'refine'): s
   return (
     'For each FAIL item above, do the work to make it pass. Use the tools available.\n\n' +
     'Also revisit any PASS items where, on reflection, your evidence was weak — re-verify those.\n\n' +
+    'If the failure is about environment mismatch, verify with the project-native toolchain (for example uv/npm/cargo/go test, the selected Python interpreter, or the configured working directory). ' +
+    'If the failure is about a long-running service, launch it with a persistent mechanism such as `nohup ... & disown` or a detached tmux session, then verify the process/port is still alive.\n\n' +
     'If after the work all items are now genuinely PASS with concrete evidence, briefly summarize what you did and stop. ' +
     'Otherwise, keep working until every item is honestly PASS.'
   );
+}
+
+export function minimumToolCallsBeforeDone(mode: Mode, env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE;
+  if (raw && raw.trim()) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
+  }
+  return mode === 'benchmark' ? 2 : 1;
+}
+
+export function buildEmptyEngagementReminder(toolCallCount: number, minToolCalls: number, mode: Mode): string {
+  const plural = minToolCalls === 1 ? '' : 's';
+  return [
+    'Your previous response attempted to finish without enough concrete tool work.',
+    `Observed tool calls this chain: ${toolCallCount}. Minimum expected before finalizing in ${mode} mode: ${minToolCalls} tool call${plural}.`,
+    '',
+    'Before finalizing, do concrete work with the available tools unless the original task is purely answer-only:',
+    '  1. Re-read the original task and identify the next concrete file, command, environment, or service check.',
+    '  2. Use tools to inspect, edit, run, or verify. Do not only describe what should be done.',
+    '  3. If no tool can possibly apply, explicitly explain why the task is answer-only and provide the final answer.',
+  ].join('\n');
 }
 
 export function dedupFingerprint(toolName: string, rawArgs: string): string {
@@ -539,6 +861,82 @@ export function dedupFingerprint(toolName: string, rawArgs: string): string {
   return `${toolName}::${normalized}`;
 }
 
+type RecoveryReason = 'repeat' | 'timeout';
+
+const RECOVERY_SNIPPET_CHARS = 500;
+const RECOVERY_REMINDER_LIMIT = 3;
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateMiddle(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  const head = Math.floor(maxChars * 0.55);
+  const tail = maxChars - head - 15;
+  return `${value.slice(0, head)} ...[truncated]... ${value.slice(-tail)}`;
+}
+
+function summarizeToolArgs(toolName: string, rawArgs: string): string {
+  try {
+    const parsed = JSON.parse(rawArgs ?? '{}') as Record<string, unknown>;
+    if (toolName === 'bash' && typeof parsed.command === 'string') {
+      return `$ ${truncateMiddle(oneLine(parsed.command), 220)}`;
+    }
+    for (const key of ['file_path', 'path', 'query', 'pattern', 'url']) {
+      if (typeof parsed[key] === 'string') {
+        return `${key}=${truncateMiddle(oneLine(parsed[key]), 220)}`;
+      }
+    }
+    return truncateMiddle(oneLine(JSON.stringify(parsed)), 220);
+  } catch {
+    return truncateMiddle(oneLine(String(rawArgs ?? '')), 220);
+  }
+}
+
+export function isTimeoutObservation(content: string): boolean {
+  return /\b(command\s+timed\s+out\s+after|timed\s+out\s+waiting|operation\s+timed\s+out|timeout\s+after)\b/i
+    .test(content);
+}
+
+export function buildRecoveryReminder(
+  toolName: string,
+  rawArgs: string,
+  toolResultContent: string,
+  reason: RecoveryReason = 'repeat',
+): string {
+  const args = summarizeToolArgs(toolName, rawArgs);
+  const snippet = truncateMiddle(oneLine(String(toolResultContent ?? '')), RECOVERY_SNIPPET_CHARS);
+  const action =
+    reason === 'timeout'
+      ? 'Do not rerun the same long command unchanged. Break it into a narrower command, inspect a smaller log/file range, run a background process and poll it, or increase timeout only when the long runtime is expected.'
+      : 'Do not retry the same call unchanged. Use the fresh result, change the arguments substantively, inspect a narrower target, or switch tools.';
+
+  return [
+    reason === 'timeout'
+      ? `Recovery signal: ${toolName} timed out.`
+      : `Recovery signal: the same ${toolName} call was re-issued.`,
+    `Arguments: ${args}`,
+    snippet ? `Previous result snippet: ${snippet}` : null,
+    `Next move: ${action}`,
+  ].filter((line): line is string => Boolean(line)).join('\n');
+}
+
+function buildRecoveryReminderBlock(reminders: string[]): string | null {
+  const unique = Array.from(new Set(reminders.map((r) => r.trim()).filter(Boolean)));
+  if (unique.length === 0) return null;
+  return [
+    '<system-reminder>',
+    'Recovery signals from recent tool use:',
+    ...unique.slice(-RECOVERY_REMINDER_LIMIT).map((reminder, i) => {
+      const indented = reminder.split('\n').map((line) => `  ${line}`).join('\n');
+      return `${i + 1}. ${indented.trimStart()}`;
+    }),
+    'Before the next tool call, change strategy if the previous action repeated, timed out, or failed.',
+    '</system-reminder>',
+  ].join('\n');
+}
+
 /**
  * F4 — Rewrite stale duplicate tool-result messages in place.
  *
@@ -561,7 +959,8 @@ export function dedupRepeatedToolCalls(
   toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[],
   toolResults: Message[],
   dedupMap: Map<string, number>,
-): void {
+): string[] {
+  const reminders: string[] = [];
   // Build a quick lookup from tool_call_id → freshly-appended message index.
   // toolResults are the LAST toolResults.length entries of messages.
   const newResultIndexById = new Map<string, number>();
@@ -586,12 +985,22 @@ export function dedupRepeatedToolCalls(
           `[deduped — same ${tc.function.name} call was re-issued; ` +
           `see the fresh result later in this conversation. ` +
           `Original was ${wasBytes} bytes.]`;
+        const fresh = messages[newIdx];
+        if (fresh && fresh.role === 'tool' && typeof fresh.content === 'string') {
+          reminders.push(buildRecoveryReminder(
+            tc.function.name,
+            tc.function.arguments,
+            fresh.content,
+            'repeat',
+          ));
+        }
       }
     }
     // Point the fingerprint at the NEWEST occurrence so future
     // repeats collapse the second one, not the (already-stubbed) first.
     dedupMap.set(fp, newIdx);
   }
+  return reminders;
 }
 
 function validateToolArguments(tool: Tool, input: Record<string, unknown>): { valid: boolean; error?: string } {
@@ -696,6 +1105,16 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     toolCallErrorCounts: new Map<string, number>(),
     toolParseFailureStreaks: new Map<string, number>(),
     toolCallLoopDetected: false,
+    recoveryReminders: [],
+    fileEditStates: new Map<string, FileEditState>(),
+    pendingEditFiles: new Set<string>(),
+    editCountSinceVerification: 0,
+    verificationAttemptedSinceEdit: false,
+    verificationGatePrompted: false,
+    emptyEngagementPrompted: false,
+    benchmarkTrajectoryGatePrompted: false,
+    benchmarkTraceEvents: [],
+    benchmarkUsageEvents: [],
   };
 
   // ── F4: Tool-call dedup map (chain-scope) ──
@@ -717,6 +1136,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // that one counts CONSECUTIVE ERRORS and aborts. This one runs on
   // SUCCESSFUL repeats and just rewrites stale messages. They compose.
   const toolCallDedupMap = new Map<string, number>();
+  let contextCapNoticeCount = 0;
 
   // ── F5+: DeCRIM 3-stage self-critique gate ──
   //
@@ -757,8 +1177,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   type CritiqueStage = 'decompose' | 'critique' | 'refine';
   const CRITIQUE_STAGES: CritiqueStage[] = ['decompose', 'critique', 'refine'];
   let critiqueStageIdx = 0;
-  const selfCritiqueEnabled = process.env.COMPACT_AGENT_NON_INTERACTIVE === '1'
-    && process.env.COMPACT_AGENT_SELF_CRITIQUE !== '0';
+  const selfCritiqueEnabled = process.env.VENTIPUS_NON_INTERACTIVE === '1'
+    && process.env.VENTIPUS_SELF_CRITIQUE !== '0';
 
   // Input suppression spans the entire chain: model streaming AND tool
   // execution. executeToolCalls calls inputGuard.pause()/resume() around
@@ -781,11 +1201,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // because its tool_calls and tool messages are still in flight.
   ctx.messages = collapseCompletedTurns(ctx.messages);
 
-  // Auto-compact if context is getting large
-  if (shouldCompact(ctx.messages, DEFAULT_COMPACTION)) {
+  // Auto-compact if context is getting large. The trigger scales with the
+  // provider's context window so smaller/free-tier models get breathing room
+  // before the hard context cap has to drop middle history.
+  const compactionConfig = buildCompactionConfig(ctx.config);
+  if (shouldCompact(ctx.messages, compactionConfig)) {
     console.log(theme.dim(`  ${sym.running} auto-compacting conversation context...`));
     setStatus({ state: 'compacting' });
-    ctx.messages = await compactMessages(ctx.messages, ctx.config);
+    ctx.messages = await compactMessages(ctx.messages, ctx.config, compactionConfig);
   } else {
     // Quick compact: truncate oversized tool results
     ctx.messages = quickCompact(ctx.messages);
@@ -814,8 +1237,29 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // contents with a short stub. Only the last MASKING_WINDOW tool
     // results stay verbatim. Stub keeps role + tool_call_id intact
     // so the API stays valid; only the content shrinks.
+    ctx.messages = quickCompact(ctx.messages);
     const systemPrompt = buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery);
-    const visibleMessages = maskOldToolResults(ctx.messages);
+    let visibleMessages = maskOldToolResults(ctx.messages);
+    const cap = enforceContextCap(
+      visibleMessages,
+      contextCapTokens(inferContextWindowTokens(ctx.config)),
+    );
+    if (cap.changed) {
+      visibleMessages = cap.messages;
+      dbgEmit('info', 'context.cap-applied', {
+        beforeTokens: cap.beforeTokens,
+        afterTokens: cap.afterTokens,
+        maxAllowedTokens: cap.maxAllowedTokens,
+        droppedMessages: cap.droppedMessages,
+      });
+      if (contextCapNoticeCount < 3) {
+        contextCapNoticeCount++;
+        console.log(theme.dim(
+          `  ${sym.running} context cap applied: ~${cap.beforeTokens.toLocaleString()} -> ` +
+          `~${cap.afterTokens.toLocaleString()} tokens (${cap.droppedMessages} older messages omitted from this API call)`,
+        ));
+      }
+    }
     // StateAct: inject a fresh task-state block as a system message
     // between the main system prompt and the conversation history.
     // The main system prompt stays first (cacheable); the state block
@@ -823,9 +1267,30 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // the upcoming turn. Skipped on short chains or via env-var
     // override.
     const stateBlock = buildStateBlock(visibleMessages);
+    const runtimeInfoBlock = buildRuntimeInfoBlock(ctx.cwd);
+    const repoMapBlock = buildAutoRepoMapBlock(ctx.cwd, userQuery);
+    const globalPlanBlock = buildGlobalPlanBlock(visibleMessages);
+    const todoStateBlock = buildTodoStateBlock(ctx.cwd);
+    const benchmarkTrajectoryBlock = ctx.mode === 'benchmark'
+      ? buildBenchmarkTrajectorySystemBlock(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents)
+      : null;
+    const editVerificationBlock = !chainStats.verificationAttemptedSinceEdit
+      ? buildEditVerificationReminder(chainStats.pendingEditFiles, chainStats.editCountSinceVerification)
+      : null;
+    const recoveryReminderBlock = buildRecoveryReminderBlock(chainStats.recoveryReminders);
+    if (recoveryReminderBlock) {
+      chainStats.recoveryReminders = [];
+    }
     const apiMessages: Message[] = [
       { role: 'system', content: systemPrompt },
+      { role: 'system', content: runtimeInfoBlock },
+      ...(repoMapBlock ? [{ role: 'system' as const, content: repoMapBlock }] : []),
       ...(stateBlock ? [{ role: 'system' as const, content: stateBlock }] : []),
+      ...(globalPlanBlock ? [{ role: 'system' as const, content: globalPlanBlock }] : []),
+      ...(todoStateBlock ? [{ role: 'system' as const, content: todoStateBlock }] : []),
+      ...(benchmarkTrajectoryBlock ? [{ role: 'system' as const, content: benchmarkTrajectoryBlock }] : []),
+      ...(editVerificationBlock ? [{ role: 'system' as const, content: editVerificationBlock }] : []),
+      ...(recoveryReminderBlock ? [{ role: 'system' as const, content: recoveryReminderBlock }] : []),
       ...visibleMessages,
     ];
 
@@ -1040,6 +1505,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
               u.prompt,
               u.completion,
             );
+            chainStats.benchmarkUsageEvents.push({
+              model: ctx.config.model,
+              promptTokens: u.prompt,
+              completionTokens: u.completion,
+              totalTokens: u.total || u.prompt + u.completion,
+              estimatedCostUsd: cost,
+            });
             // Single newline separator if we just streamed text, then the
             // compact telemetry line.
             if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
@@ -1189,6 +1661,52 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // next stage. After all 3 stages fire, the gate is exhausted
     // and the next no-tool-call turn lets the chain end normally.
     if (!toolCalls || toolCalls.length === 0) {
+      const needsEditVerification =
+        process.env.VENTIPUS_VERIFY_AFTER_EDIT !== '0'
+        && selfCritiqueEnabled
+        && chainStats.editCountSinceVerification > 0
+        && !chainStats.verificationAttemptedSinceEdit
+        && !chainStats.verificationGatePrompted;
+      if (needsEditVerification) {
+        chainStats.verificationGatePrompted = true;
+        ctx.messages.push({
+          role: 'user',
+          content:
+            buildEditVerificationReminder(
+              chainStats.pendingEditFiles,
+              chainStats.editCountSinceVerification,
+            ) +
+            '\n\nThis is a non-interactive run. Do not provide the final answer yet: verify the edits first, or make a concrete evidence-based case that no verification command exists.',
+        });
+        continue;
+      }
+      const minToolCalls = minimumToolCallsBeforeDone(ctx.mode);
+      if (
+        selfCritiqueEnabled
+        && minToolCalls > 0
+        && chainStats.toolCallCount < minToolCalls
+        && !chainStats.emptyEngagementPrompted
+      ) {
+        chainStats.emptyEngagementPrompted = true;
+        ctx.messages.push({
+          role: 'user',
+          content: buildEmptyEngagementReminder(chainStats.toolCallCount, minToolCalls, ctx.mode),
+        });
+        continue;
+      }
+      const benchmarkCompletionReminder = selfCritiqueEnabled
+        && ctx.mode === 'benchmark'
+        && !chainStats.benchmarkTrajectoryGatePrompted
+        ? buildBenchmarkCompletionReminder(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents)
+        : null;
+      if (benchmarkCompletionReminder) {
+        chainStats.benchmarkTrajectoryGatePrompted = true;
+        ctx.messages.push({
+          role: 'user',
+          content: benchmarkCompletionReminder,
+        });
+        continue;
+      }
       if (selfCritiqueEnabled && critiqueStageIdx < CRITIQUE_STAGES.length) {
         const stage = CRITIQUE_STAGES[critiqueStageIdx];
         critiqueStageIdx++;
@@ -1221,7 +1739,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // We rewrite the older one (not the newer) so the model's most
     // recent attention sees a fresh, complete result — but the
     // accumulated history doesn't carry redundant copies.
-    dedupRepeatedToolCalls(ctx.messages, toolCalls, toolResults, toolCallDedupMap);
+    const repeatReminders = dedupRepeatedToolCalls(ctx.messages, toolCalls, toolResults, toolCallDedupMap);
+    queueRecoveryReminders(chainStats, repeatReminders);
   }
 
   // Chain ended; back to idle so F1 reports the correct state.
@@ -1261,7 +1780,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
 
   if (Number.isFinite(maxTurns) && turns >= maxTurns) {
     console.log(theme.warning(`\n  ${sym.warn} reached configured max turns limit (${maxTurns})`));
-    console.log(theme.dim(`     remove the cap by deleting maxTurns from ~/.compact-agent/config.json`));
+    console.log(theme.dim(`     remove the cap by deleting maxTurns from ~/.ventipus/config.json`));
   }
 
   // Chain-elapsed summary. One line per response chain (user msg → assistant
@@ -1316,6 +1835,21 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       console.log(theme.dim(`           Run /skill-create or /learn to bank it. Skip if it was one-off.`));
     }
   }
+
+  const trace = writeBenchmarkTrace({
+    sessionId: ctx.sessionId,
+    mode: ctx.mode,
+    cwd: ctx.cwd,
+    config: ctx.config,
+    startedAtMs: chainStart,
+    endedAtMs: Date.now(),
+    messages: ctx.messages,
+    events: chainStats.benchmarkTraceEvents,
+    usageEvents: chainStats.benchmarkUsageEvents,
+  });
+  if (trace) {
+    console.log(theme.dim(`  [benchmark] trace: ${trace.summaryPath}`));
+  }
   } finally {
     // Drain any queued user input typed during streaming. Stash on
     // globalThis for the REPL loop in index.ts to pick up — it'll
@@ -1323,7 +1857,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // Enter mid-stream.
     const queued = inputGuard.drainQueuedInput();
     if (queued.trim()) {
-      (globalThis as { __crowcoderQueuedInput?: string }).__crowcoderQueuedInput = queued;
+      (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = queued;
     }
     inputGuard.restore();
     // Clear the per-turn abort controller pointer so a stale handle
@@ -1383,9 +1917,32 @@ interface ChainStats {
    */
   toolParseFailureStreaks: Map<string, number>;
   toolCallLoopDetected: boolean;
+  recoveryReminders: string[];
+  fileEditStates: Map<string, FileEditState>;
+  pendingEditFiles: Set<string>;
+  editCountSinceVerification: number;
+  verificationAttemptedSinceEdit: boolean;
+  verificationGatePrompted: boolean;
+  emptyEngagementPrompted: boolean;
+  benchmarkTrajectoryGatePrompted: boolean;
+  benchmarkTraceEvents: BenchmarkTraceEvent[];
+  benchmarkUsageEvents: BenchmarkUsageEvent[];
 }
 
 const TOOL_CALL_LOOP_THRESHOLD = 3;
+
+function queueRecoveryReminders(chainStats: ChainStats | undefined, reminders: string[]): void {
+  if (!chainStats || reminders.length === 0) return;
+  for (const reminder of reminders) {
+    if (!reminder.trim()) continue;
+    if (!chainStats.recoveryReminders.includes(reminder)) {
+      chainStats.recoveryReminders.push(reminder);
+    }
+  }
+  if (chainStats.recoveryReminders.length > RECOVERY_REMINDER_LIMIT) {
+    chainStats.recoveryReminders = chainStats.recoveryReminders.slice(-RECOVERY_REMINDER_LIMIT);
+  }
+}
 
 async function executeToolCalls(
   toolCalls: { id: string; type: 'function'; function: { name: string; arguments: string } }[],
@@ -1413,10 +1970,28 @@ async function executeToolCalls(
     const tcFingerprint = chainStats
       ? `${toolName}::${String(tc.function.arguments ?? '').slice(0, 1000)}`
       : null;
+    const recordInvalidToolAction = (
+      reason: string,
+      evidence: string,
+      input?: Record<string, unknown>,
+    ): void => {
+      if (!chainStats || !(ctx.mode === 'benchmark' || process.env.VENTIPUS_BENCHMARK_TRACE === '1')) return;
+      chainStats.benchmarkTraceEvents.push(makeBenchmarkInvalidToolActionEvent({
+        seq: chainStats.benchmarkTraceEvents.length + 1,
+        tool: toolName,
+        reason,
+        evidence,
+        input,
+      }));
+    };
     if (chainStats && tcFingerprint) {
       const errorCount = chainStats.toolCallErrorCounts.get(tcFingerprint) ?? 0;
       if (errorCount >= TOOL_CALL_LOOP_THRESHOLD && !chainStats.toolCallLoopDetected) {
         chainStats.toolCallLoopDetected = true;
+        recordInvalidToolAction('tool_loop_detected', `same tool fingerprint failed ${errorCount} times consecutively`, {
+          argumentsPreview: String(tc.function.arguments ?? '').slice(0, 1000),
+          consecutiveErrorCount: errorCount,
+        });
         console.log(theme.error(
           `  ⚠ Tool-call loop detected — ${toolName} with the same arguments has failed ${errorCount} times in a row. Aborting chain.`,
         ));
@@ -1467,6 +2042,9 @@ async function executeToolCalls(
       // it self-correct on the next iteration instead of giving up.
       const valid = ALL_TOOLS.map((t) => t.name).join(', ');
       console.log(theme.error(`  ${sym.error} Unknown tool: ${toolName} (valid: ${valid})`));
+      recordInvalidToolAction('unknown_tool', `tool "${toolName}" is not registered; valid tools: ${valid}`, {
+        argumentsPreview: String(tc.function.arguments ?? '').slice(0, 1000),
+      });
       results.push({
         role: 'tool',
         tool_call_id: tc.id,
@@ -1547,6 +2125,12 @@ async function executeToolCalls(
         chainStats.toolParseFailureStreaks.set(toolName, streak);
         if (streak >= TOOL_CALL_LOOP_THRESHOLD && !chainStats.toolCallLoopDetected) {
           chainStats.toolCallLoopDetected = true;
+          recordInvalidToolAction('parse_failure_streak', `JSON.parse failed ${streak} times consecutively for ${toolName}: ${errMsg}`, {
+            argumentsPreview: preview,
+            parserError: errMsg,
+            parseFailureStreak: streak,
+            hints,
+          });
           console.log(theme.error(
             `  ⚠ Parse-failure streak — ${toolName} has failed JSON.parse ${streak} times in a row. Aborting chain.`,
           ));
@@ -1581,6 +2165,11 @@ async function executeToolCalls(
         }
       }
 
+      recordInvalidToolAction('malformed_json', `could not parse tool arguments as JSON: ${errMsg}`, {
+        argumentsPreview: preview,
+        parserError: errMsg,
+        hints,
+      });
       continue;
     }
 
@@ -1603,6 +2192,9 @@ async function executeToolCalls(
           `Do NOT retry with the same arguments. Adjust the arguments to satisfy the schema and try again.`,
       });
       bumpFingerprintError();
+      recordInvalidToolAction('schema_validation', validation.error || 'tool arguments failed schema validation', {
+        input,
+      });
       continue;
     }
 
@@ -1618,6 +2210,9 @@ async function executeToolCalls(
         content: `BLOCKED by security scanner: ${secResult.threats.join('; ')}`,
       });
       bumpFingerprintError();
+      recordInvalidToolAction('security_blocked', secResult.threats.join('; ') || 'blocked by security scanner', {
+        input,
+      });
       continue;
     }
 
@@ -1641,6 +2236,9 @@ async function executeToolCalls(
         content: `Blocked by hook: ${preHook.message || 'denied'}`,
       });
       bumpFingerprintError();
+      recordInvalidToolAction('hook_blocked', preHook.message || 'denied by pre-tool hook', {
+        input,
+      });
       continue;
     }
 
@@ -1678,10 +2276,20 @@ async function executeToolCalls(
         content: 'Permission denied by user.',
       });
       bumpFingerprintError();
+      recordInvalidToolAction('permission_denied', 'permission denied by user', {
+        input,
+      });
       continue;
     }
 
     // ── Execute ───────────────────────────────────────────
+    const editTargetsForStateTracking = chainStats
+      ? editedTargetsFromToolCall(toolName, tc.function.arguments)
+      : [];
+    const beforeEditStates = editTargetsForStateTracking.length > 0
+      ? snapshotFileEditStates(ctx.cwd, editTargetsForStateTracking)
+      : new Map<string, FileEditState>();
+
     // printToolRun is now async (animated boot + persistent spinner).
     // Await before kicking off the actual tool — the boot animation
     // is short (~150ms) and the spinner starts ticking immediately
@@ -1693,6 +2301,7 @@ async function executeToolCalls(
     setStatus({ state: 'tool-call', detail: `${toolName}: ${formatArgs(tool, input).slice(0, 60)}` });
 
     let result;
+    let elapsedMs = 0;
     if (ctx.config.dryRun) {
       console.log(theme.warning(`  ${sym.pending} [DRY RUN] Would execute: ${toolName}`));
       console.log(theme.warning(`           Arguments: ${JSON.stringify(input).slice(0, 100)}`));
@@ -1705,6 +2314,7 @@ async function executeToolCalls(
       dbgEmit('debug', 'tool.start', { tool: toolName, input });
       result = await tool.call(input, ctx.cwd);
       const elapsed = Date.now() - startTime;
+      elapsedMs = elapsed;
       dbgEmit('info', 'tool.done', {
         tool: toolName,
         elapsedMs: elapsed,
@@ -1717,6 +2327,21 @@ async function executeToolCalls(
       await printToolResult(!result.isError, elapsed, result.output);
     }
 
+    if (chainStats && (ctx.mode === 'benchmark' || process.env.VENTIPUS_BENCHMARK_TRACE === '1')) {
+      chainStats.benchmarkTraceEvents.push(makeBenchmarkTraceEvent({
+        seq: chainStats.benchmarkTraceEvents.length + 1,
+        tool: toolName,
+        input,
+        output: result.output,
+        isError: !!result.isError,
+        elapsedMs,
+      }));
+    }
+
+    const modelOutput = ctx.config.dryRun || toolName === 'bash'
+      ? String(result.output ?? '')
+      : archiveLargeToolOutput(ctx.cwd, toolName, result.output).output;
+
     // Stash last-tool-call info so the Shift+F3 hotkey (src/index.ts) can
     // re-announce "what did the model just do." Truncate the preview to
     // keep TTS readouts short and avoid pinning huge buffers in memory.
@@ -1725,7 +2350,7 @@ async function executeToolCalls(
     } | null }).__lastToolCall = {
       name: toolName,
       argsPreview: formatArgs(tool, input).slice(0, 80),
-      outputPreview: String(result.output ?? '').slice(0, 160),
+      outputPreview: modelOutput.slice(0, 160),
       isError: !!result.isError,
     };
 
@@ -1752,10 +2377,41 @@ async function executeToolCalls(
     // within the same chain.
     if (chainStats) {
       chainStats.toolCallCount++;
+      const wasVerificationCall = isVerificationToolCall(toolName, tc.function.arguments);
       if (result.isError) {
         chainStats.sawToolError = true;
       } else if (chainStats.sawToolError) {
         chainStats.sawToolRecovery = true;
+      }
+      if (wasVerificationCall && chainStats.editCountSinceVerification > 0) {
+        chainStats.verificationAttemptedSinceEdit = true;
+        if (!result.isError) {
+          chainStats.pendingEditFiles.clear();
+          chainStats.editCountSinceVerification = 0;
+          chainStats.verificationGatePrompted = false;
+        }
+      } else if (!result.isError) {
+        const editedTargets = editTargetsForStateTracking;
+        if (editedTargets.length > 0) {
+          for (const target of editedTargets) chainStats.pendingEditFiles.add(target);
+          chainStats.editCountSinceVerification++;
+          chainStats.verificationAttemptedSinceEdit = false;
+          chainStats.verificationGatePrompted = false;
+          if (!ctx.config.dryRun) {
+            queueRecoveryReminders(chainStats, recordFileEditStates(
+              ctx.cwd,
+              editedTargets,
+              chainStats.fileEditStates,
+              beforeEditStates,
+            ));
+          }
+        }
+      }
+      const outputText = modelOutput;
+      if (isTimeoutObservation(outputText)) {
+        queueRecoveryReminders(chainStats, [
+          buildRecoveryReminder(toolName, tc.function.arguments, outputText, 'timeout'),
+        ]);
       }
     }
 
@@ -1769,7 +2425,7 @@ async function executeToolCalls(
       // raw .slice would throw, killing the chain after the tool
       // already ran. Matches the same coercion pattern used by the
       // __lastToolCall stash above.
-      toolOutput: String(result.output ?? '').slice(0, 1000),
+      toolOutput: modelOutput.slice(0, 1000),
       sessionId: ctx.sessionId,
       cwd: ctx.cwd,
       permissionMode: ctx.config.permissionMode,
@@ -1778,7 +2434,7 @@ async function executeToolCalls(
     results.push({
       role: 'tool',
       tool_call_id: tc.id,
-      content: result.output,
+      content: modelOutput,
     });
   }
 

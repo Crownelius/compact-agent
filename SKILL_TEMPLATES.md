@@ -1,4 +1,4 @@
-# Skill Templates for Crowcoder CLI
+# Skill Templates for Ventipus CLI
 
 > Generated from analysis of git history, source conventions, and recurring development workflows.
 > Each skill is a reusable prompt template with `{{placeholders}}` for dynamic values.
@@ -153,7 +153,7 @@ git commit -m "test: add tests for {{MODULE_NAME}}"
 ```bash
 git diff --stat
 git diff src/{{FILE}}.ts
-# Use /review in Crowcoder for AI-assisted review
+# Use /review in Ventipus for AI-assisted review
 ```
 
 **Validation**:
@@ -166,7 +166,7 @@ git diff src/{{FILE}}.ts
 
 ## Skill 6: `module-creation-workflow`
 
-**Description**: Create a new self-contained module following Crowcoder conventions.
+**Description**: Create a new self-contained module following Ventipus conventions.
 
 **Trigger Patterns**: "create module", "new module", "add module", "scaffold"
 
@@ -208,7 +208,7 @@ git commit -m "feat: add {{MODULE_NAME}} module"
 2. **Pull upstream** — If `resources/ecc/` needs updating, pull from upstream repo.
 3. **Reinstall** — Run `/ecc-install` to reimport all resources idempotently.
 4. **Verify** — Check each category: `/ecc-skills`, `/ecc-agents`, `/ecc-commands`.
-5. **Check hooks** — Verify hooks seeded in `~/.compact-agent/hooks.json`.
+5. **Check hooks** — Verify hooks seeded in `~/.ventipus/hooks.json`.
 6. **Test a skill** — Trigger a known ECC skill by mentioning its topic.
 
 **Commands**:
@@ -230,20 +230,20 @@ git commit -m "feat: add {{MODULE_NAME}} module"
 
 ## Skill 8: `config-change-workflow`
 
-**Description**: Safely modify Crowcoder configuration — API keys, providers, models, permissions.
+**Description**: Safely modify Ventipus configuration — API keys, providers, models, permissions.
 
 **Trigger Patterns**: "change config", "update config", "set model", "change provider", "config"
 
 **Steps**:
-1. **Read current config** — `read_file` on `~/.compact-agent/config.json` or use `/config`.
+1. **Read current config** — `read_file` on `~/.ventipus/config.json` or use `/config`.
 2. **Validate change** — Ensure the new value is valid (URL format, known provider, valid model).
-3. **Apply change** — Edit `config.json` or use Crowcoder's `/model`, `/provider`, `/perm` commands.
+3. **Apply change** — Edit `config.json` or use Ventipus's `/model`, `/provider`, `/perm` commands.
 4. **Verify** — Reload config and confirm the change took effect.
 5. **Test connection** — Send a test message to verify the new provider/model works.
 
 **Commands**:
 ```bash
-cat ~/.compact-agent/config.json
+cat ~/.ventipus/config.json
 # Edit via /model, /provider, /perm slash commands
 # Or edit config.json directly:
 # Change "model": "anthropic/claude-sonnet-4" → "model": "{{NEW_MODEL}}"
@@ -264,7 +264,7 @@ cat ~/.compact-agent/config.json
 **Trigger Patterns**: "add hook", "remove hook", "hooks", "hook config"
 
 **Steps**:
-1. **List current hooks** — `list_hooks` or read `~/.compact-agent/hooks.json`.
+1. **List current hooks** — `list_hooks` or read `~/.ventipus/hooks.json`.
 2. **Define new hook** — Specify event, match pattern, command, timeout, blocking.
 3. **Add hook** — Use `/hooks add` or edit hooks.json directly.
 4. **Test hook** — Trigger the matched event to verify the hook fires correctly.
@@ -272,7 +272,7 @@ cat ~/.compact-agent/config.json
 
 **Commands**:
 ```bash
-cat ~/.compact-agent/hooks.json
+cat ~/.ventipus/hooks.json
 # Add hook entry:
 # { "event": "PreToolUse", "match": "bash", "command": "node guard.js", "blocking": true }
 ```
@@ -287,7 +287,7 @@ cat ~/.compact-agent/hooks.json
 
 ## Skill 10: `build-and-release-workflow`
 
-**Description**: Full build, test, and release cycle for Crowcoder itself.
+**Description**: Full build, test, and release cycle for Ventipus itself.
 
 **Trigger Patterns**: "build", "release", "publish", "npm publish", "deploy"
 

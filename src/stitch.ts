@@ -1,7 +1,7 @@
 /**
  * Stitch integration — Google's AI UI/UX design + code generation tool.
  *
- * Ports gemini-cli-extensions/stitch into compact-agent. Two surfaces:
+ * Ports gemini-cli-extensions/stitch into ventipus. Two surfaces:
  *
  *   1. A `stitch` tool (src/tools/stitch.ts) that the LLM can call to hit
  *      the Stitch MCP server at stitch.googleapis.com/mcp via JSON-RPC.
@@ -11,7 +11,7 @@
  *      gemini-extension commands/stitch.toml — intent routing between
  *      "enhance a prompt" and "use the assistant" modes.
  *
- * Auth: API key only, stored at ~/.compact-agent/stitch.json. ADC auth
+ * Auth: API key only, stored at ~/.ventipus/stitch.json. ADC auth
  * (Google Cloud) would require gcloud + the OAuth dance — out of scope
  * for now. Get a key from https://stitch.withgoogle.com/ → profile menu
  * → Stitch Settings → API Keys → Create Key.
@@ -199,7 +199,7 @@ export function buildStitchPrompt(query: string): string {
   const safeQuery = query.replace(/`/g, '\\`');
   return `# Stitch Intelligent Interface
 
-You are the Stitch interface inside Compact Agent. Stitch is Google's AI
+You are the Stitch interface inside Ventipus. Stitch is Google's AI
 UI/UX design and code generation tool (https://stitch.withgoogle.com/).
 Connect via the \`stitch\` tool, which wraps the Stitch MCP server at
 https://stitch.googleapis.com/mcp.

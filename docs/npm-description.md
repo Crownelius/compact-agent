@@ -12,7 +12,7 @@ The current `package.json` description is already accurate (updated in commit `c
 
 ## npm page hook (2 sentences)
 
-Agentic coding CLIs are great until you're locked to one vendor's API and pricing — free, local, and open-weight models stay out of reach, and you can't pool multiple free-tier keys to keep working past a rate limit. compact-agent keeps the full agent (9 modes, 130+ commands, ECC v2.0 skills, multi-agent swarm, OS sandbox, voice + screen-reader) and lets you point it at any OpenAI-compatible backend, swapping models mid-session with `/model` and pooling keys with `/keys add`.
+Agentic coding CLIs are great until you're locked to one vendor's API and pricing — free, local, and open-weight models stay out of reach, and you can't pool multiple free-tier keys to keep working past a rate limit. ventipus keeps the full agent (9 modes, 130+ commands, ECC v2.0 skills, multi-agent swarm, OS sandbox, voice + screen-reader) and lets you point it at any OpenAI-compatible backend, swapping models mid-session with `/model` and pooling keys with `/keys add`.
 
 ## Tagline candidates
 
@@ -24,4 +24,4 @@ Agentic coding CLIs are great until you're locked to one vendor's API and pricin
 
 Current keywords are correct: `ai`, `agent`, `cli`, `coding-assistant`, `claude`, `openrouter`, `openai`, `anthropic`, `ollama`, `hermes`, `tdd`, `everything-claude-code`, `accessibility`, `voice`, `whisper`, `tts`, `screen-reader`, `dictation`, `blind`, `memory`, `mempalace`, `knowledge-graph`.
 
-Worth adding for discovery: `nvidia`, `swarm`, `multi-agent`, `sandbox`, `compact-agent`.
+Worth adding for discovery: `nvidia`, `swarm`, `multi-agent`, `sandbox`, `ventipus`.

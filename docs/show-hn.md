@@ -2,13 +2,13 @@
 
 ## Title
 
-Show HN: compact-agent — claude-code-style terminal agent for any OpenAI-compatible API
+Show HN: ventipus — claude-code-style terminal agent for any OpenAI-compatible API
 
 ## Body
 
 I wanted the claude-code REPL experience — tools, modes, skills, planning — but on the model and provider of my choice. Locking the whole agent surface to one vendor's API ruled out cheap open-weight models, local Ollama runs, NVIDIA NIM, and rotating providers per task. Wrapping a new SDK per backend means re-implementing tools, modes, and streaming for each one, and you still can't switch mid-task without losing context.
 
-compact-agent puts the full agent behind one OpenAI-compatible transport. Point it at OpenRouter, NVIDIA NIM, DeepSeek, GLM, a local Ollama or LM Studio endpoint, or any custom gateway. Swap models with `/model`, providers with `/provider`, mid-session, without losing context.
+ventipus puts the full agent behind one OpenAI-compatible transport. Point it at OpenRouter, NVIDIA NIM, DeepSeek, GLM, a local Ollama or LM Studio endpoint, or any custom gateway. Swap models with `/model`, providers with `/provider`, mid-session, without losing context.
 
 A few things that aren't in the other agent CLIs:
 
@@ -24,14 +24,14 @@ The rest of the surface:
 - 130+ slash commands
 - Bundled skill library: 228 skills, 60 agents, 75 workflow commands, 19 language rule bundles (ECC v2.0)
 - Hermes mode — recalls prior sessions before answering, parallelizes independent subtasks, distills new skills from experience
-- Zero telemetry; state in `~/.compact-agent/`; MIT, TypeScript, Node 18+
+- Zero telemetry; state in `~/.ventipus/`; MIT, TypeScript, Node 18+
 
 ```bash
-npm install -g compact-agent
-compact-agent
+npm install -g ventipus
+ventipus
 ```
 
 Feedback on the mode set, the provider list, and the swarm fan-out pattern is especially welcome.
 
-GitHub: https://github.com/Crownelius/compact-agent
-npm: https://www.npmjs.com/package/compact-agent
+GitHub: https://github.com/Crownelius/ventipus
+npm: https://www.npmjs.com/package/ventipus

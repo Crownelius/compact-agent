@@ -1,0 +1,103 @@
+import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, normalize } from 'node:path';
+
+describe('Exgentic adapter packaging', () => {
+  const adapterDir = join(process.cwd(), 'resources', 'exgentic', 'ventipus_agent');
+  const agentPath = join(adapterDir, 'agent.py');
+  const utilsPath = join(adapterDir, 'utils.py');
+  const setupPath = join(adapterDir, 'setup.sh');
+  const requirementsPath = join(adapterDir, 'requirements.txt');
+
+  it('ships an Exgentic custom agent package', () => {
+    expect(existsSync(agentPath)).toBe(true);
+    expect(existsSync(utilsPath)).toBe(true);
+    expect(existsSync(setupPath)).toBe(true);
+    expect(existsSync(requirementsPath)).toBe(true);
+
+    const agent = readFileSync(agentPath, 'utf-8');
+    expect(agent).toContain('class VentipusAgent(Agent)');
+    expect(agent).toContain('class VentipusAgentInstance(AgentInstance)');
+    expect(agent).toContain('slug_name: ClassVar[str] = "ventipus_agent"');
+    expect(agent).toContain('def react(self, observation: Observation | None) -> Action | None');
+    expect(agent).toContain('VENTIPUS_EXGENTIC_COMMAND');
+    expect(agent).toContain('--benchmark-trace-dir');
+    expect(agent).toContain('summary.json');
+    expect(agent).toContain('{"name":"<action name>","arguments":{}}');
+  });
+
+  it('prints the packaged Exgentic agent directory from the CLI wrapper', () => {
+    const out = execFileSync('node', ['bin/ventipus.js', '--print-exgentic-agent'], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    }).trim();
+    expect(normalize(out)).toBe(normalize(adapterDir));
+  });
+
+  it('accepts common harness CLI flags before the Exgentic utility flag', () => {
+    const out = execFileSync('node', [
+      'bin/ventipus.js',
+      '--model',
+      'openrouter/free',
+      '--max-turns=3',
+      '--output-format',
+      'text',
+      '--benchmark-trace-dir',
+      'artifacts',
+      '--print-exgentic-agent',
+    ], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    }).trim();
+    expect(normalize(out)).toBe(normalize(adapterDir));
+  });
+
+  it('parses ventipus action JSON from stdout', () => {
+    const samples = [
+      'notes\n{"name":"finish","arguments":{"answer":"42"}}',
+      '```json\n{"action":"message","arguments":{"content":"done"}}\n```',
+      'ventipus-exgentic action JSON: {"action":{"name":"click","arguments":{"x":1}}}',
+    ];
+    const script = [
+      `import json, sys`,
+      `sys.path.insert(0, ${JSON.stringify(adapterDir)})`,
+      `import utils`,
+      `samples = ${JSON.stringify(samples)}`,
+      `payloads = [utils.extract_action_payload(sample) for sample in samples]`,
+      `print(json.dumps([{"name": p.name, "arguments": p.arguments} for p in payloads], sort_keys=True))`,
+    ].join('\n');
+    const out = execFileSync('python', ['-c', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+    }).trim();
+    const parsed = JSON.parse(out);
+    expect(parsed).toEqual([
+      { name: 'finish', arguments: { answer: '42' } },
+      { name: 'message', arguments: { content: 'done' } },
+      { name: 'click', arguments: { x: 1 } },
+    ]);
+  });
+
+  it('compiles the Python adapter files without writing __pycache__ into resources', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ventipus-exgentic-pycompile-'));
+    try {
+      const script = [
+        'import py_compile',
+        `py_compile.compile(${JSON.stringify(agentPath)}, cfile=${JSON.stringify(join(dir, 'agent.pyc'))}, doraise=True)`,
+        `py_compile.compile(${JSON.stringify(utilsPath)}, cfile=${JSON.stringify(join(dir, 'utils.pyc'))}, doraise=True)`,
+      ].join('\n');
+      execFileSync('python', ['-c', script], {
+        cwd: process.cwd(),
+        encoding: 'utf-8',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

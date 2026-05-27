@@ -1,5 +1,6 @@
 /**
- * HTML to text parser - converts HTML to readable plain text without external dependencies.
+ * HTML to text parser — converts HTML to readable plain text without external dependencies.
+ * Used internally by the web_fetch tool to extract readable content from web pages.
  */
 
 /**
@@ -11,6 +12,9 @@
  * - Extracts title separately
  * - Collapses multiple blank lines
  * - Trims whitespace
+ *
+ * @param html - Raw HTML string
+ * @returns Plain text with preserved structure
  */
 export function htmlToText(html: string): string {
   // Extract title before stripping tags

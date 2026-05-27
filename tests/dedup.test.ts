@@ -18,7 +18,12 @@
  *      duplicates become stubs.
  */
 import { describe, it, expect } from 'vitest';
-import { dedupFingerprint, dedupRepeatedToolCalls } from '../src/query.js';
+import {
+  buildRecoveryReminder,
+  dedupFingerprint,
+  dedupRepeatedToolCalls,
+  isTimeoutObservation,
+} from '../src/query.js';
 import type { Message } from '../src/types.js';
 
 describe('dedupFingerprint', () => {
@@ -121,11 +126,15 @@ describe('dedupRepeatedToolCalls', () => {
     // Second call — read /a.py again
     const second = batch([['read', '{"file_path":"/a.py"}', 'FRESH COPY']]);
     messages.push(...second.toolResults);
-    dedupRepeatedToolCalls(messages, second.toolCalls, second.toolResults, dedup);
+    const reminders = dedupRepeatedToolCalls(messages, second.toolCalls, second.toolResults, dedup);
 
     // OLDER message (index 0) stub'd; NEWER message (index 2) intact.
     expect(messages[0].content as string).toContain('deduped');
     expect(messages[2].content).toBe('FRESH COPY');
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]).toContain('the same read call was re-issued');
+    expect(reminders[0]).toContain('file_path=/a.py');
+    expect(reminders[0]).toContain('FRESH COPY');
   });
 
   it('preserves role + tool_call_id on the stubbed message (API stays valid)', () => {
@@ -191,5 +200,26 @@ describe('dedupRepeatedToolCalls', () => {
 
     expect(messages[0].content as string).toContain('deduped');
     expect(messages[1].content).toBe('V2');
+  });
+});
+
+describe('recovery reminders', () => {
+  it('detects timeout observations from tool output', () => {
+    expect(isTimeoutObservation('[command timed out after 30000ms]')).toBe(true);
+    expect(isTimeoutObservation('operation timed out while reading')).toBe(true);
+    expect(isTimeoutObservation('completed successfully')).toBe(false);
+  });
+
+  it('builds a timeout reminder that tells the model to change strategy', () => {
+    const reminder = buildRecoveryReminder(
+      'bash',
+      '{"command":"npm test -- --watch","timeout":1000}',
+      '[command timed out after 1000ms]',
+      'timeout',
+    );
+
+    expect(reminder).toContain('bash timed out');
+    expect(reminder).toContain('$ npm test -- --watch');
+    expect(reminder).toContain('Do not rerun the same long command unchanged');
   });
 });

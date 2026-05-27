@@ -2,9 +2,19 @@
  * Git workflow — smart commit, PR creation, diff, log.
  * Injected as slash commands: /commit, /pr, /diff, /log
  */
+/**
+ * Git workflow — smart commit, PR creation, diff, log.
+ * Injected as slash commands: /commit, /pr, /diff, /log
+ */
 import { execSync } from 'node:child_process';
 import chalk from 'chalk';
 
+/**
+ * Execute a git command safely, returning empty string on error.
+ * @param cmd - Git command arguments (without "git" prefix)
+ * @param cwd - Working directory
+ * @returns Command output or error message
+ */
 function git(cmd: string, cwd: string): string {
   try {
     return execSync(`git ${cmd}`, {

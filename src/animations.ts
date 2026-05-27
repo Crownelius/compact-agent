@@ -24,7 +24,7 @@
  *   - stdout is not a TTY (CI, log capture, piped output)
  *   - screen-reader mode is on (in-place repaints become a flood
  *     of new content events for the screen reader)
- *   - the env override CROWCODER_ANIMATIONS=0 is set
+ *   - the env override VENTIPUS_ANIMATIONS=0 is set
  *   - setAnimationConfig({ enabled: false }) was called
  *
  * Disabled-mode behavior: `playFrames()` paints only the LAST frame
@@ -74,7 +74,7 @@ export function setAnimationConfig(opts: { enabled?: boolean; screenReader?: boo
  */
 export function animationsEnabled(): boolean {
   if (!stdout.isTTY) return false;
-  if (process.env.CROWCODER_ANIMATIONS === '0') return false;
+  if (process.env.VENTIPUS_ANIMATIONS === '0') return false;
   if (_screenReader) return false;
   return _enabled;
 }

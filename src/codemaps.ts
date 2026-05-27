@@ -22,6 +22,7 @@ export interface FileEntry {
   lineCount: number;
   exports: string[];
   imports: string[];
+  localImports: string[];
   size: number;
 }
 
@@ -39,6 +40,21 @@ export interface CodeMap {
   totalFiles: number;
   totalLines: number;
 }
+
+export interface RepoMapOptions {
+  minFiles?: number;
+  maxFiles?: number;
+  maxChars?: number;
+}
+
+interface RankedFile {
+  file: FileEntry;
+  score: number;
+  inbound: number;
+}
+
+const AUTO_REPO_MAP_CACHE = new Map<string, { createdAt: number; block: string | null }>();
+const AUTO_REPO_MAP_TTL_MS = 10_000;
 
 /**
  * Detect language from file extension
@@ -100,18 +116,20 @@ function extractExports(content: string, language: string): string[] {
 /**
  * Extract imports from a code file
  */
-function extractImports(content: string, language: string): string[] {
+function extractImports(content: string, language: string): { external: string[]; local: string[] } {
   const imports: Set<string> = new Set();
+  const localImports: Set<string> = new Set();
   let match: RegExpExecArray | null;
 
   if (language === 'typescript' || language === 'javascript') {
-    // Match "import { x } from 'y'"
-    const importRegex =
-      /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+['"]([^'"]+)['"]/g;
+    // Match import/export specifiers and CommonJS require().
+    const importRegex = /(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)/g;
     while ((match = importRegex.exec(content)) !== null) {
-      const source = match[3];
-      if (!source.startsWith('.')) {
-        // External module
+      const source = match[1] || match[2];
+      if (!source) continue;
+      if (source.startsWith('.')) {
+        localImports.add(source);
+      } else {
         imports.add(source.split('/')[0]); // Get package name
       }
     }
@@ -124,7 +142,10 @@ function extractImports(content: string, language: string): string[] {
     }
   }
 
-  return Array.from(imports).slice(0, 15); // Limit to 15 imports
+  return {
+    external: Array.from(imports).slice(0, 15),
+    local: Array.from(localImports).slice(0, 30),
+  };
 }
 
 /**
@@ -171,7 +192,7 @@ function walkDirectory(
 
     for (const file of files) {
       const fullPath = join(dir, file.name);
-      const relPath = relative(rootDir, fullPath);
+      const relPath = relative(rootDir, fullPath).replace(/\\/g, '/');
 
       // Check if should ignore
       if (ignorePatterns.some((pattern) => relPath.includes(pattern))) {
@@ -187,12 +208,14 @@ function walkDirectory(
           const lineCount = content.split('\n').length;
           const stats = statSync(fullPath);
 
+          const imports = extractImports(content, language);
           entries.push({
             path: relPath,
             language,
             lineCount,
             exports: extractExports(content, language),
-            imports: extractImports(content, language),
+            imports: imports.external,
+            localImports: imports.local,
             size: stats.size,
           });
         } catch {
@@ -250,6 +273,135 @@ export function generateCodeMap(cwd: string): CodeMap {
     totalFiles: files.length,
     totalLines,
   };
+}
+
+function normalizeMapPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+function withoutKnownExt(path: string): string {
+  return normalizeMapPath(path).replace(/\.(tsx?|jsx?|py|go|rs|java|c|cpp|h|hpp|json|ya?ml)$/i, '');
+}
+
+function localImportTarget(fromPath: string, specifier: string): string {
+  const fromDir = dirname(fromPath).replace(/\\/g, '/');
+  return normalizeMapPath(join(fromDir, specifier));
+}
+
+function buildPathLookup(files: FileEntry[]): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const file of files) {
+    const path = normalizeMapPath(file.path);
+    const stem = withoutKnownExt(path);
+    lookup.set(path, file.path);
+    lookup.set(stem, file.path);
+    if (basename(stem) === 'index') {
+      lookup.set(dirname(stem).replace(/\\/g, '/'), file.path);
+    }
+  }
+  return lookup;
+}
+
+function resolveLocalImport(fromPath: string, specifier: string, lookup: Map<string, string>): string | null {
+  const target = localImportTarget(fromPath, specifier);
+  const stem = withoutKnownExt(target);
+  return lookup.get(target)
+    ?? lookup.get(stem)
+    ?? lookup.get(`${stem}/index`)
+    ?? null;
+}
+
+function queryTerms(query: string | undefined): string[] {
+  return Array.from(new Set(String(query ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9_./-]+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3)))
+    .slice(0, 20);
+}
+
+function rankCodeMapFiles(map: CodeMap, query?: string): RankedFile[] {
+  const lookup = buildPathLookup(map.files);
+  const inbound = new Map<string, number>();
+  for (const file of map.files) inbound.set(file.path, 0);
+
+  for (const file of map.files) {
+    for (const spec of file.localImports ?? []) {
+      const target = resolveLocalImport(file.path, spec, lookup);
+      if (target && target !== file.path) {
+        inbound.set(target, (inbound.get(target) ?? 0) + 1);
+      }
+    }
+  }
+
+  const terms = queryTerms(query);
+  const entrypointRe = /(^|\/)(index|main|app|server|cli|ventipus)\.(tsx?|jsx?|py|go|rs|java)$/i;
+  return map.files.map((file) => {
+    const inboundCount = inbound.get(file.path) ?? 0;
+    let score = 1;
+    score += Math.min(file.exports.length, 12) * 2;
+    score += inboundCount * 5;
+    score += Math.min((file.localImports ?? []).length, 10);
+    if (entrypointRe.test(file.path)) score += 8;
+    if (file.path.includes('/test') || file.path.includes('.test.') || file.path.includes('.spec.')) score -= 2;
+
+    const haystack = `${file.path} ${file.language} ${file.exports.join(' ')}`.toLowerCase();
+    for (const term of terms) {
+      if (haystack.includes(term)) score += 6;
+    }
+    return { file, score, inbound: inboundCount };
+  }).sort((a, b) => b.score - a.score || b.inbound - a.inbound || a.file.path.localeCompare(b.file.path));
+}
+
+function renderRepoMap(map: CodeMap, ranked: RankedFile[], maxFiles: number, maxChars: number): string | null {
+  if (map.totalFiles === 0) return null;
+  const lines: string[] = [
+    '<repo_map>',
+    `Project outline: ${map.totalFiles} code/config files, ${map.totalLines.toLocaleString()} lines, ${map.modules.length} top-level modules.`,
+    'Ranked by local dependency references, exported symbols, entrypoint names, and current request terms. Use read_file/grep for full source before editing.',
+  ];
+
+  for (const item of ranked.slice(0, maxFiles)) {
+    const symbols = item.file.exports.length > 0
+      ? ` exports: ${item.file.exports.slice(0, 8).join(', ')}${item.file.exports.length > 8 ? ', ...' : ''}`
+      : '';
+    const deps = item.inbound > 0 ? ` inbound:${item.inbound}` : '';
+    const line = `- ${item.file.path} (${item.file.language}, ${item.file.lineCount} lines${deps})${symbols}`;
+    const projected = [...lines, line, '</repo_map>'].join('\n');
+    if (projected.length > maxChars) break;
+    lines.push(line);
+  }
+
+  if (lines.length <= 3) return null;
+  lines.push('</repo_map>');
+  return lines.join('\n');
+}
+
+export function buildAutoRepoMapBlock(
+  cwd: string,
+  userQuery?: string,
+  options: RepoMapOptions = {},
+): string | null {
+  if (process.env.VENTIPUS_REPO_MAP === '0') return null;
+  const minFiles = options.minFiles ?? 5;
+  const maxFiles = options.maxFiles ?? 24;
+  const maxChars = options.maxChars ?? 6_000;
+  const cacheKey = `${cwd}\0${userQuery ?? ''}\0${minFiles}\0${maxFiles}\0${maxChars}`;
+  const cached = AUTO_REPO_MAP_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < AUTO_REPO_MAP_TTL_MS) return cached.block;
+
+  let block: string | null = null;
+  try {
+    const map = generateCodeMap(cwd);
+    if (map.totalFiles >= minFiles) {
+      block = renderRepoMap(map, rankCodeMapFiles(map, userQuery), maxFiles, maxChars);
+    }
+  } catch {
+    block = null;
+  }
+
+  AUTO_REPO_MAP_CACHE.set(cacheKey, { createdAt: Date.now(), block });
+  return block;
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
  * Command palette catalog — the slash commands exposed via the
- * Space-at-empty quick picker. Hand-curated rather than auto-
+ * inline `/` command selector. Hand-curated rather than auto-
  * extracted from handleSlashCommand's switch, because:
  *
  *   1. The switch contains alias arms (/branch → /fork, /quit → /exit,
@@ -30,21 +30,23 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/editor', description: 'Open $EDITOR for a multi-line prompt', category: 'General' },
   { command: '/history', description: 'Message count + token estimate', category: 'General' },
   { command: '/export', description: 'Export conversation (md/json/txt)', category: 'General' },
-  { command: '/walkthrough', description: 'Agent-led tour of compact-agent', category: 'General' },
+  { command: '/walkthrough', description: 'Agent-led tour of ventipus', category: 'General' },
   { command: '/config', description: 'Reconfigure provider / model / key (re-runs the setup wizard)', category: 'General' },
   { command: '/theme', description: 'Change display mode (full/compact/minimal)', category: 'General' },
   { command: '/palette', description: 'Switch color palette (run /palettes to list)', category: 'General' },
+  { command: '/palettes', description: 'List the 12 Coolors-based color palettes', category: 'General' },
 
   // ── Model & Provider ──
   { command: '/model', description: 'Switch model (no arg → interactive picker on OpenRouter)', category: 'Model' },
   { command: '/models', description: 'List available models for the current provider', category: 'Model' },
   { command: '/fallback', description: 'Set/show the model auto-retried on cryptic errors', category: 'Model' },
+  { command: '/openrouter-free', description: 'Switch to OpenRouter free-tier router', category: 'Model' },
   { command: '/provider', description: 'Show provider info (URL, masked key)', category: 'Model' },
   { command: '/keys', description: 'Multi-key rotation pool (/keys add, status, remove)', category: 'Model' },
   { command: '/route', description: 'Auto-route to a model based on the next message', category: 'Model' },
 
   // ── Modes ──
-  { command: '/mode', description: 'Switch mode (dev/review/tdd/research/plan/debug/architect/hermes/design)', category: 'Modes' },
+  { command: '/mode', description: 'Switch mode (dev/review/tdd/research/plan/debug/benchmark/architect/hermes/design)', category: 'Modes' },
   { command: '/modes', description: 'List all available modes', category: 'Modes' },
   { command: '/hermes', description: 'Switch to Hermes mode (self-improving learning loop)', category: 'Modes' },
   { command: '/design', description: 'Switch to design mode (Stitch-powered UI work)', category: 'Modes' },
@@ -70,6 +72,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/verify', description: 'Run tests, fix failures, repeat until green', category: 'Code Quality' },
   { command: '/build-fix', description: 'Auto-detect language + fix build errors', category: 'Code Quality' },
   { command: '/test-coverage', description: 'Analyze coverage, suggest missing tests', category: 'Code Quality' },
+  { command: '/benchmark', description: 'Benchmark-grade SWE/terminal issue run', category: 'Code Quality' },
   { command: '/refactor', description: 'Dead code detection + cleanup', category: 'Code Quality' },
   { command: '/hunt-silent', description: 'Silent-failure-hunter agent (empty catches, log-and-forget)', category: 'Code Quality' },
   { command: '/explore', description: 'Code-explorer agent (codebase reconnaissance pass)', category: 'Code Quality' },
@@ -92,6 +95,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/plan', description: 'Structured implementation planning', category: 'Planning' },
   { command: '/checkpoint', description: 'Save git-state checkpoint inside this session', category: 'Planning' },
   { command: '/search-first', description: 'Research before coding', category: 'Planning' },
+  { command: '/source-research', description: 'Research arXiv, GitHub, Hugging Face, and Kaggle', category: 'Planning' },
   { command: '/update-docs', description: 'Sync documentation with code', category: 'Planning' },
 
   // ── Orchestration ──
@@ -125,3 +129,13 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   // ── Exit ──
   { command: '/exit', description: 'Quit the REPL', category: 'General' },
 ];
+
+export function completeSlashCommandNames(
+  line: string,
+  commands: string[] = COMMAND_CATALOG.map((c) => c.command),
+): [string[], string] {
+  if (!line.startsWith('/')) return [[], line];
+
+  const matches = commands.filter((c) => c.startsWith(line));
+  return matches.length === 1 ? [matches, line] : [[], line];
+}

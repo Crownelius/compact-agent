@@ -20,8 +20,22 @@
  * a careless tweak doesn't quietly turn the gate back into the
  * generic-critique flavor from v1.34.0.
  */
-import { describe, it, expect } from 'vitest';
-import { critiquePromptFor } from '../src/query.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import {
+  buildEmptyEngagementReminder,
+  critiquePromptFor,
+  minimumToolCallsBeforeDone,
+} from '../src/query.js';
+
+const ORIGINAL_MIN_TOOLS = process.env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE;
+
+afterEach(() => {
+  if (ORIGINAL_MIN_TOOLS === undefined) {
+    delete process.env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE;
+  } else {
+    process.env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE = ORIGINAL_MIN_TOOLS;
+  }
+});
 
 describe('critiquePromptFor', () => {
   describe('decompose stage', () => {
@@ -43,6 +57,15 @@ describe('critiquePromptFor', () => {
 
     it('asks how the requirement is verifiable', () => {
       expect(prompt.toLowerCase()).toMatch(/verif/);
+    });
+
+    it('calls out exact paths, formats, services, and environment assumptions', () => {
+      const lower = prompt.toLowerCase();
+      expect(lower).toContain('exact file names');
+      expect(lower).toContain('output paths');
+      expect(lower).toContain('service/process');
+      expect(lower).toContain('environment/toolchain');
+      expect(lower).toContain('network/offline');
     });
 
     it('does not yet ask the model to judge — only to enumerate', () => {
@@ -80,6 +103,15 @@ describe('critiquePromptFor', () => {
     it('says when uncertain, mark FAIL', () => {
       expect(prompt.toLowerCase()).toMatch(/uncertain.*fail|when in doubt|if you are uncertain/);
     });
+
+    it('requires evidence from the real runtime and persistent services', () => {
+      const lower = prompt.toLowerCase();
+      expect(lower).toContain('package manager');
+      expect(lower).toMatch(/virtualenv|interpreter/);
+      expect(lower).toContain('network/offline');
+      expect(lower).toContain('service process');
+      expect(lower).toContain('persistently');
+    });
   });
 
   describe('refine stage', () => {
@@ -104,6 +136,14 @@ describe('critiquePromptFor', () => {
       expect(prompt.toLowerCase()).toMatch(/summar/);
       expect(prompt.toLowerCase()).toContain('stop');
     });
+
+    it('pushes environment mismatch and service persistence recovery', () => {
+      const lower = prompt.toLowerCase();
+      expect(lower).toContain('project-native toolchain');
+      expect(lower).toContain('nohup');
+      expect(lower).toContain('tmux');
+      expect(lower).toContain('process/port');
+    });
   });
 
   describe('stage discipline (regression guards)', () => {
@@ -124,5 +164,35 @@ describe('critiquePromptFor', () => {
       expect(b).not.toBe(c);
       expect(a).not.toBe(c);
     });
+  });
+});
+
+describe('minimumToolCallsBeforeDone', () => {
+  it('defaults benchmark mode to two concrete tool calls', () => {
+    expect(minimumToolCallsBeforeDone('benchmark', {} as NodeJS.ProcessEnv)).toBe(2);
+  });
+
+  it('defaults non-benchmark modes to one concrete tool call', () => {
+    expect(minimumToolCallsBeforeDone('dev', {} as NodeJS.ProcessEnv)).toBe(1);
+  });
+
+  it('supports an explicit env override including zero', () => {
+    expect(minimumToolCallsBeforeDone('benchmark', {
+      VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE: '0',
+    } as NodeJS.ProcessEnv)).toBe(0);
+    expect(minimumToolCallsBeforeDone('dev', {
+      VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE: '4',
+    } as NodeJS.ProcessEnv)).toBe(4);
+  });
+});
+
+describe('buildEmptyEngagementReminder', () => {
+  it('tells the model to do concrete tool work before finalizing', () => {
+    const reminder = buildEmptyEngagementReminder(0, 2, 'benchmark').toLowerCase();
+    expect(reminder).toContain('without enough concrete tool work');
+    expect(reminder).toContain('observed tool calls this chain: 0');
+    expect(reminder).toContain('minimum expected');
+    expect(reminder).toContain('use tools');
+    expect(reminder).toContain('purely answer-only');
   });
 });

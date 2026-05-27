@@ -1,0 +1,272 @@
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, normalize } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const tempDirs: string[] = [];
+
+function tempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ventipus-kbench-test-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe('KBench adapter packaging', () => {
+  const adapterDir = join(process.cwd(), 'resources', 'kbench', 'ventipus_agent');
+  const manifestPath = join(adapterDir, 'adapter.manifest.json');
+  const runnerPath = join(adapterDir, 'runner.mjs');
+
+  it('ships a KBench manifest and runner', () => {
+    expect(existsSync(manifestPath)).toBe(true);
+    expect(existsSync(runnerPath)).toBe(true);
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    expect(manifest).toMatchObject({
+      schemaVersion: 'kbench.adapter/v1',
+      id: 'ventipus',
+      kind: 'node',
+      entry: './runner.mjs',
+    });
+    expect(manifest.supportedBenchmarks).toEqual(['swe', 'tb2', 'sae']);
+    expect(manifest.capabilities.runModes).toEqual(['task']);
+    expect(manifest.capabilities.machineReadableStdout).toBe(true);
+    const runner = readFileSync(runnerPath, 'utf-8');
+    expect(runner).toContain('VENTIPUS_BASH_TIMEOUT_MS');
+  });
+
+  it('prints the packaged KBench adapter directory from the CLI wrapper', () => {
+    const out = execFileSync('node', ['bin/ventipus.js', '--print-kbench-adapter'], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    }).trim();
+    expect(normalize(out)).toBe(normalize(adapterDir));
+  });
+
+  it('runs the adapter protocol against a fake ventipus command', () => {
+    const dir = tempDir();
+    const fakeAgent = join(dir, 'fake-agent.mjs');
+    writeFileSync(join(dir, 'fixture.txt'), 'before\n', 'utf-8');
+    spawnSync('git', ['init'], { cwd: dir, encoding: 'utf-8' });
+    spawnSync('git', ['add', 'fixture.txt'], { cwd: dir, encoding: 'utf-8' });
+    spawnSync('git', ['-c', 'user.email=test@example.invalid', '-c', 'user.name=Test User', 'commit', '-m', 'baseline'], { cwd: dir, encoding: 'utf-8' });
+    writeFileSync(fakeAgent, [
+      'import { mkdirSync, writeFileSync } from "node:fs";',
+      'import { join } from "node:path";',
+      'writeFileSync("fixture.txt", "after\\n", "utf-8");',
+      'writeFileSync("new-file.txt", "new content\\n", "utf-8");',
+      'const traceDir = process.env.VENTIPUS_BENCHMARK_TRACE_DIR;',
+      'if (traceDir) {',
+      '  const runDir = join(traceDir, "fixture-run");',
+      '  mkdirSync(runDir, { recursive: true });',
+      '  writeFileSync(join(runDir, "summary.json"), JSON.stringify({',
+      '    endedAt: "2026-05-26T10:00:00.000Z",',
+      '    verificationCount: 1,',
+      '    verificationCommands: ["npm test"],',
+      '    verificationEvidence: { lastVerificationSeq: 7, lastVerificationStatus: "ok", extracted: [{ framework: "vitest", passed: 3, total: 3 }] },',
+      '    finalAnswerEvidence: { mentionsVerification: true, claimsPassingVerification: true, claimsNoVerificationRun: false, claimsIncomplete: false, claimsBlocked: false, finalAnswerCompletion: "unknown", unsupportedPassingClaim: false, contradictedPassingClaim: false, staleNoVerificationClaim: false, latestVerificationStatus: "ok", lastSuccessfulVerificationSeq: 7, verificationCount: 1, warnings: [] },',
+      '    usage: { callCount: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0, byModel: [{ model: "openrouter/free", calls: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0 }] },',
+      '    changedFiles: ["fixture.txt"],',
+      '    worktreeChangedFiles: ["fixture.txt", "new-file.txt"],',
+      '    artifacts: [{ kind: "patch", path: "worktree.patch", contentType: "text/x-diff", description: "patch" }],',
+      '    trajectoryQuality: { benchmarkContextUsed: true, usageCallCount: 2, usageTotalTokens: 3700, usageEstimatedCostUsd: 0, costEfficiencyRisk: false, invalidToolActionCount: 1, invalidToolActionPercent: 4.35, invalidToolActionEvents: [{ seq: 4, tool: "web_search_exa", reason: "unknown_tool", evidence: "tool missing" }], localizationBeforeFirstEdit: true, failingReproductionBeforeFirstEdit: true, passingValidationAfterFirstEdit: true, validationAfterLastEdit: true, passingValidationAfterLastEdit: true, finalEditVerificationCount: 2, finalEditPassingVerificationCount: 2, stableValidationAfterLastEdit: true, broadValidationAfterLastEdit: true, passingBroadValidationAfterLastEdit: true, successfulVerificationCount: 1, failedVerificationCount: 0, incompleteVerifierCount: 0, incompleteVerifierEvents: [], inconclusiveVerifierEvents: [], environmentSetupFailureCount: 0, environmentSetupFailureEvents: [], unresolvedEnvironmentSetupFailureCount: 0, unresolvedEnvironmentSetupFailureEvents: [], environmentSetupCount: 0, successfulEnvironmentSetupCount: 0, environmentSetupEvents: [], skillViewCount: 1, skillViewEvents: [{ seq: 2, name: "Python Patterns" }], skillNames: ["Python Patterns"], skillLoadedBeforeLocalContext: false, excessiveSkillViewCount: false, ciWorkflowCommandCount: 1, ciVerifierCommands: ["npm test"], ciValidationAfterFirstEdit: true, passingCiValidationAfterFirstEdit: true, ciValidationAfterLastEdit: true, passingCiValidationAfterLastEdit: true, firstCiValidationAfterFirstEditSeq: 7, sourceResearchCoverage: { callCount: 0 }, taskContractSignalCount: 0, taskContractChecklistUsed: false, taskContractChecklistAfterContext: null, taskContractChecklistComplete: null, latestTodoSeq: null, todoIncompleteCount: 0, todoIncompleteItems: [], noEditContractDetected: false, editAfterNoEditContract: false, lastEditSeq: 5, editTargetCount: 0, localizedEditTargetCount: 0, unlocalizedEditTargetEvents: [], broadEditContractDetected: false, largeEditSurfaceTargetCount: 0, largeEditSurfaceTargets: [], redundantToolCallCount: 0, redundantToolCallEvents: [], redundantVerifierCount: 0, redundantVerifierEvents: [], blindRepairCount: 0, blindRepairEvents: [], postEditRegressionCycleCount: 1, postEditRegressionCycleEvents: [{ firstPassingSeq: 5, failingSeq: 6, recoveryPassingSeq: 7, failingCommand: "npm test", recoveryCommand: "npm test", broadFailure: true }], scratchArtifactPermissionDetected: false, scratchArtifactEvents: [], postEditDiffReview: null, diffReviewAfterLastEdit: null, firstPostEditDiffReviewSeq: null, firstDiffReviewAfterLastEditSeq: null, broadValidationAfterFirstEdit: null, passingBroadValidationAfterFirstEdit: null, firstBroadValidationAfterFirstEditSeq: null, lastPostEditVerificationSeq: 7, lastPostEditVerificationStatus: "ok", lastPostEditVerificationConclusiveFailure: false, firstConclusiveFailedVerificationSeq: 3, testEditPermissionDetected: false, testHarnessEditEvents: [], processScore: 100, processDefects: [], warnings: [] }',
+      '  }), "utf-8");',
+      '  writeFileSync(join(runDir, "trace.jsonl"), "", "utf-8");',
+      '}',
+      'process.stdout.write("fake ventipus complete sk-or-v1-dummysecret\\n");',
+      'process.stderr.write("fake diagnostic hf_abcdefghijklmnop\\n");',
+    ].join('\n'), 'utf-8');
+    const payload = {
+      mode: 'task',
+      task: {
+        benchmark: 'swe',
+        instanceId: 'fixture',
+        instruction: 'Fix the fixture bug npm_abcdefghijklmnop',
+        env: { workdir: dir },
+      },
+      env: { workdir: dir },
+      config: {
+        modelName: 'openrouter/free',
+        storeDir: dir,
+      },
+    };
+
+    const result = spawnSync('node', [runnerPath], {
+      cwd: process.cwd(),
+      input: JSON.stringify(payload),
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        VENTIPUS_KBENCH_COMMAND: `node ${fakeAgent}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.ok).toBe(true);
+    expect(output.status).toBe('ok');
+    expect(output.finalText).toContain('fake ventipus complete');
+    expect(output.benchmarkResult.profile).toBe('swe-bench');
+    expect(output.benchmarkResult.verificationEvidence).toMatchObject({
+      lastVerificationSeq: 7,
+      lastVerificationStatus: 'ok',
+    });
+    expect(output.benchmarkResult.traceSummary.finalAnswerEvidence).toMatchObject({
+      mentionsVerification: true,
+      claimsPassingVerification: true,
+      claimsIncomplete: false,
+      claimsBlocked: false,
+      finalAnswerCompletion: 'unknown',
+      unsupportedPassingClaim: false,
+      contradictedPassingClaim: false,
+      latestVerificationStatus: 'ok',
+      lastSuccessfulVerificationSeq: 7,
+    });
+    expect(output.benchmarkResult.usage).toMatchObject({
+      callCount: 2,
+      promptTokens: 3000,
+      completionTokens: 700,
+      totalTokens: 3700,
+      estimatedCostUsd: 0,
+    });
+    expect(output.benchmarkResult.traceSummary.verificationCommands).toEqual(['npm test']);
+    expect(output.benchmarkResult.traceSummary.usage.byModel).toEqual([
+      {
+        model: 'openrouter/free',
+        calls: 2,
+        promptTokens: 3000,
+        completionTokens: 700,
+        totalTokens: 3700,
+        estimatedCostUsd: 0,
+      },
+    ]);
+    expect(output.benchmarkResult.traceSummary.trajectoryQuality).toMatchObject({
+      benchmarkContextUsed: true,
+      usageCallCount: 2,
+      usageTotalTokens: 3700,
+      usageEstimatedCostUsd: 0,
+      costEfficiencyRisk: false,
+      invalidToolActionCount: 1,
+      invalidToolActionPercent: 4.35,
+      invalidToolActionEvents: [{ seq: 4, tool: 'web_search_exa', reason: 'unknown_tool', evidence: 'tool missing' }],
+      passingValidationAfterFirstEdit: true,
+      validationAfterLastEdit: true,
+      passingValidationAfterLastEdit: true,
+      finalEditVerificationCount: 2,
+      finalEditPassingVerificationCount: 2,
+      stableValidationAfterLastEdit: true,
+      broadValidationAfterLastEdit: true,
+      passingBroadValidationAfterLastEdit: true,
+      taskContractSignalCount: 0,
+      taskContractChecklistUsed: false,
+      taskContractChecklistAfterContext: null,
+      taskContractChecklistComplete: null,
+      latestTodoSeq: null,
+      todoIncompleteCount: 0,
+      todoIncompleteItems: [],
+      incompleteVerifierCount: 0,
+      incompleteVerifierEvents: [],
+      inconclusiveVerifierEvents: [],
+      environmentSetupFailureCount: 0,
+      environmentSetupFailureEvents: [],
+      unresolvedEnvironmentSetupFailureCount: 0,
+      unresolvedEnvironmentSetupFailureEvents: [],
+      environmentSetupCount: 0,
+      successfulEnvironmentSetupCount: 0,
+      environmentSetupEvents: [],
+      skillViewCount: 1,
+      skillViewEvents: [{ seq: 2, name: 'Python Patterns' }],
+      skillNames: ['Python Patterns'],
+      skillLoadedBeforeLocalContext: false,
+      excessiveSkillViewCount: false,
+      ciWorkflowCommandCount: 1,
+      ciVerifierCommands: ['npm test'],
+      ciValidationAfterFirstEdit: true,
+      passingCiValidationAfterFirstEdit: true,
+      ciValidationAfterLastEdit: true,
+      passingCiValidationAfterLastEdit: true,
+      firstCiValidationAfterFirstEditSeq: 7,
+      noEditContractDetected: false,
+      editAfterNoEditContract: false,
+      lastEditSeq: 5,
+      editTargetCount: 0,
+      localizedEditTargetCount: 0,
+      unlocalizedEditTargetEvents: [],
+      broadEditContractDetected: false,
+      largeEditSurfaceTargetCount: 0,
+      largeEditSurfaceTargets: [],
+      redundantToolCallCount: 0,
+      redundantToolCallEvents: [],
+      redundantVerifierCount: 0,
+      redundantVerifierEvents: [],
+      blindRepairCount: 0,
+      blindRepairEvents: [],
+      postEditRegressionCycleCount: 1,
+      postEditRegressionCycleEvents: [{
+        firstPassingSeq: 5,
+        failingSeq: 6,
+        recoveryPassingSeq: 7,
+        failingCommand: 'npm test',
+        recoveryCommand: 'npm test',
+        broadFailure: true,
+      }],
+      scratchArtifactPermissionDetected: false,
+      scratchArtifactEvents: [],
+      postEditDiffReview: null,
+      diffReviewAfterLastEdit: null,
+      firstPostEditDiffReviewSeq: null,
+      firstDiffReviewAfterLastEditSeq: null,
+      broadValidationAfterFirstEdit: null,
+      passingBroadValidationAfterFirstEdit: null,
+      firstBroadValidationAfterFirstEditSeq: null,
+      lastPostEditVerificationSeq: 7,
+      lastPostEditVerificationStatus: 'ok',
+      lastPostEditVerificationConclusiveFailure: false,
+      firstConclusiveFailedVerificationSeq: 3,
+      testEditPermissionDetected: false,
+      testHarnessEditEvents: [],
+      processScore: 100,
+      processDefects: [],
+    });
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'stdout')).toBe(true);
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'ventipus-summary')).toBe(true);
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'ventipus-tool-trace')).toBe(true);
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'patch')).toBe(true);
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'git-status')).toBe(true);
+    const instructionArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'instruction');
+    const instructionText = readFileSync(instructionArtifact.path, 'utf-8');
+    expect(instructionText).toContain('Fix the fixture bug');
+    expect(instructionText).toContain('npm_[REDACTED]');
+    expect(instructionText).not.toContain('npm_abcdefghijklmnop');
+    const stdoutArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'stdout');
+    const stdoutText = readFileSync(stdoutArtifact.path, 'utf-8');
+    expect(stdoutText).toContain('fake ventipus complete');
+    expect(stdoutText).toContain('sk-or-v1-[REDACTED]');
+    expect(stdoutText).not.toContain('sk-or-v1-dummysecret');
+    const stderrArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'stderr');
+    const stderrText = readFileSync(stderrArtifact.path, 'utf-8');
+    expect(stderrText).toContain('fake diagnostic');
+    expect(stderrText).toContain('hf_[REDACTED]');
+    expect(stderrText).not.toContain('hf_abcdefghijklmnop');
+    const patchArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'patch');
+    const patchText = readFileSync(patchArtifact.path, 'utf-8');
+    expect(patchText).toContain('+after');
+    expect(patchText).toContain('new-file.txt');
+    expect(patchText).toContain('new content');
+  });
+
+  it('returns unsupported_capability JSON for session mode', () => {
+    const result = spawnSync('node', [runnerPath], {
+      cwd: process.cwd(),
+      input: JSON.stringify({ mode: 'session', session: { benchmark: 'tau', instanceId: 'fixture' }, config: {} }),
+      encoding: 'utf-8',
+    });
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.ok).toBe(false);
+    expect(output.status).toBe('unsupported_capability');
+  });
+});

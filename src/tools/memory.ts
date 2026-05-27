@@ -62,7 +62,7 @@ export const MemoryAddTool: Tool = {
         content: input.content as string,
         tags: (input.tags as string[]) || [],
         importance: typeof input.importance === 'number' ? input.importance : undefined,
-        scope: (input.scope as Scope | 'auto') || 'auto',
+        scope: (input.scope as 'global' | 'project' | 'auto' | undefined) || 'auto',
         cwd,
       });
       return {

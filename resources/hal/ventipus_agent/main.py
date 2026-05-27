@@ -1,0 +1,362 @@
+"""HAL custom-agent adapter for ventipus.
+
+HAL expects a module-level run(input, **kwargs) function. This adapter keeps
+ventipus framework-agnostic by launching the installed CLI in headless
+benchmark mode, then returning the artifact shape expected by common HAL tasks.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+SECRET_REPLACEMENTS = [
+    (re.compile(r"sk-or-v1-[A-Za-z0-9_-]+"), "sk-or-v1-[REDACTED]"),
+    (re.compile(r"sk-[A-Za-z0-9_-]{16,}"), "sk-[REDACTED]"),
+    (re.compile(r"hf_[A-Za-z0-9]{16,}"), "hf_[REDACTED]"),
+    (re.compile(r"KGAT_[A-Za-z0-9]{16,}"), "KGAT_[REDACTED]"),
+    (re.compile(r"npm_[A-Za-z0-9]{16,}"), "npm_[REDACTED]"),
+]
+
+ORACLE_FIELD_RE = re.compile(
+    r"(^|_)(patch|test_patch|solution|answer|gold|fail_to_pass|pass_to_pass)($|_)",
+    re.IGNORECASE,
+)
+
+SAFE_FIELD_ORDER = [
+    "instance_id",
+    "task_id",
+    "repo",
+    "base_commit",
+    "version",
+    "created_at",
+    "problem_statement",
+    "hints_text",
+    "description",
+    "description_no_samples",
+    "samples",
+    "num_tests",
+    "num_samples",
+    "problem_link",
+    "problem_level",
+    "cp_id",
+    "problem_id",
+    "runtime_limit",
+    "memory_limit",
+    "runtime_limit_sentences",
+    "memory_limit_sentences",
+    "task_inst",
+    "dataset_path",
+    "dataset_folder_tree",
+    "dataset_preview",
+    "output_fname",
+    "domain_knowledge",
+]
+
+
+@dataclass
+class AgentRun:
+    returncode: int
+    stdout: str
+    stderr: str
+    trace_dir: Path
+
+
+def _redact(text: Any) -> str:
+    value = str(text or "")
+    for pattern, replacement in SECRET_REPLACEMENTS:
+        value = pattern.sub(replacement, value)
+    return value
+
+
+def _truncate(text: str, limit: int = 50000) -> str:
+    clean = _redact(text)
+    if len(clean) <= limit:
+        return clean
+    omitted = len(clean) - limit
+    return clean[:limit] + f"\n...[truncated {omitted} chars]"
+
+
+def _safe_task_id(task_id: Any) -> str:
+    raw = str(task_id or "task")
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip("-")
+    return safe or "task"
+
+
+def _include_oracle_fields() -> bool:
+    return os.environ.get("VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS", "").lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_task_view(task: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    if _include_oracle_fields():
+        return task, []
+
+    allowed: dict[str, Any] = {}
+    omitted: list[str] = []
+    ordered_keys = [key for key in SAFE_FIELD_ORDER if key in task]
+    ordered_keys.extend(sorted(key for key in task if key not in ordered_keys))
+    for key in ordered_keys:
+        if ORACLE_FIELD_RE.search(key):
+            omitted.append(key)
+            continue
+        allowed[key] = task[key]
+    return allowed, omitted
+
+
+def _is_patch_task(task: dict[str, Any]) -> bool:
+    return bool(
+        task.get("problem_statement")
+        and (task.get("repo") or task.get("base_commit") or task.get("instance_id"))
+    )
+
+
+def _is_science_agent_task(task: dict[str, Any]) -> bool:
+    return bool(
+        task.get("task_inst")
+        and (task.get("dataset_path") or task.get("output_fname") or task.get("dataset_folder_tree"))
+    )
+
+
+def _is_appworld_task(task: dict[str, Any]) -> bool:
+    keys = set(task.keys())
+    return bool(task.get("task_id") and keys.issubset({"task_id", "instance_id"}))
+
+
+def _is_usaco_task(task: dict[str, Any]) -> bool:
+    return bool(
+        task.get("description")
+        and (task.get("samples") or task.get("cp_id") or task.get("problem_id") or task.get("problem_link"))
+    )
+
+
+def _profile_for_task(task: dict[str, Any]) -> str:
+    if _is_patch_task(task):
+        return "swe-bench"
+    return "generic"
+
+
+def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
+    profile = _profile_for_task(task)
+    safe_task, omitted = _safe_task_view(task)
+    body = json.dumps(safe_task, ensure_ascii=False, indent=2, sort_keys=True)
+
+    lines = [
+        f"/benchmark {profile} HAL task {task_id}",
+        "",
+        "You are running inside the Holistic Agent Leaderboard harness.",
+        "Use ventipus benchmark discipline: inspect local files, patch only what is needed, run targeted verification, and preserve trace evidence.",
+    ]
+    if profile == "swe-bench":
+        lines.extend([
+            "This is a SWE-bench-style patch task. Modify the checked-out repository; the HAL adapter will collect the git patch after the run.",
+            "Do not edit tests or harness files unless the task explicitly asks for that.",
+        ])
+    elif _is_science_agent_task(task):
+        lines.append("This is a ScienceAgentBench-style task. Produce a concise solution trajectory and any required output/program artifact in the final response.")
+    elif _is_appworld_task(task):
+        lines.append("This is an AppWorld-style environment task. Interact with the environment as needed, then complete the task through the environment API.")
+    elif _is_usaco_task(task):
+        lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
+    else:
+        lines.append("Return the final task response clearly; the HAL adapter will store it in the task response field.")
+
+    if omitted:
+        lines.append("Oracle-like task fields omitted from the prompt by default: " + ", ".join(sorted(omitted)) + ".")
+
+    lines.extend(["", "## HAL task data", _truncate(body)])
+    return "\n".join(lines)
+
+
+def _base_command() -> list[str]:
+    command = os.environ.get("VENTIPUS_HAL_COMMAND", "ventipus")
+    parts = shlex.split(command, posix=os.name != "nt")
+    return parts or ["ventipus"]
+
+
+def _append_flag(args: list[str], flag: str, value: Any) -> None:
+    if value is None:
+        return
+    text = str(value).strip()
+    if not text:
+        return
+    args.extend([flag, text])
+
+
+def _run_ventipus(task_id: str, prompt: str, kwargs: dict[str, Any]) -> AgentRun:
+    trace_root = Path(os.environ.get("VENTIPUS_HAL_TRACE_DIR", ".ventipus/hal-trace"))
+    trace_dir = trace_root / _safe_task_id(task_id)
+    trace_dir.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env.setdefault("VENTIPUS_ENV_CONFIG", "1")
+    env.setdefault("VENTIPUS_THEME", "minimal")
+    env.setdefault("VENTIPUS_SHOW_THINKING", "0")
+    env.setdefault("VENTIPUS_MEMORY", "0")
+    env.setdefault("VENTIPUS_BASH_TIMEOUT_MS", "300000")
+
+    args = _base_command()
+    args.extend([
+        "--prompt",
+        prompt,
+        "--perm",
+        "yolo",
+        "--benchmark-trace-dir",
+        str(trace_dir),
+    ])
+    _append_flag(args, "--model", kwargs.get("model_name") or kwargs.get("model"))
+    _append_flag(args, "--provider", kwargs.get("provider"))
+    _append_flag(args, "--max-turns", kwargs.get("max_turns"))
+    _append_flag(args, "--max-tokens", kwargs.get("max_tokens"))
+    _append_flag(args, "--temperature", kwargs.get("temperature"))
+    _append_flag(args, "--output-format", kwargs.get("output_format"))
+
+    timeout = int(os.environ.get("VENTIPUS_HAL_TIMEOUT_SEC", "1800"))
+    try:
+        completed = subprocess.run(
+            args,
+            cwd=os.getcwd(),
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        stdout = _redact(completed.stdout)
+        stderr = _redact(completed.stderr)
+        returncode = completed.returncode
+    except subprocess.TimeoutExpired as exc:
+        stdout = _redact(exc.stdout)
+        stderr = _redact(exc.stderr) + f"\nventipus timed out after {timeout}s"
+        returncode = 124
+
+    (trace_dir / "hal-stdout.txt").write_text(stdout, encoding="utf-8")
+    (trace_dir / "hal-stderr.txt").write_text(stderr, encoding="utf-8")
+    return AgentRun(returncode=returncode, stdout=stdout, stderr=stderr, trace_dir=trace_dir)
+
+
+def _run_git(args: list[str], cwd: Path | None = None) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd) if cwd else None,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+    except Exception:
+        return ""
+    if completed.returncode not in {0, 1}:
+        return ""
+    return _redact(completed.stdout)
+
+
+def _latest_trace_patch(trace_dir: Path) -> str:
+    patches = sorted(
+        trace_dir.rglob("worktree.patch"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for patch in patches:
+        try:
+            text = _redact(patch.read_text(encoding="utf-8", errors="replace"))
+            if text.strip():
+                return text
+        except OSError:
+            continue
+    return ""
+
+
+def _collect_git_patch(trace_dir: Path) -> str:
+    trace_patch = _latest_trace_patch(trace_dir)
+    if trace_patch:
+        return trace_patch
+
+    parts = [
+        _run_git(["diff", "--binary", "--no-ext-diff"]),
+        _run_git(["diff", "--cached", "--binary", "--no-ext-diff"]),
+    ]
+    if os.name != "nt":
+        raw_untracked = _run_git(["ls-files", "--others", "--exclude-standard", "-z"])
+        for filename in raw_untracked.split("\0"):
+            if filename:
+                parts.append(_run_git(["diff", "--no-index", "--binary", "--no-ext-diff", "--", "/dev/null", filename]))
+    return "".join(part for part in parts if part)
+
+
+def _latest_summary(trace_dir: Path) -> dict[str, Any]:
+    summaries = sorted(
+        trace_dir.rglob("summary.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for summary in summaries:
+        try:
+            return json.loads(summary.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return {}
+
+
+def _response_text(run_result: AgentRun) -> str:
+    summary = _latest_summary(run_result.trace_dir)
+    final = summary.get("finalAssistant")
+    if isinstance(final, str) and final.strip():
+        return _truncate(final, 20000)
+    combined = "\n".join(part for part in [run_result.stdout, run_result.stderr] if part)
+    return _truncate(combined, 20000)
+
+
+def _submission_for_task(task: dict[str, Any], run_result: AgentRun) -> Any:
+    response = _response_text(run_result)
+    if _is_science_agent_task(task):
+        return response
+    if _is_appworld_task(task):
+        return "Completed" if run_result.returncode == 0 else response
+
+    updated = dict(task)
+    updated["response"] = response
+    return updated
+
+
+def run(input: dict[str, dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    """Run ventipus for HAL.
+
+    Patch-style tasks return {task_id: patch}. ScienceAgentBench-style tasks
+    return a trajectory string. AppWorld-style tasks return "Completed" after
+    a successful run. Other text/code tasks return the original task dict with
+    a response field, matching HAL's USACO-style pattern.
+    """
+    if not isinstance(input, dict):
+        raise TypeError("ventipus HAL adapter expects input to be a dictionary")
+
+    patch_task_ids = [
+        str(task_id)
+        for task_id, task in input.items()
+        if isinstance(task, dict) and _is_patch_task(task)
+    ]
+    if len(patch_task_ids) > 1:
+        raise ValueError("ventipus HAL adapter expects one patch-style task per checked-out worktree")
+
+    output: dict[str, Any] = {}
+    for task_id, task in input.items():
+        if not isinstance(task, dict):
+            output[str(task_id)] = task
+            continue
+
+        prompt = _build_prompt(str(task_id), task)
+        run_result = _run_ventipus(str(task_id), prompt, kwargs)
+
+        if _is_patch_task(task):
+            output[str(task_id)] = _collect_git_patch(run_result.trace_dir)
+        else:
+            output[str(task_id)] = _submission_for_task(task, run_result)
+
+    return output
