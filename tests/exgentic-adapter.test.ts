@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, normalize } from 'node:path';
+import pkg from '../package.json' with { type: 'json' };
 
 describe('Exgentic adapter packaging', () => {
   const adapterDir = join(process.cwd(), 'resources', 'exgentic', 'ventipus_agent');
@@ -34,6 +35,23 @@ describe('Exgentic adapter packaging', () => {
       encoding: 'utf-8',
     }).trim();
     expect(normalize(out)).toBe(normalize(adapterDir));
+  });
+
+  it('prints CLI help and version without entering first-time setup', () => {
+    const help = execFileSync('node', ['bin/ventipus.js', '--help'], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    });
+    expect(help).toContain('Usage:');
+    expect(help).toContain('ventipus [options]');
+    expect(help).toContain('--prompt <text>');
+    expect(help).not.toContain('First-time Setup');
+
+    const version = execFileSync('node', ['bin/ventipus.js', '--version'], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    }).trim();
+    expect(version).toBe(pkg.version);
   });
 
   it('ships and prints an Open Agent Leaderboard agent card', () => {

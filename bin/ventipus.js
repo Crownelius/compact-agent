@@ -91,6 +91,58 @@
 const { createRequire } = await import('node:module');
 const __require = createRequire(import.meta.url);
 
+function printCliHelp() {
+  const pkg = __require('../package.json');
+  process.stdout.write(`Ventipus ${pkg.version}
+
+Usage:
+  ventipus [options]
+  ventipus --prompt "fix the failing test" [options]
+  ventipus --prompt-file task.txt [options]
+
+Options:
+  -h, --help                         Show this help and exit.
+  -v, --version                      Print the installed version and exit.
+  --provider <name>                  Use a provider for this run.
+  --model <model>                    Override the configured model.
+  --fallback-model <model>           Override the fallback model.
+  --base-url <url>                   Override the OpenAI-compatible base URL.
+  --api-key <key>                    Use an API key for this run.
+  --api-key-env <name>               Read the API key from an environment variable.
+  --perm <ask|auto|yolo>             Override permission mode.
+  --prompt <text>                    Run one non-interactive task.
+  --prompt-file <path>               Run one task read from a file.
+  --non-interactive                  Disable the interactive REPL path.
+  --max-turns <n>                    Limit non-interactive agent turns.
+  --max-tokens <n>                   Override max output tokens.
+  --context-window-tokens <n>        Override context window estimate.
+  --temperature <n>                  Override model temperature.
+  --output-format <text|json>        Set non-interactive output format.
+  --benchmark-trace-dir <path>       Write benchmark trace artifacts.
+  --debug[=<off|info|debug|trace>]   Enable wrapper debug logging.
+
+Packaged paths:
+  --print-terminal-bench-adapter
+  --print-kbench-adapter
+  --print-hal-agent
+  --print-exgentic-agent
+  --print-open-agent-card
+`);
+}
+
+(() => {
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h') || argv[0] === 'help') {
+    printCliHelp();
+    process.exit(0);
+  }
+  if (argv.includes('--version') || argv.includes('-v')) {
+    const pkg = __require('../package.json');
+    process.stdout.write(`${pkg.version}\n`);
+    process.exit(0);
+  }
+})();
+
 function readFlagValue(argv, index, flag) {
   const current = argv[index];
   const prefix = `${flag}=`;
