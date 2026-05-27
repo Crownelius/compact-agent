@@ -283,6 +283,8 @@ function compactTraceSummary(traceSummary) {
       failureUnalignedRepairEvents: Array.isArray(quality.failureUnalignedRepairEvents) ? quality.failureUnalignedRepairEvents.slice(0, 20) : [],
       postEditRegressionCycleCount: quality.postEditRegressionCycleCount,
       postEditRegressionCycleEvents: Array.isArray(quality.postEditRegressionCycleEvents) ? quality.postEditRegressionCycleEvents.slice(0, 20) : [],
+      postSuccessMutationCount: quality.postSuccessMutationCount,
+      postSuccessMutationEvents: Array.isArray(quality.postSuccessMutationEvents) ? quality.postSuccessMutationEvents.slice(0, 20) : [],
       predictedEditCount: quality.predictedEditCount,
       unpredictedEditCount: quality.unpredictedEditCount,
       contradictedEditPredictionCount: quality.contradictedEditPredictionCount,

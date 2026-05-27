@@ -16,6 +16,7 @@ import {
   buildBenchmarkInvalidToolActionEvents,
   buildBenchmarkLeakageRiskEvents,
   buildBenchmarkLongHorizonSignals,
+  buildBenchmarkPostSuccessMutationEvents,
   buildBenchmarkRewardHackSignals,
   buildBenchmarkRedundantVerifierEvents,
   buildBenchmarkRedundantToolCallEvents,
@@ -715,6 +716,110 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('decision_risk=yes');
     expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('Prediction line');
     expect(JSON.stringify(summary.changeEvaluation)).not.toContain(config.apiKey);
+  });
+
+  it('flags AHE publish-state mutations after passing validation without revalidation', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: '# Benchmark Context\n## Likely Verification Commands\n- npm test\n',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 failed, 1 total\nsrc/app.test.ts',
+        isError: true,
+        elapsedMs: 20,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const value = 1;',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: '1', new_string: '2' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 20,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: '2', new_string: '3' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+
+    expect(buildBenchmarkPostSuccessMutationEvents(events)).toMatchObject([{
+      seq: 6,
+      tool: 'edit_file',
+      target: 'src/app.ts',
+      passingVerifierSeq: 5,
+      passingVerifierCommand: 'npm test',
+    }]);
+    expect(quality.postSuccessMutationCount).toBe(1);
+    expect(quality.postSuccessMutationEvents[0].reason).toContain('file edit after passing verifier');
+    expect(quality.warnings.join('\n')).toContain('AHE publish-state risk');
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('post_success_mutation_without_revalidation');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('post_success_mutations=1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('post-success edit');
+  });
+
+  it('clears AHE publish-state mutation risk when a later verifier passes', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 20,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'git reset --hard HEAD' },
+        output: 'HEAD is now at abc123',
+        isError: false,
+        elapsedMs: 20,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 20,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+
+    expect(buildBenchmarkPostSuccessMutationEvents(events)).toEqual([]);
+    expect(quality.postSuccessMutationCount).toBe(0);
+    expect(quality.processDefects.map((defect) => defect.code)).not.toContain('post_success_mutation_without_revalidation');
   });
 
   it('summarizes benchmark token and cost usage by model', () => {
@@ -1886,13 +1991,17 @@ describe('benchmark trace artifacts', () => {
     expect(quality.validationAfterLastEdit).toBe(false);
     expect(quality.passingValidationAfterLastEdit).toBe(false);
     expect(quality.lastEditSeq).toBe(8);
-    expect(quality.processDefects.map((d) => d.code)).toEqual(['missing_final_post_edit_validation']);
+    expect(quality.processDefects.map((d) => d.code)).toEqual([
+      'missing_final_post_edit_validation',
+      'post_success_mutation_without_revalidation',
+    ]);
     expect(quality.processDefects[0]).toMatchObject({
       category: 'validation',
       severity: 'high',
       seq: 8,
     });
-    expect(quality.processScore).toBe(80);
+    expect(quality.postSuccessMutationCount).toBe(1);
+    expect(quality.processScore).toBe(75);
     expect(quality.warnings.join('\n')).toContain('final edit was not followed by a verifier');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_validate_after_edit=no');
     expect(buildBenchmarkCompletionReminder(events)).toContain('run a verifier after the final edit');

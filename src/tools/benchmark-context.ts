@@ -1058,6 +1058,7 @@ function summarizePriorValidationReliability(
     ?? finiteNumber(quality.finalEditPassingVerificationCount);
   const regressionCount = finiteNumber(reliability.postEditRegressionCycleCount)
     ?? finiteNumber(quality.postEditRegressionCycleCount);
+  const postSuccessMutationCount = finiteNumber(quality.postSuccessMutationCount);
   const stable = firstBooleanOrNull(reliability.stableValidationAfterLastEdit, quality.stableValidationAfterLastEdit);
   const broad = firstBooleanOrNull(reliability.passingBroadValidationAfterLastEdit, quality.passingBroadValidationAfterLastEdit);
   const ci = firstBooleanOrNull(reliability.passingCiValidationAfterLastEdit, quality.passingCiValidationAfterLastEdit);
@@ -1075,6 +1076,7 @@ function summarizePriorValidationReliability(
     && broad === undefined
     && ci === undefined
     && (regressionCount ?? 0) <= 0
+    && (postSuccessMutationCount ?? 0) <= 0
     && commands.length === 0
   ) {
     return null;
@@ -1087,6 +1089,7 @@ function summarizePriorValidationReliability(
     `broad_ok:${formatDependencyTriState(broad)}`,
     `ci_ok:${formatDependencyTriState(ci)}`,
     `regressions:${regressionCount ?? 0}`,
+    `post_success_mutations:${postSuccessMutationCount ?? 0}`,
     lastStatus ? `latest:${truncateContractSignal(redactTraceText(lastStatus), 40)}` : null,
     commands.length ? `commands:${commands.join('|')}` : null,
   ].filter(Boolean).join(',');

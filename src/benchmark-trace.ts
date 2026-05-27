@@ -606,6 +606,8 @@ export interface BenchmarkTrajectoryQuality {
   failureUnalignedRepairEvents: BenchmarkFailureUnalignedRepairEvent[];
   postEditRegressionCycleCount: number;
   postEditRegressionCycleEvents: BenchmarkPostEditRegressionCycleEvent[];
+  postSuccessMutationCount: number;
+  postSuccessMutationEvents: BenchmarkPostSuccessMutationEvent[];
   predictedEditCount: number;
   unpredictedEditCount: number;
   contradictedEditPredictionCount: number;
@@ -848,6 +850,15 @@ export interface BenchmarkPostEditRegressionCycleEvent {
   failingCommand: string;
   recoveryCommand: string;
   broadFailure: boolean;
+}
+
+export interface BenchmarkPostSuccessMutationEvent {
+  seq: number;
+  tool: string;
+  target: string;
+  passingVerifierSeq: number;
+  passingVerifierCommand: string;
+  reason: string;
 }
 
 export interface BenchmarkScratchArtifactEvent {
@@ -2382,6 +2393,7 @@ export function buildBenchmarkTrajectoryQuality(
   const blindRepairEvents = buildBenchmarkBlindRepairEvents(events);
   const failureRepairAlignment = buildBenchmarkFailureRepairAlignment(events);
   const postEditRegressionCycleEvents = buildBenchmarkPostEditRegressionCycleEvents(events);
+  const postSuccessMutationEvents = buildBenchmarkPostSuccessMutationEvents(events);
   const decisionObservability = buildBenchmarkExperienceDecisionObservability(messages, events);
   const predictedEditSeqs = new Set(decisionObservability.editPredictions.map((prediction) => prediction.editSeq));
   const unpredictedEditCount = events.filter((event) => isEditEvent(event) && !predictedEditSeqs.has(event.seq)).length;
@@ -2904,6 +2916,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`post-edit regression cycle detected after earlier passing validation: ${cycles}. Inspect whether the failure reflected a real regression or unstable verifier before treating final validation as clean.`);
   }
+  if (postSuccessMutationEvents.length > 0) {
+    const mutations = postSuccessMutationEvents
+      .slice(0, 3)
+      .map((event) => `pass#${event.passingVerifierSeq}->${event.tool}#${event.seq} ${event.target}`)
+      .join('; ');
+    warnings.push(`AHE publish-state risk: mutation(s) occurred after passing validation without a later passing verifier: ${mutations}. Re-run the relevant verifier after the final mutation before claiming completion.`);
+  }
   if (decisionObservabilityRisk) {
     const parts = [
       unpredictedEditCount > 0 ? `${unpredictedEditCount} edit(s) without Prediction manifest` : '',
@@ -3035,6 +3054,7 @@ export function buildBenchmarkTrajectoryQuality(
     failureAlignedRepairCount: failureRepairAlignment.alignedCount,
     failureUnalignedRepairEvents: failureRepairAlignment.unalignedEvents,
     postEditRegressionCycleEvents,
+    postSuccessMutationEvents,
     predictedEditCount: decisionObservability.predictedEditCount,
     unpredictedEditCount,
     contradictedEditPredictionCount,
@@ -3210,6 +3230,8 @@ export function buildBenchmarkTrajectoryQuality(
     failureUnalignedRepairEvents: failureRepairAlignment.unalignedEvents,
     postEditRegressionCycleCount: postEditRegressionCycleEvents.length,
     postEditRegressionCycleEvents,
+    postSuccessMutationCount: postSuccessMutationEvents.length,
+    postSuccessMutationEvents,
     predictedEditCount: decisionObservability.predictedEditCount,
     unpredictedEditCount,
     contradictedEditPredictionCount,
@@ -3268,7 +3290,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, predicted_edits=${quality.predictedEditCount} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -3421,6 +3443,7 @@ interface BenchmarkProcessDefectInput {
   failureAlignedRepairCount: number;
   failureUnalignedRepairEvents: BenchmarkFailureUnalignedRepairEvent[];
   postEditRegressionCycleEvents: BenchmarkPostEditRegressionCycleEvent[];
+  postSuccessMutationEvents: BenchmarkPostSuccessMutationEvent[];
   predictedEditCount: number;
   unpredictedEditCount: number;
   contradictedEditPredictionCount: number;
@@ -3958,6 +3981,19 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       input.postEditRegressionCycleEvents
         .slice(0, 3)
         .map((event) => `pass#${event.firstPassingSeq}->fail#${event.failingSeq}->pass#${event.recoveryPassingSeq}:${event.failingCommand}`)
+        .join('; '),
+    );
+  }
+  if (input.postSuccessMutationEvents.length > 0) {
+    add(
+      'post_success_mutation_without_revalidation',
+      'execution_control',
+      input.postSuccessMutationEvents.some((event) => event.tool === 'bash') ? 'medium' : 'low',
+      input.postSuccessMutationEvents[0]?.seq ?? null,
+      'A passing verifier was followed by a state mutation without a later passing verifier.',
+      input.postSuccessMutationEvents
+        .slice(0, 3)
+        .map((event) => `pass#${event.passingVerifierSeq}->${event.tool}#${event.seq}:${event.target}`)
         .join('; '),
     );
   }
@@ -4783,6 +4819,38 @@ export function buildBenchmarkPostEditRegressionCycleEvents(events: BenchmarkTra
   return cycles.slice(0, 20);
 }
 
+export function buildBenchmarkPostSuccessMutationEvents(events: BenchmarkTraceEvent[]): BenchmarkPostSuccessMutationEvent[] {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq);
+  const mutations: BenchmarkPostSuccessMutationEvent[] = [];
+  let latestPassingVerifier: BenchmarkTraceEvent | null = null;
+
+  for (const event of sorted) {
+    if (event.verification && event.status === 'ok') {
+      latestPassingVerifier = event;
+      continue;
+    }
+    if (latestPassingVerifier == null) continue;
+    const reason = classifyPostSuccessMutation(event);
+    if (!reason) continue;
+    const laterPassingVerifier = sorted.some((candidate) => (
+      candidate.seq > event.seq
+      && candidate.verification
+      && candidate.status === 'ok'
+    ));
+    if (laterPassingVerifier) continue;
+    mutations.push({
+      seq: event.seq,
+      tool: truncate(redactTraceText(event.tool), 80),
+      target: truncate(redactTraceText(formatPostSuccessMutationTarget(event)), 220),
+      passingVerifierSeq: latestPassingVerifier.seq,
+      passingVerifierCommand: truncate(redactTraceText(verifierCommandForEvent(latestPassingVerifier)), 180),
+      reason,
+    });
+  }
+
+  return mutations.slice(0, 20);
+}
+
 export function buildBenchmarkFailureUnalignedRepairEvents(events: BenchmarkTraceEvent[]): BenchmarkFailureUnalignedRepairEvent[] {
   return buildBenchmarkFailureRepairAlignment(events).unalignedEvents;
 }
@@ -5040,6 +5108,29 @@ function supportedEditTargetsForBlindRepair(event: BenchmarkTraceEvent): string[
 function formatEditTargetsForEvent(event: BenchmarkTraceEvent): string {
   const targets = supportedEditTargetsForBlindRepair(event).filter(Boolean);
   return targets.length > 0 ? targets.slice(0, 3).join(', ') : event.target || event.tool;
+}
+
+function formatPostSuccessMutationTarget(event: BenchmarkTraceEvent): string {
+  if (isEditEvent(event)) return formatEditTargetsForEvent(event);
+  if (event.tool === 'bash') return verifierCommandForEvent(event) || event.target || event.tool;
+  return event.target || event.tool;
+}
+
+function classifyPostSuccessMutation(event: BenchmarkTraceEvent): string | null {
+  if (event.verification) return null;
+  if (isEditEvent(event)) return 'file edit after passing verifier without later passing validation';
+  if (event.tool !== 'bash') return null;
+  const command = verifierCommandForEvent(event);
+  if (isPostSuccessStateMutationCommand(command)) {
+    return 'state-changing shell command after passing verifier without later passing validation';
+  }
+  return null;
+}
+
+function isPostSuccessStateMutationCommand(command: string): boolean {
+  const normalized = command.replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return /(?:^|[;&|]\s*)(?:git\s+(?:reset|clean|checkout|restore|apply|am|commit|merge|rebase|cherry-pick)\b|npm\s+version\b|pnpm\s+version\b|yarn\s+version\b|rm\s+(?:-[A-Za-z]*\s+)?\S|del\s+(?:\/[A-Za-z]\s+)?\S|erase\s+(?:\/[A-Za-z]\s+)?\S|remove-item\b|move-item\b|copy-item\b|set-content\b|add-content\b|out-file\b|mv\s+\S|move\s+\S|cp\s+\S|copy\s+\S|python(?:3)?\s+-c\b.*\b(?:write_text|open\(|Path\().*(?:write|unlink|rename|replace|mkdir)|node\s+-e\b.*\b(?:writeFile|appendFile|rmSync|unlinkSync|renameSync|mkdirSync))\b/i.test(normalized);
 }
 
 function verifierCommandForEvent(event: BenchmarkTraceEvent): string {
@@ -6273,6 +6364,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('blind repair after failed verifier')
     || warning.includes('failed-verifier repair target')
     || warning.includes('post-edit regression cycle')
+    || warning.includes('AHE publish-state risk')
     || warning.includes('scratch/probe artifact')
     || warning.includes('post-edit diff/status review')
     || warning.includes('broad post-edit verifier')
@@ -6288,7 +6380,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones and WebDevBench canaries before claiming RoadmapBench/SaaSBench/mobile/WebDevBench completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line to each non-trivial edit and verify it after the edit, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, or frontend-backend/security verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones and WebDevBench canaries before claiming RoadmapBench/SaaSBench/mobile/WebDevBench completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line to each non-trivial edit and verify it after the edit, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, or frontend-backend/security verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 

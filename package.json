@@ -1,6 +1,6 @@
 {
   "name": "ventipus",
-  "version": "1.35.30",
+  "version": "1.35.31",
   "description": "Terminal AI coding CLI. Speaks any OpenAI-compatible API (OpenRouter, OpenAI, NVIDIA, Ollama, LM Studio, DeepSeek). Modes, slash commands, multi-agent swarming, key-rotation pool, optional voice + screen-reader, sandbox + permission gates, persistent input box, bundled everything-claude-code skills.",
   "type": "module",
   "license": "MIT",

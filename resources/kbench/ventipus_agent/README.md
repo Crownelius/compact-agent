@@ -33,7 +33,7 @@ or build artifacts, dependency manifest/lockfile setup-validation signals,
 skill-view fit/timing signals, per-target edit localization signals, large edit-surface
 signals, scratch/probe artifact signals, redundant tool-call signals,
 redundant failing-verifier rerun signals, blind-repair signals, post-edit regression-cycle signals,
-latest post-edit verifier signals, post-edit and final-state
+AHE publish-state mutation signals, latest post-edit verifier signals, post-edit and final-state
 diff-review signals, final-edit validation stability/lucky-pass signals, broad-validation signals,
 CI-derived validation signals,
 source-research recency signals,
