@@ -338,7 +338,7 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `web_search` | Search the web by keyword (DuckDuckGo, no API key). | Yes |
 | `stitch` | Call Google Stitch's MCP server (`tools/list`, `tools/call`). Only present when `/stitch-config` has been run. | No |
 
-Prior benchmark hints emitted by `benchmark_context` include compact `efficiency=...` signals when available: tool calls, usage calls, tokens, cost, invalid-action rate, successful verifier count, process score, process-defect count, warnings, and cost-efficiency risk. They also include `source_research=...` signals when prior runs captured source coverage: source kinds, hit/error counts, recency/freshness, targeted-coverage status, Kaggle fallback status, top URLs, and bounded coverage notes.
+Prior benchmark hints emitted by `benchmark_context` include compact `efficiency=...` signals when available: tool calls, tool elapsed time, slow tool calls, usage calls, tokens, cost, invalid-action rate, successful verifier count, process score, process-defect count, warnings, cost-efficiency risk, and time-efficiency risk. They also include `source_research=...` signals when prior runs captured source coverage: source kinds, hit/error counts, recency/freshness, targeted-coverage status, Kaggle fallback status, top URLs, and bounded coverage notes.
 
 Benchmark trajectory summaries include `evidence_grounding=...` when an edit retries a target after stale/no-effect edit evidence without first refreshing current file state via read/search/diff. This is surfaced as an execution-control process defect so benchmark runs do not silently loop on stale observations.
 

@@ -173,6 +173,11 @@ function compactTraceSummary(traceSummary) {
       usageTotalTokens: quality.usageTotalTokens,
       usageEstimatedCostUsd: quality.usageEstimatedCostUsd,
       costEfficiencyRisk: quality.costEfficiencyRisk,
+      totalToolElapsedMs: quality.totalToolElapsedMs,
+      maxToolElapsedMs: quality.maxToolElapsedMs,
+      slowToolCallCount: quality.slowToolCallCount,
+      slowToolEvents: Array.isArray(quality.slowToolEvents) ? quality.slowToolEvents.slice(0, 20) : [],
+      timeEfficiencyRisk: quality.timeEfficiencyRisk,
       invalidToolActionCount: quality.invalidToolActionCount,
       invalidToolActionPercent: quality.invalidToolActionPercent,
       invalidToolActionEvents: Array.isArray(quality.invalidToolActionEvents) ? quality.invalidToolActionEvents.slice(0, 20) : [],
@@ -389,6 +394,9 @@ function compactRunEfficiency(runEfficiency) {
   if (!runEfficiency || typeof runEfficiency !== 'object' || Array.isArray(runEfficiency)) return undefined;
   return {
     toolCallCount: runEfficiency.toolCallCount,
+    totalToolElapsedMs: runEfficiency.totalToolElapsedMs,
+    maxToolElapsedMs: runEfficiency.maxToolElapsedMs,
+    slowToolCallCount: runEfficiency.slowToolCallCount,
     usageCallCount: runEfficiency.usageCallCount,
     totalTokens: runEfficiency.totalTokens,
     estimatedCostUsd: runEfficiency.estimatedCostUsd,
@@ -399,6 +407,8 @@ function compactRunEfficiency(runEfficiency) {
     invalidToolActionCount: runEfficiency.invalidToolActionCount,
     invalidToolActionPercent: runEfficiency.invalidToolActionPercent,
     costEfficiencyRisk: runEfficiency.costEfficiencyRisk,
+    timeEfficiencyRisk: runEfficiency.timeEfficiencyRisk,
+    slowToolEvents: Array.isArray(runEfficiency.slowToolEvents) ? runEfficiency.slowToolEvents.slice(0, 12) : [],
   };
 }
 

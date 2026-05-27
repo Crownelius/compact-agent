@@ -557,6 +557,9 @@ describe('benchmark_context tool', () => {
         },
         runEfficiency: {
           toolCallCount: 8,
+          totalToolElapsedMs: 620000,
+          maxToolElapsedMs: 300000,
+          slowToolCallCount: 2,
           usageCallCount: 2,
           totalTokens: 1200,
           estimatedCostUsd: 0,
@@ -567,6 +570,7 @@ describe('benchmark_context tool', () => {
           invalidToolActionCount: 0,
           invalidToolActionPercent: 0,
           costEfficiencyRisk: false,
+          timeEfficiencyRisk: true,
         },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
@@ -588,7 +592,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,latest:ok,commands:npm test|npm run build');
     expect(result.output).toContain('context=inspects:4,hits:1,misses:3,utilization:25.00%,risk:true,unused:read_file#2 src/unrelated.ts,pre_edit:1/4,pre_edit_utilization:25.00%,pre_edit_bloat:true,pre_edit_unused:read_file#2 src/unrelated.ts');
     expect(result.output).toContain('source_research=calls:1,hits:4,errors:0,sources:arxiv|github|huggingface|kaggle,github:repositories|issues,hf:papers,kaggle:competitions,result_sources:arxiv|github_repo|hf_paper|kaggle_competition,targeted:true,fresh:true,kaggle_skipped:false,recent_days:90,top:https://arxiv.org/abs/2602.08316|https://github.com/example/benchmark-agent,notes:targeted benchmark coverage requested');
-    expect(result.output).toContain('efficiency=tools:8,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
+    expect(result.output).toContain('efficiency=tools:8,tool_elapsed_ms:620000,slow_tools:2,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,time_risk:true,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
   }, 15_000);
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {

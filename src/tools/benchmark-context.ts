@@ -1245,6 +1245,8 @@ function summarizePriorRunEfficiency(
   const card = objectRecord(summary.experienceCard);
   const efficiency = objectRecord(card.runEfficiency);
   const toolCallCount = finiteNumber(efficiency.toolCallCount) ?? finiteNumber(quality.toolCallCount);
+  const totalToolElapsedMs = finiteNumber(efficiency.totalToolElapsedMs) ?? finiteNumber(quality.totalToolElapsedMs);
+  const slowToolCallCount = finiteNumber(efficiency.slowToolCallCount) ?? finiteNumber(quality.slowToolCallCount);
   const usageCallCount = finiteNumber(efficiency.usageCallCount) ?? finiteNumber(quality.usageCallCount) ?? finiteNumber(usage.callCount);
   const totalTokens = finiteNumber(efficiency.totalTokens) ?? finiteNumber(quality.usageTotalTokens) ?? finiteNumber(usage.totalTokens);
   const estimatedCostUsd = finiteNumber(efficiency.estimatedCostUsd) ?? finiteNumber(quality.usageEstimatedCostUsd) ?? finiteNumber(usage.estimatedCostUsd);
@@ -1259,9 +1261,14 @@ function summarizePriorRunEfficiency(
   const costEfficiencyRisk = typeof efficiency.costEfficiencyRisk === 'boolean'
     ? efficiency.costEfficiencyRisk
     : (typeof quality.costEfficiencyRisk === 'boolean' ? quality.costEfficiencyRisk : undefined);
+  const timeEfficiencyRisk = typeof efficiency.timeEfficiencyRisk === 'boolean'
+    ? efficiency.timeEfficiencyRisk
+    : (typeof quality.timeEfficiencyRisk === 'boolean' ? quality.timeEfficiencyRisk : undefined);
 
   if (
     toolCallCount == null
+    && totalToolElapsedMs == null
+    && slowToolCallCount == null
     && usageCallCount == null
     && totalTokens == null
     && estimatedCostUsd == null
@@ -1272,16 +1279,20 @@ function summarizePriorRunEfficiency(
     && invalidToolActionCount == null
     && invalidToolActionPercent == null
     && costEfficiencyRisk === undefined
+    && timeEfficiencyRisk === undefined
   ) {
     return null;
   }
 
   return [
     `efficiency=tools:${toolCallCount ?? 0}`,
+    totalToolElapsedMs == null ? null : `tool_elapsed_ms:${totalToolElapsedMs}`,
+    slowToolCallCount == null ? null : `slow_tools:${slowToolCallCount}`,
     `usage_calls:${usageCallCount ?? 0}`,
     totalTokens == null ? null : `tokens:${totalTokens}`,
     estimatedCostUsd == null ? null : `cost:$${estimatedCostUsd.toFixed(4)}`,
     costEfficiencyRisk === undefined ? null : `cost_risk:${String(costEfficiencyRisk)}`,
+    timeEfficiencyRisk === undefined ? null : `time_risk:${String(timeEfficiencyRisk)}`,
     `invalid:${invalidToolActionCount ?? 0}`,
     invalidToolActionPercent == null ? null : `invalid_pct:${invalidToolActionPercent.toFixed(2)}`,
     `success_verifiers:${successfulVerificationCount ?? 0}`,

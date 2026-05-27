@@ -156,6 +156,9 @@ export interface BenchmarkExperienceContextUtilization {
 
 export interface BenchmarkExperienceRunEfficiency {
   toolCallCount: number;
+  totalToolElapsedMs: number;
+  maxToolElapsedMs: number;
+  slowToolCallCount: number;
   usageCallCount: number;
   totalTokens: number;
   estimatedCostUsd: number;
@@ -166,6 +169,8 @@ export interface BenchmarkExperienceRunEfficiency {
   invalidToolActionCount: number;
   invalidToolActionPercent: number;
   costEfficiencyRisk: boolean;
+  timeEfficiencyRisk: boolean;
+  slowToolEvents: BenchmarkSlowToolEvent[];
 }
 
 export interface BenchmarkAgentContextCompilation {
@@ -447,9 +452,23 @@ export interface BenchmarkInvalidToolActionEvent {
   evidence: string;
 }
 
+export interface BenchmarkSlowToolEvent {
+  seq: number;
+  tool: string;
+  target: string;
+  elapsedMs: number;
+  status: 'ok' | 'error';
+  reason: string;
+}
+
 export interface BenchmarkTrajectoryQuality {
   version: 1;
   toolCallCount: number;
+  totalToolElapsedMs: number;
+  maxToolElapsedMs: number;
+  slowToolCallCount: number;
+  slowToolEvents: BenchmarkSlowToolEvent[];
+  timeEfficiencyRisk: boolean;
   usageCallCount: number;
   usageTotalTokens: number;
   usageEstimatedCostUsd: number;
@@ -621,6 +640,11 @@ const COST_EFFICIENCY_USD_THRESHOLD = 0.5;
 const COST_EFFICIENCY_HIGH_TOKEN_THRESHOLD = 80_000;
 const COST_EFFICIENCY_HIGH_CALL_THRESHOLD = 10;
 const COST_EFFICIENCY_HIGH_USD_THRESHOLD = 1.0;
+const TIME_EFFICIENCY_TOTAL_MS_THRESHOLD = 10 * 60_000;
+const TIME_EFFICIENCY_HIGH_TOTAL_MS_THRESHOLD = 20 * 60_000;
+const TIME_EFFICIENCY_SINGLE_TOOL_MS_THRESHOLD = 2 * 60_000;
+const TIME_EFFICIENCY_HIGH_SINGLE_TOOL_MS_THRESHOLD = 5 * 60_000;
+const TIME_EFFICIENCY_SLOW_TOOL_COUNT_THRESHOLD = 3;
 export const BENCHMARK_INVALID_TOOL_ACTION_TOOL = '__invalid_tool_action__';
 
 export interface SourceResearchCoverage {
@@ -1138,6 +1162,9 @@ function buildBenchmarkExperienceRunEfficiency(
 ): BenchmarkExperienceRunEfficiency {
   return {
     toolCallCount: quality.toolCallCount,
+    totalToolElapsedMs: quality.totalToolElapsedMs,
+    maxToolElapsedMs: quality.maxToolElapsedMs,
+    slowToolCallCount: quality.slowToolCallCount,
     usageCallCount: quality.usageCallCount,
     totalTokens: quality.usageTotalTokens,
     estimatedCostUsd: Number(quality.usageEstimatedCostUsd.toFixed(6)),
@@ -1148,6 +1175,15 @@ function buildBenchmarkExperienceRunEfficiency(
     invalidToolActionCount: quality.invalidToolActionCount,
     invalidToolActionPercent: quality.invalidToolActionPercent,
     costEfficiencyRisk: quality.costEfficiencyRisk,
+    timeEfficiencyRisk: quality.timeEfficiencyRisk,
+    slowToolEvents: quality.slowToolEvents
+      .map((event) => ({
+        ...event,
+        tool: truncate(redactTraceText(event.tool), 80),
+        target: truncate(redactTraceText(event.target), 160),
+        reason: truncate(redactTraceText(event.reason), 180),
+      }))
+      .slice(0, 12),
   };
 }
 
@@ -1949,6 +1985,15 @@ function formatBenchmarkUsageSummary(usage: BenchmarkUsageSummary): string {
   return `${callLabel}, ${tokenLabel}, ${costLabel}`;
 }
 
+function formatElapsedMs(ms: number): string {
+  const safe = Math.max(0, Math.floor(ms));
+  const totalSeconds = Math.floor(safe / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 function isHighBenchmarkUsage(usage: BenchmarkUsageSummary): boolean {
   return usage.totalTokens >= COST_EFFICIENCY_TOKEN_THRESHOLD
     || usage.callCount >= COST_EFFICIENCY_CALL_THRESHOLD
@@ -1993,6 +2038,68 @@ function hasBenchmarkCostEfficiencyRisk(input: {
   if (input.incompleteVerifierCount > 0 || input.inconclusiveVerifierCount > 0) return true;
   if (input.sourceResearchUsed && (!input.sourceResearchCoverage.completeTargetedCoverage || input.sourceResearchCoverage.sourceHitCount === 0)) return true;
   return false;
+}
+
+function buildBenchmarkTimeEfficiency(input: {
+  events: BenchmarkTraceEvent[];
+  editCount: number;
+  successfulVerificationCount: number;
+  passingValidationAfterFirstEdit: boolean | null;
+  passingValidationAfterLastEdit: boolean | null;
+  incompleteVerifierCount: number;
+  inconclusiveVerifierCount: number;
+  invalidToolActionCount: number;
+}): {
+  totalToolElapsedMs: number;
+  maxToolElapsedMs: number;
+  slowToolEvents: BenchmarkSlowToolEvent[];
+  risk: boolean;
+} {
+  let totalToolElapsedMs = 0;
+  let maxToolElapsedMs = 0;
+  const slowToolEvents: BenchmarkSlowToolEvent[] = [];
+  for (const event of input.events) {
+    const elapsedMs = Math.max(0, Math.floor(event.elapsedMs || 0));
+    totalToolElapsedMs += elapsedMs;
+    maxToolElapsedMs = Math.max(maxToolElapsedMs, elapsedMs);
+    if (elapsedMs >= TIME_EFFICIENCY_SINGLE_TOOL_MS_THRESHOLD) {
+      slowToolEvents.push({
+        seq: event.seq,
+        tool: event.tool,
+        target: event.target,
+        elapsedMs,
+        status: event.status,
+        reason: 'tool call elapsed time exceeded the slow-call threshold',
+      });
+    }
+  }
+
+  const weakBenchmarkEvidence =
+    input.successfulVerificationCount === 0
+    || (input.editCount > 0 && input.passingValidationAfterFirstEdit !== true)
+    || (input.editCount > 0 && input.passingValidationAfterLastEdit === false)
+    || input.incompleteVerifierCount > 0
+    || input.inconclusiveVerifierCount > 0
+    || input.invalidToolActionCount > 0;
+  const slowEnough =
+    totalToolElapsedMs >= TIME_EFFICIENCY_TOTAL_MS_THRESHOLD
+    || maxToolElapsedMs >= TIME_EFFICIENCY_HIGH_SINGLE_TOOL_MS_THRESHOLD
+    || slowToolEvents.length >= TIME_EFFICIENCY_SLOW_TOOL_COUNT_THRESHOLD;
+
+  return {
+    totalToolElapsedMs,
+    maxToolElapsedMs,
+    slowToolEvents: slowToolEvents.slice(0, 20),
+    risk: weakBenchmarkEvidence && slowEnough,
+  };
+}
+
+function timeEfficiencySeverity(input: { totalToolElapsedMs: number; maxToolElapsedMs: number; slowToolCallCount: number }): BenchmarkProcessDefectSeverity {
+  return input.totalToolElapsedMs >= TIME_EFFICIENCY_HIGH_TOTAL_MS_THRESHOLD
+    || input.maxToolElapsedMs >= TIME_EFFICIENCY_HIGH_SINGLE_TOOL_MS_THRESHOLD
+    || input.slowToolCallCount >= TIME_EFFICIENCY_SLOW_TOOL_COUNT_THRESHOLD + 2
+    ? 'high'
+    : 'medium';
 }
 
 export function buildBenchmarkTrajectoryQuality(
@@ -2393,6 +2500,16 @@ export function buildBenchmarkTrajectoryQuality(
     leakageRiskCount: leakageRiskEvents.length,
     invalidToolActionCount: invalidToolActionEvents.length,
   });
+  const timeEfficiency = buildBenchmarkTimeEfficiency({
+    events,
+    editCount,
+    successfulVerificationCount,
+    passingValidationAfterFirstEdit,
+    passingValidationAfterLastEdit,
+    incompleteVerifierCount: incompleteVerifierEvents.length,
+    inconclusiveVerifierCount: inconclusiveVerifierEvents.length,
+    invalidToolActionCount: invalidToolActionEvents.length,
+  });
 
   const warnings: string[] = [];
   if (!benchmarkContextUsed) {
@@ -2621,6 +2738,13 @@ export function buildBenchmarkTrajectoryQuality(
   if (costEfficiencyRisk) {
     warnings.push(`cost-efficiency risk: ${formatBenchmarkUsageSummary(usage)} was spent while key benchmark evidence is still weak. Close the highest-value evidence gap before spending more turns.`);
   }
+  if (timeEfficiency.risk) {
+    const slowExamples = timeEfficiency.slowToolEvents
+      .slice(0, 3)
+      .map((event) => `#${event.seq} ${event.tool}:${event.target} ${formatElapsedMs(event.elapsedMs)}`)
+      .join('; ');
+    warnings.push(`time-efficiency risk: ${formatElapsedMs(timeEfficiency.totalToolElapsedMs)} of tool runtime elapsed while benchmark evidence is still weak${slowExamples ? `; slow calls: ${slowExamples}` : ''}. Stop long-running unchanged commands, inspect logs, and narrow the next verifier or investigation step.`);
+  }
   if (testHarnessEditEvents.length > 0 && !testEditPermissionDetected) {
     const targets = testHarnessEditEvents
       .slice(0, 3)
@@ -2755,11 +2879,20 @@ export function buildBenchmarkTrajectoryQuality(
     errorCount: events.filter((event) => event.status === 'error').length,
     usage,
     costEfficiencyRisk,
+    totalToolElapsedMs: timeEfficiency.totalToolElapsedMs,
+    maxToolElapsedMs: timeEfficiency.maxToolElapsedMs,
+    slowToolEvents: timeEfficiency.slowToolEvents,
+    timeEfficiencyRisk: timeEfficiency.risk,
   });
 
   return {
     version: 1,
     toolCallCount: events.length,
+    totalToolElapsedMs: timeEfficiency.totalToolElapsedMs,
+    maxToolElapsedMs: timeEfficiency.maxToolElapsedMs,
+    slowToolCallCount: timeEfficiency.slowToolEvents.length,
+    slowToolEvents: timeEfficiency.slowToolEvents,
+    timeEfficiencyRisk: timeEfficiency.risk,
     usageCallCount: usage.callCount,
     usageTotalTokens: usage.totalTokens,
     usageEstimatedCostUsd: usage.estimatedCostUsd,
@@ -2913,7 +3046,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -3121,6 +3254,10 @@ interface BenchmarkProcessDefectInput {
   errorCount: number;
   usage: BenchmarkUsageSummary;
   costEfficiencyRisk: boolean;
+  totalToolElapsedMs: number;
+  maxToolElapsedMs: number;
+  slowToolEvents: BenchmarkSlowToolEvent[];
+  timeEfficiencyRisk: boolean;
 }
 
 function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): BenchmarkProcessDefect[] {
@@ -3255,6 +3392,28 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       null,
       'High token/cost/call usage occurred while benchmark evidence remained weak.',
       formatBenchmarkUsageSummary(input.usage),
+    );
+  }
+  if (input.timeEfficiencyRisk) {
+    add(
+      'slow_under_evidenced_trajectory',
+      'execution_control',
+      timeEfficiencySeverity({
+        totalToolElapsedMs: input.totalToolElapsedMs,
+        maxToolElapsedMs: input.maxToolElapsedMs,
+        slowToolCallCount: input.slowToolEvents.length,
+      }),
+      input.slowToolEvents[0]?.seq ?? null,
+      'High tool runtime occurred while benchmark evidence remained weak.',
+      [
+        `tool_elapsed=${formatElapsedMs(input.totalToolElapsedMs)}`,
+        `max_tool_elapsed=${formatElapsedMs(input.maxToolElapsedMs)}`,
+        `slow_tools=${input.slowToolEvents.length}`,
+        input.slowToolEvents
+          .slice(0, 3)
+          .map((event) => `#${event.seq}:${event.tool}:${event.target}:${formatElapsedMs(event.elapsedMs)}`)
+          .join('; '),
+      ].filter(Boolean).join(', '),
     );
   }
   if (input.inconclusiveVerifierEvents.length > 0) {
@@ -5786,6 +5945,7 @@ export function buildBenchmarkCompletionReminder(
   const blockingWarnings = quality.warnings.filter((warning) =>
     warning.includes('benchmark_context')
     || warning.includes('cost-efficiency risk')
+    || warning.includes('time-efficiency risk')
     || warning.includes('invalid tool action')
     || warning.includes('first edit happened')
     || warning.includes('no failing reproduction')
@@ -5834,7 +5994,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones before claiming RoadmapBench/SaaSBench/mobile completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier for long-horizon SaaS/mobile/roadmap tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones before claiming RoadmapBench/SaaSBench/mobile completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier for long-horizon SaaS/mobile/roadmap tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 

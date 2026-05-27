@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.27
+version: 1.35.28
 developers:
   - Crownelius
 license: MIT
@@ -50,7 +50,7 @@ Benchmark mode emphasizes:
 
 Ventipus includes MemPalace-backed project and global memory. In benchmark mode, `benchmark_context` can surface bounded relevant memories and prior local benchmark experience cards. These are explicitly framed as hypotheses that must be verified against current task files and verifier output.
 
-Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, reward-hack, and long-horizon roadmap/SaaS/mobile coverage risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence plus pre-edit context-bloat evidence, evidence-grounding signals for stale/no-effect edit retries without a current-state refresh, run-efficiency action/usage/cost evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact for retrieval, replay, or training-data curation.
+Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, reward-hack, and long-horizon roadmap/SaaS/mobile coverage risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence plus pre-edit context-bloat evidence, evidence-grounding signals for stale/no-effect edit retries without a current-state refresh, run-efficiency action/usage/cost/time evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact for retrieval, replay, or training-data curation.
 
 ## Models
 

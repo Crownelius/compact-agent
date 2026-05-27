@@ -196,6 +196,11 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.usageTotalTokens).toBe(0);
     expect(summary.trajectoryQuality.usageEstimatedCostUsd).toBe(0);
     expect(summary.trajectoryQuality.costEfficiencyRisk).toBe(false);
+    expect(summary.trajectoryQuality.totalToolElapsedMs).toBe(1234);
+    expect(summary.trajectoryQuality.maxToolElapsedMs).toBe(1234);
+    expect(summary.trajectoryQuality.slowToolCallCount).toBe(0);
+    expect(summary.trajectoryQuality.slowToolEvents).toEqual([]);
+    expect(summary.trajectoryQuality.timeEfficiencyRisk).toBe(false);
     expect(summary.trajectoryQuality.invalidToolActionCount).toBe(0);
     expect(summary.trajectoryQuality.invalidToolActionPercent).toBe(0);
     expect(summary.trajectoryQuality.invalidToolActionEvents).toEqual([]);
@@ -592,6 +597,9 @@ describe('benchmark trace artifacts', () => {
     });
     expect(summary.experienceCard.runEfficiency).toMatchObject({
       toolCallCount: 7,
+      totalToolElapsedMs: 297,
+      maxToolElapsedMs: 120,
+      slowToolCallCount: 0,
       usageCallCount: 0,
       totalTokens: 0,
       estimatedCostUsd: 0,
@@ -599,6 +607,8 @@ describe('benchmark trace artifacts', () => {
       invalidToolActionCount: 0,
       invalidToolActionPercent: 0,
       costEfficiencyRisk: false,
+      timeEfficiencyRisk: false,
+      slowToolEvents: [],
     });
     expect(summary.experienceCard.runEfficiency.processScore).toBe(summary.trajectoryQuality.processScore);
     expect(summary.experienceCard.runEfficiency.processDefectCount).toBe(summary.trajectoryQuality.processDefects.length);
@@ -826,6 +836,54 @@ describe('benchmark trace artifacts', () => {
     expect(quality.warnings.join('\n')).toContain('cost-efficiency risk');
     expect(buildBenchmarkTrajectorySystemBlock(events, usageEvents)).toContain('usage_calls=6 usage_tokens=60000 usage_cost=$0.0000 cost_risk=yes');
     expect(buildBenchmarkCompletionReminder(events, usageEvents)).toContain('cost-efficiency risk');
+  });
+
+  it('flags high wall-clock tool time when benchmark evidence stays weak', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1_000,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'command timed out after 300s',
+        isError: true,
+        elapsedMs: 300_000,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'grep',
+        input: { pattern: 'failure', path: 'logs' },
+        output: '',
+        isError: false,
+        elapsedMs: 181_000,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'command timed out after 300s',
+        isError: true,
+        elapsedMs: 300_000,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.totalToolElapsedMs).toBe(782_000);
+    expect(quality.maxToolElapsedMs).toBe(300_000);
+    expect(quality.slowToolCallCount).toBe(3);
+    expect(quality.slowToolEvents.map((event) => event.seq)).toEqual([2, 3, 4]);
+    expect(quality.timeEfficiencyRisk).toBe(true);
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('slow_under_evidenced_trajectory');
+    expect(quality.warnings.join('\n')).toContain('time-efficiency risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('tool_elapsed=782000ms slow_tools=3 time_risk=yes');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('time-efficiency risk');
   });
 
   it('tracks invalid tool actions as first-class trajectory evidence', () => {

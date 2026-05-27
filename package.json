@@ -1,6 +1,6 @@
 {
   "name": "ventipus",
-  "version": "1.35.27",
+  "version": "1.35.28",
   "description": "Terminal AI coding CLI. Speaks any OpenAI-compatible API (OpenRouter, OpenAI, NVIDIA, Ollama, LM Studio, DeepSeek). Modes, slash commands, multi-agent swarming, key-rotation pool, optional voice + screen-reader, sandbox + permission gates, persistent input box, bundled everything-claude-code skills.",
   "type": "module",
   "license": "MIT",
@@ -53,7 +53,7 @@
     "build": "tsc",
     "start": "tsx src/index.ts",
     "dev": "tsx --watch src/index.ts",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism --testTimeout 30000 --hookTimeout 30000",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "prepare": "tsc || echo 'prepare: tsc skipped (dist may already be built)'"
