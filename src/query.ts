@@ -1492,15 +1492,26 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // AbortController per turn and pass it to streamChat.
     const streamAbort = new AbortController();
     let wasSteered = false;
-    inputGuard.onSteer(() => {
+    const cancelCurrentTurn = () => {
       wasSteered = true;
       try { streamAbort.abort(); } catch { /* noop */ }
-    });
+    };
+    inputGuard.onSteer(cancelCurrentTurn);
     // Expose the per-turn abort controller on globalThis so the F-row
     // hotkey listener (src/index.ts) can soft-cancel the current turn
-    // without going through Ctrl+C / SIGINT. Cleared in the finally
-    // block so a stale controller can't be aborted between turns.
-    (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl = streamAbort;
+    // without going through Ctrl+C / SIGINT. Expose a cancel callback
+    // too: aborting the controller directly bypasses wasSteered and makes
+    // a user cancel look like a provider failure in the catch path.
+    // Both globals are cleared in the finally block so stale handles
+    // cannot fire between turns.
+    (globalThis as {
+      __turnAbortCtl?: AbortController | null;
+      __turnCancelCurrent?: (() => void) | null;
+    }).__turnAbortCtl = streamAbort;
+    (globalThis as {
+      __turnAbortCtl?: AbortController | null;
+      __turnCancelCurrent?: (() => void) | null;
+    }).__turnCancelCurrent = cancelCurrentTurn;
 
     dbgEmit('info', 'turn.start', {
       turn: turns,
@@ -2013,7 +2024,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     inputGuard.restore();
     // Clear the per-turn abort controller pointer so a stale handle
     // can't be aborted between turns by Shift+F5 (soft-cancel).
-    (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl = null;
+    (globalThis as {
+      __turnAbortCtl?: AbortController | null;
+      __turnCancelCurrent?: (() => void) | null;
+    }).__turnAbortCtl = null;
+    (globalThis as {
+      __turnAbortCtl?: AbortController | null;
+      __turnCancelCurrent?: (() => void) | null;
+    }).__turnCancelCurrent = null;
   }
 }
 

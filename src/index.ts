@@ -14,7 +14,7 @@ import {
   getOpenAICodexAuthStatus,
   runCodexLogin,
 } from './openai-oauth.js';
-import { isTurnCancelKeySequence, runQuery } from './query.js';
+import { fallbackModelForKnownFlakyTurn, isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import type { VentipusConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
@@ -219,33 +219,24 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
   const modelInput = await rl.question(chalk.yellow(`  Model [${model}]: `));
   if (modelInput.trim()) model = modelInput.trim();
 
-  // Warn on known-flaky experimental models. These are free / preview
-  // models on OpenRouter (and similar gateways) that frequently return
-  // empty responses, the literal string "ERROR", or hang past 30s. The
-  // auto-fallback in runQuery tries to recover but on a free-tier key
-  // the fallback may also be unreachable — so a user picking one of
-  // these by name ends up staring at the live-queue box wondering
-  // what's broken. Flag it now while we can still talk them out of it.
-  //
-  // Heuristic-only — we don't block. The matched substrings cover
-  // the cases that have shown up in user reports without false-positiving
-  // on legitimate model names that happen to share a prefix.
-  const flakyPatterns = [
-    'owl-alpha',          // perpetual-experimental, returns "ERROR"
-    'horizon-alpha',
-    'horizon-beta',
-    'optimus-alpha',
-    'quasar-alpha',
-  ];
-  const lowerModel = model.toLowerCase();
-  if (flakyPatterns.some((p) => lowerModel.includes(p))) {
+  // Auto-heal known-flaky experimental models. These OpenRouter preview
+  // IDs frequently return empty responses, the literal string "ERROR",
+  // or no first stream event. Warning-only was not enough: users could
+  // save a broken first-run config and every prompt looked like it was
+  // stuck in the live queue. Keep an explicit env escape hatch for model
+  // debugging, but default normal users back to the free router.
+  if (isKnownFlakyOpenRouterModel({ provider: provider.name, model })) {
     console.log('');
     console.log(chalk.yellow(`  ⚠  "${model}" is an experimental / free model that's been reported to return`));
-    console.log(chalk.yellow(`     empty or "ERROR" responses. Ventipus's auto-fallback will try to`));
-    console.log(chalk.yellow(`     recover, but on a free-tier API key the fallback may not be reachable.`));
-    console.log(chalk.dim('     Safer free-tier option on OpenRouter:'));
-    console.log(chalk.dim('       openrouter/free'));
-    console.log(chalk.dim('     You can change this any time with /model <id> in the REPL.'));
+    console.log(chalk.yellow(`     empty or "ERROR" responses, or no first stream event.`));
+    if (process.env.VENTIPUS_ALLOW_FLAKY_MODELS === '1') {
+      console.log(chalk.dim('     Keeping it because VENTIPUS_ALLOW_FLAKY_MODELS=1 is set.'));
+    } else {
+      const safer = providerKey === 'openrouter' ? PROVIDERS.openrouter.defaultModel : provider.defaultModel;
+      console.log(chalk.dim(`     Using safer default instead: ${safer}`));
+      console.log(chalk.dim('     Override only for debugging: VENTIPUS_ALLOW_FLAKY_MODELS=1 ventipus'));
+      model = safer;
+    }
     console.log('');
   }
   if (providerKey === 'openrouter' && !isOpenRouterFreeModelId(model)) {
@@ -3262,6 +3253,36 @@ async function main(): Promise<void> {
   // for screen readers, so they're force-off in that mode. Sighted
   // users get them by default; the VENTIPUS_ANIMATIONS=0 env var still
   // overrides for users who specifically don't want the motion.
+  // Saved configs can contain OpenRouter preview models that are known
+  // to hang before the first token. Do not let the CLI boot into that
+  // broken state by default; keep an env escape hatch for deliberate
+  // provider debugging.
+  const runtimeModelOverride = !!process.env.VENTIPUS_MODEL_OVERRIDE || !!process.env.VENTIPUS_MODEL;
+  const knownFlakyFallback = fallbackModelForKnownFlakyTurn(config)
+    || (
+      process.env.VENTIPUS_ALLOW_FLAKY_MODELS !== '1'
+      && isKnownFlakyOpenRouterModel(config)
+      && /openrouter/i.test(config.provider)
+        ? PROVIDERS.openrouter.defaultModel
+        : null
+    );
+  if (knownFlakyFallback) {
+    const previousModel = config.model;
+    applyModelSelection(config, knownFlakyFallback);
+    config.fallbackModel = knownFlakyFallback;
+    resetClient();
+    if (!nonInteractive && !runtimeModelOverride) {
+      saveConfig(config);
+      console.log(theme.warning(`  ⚠  Saved model "${previousModel}" is known to stall; switched config to ${knownFlakyFallback}.`));
+      console.log(theme.dim('     Use VENTIPUS_ALLOW_FLAKY_MODELS=1 only if you are deliberately testing that model.'));
+      console.log('');
+    } else if (!nonInteractive) {
+      console.log(theme.warning(`  ⚠  Requested model "${previousModel}" is known to stall; using ${knownFlakyFallback} for this session.`));
+      console.log(theme.dim('     Use VENTIPUS_ALLOW_FLAKY_MODELS=1 to force the requested model.'));
+      console.log('');
+    }
+  }
+
   {
     const { setAnimationConfig } = await import('./animations.js');
     setAnimationConfig({
@@ -3511,10 +3532,17 @@ async function main(): Promise<void> {
       // terminal did not preserve Shift metadata. Windows Terminal commonly
       // reports Shift+F5 as a raw escape sequence or bare f5 depending on
       // mode, and the previous path silently fell through when voice was off.
-      const activeTurnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
+      const activeTurnState = globalThis as {
+        __turnAbortCtl?: AbortController | null;
+        __turnCancelCurrent?: (() => void) | null;
+      };
+      const activeTurnCtl = activeTurnState.__turnAbortCtl;
       const f5LikeKey = name === 'f5' || rawF5CancelSequence;
       if (f5LikeKey && activeTurnCtl && !activeTurnCtl.signal.aborted) {
-        try { activeTurnCtl.abort(); } catch { /* noop */ }
+        try {
+          if (activeTurnState.__turnCancelCurrent) activeTurnState.__turnCancelCurrent();
+          else activeTurnCtl.abort();
+        } catch { /* noop */ }
         announce('F5', 'Turn cancelled. Partial response kept.');
         return;
       }
@@ -3633,9 +3661,15 @@ async function main(): Promise<void> {
         }
         // ── Shift+F5: soft-cancel current turn ─────────────
         if (name === 'f5') {
-          const g = globalThis as { __turnAbortCtl?: AbortController | null };
+          const g = globalThis as {
+            __turnAbortCtl?: AbortController | null;
+            __turnCancelCurrent?: (() => void) | null;
+          };
           if (g.__turnAbortCtl && !g.__turnAbortCtl.signal.aborted) {
-            try { g.__turnAbortCtl.abort(); } catch { /* noop */ }
+            try {
+              if (g.__turnCancelCurrent) g.__turnCancelCurrent();
+              else g.__turnAbortCtl.abort();
+            } catch { /* noop */ }
             announce('Shift+F5', 'Turn cancelled. Partial response kept.');
           } else {
             announce('Shift+F5', 'No turn in progress.');

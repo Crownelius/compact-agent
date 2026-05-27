@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.26
+version: 1.35.27
 developers:
   - Crownelius
 license: MIT
@@ -65,7 +65,7 @@ Packaged evaluation surfaces:
 - HAL custom agent.
 - Exgentic/Open Agent Leaderboard custom agent.
 
-Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, Open Agent AppWorld/BrowseComp+/tau2-style tasks, and generic multi-step tool-use tasks. The Exgentic adapter builds a deterministic recommended action shortlist from the current task, context, latest observation, profile, schemas, and recent diagnostics before showing the full action schemas, highlights required argument keys with redacted exact current-state hints when available, repairs case/camelCase/schema-key near misses and exact latest-observation/context required-argument omissions before `ActionType` dispatch, avoids repeating no-effect actions when the latest observation did not change, uses the shortlist/hints to recover from malformed or missing action JSON with a viable non-finish action while completion is not ready, then folds prior observations/actions into a compact task-relevant ledger between steps so long noisy sessions keep current state, policy evidence, selected actions, and diagnostics in view without repeatedly reinjecting raw transcripts. The interactive CLI acknowledges submitted turns before provider I/O, treats F5/Shift+F5 raw terminal sequences as active-turn cancellation on Windows/xterm terminals, and preemptively moves known-stuck OpenRouter preview models to the configured fallback unless explicitly overridden.
+Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, Open Agent AppWorld/BrowseComp+/tau2-style tasks, and generic multi-step tool-use tasks. The Exgentic adapter builds a deterministic recommended action shortlist from the current task, context, latest observation, profile, schemas, and recent diagnostics before showing the full action schemas, highlights required argument keys with redacted exact current-state hints when available, repairs case/camelCase/schema-key near misses and exact latest-observation/context required-argument omissions before `ActionType` dispatch, avoids repeating no-effect actions when the latest observation did not change, uses the shortlist/hints to recover from malformed or missing action JSON with a viable non-finish action while completion is not ready, then folds prior observations/actions into a compact task-relevant ledger between steps so long noisy sessions keep current state, policy evidence, selected actions, and diagnostics in view without repeatedly reinjecting raw transcripts. The interactive CLI acknowledges submitted turns before provider I/O, treats F5/Shift+F5 raw terminal sequences as active-turn cancellation on Windows/xterm terminals, and auto-heals known-stuck OpenRouter preview models to the configured free fallback unless explicitly overridden.
 
 ## Evaluation Results
 
