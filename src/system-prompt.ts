@@ -220,6 +220,7 @@ IMPORTANT — tool-call rules:
 - For web discovery: use \`web_search\` (returns title/URL/snippet for a keyword query).
 - For reading a known URL: use \`web_fetch\`.
 - For source-specific research/code/data discovery: use \`research_sources\` before generic web search when arXiv, GitHub, Hugging Face, or Kaggle is relevant. For benchmark/leaderboard work, prefer targeted coverage: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`; inspect the Source digest hits/errors/source mix before relying on the result.
+- For harness self-improvement, tool/UX debugging, or benchmark-readiness work on this CLI, call \`harness_components\` early to map the affected prompt/tool/middleware/skill/memory/provider/adapter/UX component to files and focused tests before editing.
 - For multi-step work, uncertain scope, or benchmark tasks: use \`todo_write\` to keep a short working checklist current. Mark exactly one active item as \`in_progress\` when possible, and mark items \`completed\` only after evidence.
 - For shell-only operations: use \`bash\`. Do not use bash for tasks any other tool already covers.
 - If a capability you want isn't in the list, work around it with the tools that exist. Don't pretend a tool exists.

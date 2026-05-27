@@ -17,6 +17,7 @@ import {
 import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from './openai-smoke.js';
 import { fallbackModelForKnownFlakyTurn, isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
+import { buildHarnessComponentsReport } from './tools/harness-components.js';
 import type { VentipusConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
 // New systems
@@ -781,6 +782,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/benchmark <task>') + d(' — benchmark-grade issue/terminal run'));
       console.log(h('\n  ── Tools & Config ──'));
       console.log(d('  ') + c('/tools') + d('            — list tools'));
+      console.log(d('  ') + c('/harness') + d('          — file-level harness component map'));
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
       console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode (ask/auto/yolo); no arg shows current + always-allow list'));
       console.log(d('  ') + c('/perm-reset') + d('       — clear the per-tool always-allow list'));
@@ -1595,6 +1597,13 @@ export function handleSlashCommand(
       });
       console.log();
       return { handled: true };
+
+    case '/harness':
+    case '/harness-components': {
+      const report = buildHarnessComponentsReport({ component: args || 'all' }, process.cwd());
+      console.log(report.output);
+      return { handled: true };
+    }
 
     case '/rules':
       printRules();

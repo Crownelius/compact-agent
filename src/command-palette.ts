@@ -85,6 +85,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
 
   // ── Tools & Config ──
   { command: '/tools', description: 'List currently-available tools', category: 'Config' },
+  { command: '/harness', description: 'Map harness components to files, tests, and docs', category: 'Config' },
   { command: '/perm', description: 'Permission mode (ask/auto/yolo)', category: 'Config' },
   { command: '/sandbox', description: 'OS-native bash sandbox (off/standard/strict)', category: 'Config' },
   { command: '/dry-run', description: 'Toggle dry-run mode (preview tool calls)', category: 'Config' },

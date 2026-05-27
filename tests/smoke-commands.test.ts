@@ -95,6 +95,8 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/update-docs', 'llm'],
     // Tools & config
     ['/tools', 'local'],
+    ['/harness', 'local'],
+    ['/harness providers', 'local'],
     ['/rules', 'local'],
     ['/perm', 'local'],
     ['/dry-run', 'local'],
