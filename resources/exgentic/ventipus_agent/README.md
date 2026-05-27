@@ -21,7 +21,10 @@ dispatch, near-miss action JSON is repaired conservatively: action names are
 matched by case/identifier normalization, schema argument keys are canonicalized,
 required schema fields are filled from exact latest-observation/context keys
 when available, and unknown extra keys are dropped when the benchmark exposes a
-fixed schema.
+fixed schema. If ventipus produces malformed or missing action JSON, the adapter
+uses the same shortlist and exact required-argument hints to select a viable
+non-finish action while the latest observation is still pending, instead of
+falling straight to a finish/message action.
 
 ## Python API use
 

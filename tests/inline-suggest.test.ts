@@ -9,6 +9,7 @@ import {
   maxVisibleSuggestRows,
   parseInlineSuggestInput,
   resolveInlineSuggestAccept,
+  resolveInlineSuggestQuestionInput,
   visibleSuggestWindow,
   type SuggestItem,
 } from '../src/inline-suggest.js';
@@ -113,7 +114,30 @@ describe('inline command selector helpers', () => {
     const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf-8');
 
     expect(source).toContain('setReadlineBuffer(rl, result.command)');
+    expect(source).toContain('__ventipusSlashAccepted');
+    expect(source).toContain('__ventipusSlashPrefillInput');
     expect(source).toContain("stdout.write('\\r\\x1b[2K' + prefix + result.command)");
     expect(source).not.toContain("rl.emit('line', result.command)");
+  });
+
+  it('suppresses stale bare-slash readline submissions after accepting a selector row', () => {
+    const accepted = { command: '/help', acceptedAtMs: 1000 };
+
+    expect(resolveInlineSuggestQuestionInput('/', accepted, 1100)).toEqual({
+      kind: 'prefill',
+      command: '/help',
+    });
+    expect(resolveInlineSuggestQuestionInput('', accepted, 1100)).toEqual({
+      kind: 'prefill',
+      command: '/help',
+    });
+    expect(resolveInlineSuggestQuestionInput('/help', accepted, 1100)).toEqual({
+      kind: 'submit',
+      clearAccepted: true,
+    });
+    expect(resolveInlineSuggestQuestionInput('/', accepted, 4000)).toEqual({
+      kind: 'submit',
+      clearAccepted: true,
+    });
   });
 });

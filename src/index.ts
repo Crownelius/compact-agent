@@ -122,7 +122,7 @@ import {
 import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage, type RecordController } from './audio.js';
 import { applyScreenReader, summarize } from './accessibility.js';
 import { COMMAND_CATALOG, completeSlashCommandNames } from './command-palette.js';
-import { inlineSuggest } from './inline-suggest.js';
+import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand } from './inline-suggest.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -474,10 +474,11 @@ function printResumedHistory(messages: Message[], sessionName: string): void {
  *     and modeTag, so this is effectively a no-op there.
  */
 async function askWithDecoratedPrompt(
-  rl: { question: (q: string) => Promise<string> },
+  rl: readline.Interface,
   sessionTag: string,
   modeTag: string,
   promptGlyph: string,
+  prefill: string = '',
 ): Promise<string> {
   const decorative = sessionTag + modeTag;
   if (decorative.length > 0) {
@@ -489,7 +490,24 @@ async function askWithDecoratedPrompt(
   // remaining mismatch (color codes around the glyph) is bounded
   // and small enough that wrap math stays correct for typical
   // terminal widths.
-  return rl.question(theme.prompt(promptGlyph));
+  const answer = rl.question(theme.prompt(promptGlyph));
+  if (prefill) {
+    setImmediate(() => {
+      const line = prefill.replace(/\r?\n/g, ' ');
+      try {
+        const rlAny = rl as unknown as { write?: (data: string) => void };
+        if (typeof rlAny.write === 'function') {
+          rlAny.write(line);
+          return;
+        }
+      } catch { /* fall through */ }
+      try {
+        setReadlineBuffer(rl, line);
+        process.stdout.write(line);
+      } catch { /* noop */ }
+    });
+  }
+  return answer;
 }
 
 function ansiVisibleLen(s: string): number {
@@ -3708,6 +3726,8 @@ async function main(): Promise<void> {
             );
             if (result.accepted && result.command) {
               try {
+                (globalThis as { __ventipusSlashAccepted?: InlineSuggestAcceptedCommand })
+                  .__ventipusSlashAccepted = { command: result.command, acceptedAtMs: Date.now() };
                 setReadlineBuffer(rl, result.command);
                 const prefix = gp.__ventipusPromptStyled ?? theme.prompt(`${sym.prompt} `);
                 stdout.write('\r\x1b[2K' + prefix + result.command);
@@ -4161,9 +4181,15 @@ async function main(): Promise<void> {
       //     is unreliable — readline.write() works on POSIX but the cursor
       //     state on Windows ConHost gets weird. Hint + manual paste is
       //     more predictable than trying to pre-fill.)
-      const g = globalThis as { __ventipusQueuedInput?: string };
+      const g = globalThis as {
+        __ventipusQueuedInput?: string;
+        __ventipusSlashAccepted?: InlineSuggestAcceptedCommand;
+        __ventipusSlashPrefillInput?: string;
+      };
       const queued = g.__ventipusQueuedInput || '';
+      const slashPrefill = g.__ventipusSlashPrefillInput || '';
       g.__ventipusQueuedInput = undefined;
+      g.__ventipusSlashPrefillInput = undefined;
       if (queued.includes('\n')) {
         // Auto-submit the ENTIRE queued buffer as a single message —
         // preserving its internal newlines verbatim so a multi-line
@@ -4190,7 +4216,7 @@ async function main(): Promise<void> {
           console.log(theme.dim(`  (auto-submitting queued: "${preview}")`));
           input = next;
         } else {
-          input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph);
+          input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, slashPrefill);
         }
       } else {
         if (queued.trim()) {
@@ -4198,10 +4224,26 @@ async function main(): Promise<void> {
           // can paste/retype at the prompt.
           console.log(theme.dim(`  (queued during last chain: "${queued.trim().slice(0, 80)}${queued.length > 80 ? '…' : ''}")`));
         }
-        input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph);
+        input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, slashPrefill);
       }
     } catch {
       break;
+    }
+
+    {
+      const g = globalThis as {
+        __ventipusSlashAccepted?: InlineSuggestAcceptedCommand;
+        __ventipusSlashPrefillInput?: string;
+      };
+      const outcome = resolveInlineSuggestQuestionInput(input, g.__ventipusSlashAccepted);
+      if (outcome.kind === 'prefill') {
+        g.__ventipusSlashAccepted = undefined;
+        g.__ventipusSlashPrefillInput = outcome.command;
+        continue;
+      }
+      if (outcome.clearAccepted) {
+        g.__ventipusSlashAccepted = undefined;
+      }
     }
 
     const trimmed = input.trim();

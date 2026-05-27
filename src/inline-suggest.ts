@@ -136,6 +136,15 @@ export interface InlineSuggestResult {
   filter: string;
 }
 
+export interface InlineSuggestAcceptedCommand {
+  command: string;
+  acceptedAtMs: number;
+}
+
+export type InlineSuggestQuestionOutcome =
+  | { kind: 'prefill'; command: string }
+  | { kind: 'submit'; clearAccepted: boolean };
+
 type TaggedListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
 type DataListener = (chunk: Buffer) => void;
 
@@ -226,6 +235,23 @@ export function resolveInlineSuggestAccept(
     return filter.startsWith('/') ? filter : `/${filter}`;
   }
   return null;
+}
+
+export function resolveInlineSuggestQuestionInput(
+  input: string,
+  accepted: InlineSuggestAcceptedCommand | null | undefined,
+  nowMs: number = Date.now(),
+  staleWindowMs: number = 2000,
+): InlineSuggestQuestionOutcome {
+  if (!accepted?.command) return { kind: 'submit', clearAccepted: false };
+
+  const ageMs = Math.max(0, nowMs - accepted.acceptedAtMs);
+  const trimmed = input.trim();
+  if (ageMs <= staleWindowMs && (trimmed === '' || trimmed === '/')) {
+    return { kind: 'prefill', command: accepted.command };
+  }
+
+  return { kind: 'submit', clearAccepted: true };
 }
 
 function clipText(text: string, max: number): string {

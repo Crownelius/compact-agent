@@ -256,6 +256,62 @@ describe('Exgentic adapter packaging', () => {
     expect(parsed.done.shortlisted_actions.map((item: { name: string }) => item.name)).toContain('finish');
   });
 
+  it('selects a viable non-finish fallback when action JSON is missing and work is pending', () => {
+    const actionDocs = [
+      {
+        name: 'lookup_order',
+        description: 'Look up order and customer state',
+        is_finish: false,
+        is_message: false,
+        arguments_schema: {
+          properties: { order_id: { type: 'string' } },
+          required: ['order_id'],
+        },
+      },
+      {
+        name: 'finish',
+        description: 'Finish with the final answer',
+        is_finish: true,
+        is_message: false,
+        arguments_schema: {
+          properties: { answer: { type: 'string' } },
+          required: ['answer'],
+        },
+      },
+    ];
+    const script = [
+      `import json, sys`,
+      `sys.path.insert(0, ${JSON.stringify(adapterDir)})`,
+      `import utils`,
+      `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
+      `pending_history = [{"role": "observation", "content": {"order_id": "ord-1", "status": "pending", "next": "lookup order before finishing"}}]`,
+      `done_history = [{"role": "observation", "content": {"order_id": "ord-1", "status": "completed", "note": "done and confirmed"}}]`,
+      `pending = utils.fallback_exgentic_action_payload(actions, task="Resolve order ord-1", history=pending_history, profile="tau2")`,
+      `done = utils.fallback_exgentic_action_payload(actions, task="Resolve order ord-1", history=done_history, profile="tau2")`,
+      `print(json.dumps({`,
+      `  "pending": {"name": pending.payload.name, "arguments": pending.payload.arguments, "diagnostics": pending.diagnostics},`,
+      `  "done": {"name": done.payload.name, "arguments": done.payload.arguments, "diagnostics": done.diagnostics},`,
+      `}, sort_keys=True))`,
+    ].join('\n');
+    const out = execFileSync('python', ['-c', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+    }).trim();
+    const parsed = JSON.parse(out);
+    expect(parsed.pending.name).toBe('lookup_order');
+    expect(parsed.pending.arguments).toEqual({ order_id: 'ord-1' });
+    expect(parsed.pending.diagnostics.status).toBe('fallback_selected');
+    expect(parsed.pending.diagnostics.completion_ready).toBe(false);
+    expect(parsed.pending.diagnostics.skipped_candidates).toEqual([]);
+    expect(parsed.done.name).toBe('finish');
+    expect(parsed.done.arguments).toEqual({});
+    expect(parsed.done.diagnostics.completion_ready).toBe(true);
+  });
+
   it('repairs near-miss Exgentic action names and argument keys before dispatch', () => {
     const actionDocs = [
       {

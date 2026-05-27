@@ -19,6 +19,7 @@ from exgentic.utils.cost import UpdatableCostReport
 from .utils import (
     ActionPayload,
     extract_action_payload,
+    fallback_exgentic_action_payload,
     fold_exgentic_history,
     json_dumps,
     repair_exgentic_action_payload,
@@ -346,6 +347,22 @@ class VentipusAgentInstance(AgentInstance):
         actions = list(getattr(self, "actions", []) or [])
         if not actions:
             return None
+        action_docs = [_action_type_to_doc(action) for action in actions]
+        profile = _profile_for_exgentic(getattr(self, "task", ""), getattr(self, "context", {}) or {}, action_docs)
+        fallback = fallback_exgentic_action_payload(
+            action_docs,
+            task=getattr(self, "task", ""),
+            context=getattr(self, "context", {}) or {},
+            history=self._history,
+            profile=profile,
+            reason="no_valid_action_json",
+        )
+        if fallback is not None:
+            self._history.append({"role": "action_repair", "content": fallback.diagnostics})
+            action = self._action_from_payload(fallback.payload)
+            if action is not None:
+                return action
+
         preferred = _first_matching_action(actions, lambda action: bool(getattr(action, "is_finish", False)))
         if preferred is None:
             preferred = _first_matching_action(actions, lambda action: bool(getattr(action, "is_message", False)))

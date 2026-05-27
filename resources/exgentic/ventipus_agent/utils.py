@@ -208,6 +208,77 @@ def repair_exgentic_action_payload(
     )
 
 
+def fallback_exgentic_action_payload(
+    action_docs: list[dict[str, Any]],
+    *,
+    task: Any = None,
+    context: Any = None,
+    history: list[dict[str, Any]] | None = None,
+    profile: str = "generic",
+    reason: str = "no_valid_action_json",
+) -> ActionRepairResult | None:
+    """Select a conservative fallback action when the model emits no valid JSON.
+
+    The old adapter bias was finish/message first. That is dangerous for
+    multi-step benchmarks because a transient malformed response can become a
+    premature stop. This selector reuses the same shortlist and exact required
+    argument hints as the main prompt, preferring viable non-finish actions
+    while the latest observation is not completion-ready.
+    """
+
+    docs = [doc for doc in action_docs or [] if isinstance(doc, dict) and doc.get("name")]
+    if not docs:
+        return None
+
+    history_items = history or []
+    latest_observation = _latest_history_content(history_items, "observation")
+    argument_hints = {
+        "latest_observation": latest_observation,
+        "context": context or {},
+    }
+    shortlist = shortlist_exgentic_actions(
+        docs,
+        task=task,
+        context=context,
+        history=history_items,
+        profile=profile,
+    )
+    completion_ready = bool(shortlist.get("completion_ready"))
+    candidate_names = _fallback_candidate_names(shortlist, docs, completion_ready=completion_ready)
+    skipped: list[dict[str, Any]] = []
+
+    for name in candidate_names:
+        doc = _doc_by_name(docs, name)
+        if doc is None:
+            continue
+        is_completion = bool(doc.get("is_finish") or doc.get("is_message"))
+        if not completion_ready and is_completion:
+            skipped.append({"name": name, "reason": "completion_not_ready"})
+            continue
+        repair = repair_exgentic_action_payload(
+            ActionPayload(name=name, arguments={}),
+            docs,
+            argument_hints=argument_hints,
+        )
+        missing = _missing_required_arguments(repair.payload.arguments, doc.get("arguments_schema"))
+        if missing and not (completion_ready and is_completion):
+            skipped.append({"name": name, "reason": "missing_required_arguments", "missing": missing})
+            continue
+        diagnostics = {
+            "status": "fallback_selected",
+            "fallback_reason": reason,
+            "selected_name": repair.payload.name,
+            "completion_ready": completion_ready,
+            "candidate_names": candidate_names[:12],
+            "skipped_candidates": skipped[:8],
+            "shortlist": shortlist,
+            "repair": repair.diagnostics,
+        }
+        return ActionRepairResult(payload=repair.payload, changed=True, diagnostics=diagnostics)
+
+    return None
+
+
 def shortlist_exgentic_actions(
     action_docs: list[dict[str, Any]],
     *,
@@ -652,6 +723,65 @@ def _required_argument_hints(required_keys: list[str], argument_hints: Any) -> l
             }
         )
     return hints
+
+
+def _missing_required_arguments(arguments: dict[str, Any], schema: Any) -> list[str]:
+    required = _schema_required_keys(schema)
+    if not required:
+        return []
+    present = {
+        _normalized_identifier(key)
+        for key, value in (arguments or {}).items()
+        if _hint_value_is_usable(value)
+    }
+    return [key for key in required if _normalized_identifier(key) not in present]
+
+
+def _fallback_candidate_names(
+    shortlist: dict[str, Any],
+    docs: list[dict[str, Any]],
+    *,
+    completion_ready: bool,
+) -> list[str]:
+    names: list[str] = []
+    if completion_ready:
+        for doc in docs:
+            if (doc.get("is_finish") or doc.get("is_message")) and doc.get("name"):
+                push_unique(names, str(doc.get("name")))
+        for doc in docs:
+            name = str(doc.get("name") or "")
+            if name.lower() in {"finish", "final", "done"}:
+                push_unique(names, name)
+
+    for item in shortlist.get("shortlisted_actions") or []:
+        if isinstance(item, dict) and item.get("name"):
+            push_unique(names, str(item.get("name")))
+
+    if not completion_ready:
+        for doc in docs:
+            if not (doc.get("is_finish") or doc.get("is_message")) and doc.get("name"):
+                push_unique(names, str(doc.get("name")))
+
+    for doc in docs:
+        if (completion_ready or len(docs) == 1) and doc.get("name"):
+            push_unique(names, str(doc.get("name")))
+    return names
+
+
+def _doc_by_name(docs: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    for doc in docs:
+        if str(doc.get("name") or "") == name:
+            return doc
+    lowered = str(name or "").lower()
+    for doc in docs:
+        if str(doc.get("name") or "").lower() == lowered:
+            return doc
+    return None
+
+
+def push_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)
 
 
 def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[float, str]:
