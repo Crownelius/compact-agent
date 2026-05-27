@@ -36,6 +36,8 @@ describe('KBench adapter packaging', () => {
     expect(manifest.capabilities.machineReadableStdout).toBe(true);
     const runner = readFileSync(runnerPath, 'utf-8');
     expect(runner).toContain('VENTIPUS_BASH_TIMEOUT_MS');
+    expect(runner).toContain("'swe-chain'");
+    expect(runner).toContain("'ci-repair'");
   });
 
   it('prints the packaged KBench adapter directory from the CLI wrapper', () => {

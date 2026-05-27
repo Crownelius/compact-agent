@@ -14,6 +14,10 @@ kbench run \
 The runner reads the KBench JSON payload from `KBENCH_ADAPTER_INPUT` or stdin,
 invokes `ventipus --prompt "/benchmark ..."` in task mode, and emits one
 `AdapterRunnerOutput` JSON object to stdout.
+Known KBench slugs are mapped to benchmark profiles before dispatch:
+`swe`/`swe-bench`, `tb2`/`terminal-bench`, `swe-chain`, and
+`ci-repair`/`ci-repair-bench` use specialized prompts; unknown slugs use
+`generic`.
 
 The output includes redacted instruction/stdout/stderr artifact refs, native
 ventipus trace refs, and redacted git patch/status refs when the task

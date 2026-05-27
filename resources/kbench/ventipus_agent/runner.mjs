@@ -82,8 +82,11 @@ function splitCommand(command) {
 }
 
 function profileForBenchmark(benchmark) {
-  if (benchmark === 'swe') return 'swe-bench';
-  if (benchmark === 'tb2') return 'terminal-bench';
+  const slug = String(benchmark || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  if (slug === 'swe' || slug === 'swebench') return 'swe-bench';
+  if (slug === 'tb2' || slug === 'terminalbench') return 'terminal-bench';
+  if (slug === 'swechain' || slug === 'chain' || slug === 'upgrade') return 'swe-chain';
+  if (slug === 'cirepair' || slug === 'cirepairbench' || slug === 'sweci' || slug === 'ci') return 'ci-repair';
   return 'generic';
 }
 

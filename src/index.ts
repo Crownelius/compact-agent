@@ -1656,12 +1656,12 @@ export function handleSlashCommand(
     case '/bench':
     case '/leaderboard': {
       if (!args) {
-        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|generic] <task>'));
+        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|swe-chain|ci-repair|generic] <task>'));
         return { handled: true };
       }
       const { profile, task } = splitBenchmarkArgs(args);
       if (!task) {
-        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|generic] <task>'));
+        console.log(chalk.yellow('  Usage: /benchmark [auto|swe-bench|terminal-bench|swe-context|swe-chain|ci-repair|generic] <task>'));
         return { handled: true };
       }
       mode.current = 'benchmark';

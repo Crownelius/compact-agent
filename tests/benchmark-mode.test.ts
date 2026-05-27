@@ -29,6 +29,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('swebench')).toBe('swe-bench');
     expect(normalizeBenchmarkProfile('tbench')).toBe('terminal-bench');
     expect(normalizeBenchmarkProfile('contextbench')).toBe('swe-context');
+    expect(normalizeBenchmarkProfile('swechain')).toBe('swe-chain');
+    expect(normalizeBenchmarkProfile('ci-repair-bench')).toBe('ci-repair');
+    expect(normalizeBenchmarkProfile('swe-ci')).toBe('ci-repair');
     expect(normalizeBenchmarkProfile('unknown')).toBe('auto');
   });
 
@@ -40,6 +43,14 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('terminal-bench train a model')).toEqual({
       profile: 'terminal-bench',
       task: 'train a model',
+    });
+    expect(splitBenchmarkArgs('swe-chain upgrade package graph')).toEqual({
+      profile: 'swe-chain',
+      task: 'upgrade package graph',
+    });
+    expect(splitBenchmarkArgs('ci-repair fix failing github actions')).toEqual({
+      profile: 'ci-repair',
+      task: 'fix failing github actions',
     });
     expect(splitBenchmarkArgs('fix parser bug')).toEqual({
       profile: 'auto',
@@ -83,5 +94,21 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('hypothesis');
     expect(prompt).toContain('bounded replay checkpoints');
     expect(prompt).toContain('validating it against current files');
+  });
+
+  it('builds SWE-Chain prompts around dependency upgrade continuity', () => {
+    const prompt = buildBenchmarkPrompt('upgrade chained package versions', '/workspace', 'swe-chain');
+    expect(prompt).toContain('SWE-Chain style chained package upgrade');
+    expect(prompt).toContain('package manager and lockfile');
+    expect(prompt).toContain('release-note breaking changes');
+    expect(prompt).toContain('subsequent chain steps');
+  });
+
+  it('builds CI-Repair prompts around workflow reconstruction', () => {
+    const prompt = buildBenchmarkPrompt('repair the failing CI workflow', '/workspace', 'ci-repair');
+    expect(prompt).toContain('CI-Repair style repository workflow validation');
+    expect(prompt).toContain('Reconstruct CI locally');
+    expect(prompt).toContain('services, containers, matrix language versions');
+    expect(prompt).toContain('missing-secret cases');
   });
 });

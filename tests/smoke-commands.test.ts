@@ -80,6 +80,8 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/e2e checkout flow', 'llm'],
     ['/eval correctness', 'llm'],
     ['/benchmark swe-bench fix parser regression', 'llm'],
+    ['/benchmark swe-chain upgrade dependency chain', 'llm'],
+    ['/benchmark ci-repair fix failing workflow', 'llm'],
     ['/plan add user profiles', 'llm'],
     ['/verify', 'llm'],
     ['/test-coverage', 'llm'],

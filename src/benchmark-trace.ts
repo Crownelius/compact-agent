@@ -873,6 +873,8 @@ function extractBenchmarkSlug(messages: Message[]): string {
   const profile = (slashMatch?.[1] ?? '').toLowerCase().trim();
   if (profile) return normalizeBenchmarkSlug(profile);
 
+  if (/\bswe[-_ ]?chain\b/i.test(text)) return 'swechain';
+  if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b|\bswe[-_ ]?ci\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
   if (/\bswe[- ]bench\b/i.test(text)) return 'swebench';
   if (/\bappworld\b/i.test(text)) return 'appworld';
@@ -889,6 +891,8 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'swebench' || cleaned === 'swe') return 'swebench';
   if (cleaned === 'terminalbench' || cleaned === 'tb' || cleaned === 'tb2') return 'terminalbench';
   if (cleaned === 'swecontext') return 'swecontext';
+  if (cleaned === 'swechain' || cleaned === 'chain' || cleaned === 'upgrade') return 'swechain';
+  if (cleaned === 'cirepair' || cleaned === 'cirepairbench' || cleaned === 'sweci' || cleaned === 'ci') return 'cirepairbench';
   if (cleaned === 'taubench' || cleaned === 'tau' || cleaned === 'tau2') return 'tau2';
   if (cleaned === 'browsecomp' || cleaned === 'browsecompplus') return 'browsecompplus';
   return cleaned || 'ventipus_agent_benchmark';
@@ -902,7 +906,9 @@ function formatBenchmarkName(slug: string): string {
     ventipus_agent_benchmark: 'Ventipus Benchmark',
     gsm8k: 'GSM8K',
     hotpotqa: 'HotpotQA',
+    cirepairbench: 'CI-Repair-Bench',
     swebench: 'SWE-bench',
+    swechain: 'SWE-Chain',
     swecontext: 'SWE-context',
     tau2: 'Tau Bench 2',
     terminalbench: 'Terminal-Bench',

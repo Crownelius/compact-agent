@@ -251,7 +251,14 @@ Be specific and evidence-based in your evaluation.`;
 }
 
 // Benchmark Prompt ----------------------------------------------------------
-export type BenchmarkProfile = 'auto' | 'swe-bench' | 'terminal-bench' | 'swe-context' | 'generic';
+export type BenchmarkProfile =
+  | 'auto'
+  | 'swe-bench'
+  | 'terminal-bench'
+  | 'swe-context'
+  | 'swe-chain'
+  | 'ci-repair'
+  | 'generic';
 
 const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   auto: 'auto',
@@ -264,6 +271,20 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   context: 'swe-context',
   'swe-context': 'swe-context',
   contextbench: 'swe-context',
+  swechain: 'swe-chain',
+  'swe-chain': 'swe-chain',
+  swe_chain: 'swe-chain',
+  'swe-chain-bench': 'swe-chain',
+  chain: 'swe-chain',
+  upgrade: 'swe-chain',
+  cirepair: 'ci-repair',
+  'ci-repair': 'ci-repair',
+  ci_repair: 'ci-repair',
+  cirepairbench: 'ci-repair',
+  'ci-repair-bench': 'ci-repair',
+  ci: 'ci-repair',
+  sweci: 'ci-repair',
+  'swe-ci': 'ci-repair',
   generic: 'generic',
 };
 
@@ -306,6 +327,20 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If benchmark_context includes bounded replay checkpoints, use them as candidate inspection/verifier starting points, not as a patch recipe.
 - Prefer concise, accurate summaries of prior experience over dumping unfiltered memory into the working context.
 - Track whether memory helped, hurt, or was irrelevant so useful experience can be persisted after the task.`;
+    case 'swe-chain':
+      return `Profile: SWE-Chain style chained package upgrade
+- Treat the task as a release-level package/dependency upgrade unless current evidence says otherwise.
+- Build an upgrade map: package manager and lockfile, direct/transitive constraints, runtime/toolchain versions, release-note breaking changes, imports, and API call sites.
+- Prefer incremental, reversible changes; avoid broad version jumps without evidence, and keep package manifests plus lockfiles consistent.
+- Run install/build/test in small loops. Inspect dependency errors before patching source, and preserve compatibility shims when downstream code still expects the old API.
+- Record the upgrade path and verifier evidence so subsequent chain steps can reuse the compatibility facts safely.`;
+    case 'ci-repair':
+      return `Profile: CI-Repair style repository workflow validation
+- Treat the task as repository-level CI repair or patch validation unless current evidence says otherwise.
+- Reconstruct CI locally from workflow files before interpreting failures: setup/install, env key names, services, containers, matrix language versions, caches, and build artifacts.
+- Localize from failing CI logs to source files; inspect parsed source failure files before editing elsewhere.
+- Run the matching CI-derived verifier commands after edits, then broader validation when available.
+- Document irreproducible external-service or missing-secret cases instead of treating them as passing validation.`;
     case 'generic':
       return `Profile: generic benchmark task
 - Identify the benchmark contract from local files and task text.
@@ -317,6 +352,8 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task looks like a repository issue or patch challenge, follow the SWE-bench profile.
 - If the task drops you into a sandbox with a verifier/test script, follow the Terminal-Bench profile.
 - If related prior cases or memory are part of the challenge, follow the SWE-ContextBench profile.
+- If the task is a chained dependency, release, package, or API upgrade, follow the SWE-Chain profile.
+- If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
 - Otherwise follow the generic benchmark profile.`;
   }
 }

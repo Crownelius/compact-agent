@@ -257,6 +257,39 @@ describe('benchmark trace artifacts', () => {
     expect(JSON.stringify(summary)).not.toContain('sk-secret-secret-secret');
   });
 
+  it('labels emerging benchmark profiles in Open Agent drafts', () => {
+    const cases = [
+      {
+        prompt: '/benchmark swe-chain upgrade chained package versions',
+        benchmark: 'swechain',
+        benchmarkName: 'SWE-Chain',
+      },
+      {
+        prompt: '/benchmark ci-repair fix failing workflow',
+        benchmark: 'cirepairbench',
+        benchmarkName: 'CI-Repair-Bench',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const summary = buildBenchmarkTraceSummary({
+        sessionId: `session-${testCase.benchmark}`,
+        mode: 'benchmark',
+        cwd: 'C:/repo',
+        config,
+        startedAtMs: 1000,
+        endedAtMs: 2500,
+        messages: [{ role: 'user', content: testCase.prompt }],
+        events: [],
+      });
+
+      expect(summary.openAgentLeaderboardDraft).toMatchObject({
+        benchmark: testCase.benchmark,
+        benchmark_name: testCase.benchmarkName,
+      });
+    }
+  });
+
   it('builds compact experience cards for future benchmark replay', () => {
     const events = [
       makeBenchmarkTraceEvent({
