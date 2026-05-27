@@ -38,6 +38,7 @@ describe('Exgentic adapter packaging', () => {
     expect(agent).toContain('return "appworld"');
     expect(agent).toContain('return "browsecomp"');
     expect(agent).toContain('return "tau2"');
+    expect(agent).toContain('return "swe-ci"');
     expect(agent).toContain('return "webdevbench"');
   });
 

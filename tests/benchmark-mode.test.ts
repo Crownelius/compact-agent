@@ -31,7 +31,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('contextbench')).toBe('swe-context');
     expect(normalizeBenchmarkProfile('swechain')).toBe('swe-chain');
     expect(normalizeBenchmarkProfile('ci-repair-bench')).toBe('ci-repair');
-    expect(normalizeBenchmarkProfile('swe-ci')).toBe('ci-repair');
+    expect(normalizeBenchmarkProfile('swe-ci')).toBe('swe-ci');
+    expect(normalizeBenchmarkProfile('swecibench')).toBe('swe-ci');
+    expect(normalizeBenchmarkProfile('swe-ci-bench')).toBe('swe-ci');
     expect(normalizeBenchmarkProfile('wildclawbench')).toBe('wildclaw');
     expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
     expect(normalizeBenchmarkProfile('spec-bench')).toBe('specbench');
@@ -64,6 +66,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('ci-repair fix failing github actions')).toEqual({
       profile: 'ci-repair',
       task: 'fix failing github actions',
+    });
+    expect(splitBenchmarkArgs('swe-ci maintain ci loop')).toEqual({
+      profile: 'swe-ci',
+      task: 'maintain ci loop',
     });
     expect(splitBenchmarkArgs('wildclaw solve BrowseComp task')).toEqual({
       profile: 'wildclaw',
@@ -169,6 +175,15 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('missing-secret cases');
   });
 
+  it('builds SWE-CI prompts around continuous maintenance loops', () => {
+    const prompt = buildBenchmarkPrompt('maintain evolving CI loop', '/workspace', 'swe-ci');
+    expect(prompt).toContain('SWE-CI style CI-loop codebase maintenance');
+    expect(prompt).toContain('run_tests');
+    expect(prompt).toContain('define_requirements');
+    expect(prompt).toContain('modify_code');
+    expect(prompt).toContain('current/target commit');
+  });
+
   it('builds WildClawBench prompts around native-runtime agent contracts', () => {
     const prompt = buildBenchmarkPrompt('solve BrowseComp and safety alignment task', '/workspace', 'wildclaw');
     expect(prompt).toContain('WildClawBench style native-runtime agent task');
@@ -229,6 +244,11 @@ describe('benchmark mode and prompt', () => {
     expect(webdev).toContain('canary-requirement checklist');
     expect(webdev).toContain('frontend and backend together');
     expect(webdev).toContain('production-readiness or security/infrastructure check');
+
+    const sweci = buildBenchmarkPrompt('maintain codebase across target commits', '/workspace', 'swe-ci');
+    expect(sweci).toContain('SWE-CI style CI-loop codebase maintenance');
+    expect(sweci).toContain('test gaps');
+    expect(sweci).toContain('pass counts improved');
   });
 
   it('builds Open Agent general-task prompts around actions, sources, and policy', () => {

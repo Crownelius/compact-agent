@@ -466,6 +466,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward policy constraints, customer intent, tool results, and pending confirmations before selecting the next action."
     if profile == "webdevbench":
         return "Carry forward canary requirements, frontend/backend state, integration evidence, and production/security gaps before selecting the next action."
+    if profile == "swe-ci":
+        return "Carry forward current/target commits, test gaps, inferred requirements, touched files, verifier deltas, and unresolved regressions before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
 
 
@@ -898,6 +900,15 @@ def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[fl
             return 5, "WebDevBench prior: verify full-stack, production, or security evidence"
         if re.search(r"\b(create|update|modify|deploy|submit|send)\b", text):
             return 3, "WebDevBench prior: app creation/modification action"
+    elif profile == "swe-ci":
+        if re.search(r"\b(current|target|commit|sha|history|log|diff|status|read|inspect|list|search|get|query)\b", text):
+            return 6, "SWE-CI prior: establish current/target commits, test gaps, and repo evolution context"
+        if re.search(r"\b(run[_ -]?tests?|test|ci|verify|check|tox|nox|act|pytest|unittest)\b", text):
+            return 6, "SWE-CI prior: run the CI/test loop and preserve verifier deltas"
+        if re.search(r"\b(requirements?|define[_ -]?requirements?|test[_ -]?gap|failure|attribution|plan|locali[sz]e)\b", text):
+            return 5, "SWE-CI prior: derive requirements from CI/test gaps before modifying code"
+        if re.search(r"\b(modify[_ -]?code|patch|edit|update|change|implement|repair)\b", text):
+            return 3, "SWE-CI prior: incremental requirement-backed code modification"
     else:
         if re.search(r"\b(observe|read|search|list|get|lookup|inspect|query)\b", text):
             return 4, "generic prior: inspect available state before irreversible actions"

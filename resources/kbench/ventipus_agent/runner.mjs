@@ -86,7 +86,8 @@ function profileForBenchmark(benchmark) {
   if (slug === 'swe' || slug === 'swebench') return 'swe-bench';
   if (slug === 'tb2' || slug === 'terminalbench') return 'terminal-bench';
   if (slug === 'swechain' || slug === 'chain' || slug === 'upgrade') return 'swe-chain';
-  if (slug === 'cirepair' || slug === 'cirepairbench' || slug === 'sweci' || slug === 'ci') return 'ci-repair';
+  if (slug === 'sweci' || slug === 'swecibench') return 'swe-ci';
+  if (slug === 'cirepair' || slug === 'cirepairbench' || slug === 'ci') return 'ci-repair';
   if (slug === 'wildclaw' || slug === 'wildclawbench' || slug === 'wcbench') return 'wildclaw';
   if (slug === 'arc' || slug === 'arcagi' || slug === 'arcagi3' || slug === 'arcprize') return 'arc-agi';
   if (slug === 'spec' || slug === 'specbench' || slug === 'speccompliance') return 'specbench';

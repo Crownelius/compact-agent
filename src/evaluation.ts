@@ -257,6 +257,7 @@ export type BenchmarkProfile =
   | 'terminal-bench'
   | 'swe-context'
   | 'swe-chain'
+  | 'swe-ci'
   | 'ci-repair'
   | 'wildclaw'
   | 'arc-agi'
@@ -288,14 +289,17 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'swe-chain-bench': 'swe-chain',
   chain: 'swe-chain',
   upgrade: 'swe-chain',
+  sweci: 'swe-ci',
+  'swe-ci': 'swe-ci',
+  swe_ci: 'swe-ci',
+  swecibench: 'swe-ci',
+  'swe-ci-bench': 'swe-ci',
   cirepair: 'ci-repair',
   'ci-repair': 'ci-repair',
   ci_repair: 'ci-repair',
   cirepairbench: 'ci-repair',
   'ci-repair-bench': 'ci-repair',
   ci: 'ci-repair',
-  sweci: 'ci-repair',
-  'swe-ci': 'ci-repair',
   wildclaw: 'wildclaw',
   wildclawbench: 'wildclaw',
   'wildclaw-bench': 'wildclaw',
@@ -418,6 +422,13 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Prefer incremental, reversible changes; avoid broad version jumps without evidence, and keep package manifests plus lockfiles consistent.
 - Run install/build/test in small loops. Inspect dependency errors before patching source, and preserve compatibility shims when downstream code still expects the old API.
 - Record the upgrade path and verifier evidence so subsequent chain steps can reuse the compatibility facts safely.`;
+    case 'swe-ci':
+      return `Profile: SWE-CI style CI-loop codebase maintenance
+- Treat the task as long-term repository evolution across current and target commits, not a one-shot CI repair.
+- Reconstruct the SWE-CI loop explicitly: run_tests, define_requirements from CI/test gaps, then modify_code. Keep each loop iteration's failing tests, inferred requirements, changed files, and verifier deltas visible.
+- Inspect current/target commit metadata, task metadata, git history, and CI/test commands before editing; preserve maintainability and future evolution, not just the current visible pass.
+- Prefer incremental, requirement-backed patches. Avoid broad rewrites, test-specific hacks, or changes that make later iterations harder.
+- After each edit, run the relevant test/CI loop command again and track whether pass counts improved, regressed, or stayed flat before claiming completion.`;
     case 'ci-repair':
       return `Profile: CI-Repair style repository workflow validation
 - Treat the task as repository-level CI repair or patch validation unless current evidence says otherwise.
@@ -514,6 +525,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task drops you into a sandbox with a verifier/test script, follow the Terminal-Bench profile.
 - If related prior cases or memory are part of the challenge, follow the SWE-ContextBench profile.
 - If the task is a chained dependency, release, package, or API upgrade, follow the SWE-Chain profile.
+- If the task mentions SWE-CI, current/target commits, test gaps, maintainability over repository evolution, or the run_tests -> define_requirements -> modify_code loop, follow the SWE-CI profile.
 - If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
 - If the task mentions WildClawBench, native-runtime agent work, OpenClaw, multimodal/social/search/safety categories, or long-horizon harness comparison, follow the WildClawBench profile.
 - If the task mentions ARC Prize, ARC-AGI, Kaggle ARC, grid abstractions, or no-instructions turn-based environments, follow the ARC-AGI profile.
@@ -550,7 +562,7 @@ Use this workflow as the default benchmark strategy:
    - For risky or multi-file edits, inspect git state first and keep changes reviewable so failed paths can be reverted without losing unrelated user work.
    - Prefer one coherent root-cause patch over broad speculative rewrites.
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
-   - For long-horizon roadmap, SaaS, mobile, or WebDevBench tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, and production-readiness gaps stay visible.
+   - For long-horizon roadmap, SaaS, mobile, WebDevBench, or SWE-CI tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, CI-loop requirements, and production-readiness gaps stay visible.
    - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.
@@ -599,7 +611,7 @@ ${preflightSnapshot}
    - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
    - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
-   - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench work, identify roadmap milestones, validation nodes, canary requirements, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
+   - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench/SWE-CI work, identify roadmap milestones, validation nodes, canary requirements, current/target commit boundaries, test gaps, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
    - For AppWorld/BrowseComp+/tau2 work, identify available actions, required source/policy evidence, finish action, and state-observation loop before taking environment actions.
    - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
 

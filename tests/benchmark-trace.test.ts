@@ -363,6 +363,11 @@ describe('benchmark trace artifacts', () => {
         benchmarkName: 'CI-Repair-Bench',
       },
       {
+        prompt: '/benchmark swe-ci maintain target commit CI loop',
+        benchmark: 'sweci',
+        benchmarkName: 'SWE-CI',
+      },
+      {
         prompt: '/benchmark wildclaw solve BrowseComp task',
         benchmark: 'wildclawbench',
         benchmarkName: 'WildClawBench',
@@ -5699,9 +5704,9 @@ describe('benchmark trace artifacts', () => {
     expect(quality.longHorizonRisk).toBe(true);
     expect(quality.longHorizonSignalCount).toBe(4);
     expect(quality.processDefects.map((d) => d.code)).toContain('long_horizon_coverage_risk');
-    expect(quality.warnings.join('\n')).toContain('WebDevBench completion may be under-evidenced');
+    expect(quality.warnings.join('\n')).toContain('WebDevBench/SWE-CI completion may be under-evidenced');
     expect(buildBenchmarkCompletionReminder(events)).toContain('WebDevBench canaries');
-    expect(buildBenchmarkCompletionReminder(events)).toContain('frontend-backend/security verifier');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('frontend-backend/security/CI-loop verifier');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('long_horizon_risk=yes long_horizon_signals=4');
   });
 
@@ -5764,6 +5769,119 @@ describe('benchmark trace artifacts', () => {
     const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
     expect(reasons).not.toContain('missing_frontend_backend_validation');
     expect(reasons).not.toContain('missing_security_production_validation');
+    expect(reasons).not.toContain('missing_broad_integration_validation');
+  });
+
+  it('flags SWE-CI evolution checklist and CI-loop validation gaps', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: SWE-CI codebase maintenance task, run_tests -> define_requirements -> modify_code.',
+          '- TASK.md: current_sha abc123 target_sha def456 with visible test gap evidence.',
+          '',
+          '## Likely Verification Commands',
+          '- run_tests',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test -- feature' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
+    expect(reasons).toContain('missing_sweci_evolution_checklist');
+    expect(reasons).toContain('missing_broad_integration_validation');
+    expect(reasons).toContain('missing_sweci_ci_loop_validation');
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.longHorizonRisk).toBe(true);
+    expect(quality.processDefects.map((d) => d.code)).toContain('long_horizon_coverage_risk');
+    expect(quality.warnings.join('\n')).toContain('SWE-CI completion may be under-evidenced');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('SWE-CI evolution requirements');
+  });
+
+  it('accepts SWE-CI checklist and CI-loop validation evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: SWE-CI repository evolution with test gap requirements.',
+          '- TASK.md: Run tests, define requirements, and modify code until target commit behavior is maintained.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'todo_write',
+        input: {
+          items: [{ content: 'Track test gaps and inferred SWE-CI requirements.', status: 'completed' }],
+        },
+        output: 'Todo list updated (1 item):\n- [x] Track test gaps and inferred SWE-CI requirements.',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const app = "old";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'run_tests' },
+        output: 'Tests: 9 passed, 9 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const reasons = buildBenchmarkLongHorizonSignals(events).map((signal) => signal.reason);
+    expect(reasons).not.toContain('missing_sweci_evolution_checklist');
+    expect(reasons).not.toContain('missing_sweci_ci_loop_validation');
     expect(reasons).not.toContain('missing_broad_integration_validation');
   });
 

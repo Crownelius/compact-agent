@@ -167,6 +167,19 @@ def _profile_for_task(task: dict[str, Any]) -> str:
     ):
         return "roadmapbench"
     if (
+        "swe-ci" in task_text
+        or "sweci" in task_text
+        or "swe ci" in task_text
+        or "run_tests" in task_text
+        or "define_requirements" in task_text
+        or "modify_code" in task_text
+        or "test gap" in task_text
+        or "current_sha" in task_text
+        or "target_sha" in task_text
+        or ("codebase maintenance" in task_text and "continuous integration" in task_text)
+    ):
+        return "swe-ci"
+    if (
         "saasbench" in task_text
         or "saas-bench" in task_text
         or "enterprise saas" in task_text
@@ -264,6 +277,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         lines.append("This is a tau2/Tau-Bench-style policy workflow. Follow the domain policy, use only available action schemas, and verify tool observations before completing.")
     elif profile == "webdevbench":
         lines.append("This is a SWE-WebDevBench-style full-stack app-agency task. Preserve canary business requirements, verify frontend-backend coupling, and collect production/security evidence when feasible.")
+    elif profile == "swe-ci":
+        lines.append("This is a SWE-CI-style repository evolution task. Track current/target commits, test gaps, requirement derivation, and CI-loop validation across run_tests -> define_requirements -> modify_code.")
     elif _is_usaco_task(task):
         lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
     else:
