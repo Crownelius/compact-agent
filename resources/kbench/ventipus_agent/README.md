@@ -45,7 +45,9 @@ context-utilization precision/miss evidence for retrieval-aware scoring and
 run-efficiency action/usage/cost evidence for cost-aware scoring. Prior
 experience hints also expose compact source-research coverage, including
 hit/error counts, targeted/fresh coverage, recency windows, top URLs, and
-Kaggle fallback status.
+Kaggle fallback status. When present, `benchmarkResult.traceSummary` also
+includes the redacted ACC-style task/context/answer compilation from the native
+Ventipus trace for retrieval, replay, or training-data curation.
 
 Inside benchmark mode, the read-only `benchmark_context` preflight also surfaces
 CI workflow run commands plus setup actions, env key names, service containers,

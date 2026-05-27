@@ -131,6 +131,7 @@ class VentipusTerminalBenchAgent(AbstractInstalledAgent):
             "cp \"$summary\" .ventipus/benchmark-summary.json; "
             "trace_dir=$(dirname \"$summary\"); "
             "if [ -f \"$trace_dir/trace.jsonl\" ]; then cp \"$trace_dir/trace.jsonl\" .ventipus/benchmark-trace.jsonl; fi; "
+            "if [ -f \"$trace_dir/agent-context-compiled.jsonl\" ]; then cp \"$trace_dir/agent-context-compiled.jsonl\" .ventipus/agent-context-compiled.jsonl; fi; "
             "fi; "
             "if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then "
             "{ git diff --binary --no-ext-diff 2>/dev/null || true; "
@@ -149,6 +150,9 @@ class VentipusTerminalBenchAgent(AbstractInstalledAgent):
             "fi; "
             "if [ -s .ventipus/benchmark-trace.jsonl ]; then "
             "echo '[ventipus] tool trace: .ventipus/benchmark-trace.jsonl'; "
+            "fi; "
+            "if [ -s .ventipus/agent-context-compiled.jsonl ]; then "
+            "echo '[ventipus] context compilation: .ventipus/agent-context-compiled.jsonl'; "
             "fi; "
             "exit \"$status\""
         )

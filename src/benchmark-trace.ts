@@ -38,6 +38,7 @@ export interface BenchmarkTraceSummary {
   openAgentLeaderboardDraft: OpenAgentLeaderboardDraft;
   trajectoryQuality: BenchmarkTrajectoryQuality;
   experienceCard: BenchmarkExperienceCard;
+  agentContextCompilation: BenchmarkAgentContextCompilation;
   finalAssistant: string;
   events: BenchmarkTraceEvent[];
 }
@@ -131,8 +132,34 @@ export interface BenchmarkExperienceRunEfficiency {
   costEfficiencyRisk: boolean;
 }
 
+export interface BenchmarkAgentContextCompilation {
+  version: 1;
+  format: 'ventipus-agent-context-compilation-v1';
+  task: string;
+  context: string;
+  answer: string;
+  metadata: {
+    sessionId: string;
+    mode: string;
+    cwd: string;
+    provider: string;
+    model: string;
+    eventCount: number;
+    contextEventCount: number;
+    verificationStatus: BenchmarkVerificationEvidence['lastVerificationStatus'];
+    successfulVerificationCount: number;
+    processScore: number;
+    usageTotalTokens: number;
+    estimatedCostUsd: number;
+    changedFiles: string[];
+    verificationCommands: string[];
+    sourceResearchCoverage: SourceResearchCoverage;
+    warnings: string[];
+  };
+}
+
 export interface BenchmarkTraceArtifact {
-  kind: 'patch' | 'git-status' | 'open-agent-leaderboard-draft';
+  kind: 'patch' | 'git-status' | 'open-agent-leaderboard-draft' | 'agent-context-compilation';
   path: string;
   contentType: string;
   description: string;
@@ -756,6 +783,16 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
     verificationEvidence,
     trajectoryQuality,
   });
+  const agentContextCompilation = buildBenchmarkAgentContextCompilation({
+    input,
+    events,
+    changedFiles,
+    verificationCommands,
+    verificationEvidence,
+    trajectoryQuality,
+    usage,
+    finalAssistantText,
+  });
 
   return {
     version: 1,
@@ -780,9 +817,99 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
     openAgentLeaderboardDraft: buildOpenAgentLeaderboardDraft(input, events, usage, verificationEvidence, finalAnswerEvidence, trajectoryQuality),
     trajectoryQuality,
     experienceCard,
+    agentContextCompilation,
     finalAssistant: finalAssistantText,
     events,
   };
+}
+
+function buildBenchmarkAgentContextCompilation(input: {
+  input: BenchmarkTraceWriteInput;
+  events: BenchmarkTraceEvent[];
+  changedFiles: string[];
+  verificationCommands: string[];
+  verificationEvidence: BenchmarkVerificationEvidence;
+  trajectoryQuality: BenchmarkTrajectoryQuality;
+  usage: BenchmarkUsageSummary;
+  finalAssistantText: string;
+}): BenchmarkAgentContextCompilation {
+  const task = extractAgentContextCompilationTask(input.input.messages);
+  const observations = buildAgentContextCompilationObservations(input.events);
+  const changedFiles = uniqueStrings(input.changedFiles)
+    .map((file) => truncate(redactTraceText(file), 160))
+    .slice(0, 30);
+  const verificationCommands = uniqueStrings(input.verificationCommands)
+    .map((command) => truncate(redactTraceText(command), 180))
+    .slice(0, 20);
+  const warnings = input.trajectoryQuality.warnings
+    .map((warning) => truncate(redactTraceText(warning), 220))
+    .slice(0, 12);
+  const sourceCoverage = formatSourceCoverage(input.trajectoryQuality.sourceResearchCoverage);
+  const context = truncate([
+    `Task: ${task || 'not recorded'}`,
+    `Run: mode=${input.input.mode}; provider=${redactTraceText(input.input.config.provider)}; model=${redactTraceText(input.input.config.model)}`,
+    `Verification: latest=${input.verificationEvidence.lastVerificationStatus ?? 'n/a'}; successful=${input.trajectoryQuality.successfulVerificationCount}; commands=${verificationCommands.join(' | ') || 'none'}`,
+    `Source coverage: ${sourceCoverage}`,
+    changedFiles.length ? `Changed files: ${changedFiles.join(', ')}` : 'Changed files: none recorded',
+    warnings.length ? `Warnings: ${warnings.join(' | ')}` : 'Warnings: none',
+    'Tool observations:',
+    observations.length ? observations.join('\n') : '- none recorded',
+  ].join('\n'), 12_000);
+  const answer = truncate([
+    input.finalAssistantText.trim() || 'No final assistant answer was recorded.',
+    '',
+    `Latest verifier status: ${input.verificationEvidence.lastVerificationStatus ?? 'n/a'}.`,
+    changedFiles.length ? `Changed files: ${changedFiles.join(', ')}.` : 'Changed files were not recorded from assistant tool calls.',
+  ].join('\n'), 4_000);
+
+  return {
+    version: 1,
+    format: 'ventipus-agent-context-compilation-v1',
+    task: truncate(redactTraceText(task || 'not recorded'), 2_000),
+    context,
+    answer,
+    metadata: {
+      sessionId: truncate(redactTraceText(input.input.sessionId), 120),
+      mode: truncate(redactTraceText(input.input.mode), 40),
+      cwd: truncate(redactTraceText(input.input.cwd), 240),
+      provider: truncate(redactTraceText(input.input.config.provider), 80),
+      model: truncate(redactTraceText(input.input.config.model), 160),
+      eventCount: input.events.length,
+      contextEventCount: observations.length,
+      verificationStatus: input.verificationEvidence.lastVerificationStatus,
+      successfulVerificationCount: input.trajectoryQuality.successfulVerificationCount,
+      processScore: input.trajectoryQuality.processScore,
+      usageTotalTokens: input.usage.totalTokens,
+      estimatedCostUsd: input.usage.estimatedCostUsd,
+      changedFiles,
+      verificationCommands,
+      sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
+      warnings,
+    },
+  };
+}
+
+function extractAgentContextCompilationTask(messages: Message[]): string {
+  const userText = messages
+    .filter((message) => message.role === 'user')
+    .map(messageText)
+    .map((text) => text.trim())
+    .filter(Boolean);
+  if (userText.length > 0) return truncate(redactTraceText(userText.join('\n\n')), 2_000);
+  return '';
+}
+
+function buildAgentContextCompilationObservations(events: BenchmarkTraceEvent[]): string[] {
+  return events
+    .filter((event) => event.tool !== BENCHMARK_INVALID_TOOL_ACTION_TOOL || event.status === 'error')
+    .slice(0, 40)
+    .map((event) => {
+      const target = truncate(redactTraceText(event.target || event.tool), 180).replace(/\s+/g, ' ').trim();
+      const output = truncate(redactTraceText(event.outputPreview), event.verification ? 700 : 420)
+        .replace(/\s+/g, ' ')
+        .trim();
+      return `- #${event.seq} ${event.tool} ${event.status}${event.verification ? ' verifier' : ''}: ${target}${output ? ` -> ${output}` : ''}`;
+    });
 }
 
 export function buildBenchmarkExperienceCard(input: {
@@ -4386,11 +4513,26 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
   ])
     .map((file) => truncate(redactTraceText(file), 160))
     .slice(0, 20);
+  summary.agentContextCompilation = buildBenchmarkAgentContextCompilation({
+    input,
+    events: summary.events,
+    changedFiles: uniqueStrings([
+      ...summary.changedFiles,
+      ...summary.worktreeChangedFiles,
+    ]),
+    verificationCommands: summary.verificationCommands,
+    verificationEvidence: summary.verificationEvidence,
+    trajectoryQuality: summary.trajectoryQuality,
+    usage: summary.usage,
+    finalAssistantText: summary.finalAssistant,
+  });
 
   const summaryPath = join(dir, 'summary.json');
   const jsonlPath = join(dir, 'trace.jsonl');
   const leaderboardDraftPath = join(dir, 'open-agent-leaderboard-draft.json');
+  const agentContextCompilationPath = join(dir, 'agent-context-compiled.jsonl');
   const leaderboardDraftText = JSON.stringify(summary.openAgentLeaderboardDraft, null, 2);
+  const agentContextCompilationText = `${JSON.stringify(summary.agentContextCompilation)}\n`;
   writeFileSync(leaderboardDraftPath, leaderboardDraftText, 'utf-8');
   summary.artifacts.push({
     kind: 'open-agent-leaderboard-draft',
@@ -4398,6 +4540,14 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
     contentType: 'application/json',
     description: 'Draft Open Agent Leaderboard-style row from ventipus trace metadata; not an official benchmark result.',
     sizeBytes: Buffer.byteLength(leaderboardDraftText),
+  });
+  writeFileSync(agentContextCompilationPath, agentContextCompilationText, 'utf-8');
+  summary.artifacts.push({
+    kind: 'agent-context-compilation',
+    path: agentContextCompilationPath,
+    contentType: 'application/jsonl',
+    description: 'Redacted ACC-style task/context/answer record compiled from this benchmark trajectory for retrieval, replay, or training data curation.',
+    sizeBytes: Buffer.byteLength(agentContextCompilationText),
   });
   writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
   writeFileSync(jsonlPath, summary.events.map((event) => JSON.stringify(event)).join('\n') + '\n', 'utf-8');

@@ -152,6 +152,7 @@ function compactTraceSummary(traceSummary) {
     finalAnswerEvidence: summary.finalAnswerEvidence,
     usage: summary.usage,
     experienceCard,
+    agentContextCompilation: compactAgentContextCompilation(summary.agentContextCompilation),
     changedFiles: Array.isArray(summary.changedFiles) ? summary.changedFiles.slice(0, 100) : [],
     worktreeChangedFiles: Array.isArray(summary.worktreeChangedFiles) ? summary.worktreeChangedFiles.slice(0, 100) : [],
     artifacts: Array.isArray(summary.artifacts) ? summary.artifacts.slice(0, 20) : [],
@@ -260,6 +261,37 @@ function compactTraceSummary(traceSummary) {
       processScore: quality.processScore,
       processDefects: Array.isArray(quality.processDefects) ? quality.processDefects.slice(0, 20) : [],
       warnings: Array.isArray(quality.warnings) ? quality.warnings.slice(0, 20) : [],
+    },
+  };
+}
+
+function compactAgentContextCompilation(compilation) {
+  if (!compilation || typeof compilation !== 'object' || Array.isArray(compilation)) return undefined;
+  const metadata = compilation.metadata && typeof compilation.metadata === 'object' && !Array.isArray(compilation.metadata)
+    ? compilation.metadata
+    : {};
+  return {
+    version: compilation.version,
+    format: compilation.format,
+    task: truncate(compilation.task || '', 2000),
+    context: truncate(compilation.context || '', 5000),
+    answer: truncate(compilation.answer || '', 2500),
+    metadata: {
+      sessionId: metadata.sessionId,
+      mode: metadata.mode,
+      provider: metadata.provider,
+      model: metadata.model,
+      eventCount: metadata.eventCount,
+      contextEventCount: metadata.contextEventCount,
+      verificationStatus: metadata.verificationStatus,
+      successfulVerificationCount: metadata.successfulVerificationCount,
+      processScore: metadata.processScore,
+      usageTotalTokens: metadata.usageTotalTokens,
+      estimatedCostUsd: metadata.estimatedCostUsd,
+      changedFiles: Array.isArray(metadata.changedFiles) ? metadata.changedFiles.slice(0, 100) : [],
+      verificationCommands: Array.isArray(metadata.verificationCommands) ? metadata.verificationCommands.slice(0, 20) : [],
+      sourceResearchCoverage: metadata.sourceResearchCoverage,
+      warnings: Array.isArray(metadata.warnings) ? metadata.warnings.slice(0, 20) : [],
     },
   };
 }

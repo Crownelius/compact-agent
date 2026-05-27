@@ -71,6 +71,7 @@ describe('KBench adapter packaging', () => {
       '    verificationEvidence: { lastVerificationSeq: 7, lastVerificationStatus: "ok", extracted: [{ framework: "vitest", passed: 3, total: 3 }] },',
       '    finalAnswerEvidence: { mentionsVerification: true, claimsPassingVerification: true, claimsNoVerificationRun: false, claimsIncomplete: false, claimsBlocked: false, finalAnswerCompletion: "unknown", unsupportedPassingClaim: false, contradictedPassingClaim: false, staleNoVerificationClaim: false, latestVerificationStatus: "ok", lastSuccessfulVerificationSeq: 7, verificationCount: 1, warnings: [] },',
       '    usage: { callCount: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0, byModel: [{ model: "openrouter/free", calls: 2, promptTokens: 3000, completionTokens: 700, totalTokens: 3700, estimatedCostUsd: 0 }] },',
+      '    agentContextCompilation: { version: 1, format: "ventipus-agent-context-compilation-v1", task: "Fix the fixture bug", context: "Task: Fix the fixture bug\\nTool observations:\\n- #1 read_file ok: fixture.txt", answer: "All checks passed.\\nLatest verifier status: ok.", metadata: { sessionId: "fixture-run", mode: "benchmark", provider: "OpenRouter", model: "openrouter/free", eventCount: 7, contextEventCount: 3, verificationStatus: "ok", successfulVerificationCount: 1, processScore: 100, usageTotalTokens: 3700, estimatedCostUsd: 0, changedFiles: ["fixture.txt"], verificationCommands: ["npm test"], sourceResearchCoverage: { callCount: 1, sourceHitCount: 4, freshTargetedCoverage: true }, warnings: [] } },',
       '    experienceCard: { version: 1, replayCheckpoints: [{ seq: 1, tool: "read_file", target: "fixture.txt", reason: "file_context", score: 11 }, { seq: 3, tool: "bash", target: "npm test", reason: "failing_verifier", score: 12 }], failureSignatures: [{ seq: 3, command: "npm test", framework: "vitest", tests: ["fixture regression"], files: ["fixture.txt"], errors: ["AssertionError: expected before to equal after"], raw: "fixture mismatch" }], sourceResearchCoverage: { callCount: 1, sourceHitCount: 4, sourceErrorCount: 0, arxiv: true, github: true, huggingface: true, kaggle: true, freshTargetedCoverage: true, completeTargetedCoverage: true }, taskContract: { signalCount: 2, checklistAfterContext: true, checklistComplete: true, incompleteCount: 0 }, environmentReconstruction: { setupFailureCount: 1, unresolvedSetupFailureCount: 0, setupCount: 1, successfulSetupCount: 1, setupEvents: [{ seq: 4, command: "npm ci", status: "ok", kind: "node package install" }], setupFailures: [{ seq: 3, command: "npm test", reason: "javascript dependency or build artifact missing", evidence: "Error: Cannot find module vitest" }], unresolvedSetupFailures: [] }, dependencyUpgrade: { manifestEditCount: 1, lockfileEditCount: 1, manifestEdits: [{ seq: 5, tool: "apply_patch", target: "package.json", ecosystem: "node", kind: "manifest" }], lockfileEdits: [{ seq: 5, tool: "apply_patch", target: "package-lock.json", ecosystem: "node", kind: "lockfile" }], setupAfterManifestEdit: true, passingSetupAfterManifestEdit: true, validationAfterManifestEdit: true, passingValidationAfterManifestEdit: true, firstSetupAfterManifestEditSeq: 6, firstValidationAfterManifestEditSeq: 7 }, decisionObservability: { editCount: 1, predictedEditCount: 1, verifiedPredictionCount: 1, editPredictions: [{ editSeq: 5, tool: "edit_file", target: "fixture.txt", prediction: "updating fixture should pass npm test", nextVerifierSeq: 7, nextVerifierStatus: "ok", nextVerifierCommand: "npm test" }] }, validationReliability: { lastEditSeq: 5, finalEditVerificationCount: 2, finalEditPassingVerificationCount: 2, stableValidationAfterLastEdit: true, broadValidationAfterLastEdit: true, passingBroadValidationAfterLastEdit: true, ciValidationAfterLastEdit: true, passingCiValidationAfterLastEdit: true, postEditRegressionCycleCount: 0, lastPostEditVerificationSeq: 7, lastPostEditVerificationStatus: "ok", finalVerifierCommands: ["npm test", "npm run build"] }, contextUtilization: { inspectCount: 6, hitCount: 2, missCount: 4, utilizationPercent: 33.33, risk: true, missEvents: [{ seq: 2, tool: "read_file", target: "src/unrelated-a.ts", reason: "local read/search/list inspection did not match any edited source target" }] }, runEfficiency: { toolCallCount: 9, usageCallCount: 2, totalTokens: 3700, estimatedCostUsd: 0, successfulVerificationCount: 1, processScore: 100, processDefectCount: 0, warningCount: 0, invalidToolActionCount: 1, invalidToolActionPercent: 4.35, costEfficiencyRisk: false }, verificationCommands: ["npm test"], changedFiles: ["fixture.txt", "new-file.txt"], warnings: [] },',
       '    changedFiles: ["fixture.txt"],',
       '    worktreeChangedFiles: ["fixture.txt", "new-file.txt"],',
@@ -146,6 +147,19 @@ describe('KBench adapter packaging', () => {
         estimatedCostUsd: 0,
       },
     ]);
+    expect(output.benchmarkResult.traceSummary.agentContextCompilation).toMatchObject({
+      version: 1,
+      format: 'ventipus-agent-context-compilation-v1',
+      task: 'Fix the fixture bug',
+      metadata: {
+        model: 'openrouter/free',
+        verificationStatus: 'ok',
+        usageTotalTokens: 3700,
+        changedFiles: ['fixture.txt'],
+        verificationCommands: ['npm test'],
+      },
+    });
+    expect(output.benchmarkResult.traceSummary.agentContextCompilation.context).toContain('Tool observations');
     expect(output.benchmarkResult.experienceCard).toMatchObject({
       version: 1,
       replayCheckpoints: [

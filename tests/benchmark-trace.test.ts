@@ -161,6 +161,30 @@ describe('benchmark trace artifacts', () => {
       verificationCount: 1,
       warnings: [],
     });
+    expect(summary.agentContextCompilation).toMatchObject({
+      version: 1,
+      format: 'ventipus-agent-context-compilation-v1',
+      task: '/benchmark swe-bench fix the app',
+      metadata: {
+        sessionId: 'session-1',
+        mode: 'benchmark',
+        provider: 'TestProvider',
+        model: 'test-model',
+        eventCount: 1,
+        contextEventCount: 1,
+        verificationStatus: 'ok',
+        successfulVerificationCount: 1,
+        processScore: expect.any(Number),
+        usageTotalTokens: 0,
+        estimatedCostUsd: 0,
+        changedFiles: ['src/app.ts'],
+        verificationCommands: ['npm test'],
+      },
+    });
+    expect(summary.agentContextCompilation.context).toContain('#1 bash ok verifier');
+    expect(summary.agentContextCompilation.context).toContain('Source coverage: none');
+    expect(summary.agentContextCompilation.answer).toContain('Latest verifier status: ok.');
+    expect(JSON.stringify(summary.agentContextCompilation)).not.toContain(config.apiKey);
     expect(summary.changedFiles).toContain('src/app.ts');
     expect(summary.trajectoryQuality.usageCallCount).toBe(0);
     expect(summary.trajectoryQuality.usageTotalTokens).toBe(0);
@@ -4949,6 +4973,7 @@ describe('benchmark trace artifacts', () => {
     const jsonl = readFileSync(written!.jsonlPath, 'utf-8');
     expect(summary).toContain('"mode": "benchmark"');
     expect(summary).toContain('"openAgentLeaderboardDraft"');
+    expect(summary).toContain('"agentContextCompilation"');
     expect(jsonl).toContain('"tool":"bash"');
     expect(summary).not.toContain(config.apiKey);
     const parsedSummary = JSON.parse(summary);
@@ -4957,6 +4982,12 @@ describe('benchmark trace artifacts', () => {
     const draftText = readFileSync(draftArtifact.path, 'utf-8');
     expect(draftText).toContain('"submissionReady": false');
     expect(draftText).toContain('"missingOfficialFields"');
+    const compiledArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'agent-context-compilation');
+    expect(compiledArtifact).toBeTruthy();
+    const compiledText = readFileSync(compiledArtifact.path, 'utf-8');
+    expect(compiledText).toContain('"format":"ventipus-agent-context-compilation-v1"');
+    expect(compiledText).toContain('Latest verifier status: ok.');
+    expect(compiledText).not.toContain(config.apiKey);
   });
 
   it('writes redacted git patch artifacts for benchmark worktrees', () => {
