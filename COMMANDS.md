@@ -18,9 +18,10 @@ After `npm install -g ventipus`, you have one binary:
 ventipus
 ventipus --doctor
 ventipus doctor --json --no-registry
+ventipus --openai-oauth-smoke
 ```
 
-`ventipus` launches the REPL. `ventipus --doctor` runs install/config/benchmark readiness checks and exits before setup; `--doctor-json` or `doctor --json` prints machine-readable output, and `--doctor-no-registry` or `--no-registry` skips the npm registry lookup.
+`ventipus` launches the REPL. `ventipus --doctor` runs install/config/benchmark readiness checks and exits before setup; `--doctor-json` or `doctor --json` prints machine-readable output, and `--doctor-no-registry` or `--no-registry` skips the npm registry lookup. `ventipus --openai-oauth-smoke` verifies Codex OAuth auth, request creation, and streaming without printing tokens.
 
 First run also fires the setup wizard (provider, API key, model, permission mode). See [INSTALL.md](INSTALL.md) for setup details.
 
@@ -79,6 +80,7 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 | `/model [name]` | Show current model, or switch to `<name>` (e.g. `/model anthropic/claude-sonnet-4`). |
 | `/models` | List models the provider can serve. |
 | `/provider` | Show provider name, base URL, masked key, current model. |
+| `/openai-login [status\|smoke]` | Configure Codex OAuth, show token status, or run a smoke request through the OAuth stream path. |
 | `/route` | Auto-route the **next** message to a cheaper/more-capable model based on its complexity. Single-use. |
 
 ### 2.4 Sessions
@@ -422,7 +424,7 @@ OpenRouter free-tier context is intentionally conservative for compatibility. `o
 
 `--prompt` and `--prompt-file` imply non-interactive mode. If the prompt begins with a slash command such as `/benchmark terminal-bench ...`, ventipus dispatches that command first and sends the expanded prompt to the model.
 
-Benchmark-friendly per-run CLI flags: `--model`, `--fallback-model`, `--provider`, `--base-url`, `--api-key`, `--api-key-env`, `--max-turns`, `--max-tokens`, `--context-window-tokens`, `--temperature`, `--output-format`, and `--benchmark-trace-dir`. They do not modify `config.json`.
+Benchmark-friendly per-run CLI flags: `--model`, `--fallback-model`, `--provider`, `--base-url`, `--api-key`, `--api-key-env`, `--max-turns`, `--max-tokens`, `--context-window-tokens`, `--temperature`, `--output-format`, and `--benchmark-trace-dir`. They do not modify `config.json`. Use `--openai-oauth-smoke` to test Codex OAuth auth, request shape, and stream parsing.
 
 Adapter path helpers:
 

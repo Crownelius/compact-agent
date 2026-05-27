@@ -120,6 +120,7 @@ Options:
   --temperature <n>                  Override model temperature.
   --output-format <text|json>        Set non-interactive output format.
   --benchmark-trace-dir <path>       Write benchmark trace artifacts.
+  --openai-oauth-smoke               Test Codex OAuth auth, request, and stream parsing.
   --doctor                           Run install/config/benchmark readiness checks.
   --doctor-json                      Run readiness checks and print JSON.
   --doctor-no-registry               Skip the npm registry check in doctor mode.
@@ -232,6 +233,15 @@ function readFlagValue(argv, index, flag) {
     }
     if (a === '--non-interactive') {
       process.env.VENTIPUS_NON_INTERACTIVE = '1';
+      argv.splice(i, 1);
+      i--;
+      continue;
+    }
+    if (a === '--openai-oauth-smoke') {
+      process.env.VENTIPUS_OPENAI_OAUTH_SMOKE = '1';
+      process.env.VENTIPUS_NON_INTERACTIVE = '1';
+      process.env.VENTIPUS_PROVIDER = process.env.VENTIPUS_PROVIDER || 'openai-codex';
+      process.env.VENTIPUS_ENV_CONFIG = '1';
       argv.splice(i, 1);
       i--;
       continue;

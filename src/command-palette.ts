@@ -42,6 +42,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/fallback', description: 'Set/show the model auto-retried on cryptic errors', category: 'Model' },
   { command: '/openrouter-free', description: 'Switch to OpenRouter free-tier router', category: 'Model' },
   { command: '/provider', description: 'Show provider info (URL, masked key)', category: 'Model' },
+  { command: '/openai-login', description: 'OpenAI Codex OAuth login, status, or smoke test', category: 'Model' },
   { command: '/keys', description: 'Multi-key rotation pool (/keys add, status, remove)', category: 'Model' },
   { command: '/route', description: 'Auto-route to a model based on the next message', category: 'Model' },
 

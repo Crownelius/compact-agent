@@ -8,6 +8,7 @@ import {
   getOpenAICodexAuthStatus,
   resolveOpenAICodexAuth,
 } from '../src/openai-oauth.js';
+import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from '../src/openai-smoke.js';
 
 const envKeys = [
   'VENTIPUS_OPENAI_ACCESS_TOKEN',
@@ -114,6 +115,63 @@ describe('OpenAI Codex OAuth helpers', () => {
       const status = getOpenAICodexAuthStatus(config(home));
       expect(status.available).toBe(false);
       expect(status.error).toContain('not found');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('OpenAI Codex OAuth smoke test', () => {
+  beforeEach(() => {
+    for (const key of envKeys) delete process.env[key];
+  });
+
+  it('uses Codex OAuth config and validates streamed text without exposing tokens', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    try {
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, 'auth.json'), JSON.stringify({
+        auth_mode: 'chatgpt',
+        tokens: {
+          access_token: 'access-token',
+          account_id: 'account-from-file',
+        },
+      }));
+
+      const result = await runOpenAICodexSmokeTest(config(home), {
+        stream: async function* (cfg) {
+          expect(cfg.provider).toBe('OpenAI Codex (OAuth)');
+          expect(cfg.baseURL).toBe(CHATGPT_CODEX_BASE_URL);
+          expect(cfg.openaiAuth?.type).toBe('codex_oauth');
+          yield { type: 'text' as const, content: 'OAuth smoke OK' };
+          yield { type: 'done' as const, usage: { prompt: 1, completion: 2, total: 3 } };
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.text).toBe('OAuth smoke OK');
+      const formatted = formatOpenAICodexSmokeResult(result);
+      expect(formatted).toContain('PASS');
+      expect(formatted).not.toContain('access-token');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('fails before request streaming when Codex auth is missing', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    try {
+      let called = false;
+      const result = await runOpenAICodexSmokeTest(config(home), {
+        stream: async function* () {
+          called = true;
+        },
+      });
+
+      expect(called).toBe(false);
+      expect(result.ok).toBe(false);
+      expect(result.phase).toBe('auth');
+      expect(formatOpenAICodexSmokeResult(result)).toContain('FAIL');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

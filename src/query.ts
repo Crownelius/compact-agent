@@ -1817,9 +1817,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // next stage. After all 3 stages fire, the gate is exhausted
     // and the next no-tool-call turn lets the chain end normally.
     if (!toolCalls || toolCalls.length === 0) {
+      const hasRemainingTurnBudget = turns < maxTurns;
       const needsEditVerification =
         process.env.VENTIPUS_VERIFY_AFTER_EDIT !== '0'
         && selfCritiqueEnabled
+        && hasRemainingTurnBudget
         && chainStats.editCountSinceVerification > 0
         && !chainStats.verificationAttemptedSinceEdit
         && !chainStats.verificationGatePrompted;
@@ -1839,6 +1841,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       const minToolCalls = minimumToolCallsBeforeDone(ctx.mode);
       if (
         selfCritiqueEnabled
+        && hasRemainingTurnBudget
         && minToolCalls > 0
         && chainStats.toolCallCount < minToolCalls
         && !chainStats.emptyEngagementPrompted
@@ -1851,6 +1854,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         continue;
       }
       const benchmarkCompletionReminder = selfCritiqueEnabled
+        && hasRemainingTurnBudget
         && ctx.mode === 'benchmark'
         && !chainStats.benchmarkTrajectoryGatePrompted
         ? buildBenchmarkCompletionReminder(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents, ctx.messages)
@@ -1863,7 +1867,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         });
         continue;
       }
-      if (selfCritiqueEnabled && critiqueStageIdx < CRITIQUE_STAGES.length) {
+      if (selfCritiqueEnabled && hasRemainingTurnBudget && critiqueStageIdx < CRITIQUE_STAGES.length) {
         const stage = CRITIQUE_STAGES[critiqueStageIdx];
         critiqueStageIdx++;
         ctx.messages.push({
@@ -1934,7 +1938,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     }
   }
 
-  if (Number.isFinite(maxTurns) && turns >= maxTurns) {
+  const latestRole = ctx.messages.at(-1)?.role;
+  const stoppedWithPendingModelWork = latestRole === 'user' || latestRole === 'tool';
+  if (Number.isFinite(maxTurns) && turns >= maxTurns && stoppedWithPendingModelWork) {
     console.log(theme.warning(`\n  ${sym.warn} reached configured max turns limit (${maxTurns})`));
     console.log(theme.dim(`     remove the cap by deleting maxTurns from ~/.ventipus/config.json`));
   }

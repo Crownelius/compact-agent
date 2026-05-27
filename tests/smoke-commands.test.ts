@@ -54,6 +54,8 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/model', 'local'],
     ['/models', 'local'],
     ['/provider', 'local'],
+    ['/openai-login status', 'local'],
+    ['/openai-login smoke', 'local'],
     ['/openrouter-free', 'local'],
     // Theme & palettes
     ['/palette', 'local'],

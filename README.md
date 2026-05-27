@@ -9,10 +9,11 @@ A terminal AI coding CLI for any OpenAI-compatible API.
 ```bash
 npm install -g ventipus
 ventipus --doctor
+ventipus --openai-oauth-smoke
 ventipus
 ```
 
-`ventipus --doctor` checks the global install, npm registry metadata, provider config, MemPalace, research credentials, and benchmark adapter packaging without printing token values. First run prompts you for a provider, key, model, and permission mode. After that, `ventipus` from any directory drops you into a REPL with a persistent bottom-anchored input box.
+`ventipus --doctor` checks the global install, npm registry metadata, provider config, MemPalace, research credentials, and benchmark adapter packaging without printing token values. `ventipus --openai-oauth-smoke` tests Codex OAuth auth, request creation, and streaming without printing tokens. First run prompts you for a provider, key, model, and permission mode. After that, `ventipus` from any directory drops you into a REPL with a persistent bottom-anchored input box.
 
 ---
 
@@ -58,6 +59,7 @@ ventipus
 | :--- | :--- | :--- |
 | OpenRouter | `https://openrouter.ai/api/v1` | One key, hundreds of models. Defaults to `openrouter/free` for free-tier-safe use. |
 | OpenAI | `https://api.openai.com/v1` | GPT-4o, o-series. |
+| OpenAI Codex (OAuth) | `https://chatgpt.com/backend-api/codex` | Uses `codex login` / `~/.codex/auth.json`; verify with `ventipus --openai-oauth-smoke` or `/openai-login smoke`. |
 | NVIDIA | `https://integrate.api.nvidia.com/v1` | NIM-hosted Llama, Mistral, DeepSeek, etc. Free tier with rate limits. |
 | DeepSeek | `https://api.deepseek.com/v1` | Cheap, strong on code. |
 | GLM (ZhipuAI) | `https://open.bigmodel.cn/api/paas/v4` | GLM family. |
@@ -117,6 +119,7 @@ Agents are pulled from the bundled ECC harness. Each runs against an empty tool 
 | `/mode <name>` | Switch mode. |
 | `/model [name]` | Show or switch model. |
 | `/openrouter-free` | Switch OpenRouter back to the free model router. |
+| `/openai-login status\|smoke` | Check Codex OAuth status or run an OAuth stream smoke test. |
 | `/palette <id>`, `/palettes` | Switch among 12 Coolors trending color schemes. |
 | `/perm ask\|auto\|yolo` | Change permission mode. |
 | `/sandbox off\|standard\|strict` | OS sandbox level (macOS / Linux only). |

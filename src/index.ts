@@ -14,6 +14,7 @@ import {
   getOpenAICodexAuthStatus,
   runCodexLogin,
 } from './openai-oauth.js';
+import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from './openai-smoke.js';
 import { fallbackModelForKnownFlakyTurn, isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import type { VentipusConfig, Message } from './types.js';
@@ -741,6 +742,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/openrouter-free') + d('  — switch to OpenRouter free-tier router'));
       console.log(d('  ') + c('/provider') + d('         — show provider info'));
       console.log(d('  ') + c('/openai-login') + d('     — authenticate OpenAI Codex OAuth via Codex CLI'));
+      console.log(d('  ') + c('/openai-login smoke') + d(' — test OAuth request + streaming'));
       console.log(d('  ') + c('/keys [add|rm]') + d('    — multi-key rotation pool (e.g. several OpenRouter accounts)'));
       console.log(d('  ') + c('/route') + d('            — auto-route model based on next message'));
       console.log(h('\n  ── Modes ──'));
@@ -1247,6 +1249,9 @@ export function handleSlashCommand(
         if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
         if (status.error) console.log(chalk.yellow(`  ${status.error}`));
         return { handled: true };
+      }
+      if (sub === 'smoke' || sub === 'test' || sub === 'doctor') {
+        return { handled: true, injectPrompt: '__OPENAI_OAUTH_SMOKE__' };
       }
 
       const wasCodexOAuth = config.openaiAuth?.type === 'codex_oauth' ||
@@ -3160,6 +3165,19 @@ async function main(): Promise<void> {
     completer: (line: string): [string[], string] => completeSlashCommandNames(line, slashCommandNames),
   });
 
+  if (process.env.VENTIPUS_OPENAI_OAUTH_SMOKE === '1') {
+    const envConfig = loadConfigFromEnv();
+    const baseConfig = envConfig ?? loadConfig();
+    const config = applyRuntimeConfigOverrides(baseConfig);
+    const result = await runOpenAICodexSmokeTest(config, {
+      model: process.env.VENTIPUS_MODEL_OVERRIDE || process.env.VENTIPUS_MODEL,
+    });
+    console.log(formatOpenAICodexSmokeResult(result));
+    try { rl.close(); } catch { /* noop */ }
+    process.exit(result.ok ? 0 : 1);
+    return;
+  }
+
   // Initialize subsystems
   initHooksDir();
 
@@ -4346,6 +4364,10 @@ async function main(): Promise<void> {
           } else {
             console.log(chalk.dim('  Cancelled — model unchanged.'));
           }
+          continue;
+        } else if (result.injectPrompt === '__OPENAI_OAUTH_SMOKE__') {
+          const smoke = await runOpenAICodexSmokeTest(config);
+          console.log(formatOpenAICodexSmokeResult(smoke));
           continue;
         } else if (result.injectPrompt.startsWith('__SWARM__')) {
           // Swarm dispatch: __SWARM__<agentsCsv>|||<task>. Same sentinel
