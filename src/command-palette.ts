@@ -69,6 +69,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/tdd', description: 'Test-driven workflow (RED → GREEN → REFACTOR)', category: 'Code Quality' },
   { command: '/security-review', description: 'Security-focused audit', category: 'Code Quality' },
   { command: '/audit', description: 'Local-only project health check', category: 'Code Quality' },
+  { command: '/doctor', description: 'Install/config/benchmark readiness check', category: 'Code Quality' },
   { command: '/verify', description: 'Run tests, fix failures, repeat until green', category: 'Code Quality' },
   { command: '/build-fix', description: 'Auto-detect language + fix build errors', category: 'Code Quality' },
   { command: '/test-coverage', description: 'Analyze coverage, suggest missing tests', category: 'Code Quality' },

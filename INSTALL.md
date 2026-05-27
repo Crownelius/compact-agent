@@ -14,10 +14,11 @@ Ventipus at any OpenAI-compatible API.
 
 ```bash
 npm install -g ventipus
+ventipus --doctor
 ventipus
 ```
 
-First run launches the setup wizard.
+`ventipus --doctor` checks the install, registry metadata, config, MemPalace, research credentials, and benchmark adapters without printing token values. First run launches the setup wizard.
 
 Inside the REPL, type `/walkthrough` for an agent-led tour, `/help` for a
 quick command list, or see [COMMANDS.md](COMMANDS.md) for a complete
@@ -42,6 +43,7 @@ Verify:
 
 ```bash
 ventipus --help     # show help
+ventipus --doctor   # install/config readiness check
 ventipus            # launch the REPL
 ```
 
@@ -138,6 +140,7 @@ You should see the splash, banner, and a `❯ ` prompt. Then:
 ❯ /walkthrough          # agent-led tour
 ❯ /skills               # shows the 33 bundled ECC skills
 ❯ /audit                # local-only project audit
+❯ /doctor               # install/config/benchmark readiness
 ❯ /exit
 ```
 

@@ -97,6 +97,7 @@ function printCliHelp() {
 
 Usage:
   ventipus [options]
+  ventipus doctor [--json] [--no-registry]
   ventipus --prompt "fix the failing test" [options]
   ventipus --prompt-file task.txt [options]
 
@@ -119,6 +120,9 @@ Options:
   --temperature <n>                  Override model temperature.
   --output-format <text|json>        Set non-interactive output format.
   --benchmark-trace-dir <path>       Write benchmark trace artifacts.
+  --doctor                           Run install/config/benchmark readiness checks.
+  --doctor-json                      Run readiness checks and print JSON.
+  --doctor-no-registry               Skip the npm registry check in doctor mode.
   --debug[=<off|info|debug|trace>]   Enable wrapper debug logging.
 
 Packaged paths:
@@ -140,6 +144,34 @@ Packaged paths:
     const pkg = __require('../package.json');
     process.stdout.write(`${pkg.version}\n`);
     process.exit(0);
+  }
+})();
+
+(() => {
+  const argv = process.argv;
+  const wantsDoctor = argv.slice(2).some((a) => a === 'doctor' || a === '--doctor' || a === '--doctor-json');
+  if (!wantsDoctor) return;
+
+  process.env.VENTIPUS_DOCTOR = '1';
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === 'doctor' || a === '--doctor') {
+      argv.splice(i, 1);
+      i--;
+      continue;
+    }
+    if (a === '--doctor-json' || a === '--json') {
+      process.env.VENTIPUS_DOCTOR_JSON = '1';
+      argv.splice(i, 1);
+      i--;
+      continue;
+    }
+    if (a === '--doctor-no-registry' || a === '--no-registry') {
+      process.env.VENTIPUS_DOCTOR_REGISTRY = '0';
+      argv.splice(i, 1);
+      i--;
+      continue;
+    }
   }
 })();
 

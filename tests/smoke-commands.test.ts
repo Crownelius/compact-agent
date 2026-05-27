@@ -96,6 +96,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/hook-profile', 'local'],
     // Audit + detection
     ['/audit', 'local'],
+    ['/doctor no-registry', 'local'],
     ['/detect', 'local'],
     // Planning & docs
     ['/checkpoints', 'local'],

@@ -37,6 +37,7 @@ import {
   buildPlanPrompt, buildE2EPrompt, buildBuildFixPrompt, buildEvalPrompt, buildUpdateDocsPrompt,
   buildBenchmarkPrompt, splitBenchmarkArgs,
 } from './evaluation.js';
+import { buildDoctorReport, formatDoctorReport, runDoctorCli } from './doctor.js';
 import { printRules } from './rules.js';
 import { buildOrchestrationPrompt, runParallel, mergeResults, printOrchestrationStatus, type SubAgent } from './orchestration.js';
 import { printBanner as printThemedBanner, theme, sym, formatDuration, installScreenReaderDispatch, uninstallScreenReaderDispatch, setPalette, getPaletteId, listPalettes, resolvePaletteId, PALETTES, expandLastThinking } from './theme.js';
@@ -595,6 +596,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/tdd <desc>') + d('       — test-driven development'));
       console.log(d('  ') + c('/security-review') + d('  — security audit'));
       console.log(d('  ') + c('/audit') + d('            — harness audit (score project health)'));
+      console.log(d('  ') + c('/doctor') + d('           — install/config/benchmark readiness check'));
       console.log(d('  ') + c('/verify [cmd]') + d('     — run tests, fix failures, repeat until green'));
       console.log(d('  ') + c('/build-fix') + d('        — auto-detect language & fix build errors'));
       console.log(d('  ') + c('/test-coverage') + d('    — analyze test coverage, suggest tests'));
@@ -1400,6 +1402,14 @@ export function handleSlashCommand(
     case '/audit': {
       const report = runAudit(process.cwd());
       printAuditReport(report);
+      return { handled: true };
+    }
+
+    case '/doctor': {
+      const wantsJson = /\bjson\b/i.test(args);
+      const includeRegistry = !/\b(?:no-registry|offline)\b/i.test(args);
+      const report = buildDoctorReport({ includeRegistry });
+      console.log(wantsJson ? JSON.stringify(report, null, 2) : formatDoctorReport(report));
       return { handled: true };
     }
 
@@ -2955,6 +2965,15 @@ export function resolveNonInteractivePrompt(
 }
 
 async function main(): Promise<void> {
+  if (process.env.VENTIPUS_DOCTOR === '1') {
+    const report = runDoctorCli({
+      json: process.env.VENTIPUS_DOCTOR_JSON === '1',
+      includeRegistry: process.env.VENTIPUS_DOCTOR_REGISTRY !== '0',
+    });
+    process.exit(report.hasFailures ? 1 : 0);
+    return;
+  }
+
   // Slash-command completer: unique-prefix fallback only. The bounded
   // inline selector is the discovery surface; this completer must never
   // return the full command catalog because readline prints multi-match

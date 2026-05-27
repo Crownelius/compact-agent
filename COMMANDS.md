@@ -16,9 +16,11 @@ After `npm install -g ventipus`, you have one binary:
 
 ```bash
 ventipus
+ventipus --doctor
+ventipus doctor --json --no-registry
 ```
 
-That's the whole shell surface. It launches the REPL. There are no subcommands at the OS level — everything else happens via slash commands inside the REPL.
+`ventipus` launches the REPL. `ventipus --doctor` runs install/config/benchmark readiness checks and exits before setup; `--doctor-json` or `doctor --json` prints machine-readable output, and `--doctor-no-registry` or `--no-registry` skips the npm registry lookup.
 
 First run also fires the setup wizard (provider, API key, model, permission mode). See [INSTALL.md](INSTALL.md) for setup details.
 
@@ -107,6 +109,7 @@ These trigger an LLM workflow with an injected prompt. `/tdd`, `/review`, `/secu
 | `/tdd <feature>` | TDD workflow — agent writes tests first, then implementation. |
 | `/security-review` | Security audit: SQLi, XSS, secrets, auth bypasses, etc. |
 | `/audit` | Local-only project health check (git, tests, linter, secrets). No data leaves your machine. |
+| `/doctor [json\|no-registry\|offline]` | Install/config/benchmark readiness check. JSON mode prints machine-readable output; no token values are printed. |
 | `/verify [cmd]` | Run tests, fix failures, repeat until green. |
 | `/build-fix` | Auto-detect language/build tool and fix build errors. |
 | `/test-coverage` | Analyze coverage and suggest missing tests. |
@@ -482,6 +485,7 @@ Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool n
 ```
 ❯ /detect            # know what build tools to expect
 ❯ /audit             # local-only health check
+❯ /doctor            # install/config/benchmark readiness check
 ❯ /auto-review       # AI review of the most recent changes
 ```
 

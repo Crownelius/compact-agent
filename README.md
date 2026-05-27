@@ -8,10 +8,11 @@ A terminal AI coding CLI for any OpenAI-compatible API.
 
 ```bash
 npm install -g ventipus
+ventipus --doctor
 ventipus
 ```
 
-First run prompts you for a provider, key, model, and permission mode. After that, `ventipus` from any directory drops you into a REPL with a persistent bottom-anchored input box.
+`ventipus --doctor` checks the global install, npm registry metadata, provider config, MemPalace, research credentials, and benchmark adapter packaging without printing token values. First run prompts you for a provider, key, model, and permission mode. After that, `ventipus` from any directory drops you into a REPL with a persistent bottom-anchored input box.
 
 ---
 
@@ -126,6 +127,7 @@ Agents are pulled from the bundled ECC harness. Each runs against an empty tool 
 | `/tdd <feature>` | TDD workflow — failing test first. |
 | `/review [target]` | Severity-rated code review. |
 | `/audit` | Local project health check. Nothing leaves your machine. |
+| `/doctor` | Install/config/benchmark readiness check. Tokens are never printed. |
 | `/orchestrate <task>` | Decompose, run sub-agents in parallel. |
 | `/skills`, `/ecc-guide`, `/skill-show <name>` | Browse the bundled skill library. |
 | `/learn`, `/evolve`, `/prune` | Cross-session learning system. |

@@ -45,6 +45,7 @@ describe('Exgentic adapter packaging', () => {
     expect(help).toContain('Usage:');
     expect(help).toContain('ventipus [options]');
     expect(help).toContain('--prompt <text>');
+    expect(help).toContain('--doctor');
     expect(help).not.toContain('First-time Setup');
 
     const version = execFileSync('node', ['bin/ventipus.js', '--version'], {
