@@ -73,7 +73,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/verify', description: 'Run tests, fix failures, repeat until green', category: 'Code Quality' },
   { command: '/build-fix', description: 'Auto-detect language + fix build errors', category: 'Code Quality' },
   { command: '/test-coverage', description: 'Analyze coverage, suggest missing tests', category: 'Code Quality' },
-  { command: '/benchmark', description: 'Benchmark-grade SWE/terminal/CI/WildClaw/ARC/spec run', category: 'Code Quality' },
+  { command: '/benchmark', description: 'Benchmark-grade SWE/terminal/CI/long-horizon run', category: 'Code Quality' },
   { command: '/refactor', description: 'Dead code detection + cleanup', category: 'Code Quality' },
   { command: '/hunt-silent', description: 'Silent-failure-hunter agent (empty catches, log-and-forget)', category: 'Code Quality' },
   { command: '/explore', description: 'Code-explorer agent (codebase reconnaissance pass)', category: 'Code Quality' },

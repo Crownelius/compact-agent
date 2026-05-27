@@ -91,6 +91,9 @@ function profileForBenchmark(benchmark) {
   if (slug === 'arc' || slug === 'arcagi' || slug === 'arcagi3' || slug === 'arcprize') return 'arc-agi';
   if (slug === 'spec' || slug === 'specbench' || slug === 'speccompliance') return 'specbench';
   if (slug === 'rhb' || slug === 'rewardhack' || slug === 'rewardhacking' || slug === 'rewardhackingagents') return 'reward-hacking';
+  if (slug === 'roadmap' || slug === 'roadmapbench' || slug === 'longhorizon' || slug === 'versionupgrade') return 'roadmapbench';
+  if (slug === 'saas' || slug === 'saasbench' || slug === 'enterprise') return 'saasbench';
+  if (slug === 'mobile' || slug === 'swebenchmobile' || slug === 'swemobile' || slug === 'ios') return 'swe-bench-mobile';
   return 'generic';
 }
 
@@ -231,6 +234,9 @@ function compactTraceSummary(traceSummary) {
       rewardHackRisk: quality.rewardHackRisk,
       rewardHackSignalCount: quality.rewardHackSignalCount,
       rewardHackSignals: Array.isArray(quality.rewardHackSignals) ? quality.rewardHackSignals.slice(0, 20) : [],
+      longHorizonRisk: quality.longHorizonRisk,
+      longHorizonSignalCount: quality.longHorizonSignalCount,
+      longHorizonSignals: Array.isArray(quality.longHorizonSignals) ? quality.longHorizonSignals.slice(0, 20) : [],
       noEditContractDetected: quality.noEditContractDetected,
       editAfterNoEditContract: quality.editAfterNoEditContract,
       lastEditSeq: quality.lastEditSeq,
@@ -344,6 +350,7 @@ function compactExperienceCard(card) {
     taskAlignment: compactRiskSignalBlock(card.taskAlignment),
     specCompliance: compactRiskSignalBlock(card.specCompliance),
     rewardHack: compactRiskSignalBlock(card.rewardHack),
+    longHorizon: compactRiskSignalBlock(card.longHorizon),
     environmentReconstruction: compactEnvironmentReconstruction(card.environmentReconstruction),
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     decisionObservability: compactDecisionObservability(card.decisionObservability),

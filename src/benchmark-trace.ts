@@ -54,6 +54,7 @@ export interface BenchmarkExperienceCard {
   taskAlignment: BenchmarkExperienceTaskAlignment;
   specCompliance: BenchmarkExperienceSpecCompliance;
   rewardHack: BenchmarkExperienceRewardHack;
+  longHorizon: BenchmarkExperienceLongHorizon;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   decisionObservability: BenchmarkExperienceDecisionObservability;
@@ -98,6 +99,12 @@ export interface BenchmarkExperienceRewardHack {
   risk: boolean;
   signalCount: number;
   signals: BenchmarkRewardHackSignal[];
+}
+
+export interface BenchmarkExperienceLongHorizon {
+  risk: boolean;
+  signalCount: number;
+  signals: BenchmarkLongHorizonSignal[];
 }
 
 export interface BenchmarkExperienceDecisionObservability {
@@ -500,6 +507,9 @@ export interface BenchmarkTrajectoryQuality {
   rewardHackRisk: boolean;
   rewardHackSignalCount: number;
   rewardHackSignals: BenchmarkRewardHackSignal[];
+  longHorizonRisk: boolean;
+  longHorizonSignalCount: number;
+  longHorizonSignals: BenchmarkLongHorizonSignal[];
   noEditContractDetected: boolean;
   editAfterNoEditContract: boolean;
   editTargetCount: number;
@@ -645,6 +655,19 @@ export interface BenchmarkRewardHackSignal {
   tool: string;
   target: string;
   reason: 'verifier_tamper' | 'oracle_or_solution_probe' | 'result_file_edit' | 'shortcut_completion_marker' | 'bypass_command';
+  evidence: string;
+}
+
+export interface BenchmarkLongHorizonSignal {
+  seq: number;
+  tool: string;
+  target: string;
+  reason:
+    | 'missing_roadmap_checklist'
+    | 'incomplete_roadmap_after_validation'
+    | 'missing_broad_integration_validation'
+    | 'missing_mobile_platform_validation'
+    | 'missing_saas_integration_validation';
   evidence: string;
 }
 
@@ -1055,6 +1078,7 @@ export function buildBenchmarkExperienceCard(input: {
     taskAlignment: buildBenchmarkExperienceTaskAlignment(input.trajectoryQuality),
     specCompliance: buildBenchmarkExperienceSpecCompliance(input.trajectoryQuality),
     rewardHack: buildBenchmarkExperienceRewardHack(input.trajectoryQuality),
+    longHorizon: buildBenchmarkExperienceLongHorizon(input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
@@ -1385,6 +1409,28 @@ function compactBenchmarkRewardHackSignal(
   };
 }
 
+function buildBenchmarkExperienceLongHorizon(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceLongHorizon {
+  return {
+    risk: quality.longHorizonRisk,
+    signalCount: quality.longHorizonSignalCount,
+    signals: quality.longHorizonSignals.map(compactBenchmarkLongHorizonSignal).slice(0, 12),
+  };
+}
+
+function compactBenchmarkLongHorizonSignal(
+  signal: BenchmarkLongHorizonSignal,
+): BenchmarkLongHorizonSignal {
+  return {
+    seq: signal.seq,
+    tool: signal.tool,
+    target: truncate(signal.target, 160),
+    reason: signal.reason,
+    evidence: truncate(signal.evidence, 220),
+  };
+}
+
 function buildBenchmarkExperienceReplayCheckpoints(events: BenchmarkTraceEvent[]): BenchmarkExperienceReplayCheckpoint[] {
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
   const firstEditSeq = firstSeq(sorted, isEditEvent);
@@ -1701,6 +1747,9 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\barc[-_ ]?agi(?:[-_ ]?3)?\b|\barc[-_ ]?prize\b|\bkaggle\s+arc\b/i.test(text)) return 'arcagi3';
   if (/\bspec[-_ ]?bench\b|\bspec[-_ ]?compliance\b/i.test(text)) return 'specbench';
   if (/\breward[-_ ]?hacking(?:[-_ ]?benchmark|[-_ ]?agents)?\b|\brhb\b/i.test(text)) return 'rewardhackingbenchmark';
+  if (/\broadmap[-_ ]?bench\b|\blong[-_ ]?horizon\b|\bversion[-_ ]?upgrade\b/i.test(text)) return 'roadmapbench';
+  if (/\bsaas[-_ ]?bench\b|\benterprise\s+saas\b/i.test(text)) return 'saasbench';
+  if (/\bswe[-_ ]?bench[-_ ]?mobile\b|\bmobile\s+bench\b|\bxcode\b|\bswift\b/i.test(text)) return 'swebenchmobile';
   if (/\bswe[-_ ]?chain\b/i.test(text)) return 'swechain';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b|\bswe[-_ ]?ci\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
@@ -1725,6 +1774,9 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'arc' || cleaned === 'arcagi' || cleaned === 'arcagi3' || cleaned === 'arcprize') return 'arcagi3';
   if (cleaned === 'spec' || cleaned === 'specbench' || cleaned === 'speccompliance') return 'specbench';
   if (cleaned === 'rhb' || cleaned === 'rewardhack' || cleaned === 'rewardhacking' || cleaned === 'rewardhackingagents' || cleaned === 'rewardhackingbenchmark') return 'rewardhackingbenchmark';
+  if (cleaned === 'roadmap' || cleaned === 'roadmapbench' || cleaned === 'longhorizon' || cleaned === 'versionupgrade') return 'roadmapbench';
+  if (cleaned === 'saas' || cleaned === 'saasbench' || cleaned === 'enterprise') return 'saasbench';
+  if (cleaned === 'mobile' || cleaned === 'swebenchmobile' || cleaned === 'swemobile' || cleaned === 'ios') return 'swebenchmobile';
   if (cleaned === 'taubench' || cleaned === 'tau' || cleaned === 'tau2') return 'tau2';
   if (cleaned === 'browsecomp' || cleaned === 'browsecompplus') return 'browsecompplus';
   return cleaned || 'ventipus_agent_benchmark';
@@ -1741,8 +1793,11 @@ function formatBenchmarkName(slug: string): string {
     arcagi3: 'ARC-AGI-3',
     cirepairbench: 'CI-Repair-Bench',
     rewardhackingbenchmark: 'Reward Hacking Benchmark',
+    roadmapbench: 'RoadmapBench',
+    saasbench: 'SaaSBench',
     specbench: 'SpecBench',
     swebench: 'SWE-bench',
+    swebenchmobile: 'SWE-Bench Mobile',
     swechain: 'SWE-Chain',
     swecontext: 'SWE-context',
     tau2: 'Tau Bench 2',
@@ -2098,6 +2153,20 @@ export function buildBenchmarkTrajectoryQuality(
     testHarnessEditEvents,
     leakageRiskEvents,
   });
+  const longHorizonSignals = buildBenchmarkLongHorizonSignals(events, {
+    messages,
+    taskContractSignalCount,
+    taskContractChecklistAfterContext,
+    taskContractChecklistComplete,
+    todoIncompleteCount: latestTodoState?.incompleteCount ?? 0,
+    firstTaskContractSeq,
+    firstEditSeq,
+    passingValidationAfterFirstEdit,
+    passingBroadValidationAfterFirstEdit,
+    passingCiValidationAfterFirstEdit,
+    finalEditVerificationCount,
+    finalEditPassingVerificationCount,
+  });
   const postEditDiffReview = firstEditSeq == null
     ? null
     : firstPostEditDiffReviewSeq != null;
@@ -2390,6 +2459,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`spec-compliance risk: visible validation may not prove the natural-language specification or held-out behavior: ${examples}. Complete the spec checklist and add a broader/generalization check before finalizing.`);
   }
+  if (longHorizonSignals.length > 0) {
+    const examples = longHorizonSignals
+      .slice(0, 3)
+      .map((signal) => `${signal.reason}#${signal.seq} ${signal.target}`)
+      .join('; ');
+    warnings.push(`long-horizon coverage risk: roadmap/SaaS/mobile completion may be under-evidenced: ${examples}. Finish the milestone checklist and run broad integration/platform validation before finalizing.`);
+  }
   if (editTargetEvidence.unlocalized.length > 0 && localizationBeforeFirstEdit !== false && !editAfterNoEditContract) {
     const targets = editTargetEvidence.unlocalized
       .slice(0, 3)
@@ -2532,6 +2608,7 @@ export function buildBenchmarkTrajectoryQuality(
     taskAlignmentSignals,
     specComplianceSignals,
     rewardHackSignals,
+    longHorizonSignals,
     noEditContractDetected,
     editAfterNoEditContract,
     unlocalizedEditTargetEvents: editTargetEvidence.unlocalized,
@@ -2674,6 +2751,9 @@ export function buildBenchmarkTrajectoryQuality(
     rewardHackRisk: rewardHackSignals.length > 0,
     rewardHackSignalCount: rewardHackSignals.length,
     rewardHackSignals,
+    longHorizonRisk: longHorizonSignals.length > 0,
+    longHorizonSignalCount: longHorizonSignals.length,
+    longHorizonSignals,
     noEditContractDetected,
     editAfterNoEditContract,
     editTargetCount: editTargetEvidence.total,
@@ -2751,7 +2831,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -2877,6 +2957,7 @@ interface BenchmarkProcessDefectInput {
   taskAlignmentSignals: BenchmarkTaskAlignmentSignal[];
   specComplianceSignals: BenchmarkSpecComplianceSignal[];
   rewardHackSignals: BenchmarkRewardHackSignal[];
+  longHorizonSignals: BenchmarkLongHorizonSignal[];
   noEditContractDetected: boolean;
   editAfterNoEditContract: boolean;
   unlocalizedEditTargetEvents: BenchmarkUnlocalizedEditEvent[];
@@ -3266,6 +3347,24 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       input.specComplianceSignals[0]?.seq ?? null,
       'The trajectory may have passed visible validation without proving the full natural-language specification or held-out behavior.',
       input.specComplianceSignals
+        .slice(0, 5)
+        .map((signal) => `${signal.reason}#${signal.seq}:${signal.target}`)
+        .join('; '),
+    );
+  }
+  if (input.longHorizonSignals.length > 0) {
+    const hasIncomplete = input.longHorizonSignals.some((signal) => signal.reason === 'incomplete_roadmap_after_validation');
+    const hasMissingValidation = input.longHorizonSignals.some((signal) =>
+      signal.reason === 'missing_broad_integration_validation'
+      || signal.reason === 'missing_mobile_platform_validation'
+      || signal.reason === 'missing_saas_integration_validation');
+    add(
+      'long_horizon_coverage_risk',
+      hasMissingValidation ? 'validation' : 'requirement_fidelity',
+      hasIncomplete || hasMissingValidation ? 'high' : 'medium',
+      input.longHorizonSignals[0]?.seq ?? null,
+      'The trajectory may be under-evidenced for a long-horizon roadmap, SaaS, or mobile task.',
+      input.longHorizonSignals
         .slice(0, 5)
         .map((signal) => `${signal.reason}#${signal.seq}:${signal.target}`)
         .join('; '),
@@ -4900,6 +4999,116 @@ export function buildBenchmarkSpecComplianceSignals(
   return dedupeBenchmarkSignals(signals).slice(0, 20);
 }
 
+export function buildBenchmarkLongHorizonSignals(
+  events: BenchmarkTraceEvent[],
+  options: {
+    messages?: Message[];
+    taskContractSignalCount?: number;
+    taskContractChecklistAfterContext?: boolean | null;
+    taskContractChecklistComplete?: boolean | null;
+    todoIncompleteCount?: number;
+    firstTaskContractSeq?: number | null;
+    firstEditSeq?: number | null;
+    passingValidationAfterFirstEdit?: boolean | null;
+    passingBroadValidationAfterFirstEdit?: boolean | null;
+    passingCiValidationAfterFirstEdit?: boolean | null;
+    finalEditVerificationCount?: number;
+    finalEditPassingVerificationCount?: number;
+  } = {},
+): BenchmarkLongHorizonSignal[] {
+  const context = getLongHorizonContext(events, options.messages ?? []);
+  if (!context.detected) return [];
+
+  const signals: BenchmarkLongHorizonSignal[] = [];
+  const firstEditSeq = options.firstEditSeq ?? firstSeq(events, isEditEvent);
+  const latestTodoState = buildBenchmarkLatestTodoState(events);
+  const taskContractSignalCount = options.taskContractSignalCount ?? countTaskContractSignals(events);
+  const taskContractChecklistAfterContext = options.taskContractChecklistAfterContext
+    ?? (taskContractSignalCount === 0 ? null : firstSeq(events, isTodoChecklistEvent) != null);
+  const taskContractChecklistComplete = options.taskContractChecklistComplete
+    ?? (taskContractSignalCount === 0 ? null : latestTodoState?.incompleteCount === 0);
+  const todoIncompleteCount = options.todoIncompleteCount ?? latestTodoState?.incompleteCount ?? 0;
+  const firstPassingPostEdit = firstEditSeq == null
+    ? events.find((event) => event.verification && event.status === 'ok')
+    : events.find((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq);
+  const passingValidationAfterFirstEdit = options.passingValidationAfterFirstEdit
+    ?? (firstEditSeq == null ? null : events.some((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq));
+  const passingBroadValidationAfterFirstEdit = options.passingBroadValidationAfterFirstEdit
+    ?? (firstEditSeq == null ? null : events.some((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq && isBroadVerificationEvent(event)));
+  const passingCiValidationAfterFirstEdit = options.passingCiValidationAfterFirstEdit ?? null;
+  const finalEditPassingVerificationCount = options.finalEditPassingVerificationCount
+    ?? (firstEditSeq == null ? 0 : events.filter((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq).length);
+  const firstContextSeq = options.firstTaskContractSeq
+    ?? firstSeq(events, (event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    ?? 0;
+
+  if (firstEditSeq != null && taskContractChecklistAfterContext !== true) {
+    signals.push({
+      seq: firstEditSeq,
+      tool: 'todo_write',
+      target: 'roadmap milestone checklist',
+      reason: 'missing_roadmap_checklist',
+      evidence: `long-horizon context detected but no post-context milestone checklist was recorded before edit #${firstEditSeq}; first_context_seq=${firstContextSeq}`,
+    });
+  }
+
+  if (firstPassingPostEdit
+    && taskContractChecklistComplete !== true
+    && todoIncompleteCount > 0) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'incomplete_roadmap_after_validation',
+      evidence: `visible validation passed while ${todoIncompleteCount} roadmap/milestone checklist item(s) remained incomplete`,
+    });
+  }
+
+  const hasPassingLongHorizonValidation = firstEditSeq == null
+    ? false
+    : events.some((event) => event.seq > firstEditSeq && event.status === 'ok' && isLongHorizonValidationEvent(event));
+  if (firstPassingPostEdit
+    && passingValidationAfterFirstEdit === true
+    && passingBroadValidationAfterFirstEdit !== true
+    && passingCiValidationAfterFirstEdit !== true
+    && finalEditPassingVerificationCount < 2
+    && !hasPassingLongHorizonValidation) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'missing_broad_integration_validation',
+      evidence: 'long-horizon task has a passing visible verifier but no broad, CI, repeated, integration, migration, or platform validation after editing',
+    });
+  }
+
+  if (context.mobile
+    && firstPassingPostEdit
+    && !events.some((event) => event.status === 'ok' && isMobilePlatformValidationEvent(event))) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'missing_mobile_platform_validation',
+      evidence: 'mobile/SWE-Bench Mobile context detected, but no passing Xcode/Swift/Fastlane/Gradle/emulator-style platform validation was recorded',
+    });
+  }
+
+  if (context.saas
+    && firstPassingPostEdit
+    && !events.some((event) => event.status === 'ok' && isSaasIntegrationValidationEvent(event))) {
+    signals.push({
+      seq: firstPassingPostEdit.seq,
+      tool: firstPassingPostEdit.tool,
+      target: truncate(redactTraceText(verifierCommandForEvent(firstPassingPostEdit) || firstPassingPostEdit.target), 240),
+      reason: 'missing_saas_integration_validation',
+      evidence: 'SaaSBench/enterprise SaaS context detected, but no passing e2e/integration/API/migration verifier was recorded',
+    });
+  }
+
+  return dedupeBenchmarkSignals(signals).slice(0, 20);
+}
+
 export function buildBenchmarkRewardHackSignals(
   events: BenchmarkTraceEvent[],
   options: {
@@ -4995,6 +5204,40 @@ function hasSpecComplianceContext(events: BenchmarkTraceEvent[], messages: Messa
     .join('\n');
   const text = `${messageTextBlock}\n${eventTextBlock}`;
   return /\b(?:specbench|spec[-_\s]?bench|reward\s+hacking\s+benchmark|\brhb\b|reward[-_\s]?hacking[-_\s]?agents|visible\s+(?:validation\s+)?suite|visible\s+tests?|held[-_\s]?out|holdout|hidden\s+tests?|natural[-_\s]?language\s+specification|specification[-_\s]?compliance|test[-_\s]?suite\s+gaming)\b/i.test(text);
+}
+
+function getLongHorizonContext(
+  events: BenchmarkTraceEvent[],
+  messages: Message[] = [],
+): { detected: boolean; mobile: boolean; saas: boolean } {
+  const messageTextBlock = messages.map(messageText).join('\n');
+  const eventTextBlock = events
+    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    .map((event) => `${event.target}\n${event.inputPreview}\n${event.outputPreview}`)
+    .join('\n');
+  const text = `${messageTextBlock}\n${eventTextBlock}`;
+  const mobile = /\b(?:swe[-_\s]?bench[-_\s]?mobile|mobile\s+bench|ios|iphone|ipad|xcode|swift|objective[-_\s]?c|figma|prd|simulator|emulator|android)\b/i.test(text);
+  const saas = /\b(?:saasbench|saas[-_\s]?bench|enterprise\s+saas|multi[-_\s]?component\s+(?:saas|app|system)|validation\s+nodes?|tenant|tenancy|migrations?|cross[-_\s]?service|e2e\s+workflow)\b/i.test(text);
+  const roadmap = /\b(?:roadmapbench|roadmap[-_\s]?bench|long[-_\s]?horizon|version[-_\s]?upgrade|multi[-_\s]?target|roadmap\s+(?:task|instruction|milestone)|target\s+version|source\s+version|release[-_\s]?level|acceptance\s+nodes?)\b/i.test(text);
+  return { detected: roadmap || saas || mobile, mobile, saas };
+}
+
+function isLongHorizonValidationEvent(event: BenchmarkTraceEvent): boolean {
+  return isMobilePlatformValidationEvent(event)
+    || isSaasIntegrationValidationEvent(event)
+    || isBroadVerificationEvent(event);
+}
+
+function isMobilePlatformValidationEvent(event: BenchmarkTraceEvent): boolean {
+  if (!event.verification || event.tool !== 'bash') return false;
+  const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
+  return /\b(?:xcodebuild|swift\s+test|fastlane|xcpretty|simctl|xcrun|adb|maestro|detox|flutter\s+test|react[-_\s]?native\s+test|(?:gradle|gradlew|\.\/gradlew)\s+(?:test|assemble|connected|connectedAndroidTest|testDebugUnitTest))\b/i.test(command);
+}
+
+function isSaasIntegrationValidationEvent(event: BenchmarkTraceEvent): boolean {
+  if (!event.verification || event.tool !== 'bash') return false;
+  const command = verifierCommandForEvent(event).replace(/\s+/g, ' ').trim();
+  return /\b(?:e2e|integration|api[-_\s]?test|newman|playwright|cypress|selenium|docker\s+compose[\s\S]{0,80}\btest|prisma\s+migrate|sequelize\s+db:migrate|alembic\s+(?:upgrade|heads|current)|rails\s+(?:test|db:migrate)|django-admin\s+test|pytest[\s\S]{0,80}\bintegration|npm\s+(?:run\s+)?(?:test:e2e|e2e|test:integration|integration|test:api|api-test)|pnpm\s+(?:run\s+)?(?:test:e2e|e2e|test:integration|integration|test:api|api-test)|yarn\s+(?:run\s+)?(?:test:e2e|e2e|test:integration|integration|test:api|api-test))\b/i.test(command);
 }
 
 function detectTestCaseMemorizationRisk(event: BenchmarkTraceEvent): string | null {
@@ -5300,6 +5543,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('no-edit/no-op task contract')
     || warning.includes('task-alignment risk')
     || warning.includes('spec-compliance risk')
+    || warning.includes('long-horizon coverage risk')
     || warning.includes('edited target(s) lacked prior file-level localization evidence')
     || warning.includes('low context utilization')
     || warning.includes('large edit surface')
@@ -5323,7 +5567,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones before claiming RoadmapBench/SaaSBench/mobile completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier for long-horizon SaaS/mobile/roadmap tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 

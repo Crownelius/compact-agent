@@ -262,6 +262,9 @@ export type BenchmarkProfile =
   | 'arc-agi'
   | 'specbench'
   | 'reward-hacking'
+  | 'roadmapbench'
+  | 'saasbench'
+  | 'swe-bench-mobile'
   | 'generic';
 
 const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
@@ -312,6 +315,20 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'reward-hacking': 'reward-hacking',
   rewardhackingagents: 'reward-hacking',
   'reward-hacking-agents': 'reward-hacking',
+  roadmap: 'roadmapbench',
+  roadmapbench: 'roadmapbench',
+  'roadmap-bench': 'roadmapbench',
+  longhorizon: 'roadmapbench',
+  'long-horizon': 'roadmapbench',
+  saas: 'saasbench',
+  saasbench: 'saasbench',
+  'saas-bench': 'saasbench',
+  enterprise: 'saasbench',
+  mobile: 'swe-bench-mobile',
+  swebenchmobile: 'swe-bench-mobile',
+  'swe-bench-mobile': 'swe-bench-mobile',
+  'swe-mobile': 'swe-bench-mobile',
+  ios: 'swe-bench-mobile',
   generic: 'generic',
 };
 
@@ -396,6 +413,27 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Preserve train/test or public/private boundaries and avoid reading oracle, hidden-label, held-out, gold, or answer-key artifacts.
 - Prefer environmental hardening: lock evaluator files when possible, make metric/reporting code read-only by convention, and document any mutable evaluation surfaces.
 - For chained tasks, carry integrity checks forward at each step instead of relying on a final scalar score.`;
+    case 'roadmapbench':
+      return `Profile: RoadmapBench style long-horizon version-upgrade task
+- Treat the task as a multi-target roadmap, not a single failing test. Build a milestone checklist from the source-version behavior, target-version behavior, migration notes, and acceptance nodes before editing.
+- Map each roadmap item to implementation files, tests, docs/config, and compatibility risks; keep partial progress explicit instead of collapsing it into a vague "done".
+- Prefer staged, reviewable patches with intermediate validation. For large changes, checkpoint the worktree and run narrow checks per milestone before the broad verifier.
+- After visible validation passes, run a broad integration/build/test command or a representative cross-feature check that covers interactions between changed targets.
+- Do not claim a version-upgrade task is complete while milestone checklist items remain pending, unverified, or incompatible with existing public APIs.`;
+    case 'saasbench':
+      return `Profile: SaaSBench style long-horizon enterprise SaaS engineering task
+- Treat the task as multi-component SaaS work: backend APIs, frontend flows, database/schema changes, auth/permissions, async jobs, and external-service boundaries may all be part of the contract.
+- Convert product requirements and validation nodes into a checklist, then map each item to concrete code paths and integration tests before editing.
+- Preserve tenant/user compatibility, migrations, feature flags, and data integrity. Avoid breaking existing routes, schemas, permissions, or workflows unless explicitly required.
+- Validate narrow units first, then run an integration/e2e/API/migration verifier when feasible so cross-component behavior is tested, not just isolated code.
+- Do not treat a UI-only or API-only pass as sufficient when the task describes an end-to-end SaaS workflow.`;
+    case 'swe-bench-mobile':
+      return `Profile: SWE-Bench Mobile style industrial mobile development task
+- Treat PRDs, screenshots/Figma references, platform conventions, and the iOS/Android build/test harness as part of the task contract.
+- Build a checklist that separates UI behavior, navigation/state, native platform constraints, accessibility, persistence/networking, and tests before editing.
+- Prefer defensive programming around lifecycle, nil/nullability, permissions, concurrency, feature flags, and backwards compatibility; avoid broad rewrites of mixed native code.
+- Validate with the narrowest relevant mobile test first, then run a platform-level build/test command such as xcodebuild, swift test, fastlane, Gradle, or the supplied emulator/simulator harness when feasible.
+- Do not claim completion from generic unit tests alone when platform build, simulator, or design-contract evidence is available.`;
     case 'generic':
       return `Profile: generic benchmark task
 - Identify the benchmark contract from local files and task text.
@@ -413,6 +451,9 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task mentions ARC Prize, ARC-AGI, Kaggle ARC, grid abstractions, or no-instructions turn-based environments, follow the ARC-AGI profile.
 - If the task mentions SpecBench, visible versus held-out validation, or long-horizon specification compliance, follow the SpecBench profile.
 - If the task mentions Reward Hacking Benchmark, RHB, evaluator tampering, train/test leakage, or shortcut opportunities, follow the Reward Hacking profile.
+- If the task mentions RoadmapBench, version-upgrade roadmaps, multi-target subtasks, or long-horizon repository development, follow the RoadmapBench profile.
+- If the task mentions SaaSBench, enterprise SaaS, validation nodes, multi-component app workflows, tenants, migrations, or cross-service integration, follow the SaaSBench profile.
+- If the task mentions SWE-Bench Mobile, iOS/mobile feature work, PRDs, Figma, Swift, Objective-C, Xcode, Android, or simulator/emulator validation, follow the SWE-Bench Mobile profile.
 - Otherwise follow the generic benchmark profile.`;
   }
 }
@@ -437,6 +478,7 @@ Use this workflow as the default benchmark strategy:
    - For risky or multi-file edits, inspect git state first and keep changes reviewable so failed paths can be reverted without losing unrelated user work.
    - Prefer one coherent root-cause patch over broad speculative rewrites.
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
+   - For long-horizon roadmap, SaaS, or mobile tasks, keep the checklist milestone-based so partially completed acceptance nodes stay visible.
 
 4. Validate like a verifier.
    - After each patch, run the narrowest relevant test again.
@@ -484,6 +526,7 @@ ${preflightSnapshot}
    - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
    - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
+   - For RoadmapBench/SaaSBench/SWE-Bench Mobile work, identify roadmap milestones, validation nodes, platform/integration verifiers, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
    - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
 
 2. Localize before editing.
@@ -513,6 +556,7 @@ ${preflightSnapshot}
    - For installs, model loads, training, builds, emulators, or broad test suites that can legitimately exceed the default shell timeout, call bash with \`timeoutMs\` (up to 1800000). Do not retry the exact same timed-out command without changing the timeout or strategy.
    - For services, servers, watchers, and daemons, call bash with \`background:true\`, then inspect the returned log path before assuming readiness.
    - Then run the broad verifier or build/test command available in the task.
+   - For roadmap/SaaS/mobile tasks, prefer at least one broad integration, platform, migration, e2e, or full build/test verifier after the final edit.
    - If a verifier fails, diagnose from output and iterate. Do not final-answer on unverified edits.
 
 6. Final response.

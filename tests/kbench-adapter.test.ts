@@ -42,6 +42,9 @@ describe('KBench adapter packaging', () => {
     expect(runner).toContain("'arc-agi'");
     expect(runner).toContain("'specbench'");
     expect(runner).toContain("'reward-hacking'");
+    expect(runner).toContain("'roadmapbench'");
+    expect(runner).toContain("'saasbench'");
+    expect(runner).toContain("'swe-bench-mobile'");
   });
 
   it('prints the packaged KBench adapter directory from the CLI wrapper', () => {

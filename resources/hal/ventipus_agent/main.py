@@ -137,9 +137,37 @@ def _is_usaco_task(task: dict[str, Any]) -> bool:
 
 
 def _profile_for_task(task: dict[str, Any]) -> str:
+    task_text = json.dumps(task, ensure_ascii=False).lower()
+    if (
+        "roadmapbench" in task_text
+        or "roadmap-bench" in task_text
+        or "long-horizon" in task_text
+        or "long horizon" in task_text
+        or "version upgrade" in task_text
+        or "multi-target" in task_text
+    ):
+        return "roadmapbench"
+    if (
+        "saasbench" in task_text
+        or "saas-bench" in task_text
+        or "enterprise saas" in task_text
+        or "validation nodes" in task_text
+        or "tenant" in task_text
+        or "migration" in task_text
+    ):
+        return "saasbench"
+    if (
+        "swe-bench mobile" in task_text
+        or "swebench mobile" in task_text
+        or "xcode" in task_text
+        or "swift" in task_text
+        or "objective-c" in task_text
+        or "figma" in task_text
+        or "simulator" in task_text
+    ):
+        return "swe-bench-mobile"
     if _is_patch_task(task):
         return "swe-bench"
-    task_text = json.dumps(task, ensure_ascii=False).lower()
     if "terminal-bench" in task_text or "terminalbench" in task_text:
         return "terminal-bench"
     if (

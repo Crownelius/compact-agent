@@ -117,7 +117,7 @@ These trigger an LLM workflow with an injected prompt. `/tdd`, `/review`, `/secu
 | `/refactor-clean` | Alias of `/refactor` — same dispatch. |
 | `/e2e <feature>` | Generate E2E tests (Playwright/Cypress/Puppeteer, auto-detected). |
 | `/eval <criteria> [target]` | Evaluate the project against custom criteria. |
-| `/benchmark [profile] <task>` | Benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `wildclaw`, `arc-agi`, `specbench`, `reward-hacking`, `generic`. Aliases: `/bench`, `/leaderboard`. |
+| `/benchmark [profile] <task>` | Benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `wildclaw`, `arc-agi`, `specbench`, `reward-hacking`, `roadmapbench`, `saasbench`, `swe-bench-mobile`, `generic`. Aliases: `/bench`, `/leaderboard`. |
 | `/plan <task>` | Structured implementation planning, no edits. |
 | `/update-docs` | Sync documentation files with current code. |
 
@@ -337,6 +337,8 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `stitch` | Call Google Stitch's MCP server (`tools/list`, `tools/call`). Only present when `/stitch-config` has been run. | No |
 
 Prior benchmark hints emitted by `benchmark_context` include compact `efficiency=...` signals when available: tool calls, usage calls, tokens, cost, invalid-action rate, successful verifier count, process score, process-defect count, warnings, and cost-efficiency risk. They also include `source_research=...` signals when prior runs captured source coverage: source kinds, hit/error counts, recency/freshness, targeted-coverage status, Kaggle fallback status, top URLs, and bounded coverage notes.
+
+Long-horizon profiles (`roadmapbench`, `saasbench`, and `swe-bench-mobile`) add roadmap/SaaS/mobile coverage checks to benchmark traces and KBench/HAL adapter routing. Trace summaries flag missing milestone checklists, incomplete roadmap items after validation, and absent broad integration/platform validation for RoadmapBench, SaaSBench, and SWE-Bench Mobile-style work.
 
 Any tool name you see in error output other than these (e.g. `web_search_exa`, `TodoWrite`, `exec_file`) is a model hallucination — the agent will be told the valid list and self-correct on the next iteration.
 

@@ -28,6 +28,9 @@ describe('HAL adapter packaging', () => {
     expect(adapter).toContain('return "arc-agi"');
     expect(adapter).toContain('return "specbench"');
     expect(adapter).toContain('return "reward-hacking"');
+    expect(adapter).toContain('return "roadmapbench"');
+    expect(adapter).toContain('return "saasbench"');
+    expect(adapter).toContain('return "swe-bench-mobile"');
   });
 
   it('prints the packaged HAL agent directory from the CLI wrapper', () => {

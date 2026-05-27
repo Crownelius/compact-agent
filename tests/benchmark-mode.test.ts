@@ -36,6 +36,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
     expect(normalizeBenchmarkProfile('spec-bench')).toBe('specbench');
     expect(normalizeBenchmarkProfile('rhb')).toBe('reward-hacking');
+    expect(normalizeBenchmarkProfile('roadmap-bench')).toBe('roadmapbench');
+    expect(normalizeBenchmarkProfile('saas-bench')).toBe('saasbench');
+    expect(normalizeBenchmarkProfile('swebenchmobile')).toBe('swe-bench-mobile');
     expect(normalizeBenchmarkProfile('unknown')).toBe('auto');
   });
 
@@ -71,6 +74,18 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('reward-hacking solve without evaluator shortcuts')).toEqual({
       profile: 'reward-hacking',
       task: 'solve without evaluator shortcuts',
+    });
+    expect(splitBenchmarkArgs('roadmapbench implement version upgrade')).toEqual({
+      profile: 'roadmapbench',
+      task: 'implement version upgrade',
+    });
+    expect(splitBenchmarkArgs('saasbench add billing workflow')).toEqual({
+      profile: 'saasbench',
+      task: 'add billing workflow',
+    });
+    expect(splitBenchmarkArgs('swe-bench-mobile implement iOS feature')).toEqual({
+      profile: 'swe-bench-mobile',
+      task: 'implement iOS feature',
     });
     expect(splitBenchmarkArgs('fix parser bug')).toEqual({
       profile: 'auto',
@@ -166,5 +181,25 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('tamper with evaluators');
     expect(prompt).toContain('score/result files');
     expect(prompt).toContain('train/test or public/private boundaries');
+  });
+
+  it('builds long-horizon benchmark prompts around roadmap coverage', () => {
+    const roadmap = buildBenchmarkPrompt('implement target version roadmap', '/workspace', 'roadmapbench');
+    expect(roadmap).toContain('RoadmapBench style long-horizon version-upgrade task');
+    expect(roadmap).toContain('multi-target roadmap');
+    expect(roadmap).toContain('milestone checklist');
+    expect(roadmap).toContain('broad integration/build/test');
+
+    const saas = buildBenchmarkPrompt('build enterprise SaaS workflow', '/workspace', 'saasbench');
+    expect(saas).toContain('SaaSBench style long-horizon enterprise SaaS engineering task');
+    expect(saas).toContain('multi-component SaaS work');
+    expect(saas).toContain('migrations');
+    expect(saas).toContain('integration/e2e/API/migration verifier');
+
+    const mobile = buildBenchmarkPrompt('implement iOS feature from PRD', '/workspace', 'swe-bench-mobile');
+    expect(mobile).toContain('SWE-Bench Mobile style industrial mobile development task');
+    expect(mobile).toContain('PRDs, screenshots/Figma references');
+    expect(mobile).toContain('defensive programming');
+    expect(mobile).toContain('xcodebuild');
   });
 });

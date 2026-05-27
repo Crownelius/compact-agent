@@ -49,7 +49,7 @@ Benchmark mode emphasizes:
 
 Ventipus includes MemPalace-backed project and global memory. In benchmark mode, `benchmark_context` can surface bounded relevant memories and prior local benchmark experience cards. These are explicitly framed as hypotheses that must be verified against current task files and verifier output.
 
-Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, and reward-hack risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence, run-efficiency action/usage/cost evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact for retrieval, replay, or training-data curation.
+Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, task-alignment, spec-compliance, reward-hack, and long-horizon roadmap/SaaS/mobile coverage risk signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence, run-efficiency action/usage/cost evidence, source-research coverage, verification commands, changed files, and warnings. They also emit a redacted ACC-style task/context/answer JSONL artifact for retrieval, replay, or training-data curation.
 
 ## Models
 
@@ -64,11 +64,11 @@ Packaged evaluation surfaces:
 - HAL custom agent.
 - Exgentic/Open Agent Leaderboard custom agent.
 
-Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, and generic multi-step tool-use tasks.
+Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, context-reuse benchmarks, long-horizon RoadmapBench/SaaSBench/SWE-Bench Mobile-style tasks, and generic multi-step tool-use tasks.
 
 ## Evaluation Results
 
-Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, and `submission-bundle-manifest.json` artifacts when benchmark trace output is enabled. The draft row follows the public Open Agent Leaderboard result-column shape where local trace evidence can support it, but remains `submissionReady:false` until an official harness supplies benchmark-owned scores and session success evidence. The submission bundle manifest indexes artifact paths and SHA-256 hashes, summarizes verifier/usage/process evidence, and lists missing official fields so local traces are not mistaken for leaderboard scores. Trajectory quality includes explicit task-alignment, spec-compliance, and reward-hack risk fields so benchmark reviewers can separate genuine task progress from distractor-following, visible-suite-only validation, verifier tampering, oracle access, or shortcut score markers.
+Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, and `submission-bundle-manifest.json` artifacts when benchmark trace output is enabled. The draft row follows the public Open Agent Leaderboard result-column shape where local trace evidence can support it, but remains `submissionReady:false` until an official harness supplies benchmark-owned scores and session success evidence. The submission bundle manifest indexes artifact paths and SHA-256 hashes, summarizes verifier/usage/process evidence, and lists missing official fields so local traces are not mistaken for leaderboard scores. Trajectory quality includes explicit task-alignment, spec-compliance, reward-hack, and long-horizon coverage risk fields so benchmark reviewers can separate genuine task progress from distractor-following, visible-suite-only validation, verifier tampering, oracle access, shortcut score markers, or unsupported RoadmapBench/SaaSBench/SWE-Bench Mobile completion claims.
 
 Official results should be produced through Exgentic, HAL, Terminal-Bench, KBench, or another benchmark-owned grader before submission.
 

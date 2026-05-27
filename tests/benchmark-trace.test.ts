@@ -13,6 +13,7 @@ import {
   buildBenchmarkIncompleteVerifierEvents,
   buildBenchmarkInvalidToolActionEvents,
   buildBenchmarkLeakageRiskEvents,
+  buildBenchmarkLongHorizonSignals,
   buildBenchmarkRewardHackSignals,
   buildBenchmarkRedundantVerifierEvents,
   buildBenchmarkRedundantToolCallEvents,
@@ -232,6 +233,9 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.rewardHackRisk).toBe(false);
     expect(summary.trajectoryQuality.rewardHackSignalCount).toBe(0);
     expect(summary.trajectoryQuality.rewardHackSignals).toEqual([]);
+    expect(summary.trajectoryQuality.longHorizonRisk).toBe(false);
+    expect(summary.trajectoryQuality.longHorizonSignalCount).toBe(0);
+    expect(summary.trajectoryQuality.longHorizonSignals).toEqual([]);
     expect(summary.trajectoryQuality.editTargetCount).toBe(0);
     expect(summary.trajectoryQuality.localizedEditTargetCount).toBe(0);
     expect(summary.trajectoryQuality.unlocalizedEditTargetEvents).toEqual([]);
@@ -303,6 +307,11 @@ describe('benchmark trace artifacts', () => {
         signalCount: 0,
         signals: [],
       },
+      longHorizon: {
+        risk: false,
+        signalCount: 0,
+        signals: [],
+      },
       verificationCommands: ['npm test'],
       changedFiles: ['src/app.ts'],
     });
@@ -340,6 +349,21 @@ describe('benchmark trace artifacts', () => {
         prompt: '/benchmark reward-hacking solve without evaluator shortcuts',
         benchmark: 'rewardhackingbenchmark',
         benchmarkName: 'Reward Hacking Benchmark',
+      },
+      {
+        prompt: '/benchmark roadmapbench implement target version roadmap',
+        benchmark: 'roadmapbench',
+        benchmarkName: 'RoadmapBench',
+      },
+      {
+        prompt: '/benchmark saasbench implement enterprise billing workflow',
+        benchmark: 'saasbench',
+        benchmarkName: 'SaaSBench',
+      },
+      {
+        prompt: '/benchmark swe-bench-mobile implement iOS PRD feature',
+        benchmark: 'swebenchmobile',
+        benchmarkName: 'SWE-Bench Mobile',
       },
     ];
 
@@ -5034,6 +5058,71 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkCompletionReminder(events)).toContain('spec-compliance risk');
     expect(buildBenchmarkCompletionReminder(events)).toContain('broader/spec-generalization check');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('spec_compliance_risk=yes spec_compliance_signals=3');
+  });
+
+  it('flags long-horizon roadmap validation gaps for SaaS/mobile-style tasks', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '# Benchmark Context',
+          '## Task Contract Signals',
+          '- TASK.md: SaaSBench long-horizon enterprise SaaS task with validation nodes.',
+          '- TASK.md: Implement roadmap milestone A, migration, API behavior, and UI workflow.',
+          '',
+          '## Likely Verification Commands',
+          '- npm test -- billing',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/billing.ts' },
+        output: 'export function billing() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'edit_file',
+        input: { file_path: 'src/billing.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test -- billing' },
+        output: 'Tests: 1 passed, 1 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const signals = buildBenchmarkLongHorizonSignals(events);
+    expect(signals.map((signal) => signal.reason)).toEqual([
+      'missing_roadmap_checklist',
+      'missing_broad_integration_validation',
+      'missing_saas_integration_validation',
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.longHorizonRisk).toBe(true);
+    expect(quality.longHorizonSignalCount).toBe(3);
+    expect(quality.processDefects.map((d) => d.code)).toContain('long_horizon_coverage_risk');
+    expect(quality.processDefects.find((d) => d.code === 'long_horizon_coverage_risk')).toMatchObject({
+      category: 'validation',
+      severity: 'high',
+    });
+    expect(quality.warnings.join('\n')).toContain('long-horizon coverage risk');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('long-horizon coverage risk');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('broad integration/platform verifier');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('long_horizon_risk=yes long_horizon_signals=3');
   });
 
   it('flags task-alignment risk when an action follows a distractor cue', () => {
