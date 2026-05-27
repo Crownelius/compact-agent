@@ -40,7 +40,7 @@
     "knowledge-graph"
   ],
   "bin": {
-    "ventipus": "./bin/ventipus.js"
+    "ventipus": "bin/ventipus.js"
   },
   "files": [
     "bin/",
