@@ -553,10 +553,10 @@ describe('benchmark_context tool', () => {
         },
         contextUtilization: {
           inspectCount: 4,
-          hitCount: 1,
-          missCount: 3,
-          utilizationPercent: 25,
-          risk: true,
+          hitCount: 3,
+          missCount: 1,
+          utilizationPercent: 75,
+          risk: false,
           missEvents: [{
             seq: 2,
             tool: 'read_file',
@@ -564,10 +564,10 @@ describe('benchmark_context tool', () => {
             reason: 'local read/search/list inspection did not match any edited source target',
           }],
           preEditInspectCount: 4,
-          preEditHitCount: 1,
-          preEditMissCount: 3,
-          preEditUtilizationPercent: 25,
-          preEditBloatRisk: true,
+          preEditHitCount: 3,
+          preEditMissCount: 1,
+          preEditUtilizationPercent: 75,
+          preEditBloatRisk: false,
           preEditBloatEvents: [{
             seq: 2,
             tool: 'read_file',
@@ -610,10 +610,104 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('dependency=manifests:1,lockfiles:1,setup:true,setup_ok:true,validation:true,validation_ok:true,targets:node:package.json|node:package-lock.json');
     expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,predictions:#5 src/app.ts -> ok: formatting total should satisfy billing assertion');
     expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,post_success_mutations:0,latest:ok,commands:npm test|npm run build');
-    expect(result.output).toContain('context=inspects:4,hits:1,misses:3,utilization:25.00%,risk:true,unused:read_file#2 src/unrelated.ts,pre_edit:1/4,pre_edit_utilization:25.00%,pre_edit_bloat:true,pre_edit_unused:read_file#2 src/unrelated.ts');
+    expect(result.output).toContain('context=inspects:4,hits:3,misses:1,utilization:75.00%,risk:false,unused:read_file#2 src/unrelated.ts,pre_edit:3/4,pre_edit_utilization:75.00%,pre_edit_bloat:false,pre_edit_unused:read_file#2 src/unrelated.ts');
     expect(result.output).toContain('source_research=calls:1,hits:4,errors:0,sources:arxiv|github|huggingface|kaggle,github:repositories|issues,hf:papers,kaggle:competitions,result_sources:arxiv|github_repo|hf_paper|kaggle_competition,targeted:true,fresh:true,kaggle_skipped:false,recent_days:90,top:https://arxiv.org/abs/2602.08316|https://github.com/example/benchmark-agent,notes:targeted benchmark coverage requested');
     expect(result.output).toContain('proactivity=detected:true,risk:false,signals:0,context:6/6,hidden_intent:true,clarification:true,privacy:true,completion:true,actions:1');
     expect(result.output).toContain('efficiency=tools:8,tool_elapsed_ms:620000,slow_tools:2,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,time_risk:true,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
+  }, 15_000);
+
+  it('routes context-bloated prior runs to prior-experience warnings', async () => {
+    const root = makeRoot();
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const bloatedPriorDir = join(traceDir, '2026-05-27-bloated-context');
+    const disciplinedPriorDir = join(traceDir, '2026-05-27-disciplined-context');
+    mkdirSync(bloatedPriorDir, { recursive: true });
+    mkdirSync(disciplinedPriorDir, { recursive: true });
+    mkdirSync(join(root, 'src'), { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      '',
+      '## Acceptance Criteria',
+      '- Must preserve parser behavior while fixing date handling.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'src', 'parser.ts'), 'export const parser = true;\n');
+
+    writeFileSync(join(bloatedPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T12:00:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['src/parser.ts'],
+      trajectoryQuality: {
+        processScore: 99,
+        successfulVerificationCount: 2,
+        processDefects: [],
+      },
+      experienceCard: {
+        contextUtilization: {
+          inspectCount: 7,
+          hitCount: 1,
+          missCount: 6,
+          utilizationPercent: 14.29,
+          risk: true,
+          missEvents: [{
+            seq: 2,
+            tool: 'read_file',
+            target: 'src/unrelated.ts',
+            reason: 'local read/search/list inspection did not match any edited source target',
+          }],
+          preEditInspectCount: 7,
+          preEditHitCount: 1,
+          preEditMissCount: 6,
+          preEditUtilizationPercent: 14.29,
+          preEditBloatRisk: true,
+          preEditBloatEvents: [{
+            seq: 3,
+            tool: 'grep',
+            target: 'docs/archive.md',
+            reason: 'pre-edit local read/search/list inspection did not match any eventual edited source target',
+          }],
+        },
+      },
+    }, null, 2));
+
+    writeFileSync(join(disciplinedPriorDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T12:05:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['src/parser.ts'],
+      trajectoryQuality: {
+        processScore: 94,
+        successfulVerificationCount: 1,
+        processDefects: [],
+      },
+      experienceCard: {
+        contextUtilization: {
+          inspectCount: 5,
+          hitCount: 4,
+          missCount: 1,
+          utilizationPercent: 80,
+          risk: false,
+          preEditInspectCount: 5,
+          preEditHitCount: 4,
+          preEditMissCount: 1,
+          preEditUtilizationPercent: 80,
+          preEditBloatRisk: false,
+        },
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root, probe_network: false }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('avoid prior run: 2026-05-27T12:00:00.000Z');
+    expect(result.output).toContain('reason=low_context_utilization=1/7|pre_edit_context_bloat=1/7');
+    expect(result.output).toContain('context=inspects:7,hits:1,misses:6,utilization:14.29%,risk:true,unused:read_file#2 src/unrelated.ts,pre_edit:1/7,pre_edit_utilization:14.29%,pre_edit_bloat:true,pre_edit_unused:grep#3 docs/archive.md');
+    expect(result.output).not.toContain('previous run: 2026-05-27T12:00:00.000Z');
+    expect(result.output).toContain('previous run: 2026-05-27T12:05:00.000Z');
+    expect(result.output).toContain('context=inspects:5,hits:4,misses:1,utilization:80.00%,risk:false,pre_edit:4/5,pre_edit_utilization:80.00%,pre_edit_bloat:false');
   }, 15_000);
 
   it('ranks complete Pi-Bench proactivity evidence ahead of generic prior runs', async () => {

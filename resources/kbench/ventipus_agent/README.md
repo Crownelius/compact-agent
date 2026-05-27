@@ -70,6 +70,10 @@ proactivity ledgers and surface incomplete ledgers as warnings. AHE change
 evaluations also participate in reuse: confirmed manifests can rank higher,
 while contradicted, regression-risk, pending-verification, missing-prediction,
 or missing-regression-forecast manifests are warnings rather than replay hints.
+Context-utilization evidence participates in reuse as well: concise runs whose
+inspected context was used by the eventual patch can rank higher, while
+low-utilization or pre-edit context-bloat runs are warnings rather than replay
+hints.
 
 Useful env vars:
 

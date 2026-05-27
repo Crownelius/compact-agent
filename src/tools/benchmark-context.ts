@@ -108,6 +108,12 @@ interface PriorChangeEvaluationSummary {
   scoreBonus: number;
 }
 
+interface PriorContextUtilizationSummary {
+  text: string | null;
+  harmReasons: string[];
+  scoreBonus: number;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -690,7 +696,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       successfulVerificationCount,
       defectCodes,
       finalAnswerEvidence,
-    }).concat(priorChangeEvaluation.harmReasons);
+    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons);
 
     const changed = changedFiles.slice(0, 5).join(', ') || 'none recorded';
     const verifiers = verificationCommands.slice(0, 3).join(' | ') || 'none recorded';
@@ -721,7 +727,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorDependency.text,
         priorDecision,
         priorReliability,
-        priorContext,
+        priorContext.text,
         priorSourceResearch,
         priorProactivity.text,
         priorEfficiency,
@@ -734,6 +740,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     if (processScore != null && processScore >= 90) score += 8;
     if ((successfulVerificationCount ?? 0) > 0) score += 8;
     score += priorChangeEvaluation.scoreBonus;
+    score += priorContext.scoreBonus;
     if (currentPiBenchLike && priorProactivity.complete) score += 20;
     if (currentPiBenchLike && priorProactivity.risk) score -= 12;
     if (score < 18) continue;
@@ -753,7 +760,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorDependency.text,
       priorDecision,
       priorReliability,
-      priorContext,
+      priorContext.text,
       priorSourceResearch,
       priorProactivity.text,
       priorEfficiency,
@@ -1187,7 +1194,7 @@ function summarizePriorValidationReliability(
 function summarizePriorContextUtilization(
   summary: Record<string, unknown>,
   quality: Record<string, unknown>,
-): string | null {
+): PriorContextUtilizationSummary {
   const card = objectRecord(summary.experienceCard);
   const context = objectRecord(card.contextUtilization);
   const inspectCount = finiteNumber(context.inspectCount)
@@ -1223,7 +1230,9 @@ function summarizePriorContextUtilization(
     && (missCount ?? 0) <= 0
     && risk !== true
     && (preEditInspectCount ?? 0) <= 0
-    && preEditBloatRisk !== true) return null;
+    && preEditBloatRisk !== true) {
+    return { text: null, harmReasons: [], scoreBonus: 0 };
+  }
 
   const misses = rawMissEvents
     .slice(0, 2)
@@ -1248,7 +1257,23 @@ function summarizePriorContextUtilization(
     })
     .map((event) => truncateContractSignal(redactTraceText(event), 160));
 
-  return [
+  const harmReasons: string[] = [];
+  if (risk === true) {
+    harmReasons.push(`low_context_utilization=${hitCount ?? 0}/${inspectCount ?? 0}`);
+  }
+  if (preEditBloatRisk === true) {
+    harmReasons.push(`pre_edit_context_bloat=${preEditHitCount ?? 0}/${preEditInspectCount ?? 0}`);
+  }
+
+  let scoreBonus = 0;
+  if (risk === false && (inspectCount ?? 0) >= 2 && (percent ?? 0) >= 50) {
+    scoreBonus += 4;
+  }
+  if (preEditBloatRisk === false && (preEditInspectCount ?? 0) >= 2 && (preEditPercent ?? 0) >= 50) {
+    scoreBonus += 3;
+  }
+
+  const text = [
     `context=inspects:${inspectCount ?? 0}`,
     `hits:${hitCount ?? 0}`,
     `misses:${missCount ?? 0}`,
@@ -1260,6 +1285,11 @@ function summarizePriorContextUtilization(
     preEditBloatRisk === undefined ? null : `pre_edit_bloat:${String(preEditBloatRisk)}`,
     bloat.length ? `pre_edit_unused:${bloat.join(' | ')}` : null,
   ].filter(Boolean).join(',');
+  return {
+    text,
+    harmReasons,
+    scoreBonus,
+  };
 }
 
 function summarizePriorSourceResearchCoverage(
