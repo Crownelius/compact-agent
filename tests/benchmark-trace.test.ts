@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildBenchmarkCompletionReminder,
   buildBenchmarkBlindRepairEvents,
+  buildBenchmarkComponentEditEvents,
   buildBenchmarkContextBloatEvents,
   buildBenchmarkDependencyEditEvents,
   buildBenchmarkEnvironmentSetupEvents,
@@ -456,6 +457,100 @@ describe('benchmark trace artifacts', () => {
         benchmark_name: testCase.benchmarkName,
       });
     }
+  });
+
+  it('classifies AHE component-observability edit surfaces', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: workspace/tool_descriptions/run_shell_command.tool.yaml',
+      '@@',
+      '-old',
+      '+new',
+      '*** Add File: workspace/middleware/publish_state.py',
+      '+print("guard")',
+      '*** Update File: resources/terminal_bench/ventipus_agent.py',
+      '@@',
+      '-old',
+      '+new',
+      '*** End Patch',
+    ].join('\n');
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'edit_file',
+        input: { file_path: 'workspace/systemprompt.md', old_string: 'a', new_string: 'b' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'apply_patch',
+        input: { patch },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 20,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'write_file',
+        input: { file_path: 'workspace/LongTermMEMORY.md', content: 'lesson' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: '1', new_string: '2' },
+        output: 'ok',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    expect(buildBenchmarkComponentEditEvents(events)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ seq: 1, target: 'workspace/systemprompt.md', component: 'system_prompt' }),
+      expect.objectContaining({ seq: 2, target: 'workspace/tool_descriptions/run_shell_command.tool.yaml', component: 'tool_description' }),
+      expect.objectContaining({ seq: 2, target: 'workspace/middleware/publish_state.py', component: 'middleware' }),
+      expect.objectContaining({ seq: 2, target: 'resources/terminal_bench/ventipus_agent.py', component: 'adapter' }),
+      expect.objectContaining({ seq: 3, target: 'workspace/LongTermMEMORY.md', component: 'long_term_memory' }),
+      expect.objectContaining({ seq: 4, target: 'src/app.ts', component: 'source_code' }),
+    ]));
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-component-observability',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 2500,
+      messages: [],
+      events,
+    });
+
+    expect(summary.trajectoryQuality).toMatchObject({
+      componentEditCount: 6,
+      componentUnclassifiedEditCount: 0,
+    });
+    expect(summary.experienceCard.componentObservability).toMatchObject({
+      editCount: 6,
+      classifiedEditCount: 6,
+      unclassifiedEditCount: 0,
+      components: expect.arrayContaining([
+        expect.objectContaining({ component: 'adapter', editCount: 1, targets: ['resources/terminal_bench/ventipus_agent.py'] }),
+        expect.objectContaining({ component: 'long_term_memory', editCount: 1, targets: ['workspace/LongTermMEMORY.md'] }),
+        expect.objectContaining({ component: 'middleware', editCount: 1, targets: ['workspace/middleware/publish_state.py'] }),
+        expect.objectContaining({ component: 'source_code', editCount: 1, targets: ['src/app.ts'] }),
+        expect.objectContaining({ component: 'system_prompt', editCount: 1, targets: ['workspace/systemprompt.md'] }),
+        expect.objectContaining({ component: 'tool_description', editCount: 1, targets: ['workspace/tool_descriptions/run_shell_command.tool.yaml'] }),
+      ]),
+    });
+    const block = buildBenchmarkTrajectorySystemBlock(events);
+    expect(block).toContain('component_edits=6');
+    expect(block).toContain('component_unclassified=0');
+    expect(block).toContain('adapter:1');
+    expect(block).toContain('system_prompt:1');
   });
 
   it('builds compact experience cards for future benchmark replay', () => {

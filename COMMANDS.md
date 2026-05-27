@@ -414,6 +414,8 @@ These affect the REPL's runtime behavior. Set in your shell before launching `ve
 
 AHE change evaluation expects each non-trivial benchmark edit to carry both `Prediction:` and `At-risk regression:` manifest lines. Missing regression forecasts are reported in trace summaries, `change-evaluation.json`, process defects, and completion reminders.
 
+Component observability classifies benchmark edit targets as system prompts, tool descriptions, tool implementations, middleware, skills, sub-agents, memory, adapters, tests/verifiers, dependency files, documentation, or product source code. The live trajectory block and `experienceCard.componentObservability` expose the counts so AHE-style regression attribution can point at the changed surface.
+
 OpenRouter free-tier context is intentionally conservative for compatibility. `openrouter/free` plans around a 128k window because the router can select different available free models; manually typed unknown `:free` model IDs plan around 32k unless `VENTIPUS_CONTEXT_WINDOW_TOKENS` is set. The interactive OpenRouter `/model` picker reads the live catalog and saves the selected exact model's context hint when available.
 
 `--prompt` and `--prompt-file` imply non-interactive mode. If the prompt begins with a slash command such as `/benchmark terminal-bench ...`, ventipus dispatches that command first and sends the expanded prompt to the model.

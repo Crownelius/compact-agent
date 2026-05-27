@@ -51,6 +51,7 @@ export interface BenchmarkExperienceCard {
   replayCheckpoints: BenchmarkExperienceReplayCheckpoint[];
   failureSignatures: BenchmarkVerifierFailureSignature[];
   sourceResearchCoverage: SourceResearchCoverage;
+  componentObservability: BenchmarkExperienceComponentObservability;
   taskContract: BenchmarkExperienceTaskContract;
   taskAlignment: BenchmarkExperienceTaskAlignment;
   specCompliance: BenchmarkExperienceSpecCompliance;
@@ -73,6 +74,47 @@ export interface BenchmarkExperienceReplayCheckpoint {
   target: string;
   reason: 'file_context' | 'search_context' | 'failing_verifier';
   score: number;
+}
+
+export type BenchmarkHarnessComponentKind =
+  | 'system_prompt'
+  | 'tool_description'
+  | 'tool_implementation'
+  | 'middleware'
+  | 'skill'
+  | 'sub_agent'
+  | 'long_term_memory'
+  | 'short_term_memory'
+  | 'agent_config'
+  | 'adapter'
+  | 'benchmark_trace'
+  | 'test_or_verifier'
+  | 'dependency_manifest'
+  | 'dependency_lockfile'
+  | 'documentation'
+  | 'source_code'
+  | 'unknown';
+
+export interface BenchmarkComponentEditEvent {
+  seq: number;
+  tool: string;
+  target: string;
+  component: BenchmarkHarnessComponentKind;
+  reason: string;
+}
+
+export interface BenchmarkComponentEditSummary {
+  component: BenchmarkHarnessComponentKind;
+  editCount: number;
+  targets: string[];
+}
+
+export interface BenchmarkExperienceComponentObservability {
+  editCount: number;
+  classifiedEditCount: number;
+  unclassifiedEditCount: number;
+  components: BenchmarkComponentEditSummary[];
+  editEvents: BenchmarkComponentEditEvent[];
 }
 
 export interface BenchmarkExperienceTaskContract {
@@ -578,6 +620,10 @@ export interface BenchmarkTrajectoryQuality {
   longHorizonSignals: BenchmarkLongHorizonSignal[];
   noEditContractDetected: boolean;
   editAfterNoEditContract: boolean;
+  componentEditCount: number;
+  componentUnclassifiedEditCount: number;
+  componentEditComponents: BenchmarkComponentEditSummary[];
+  componentEditEvents: BenchmarkComponentEditEvent[];
   editTargetCount: number;
   localizedEditTargetCount: number;
   unlocalizedEditTargetEvents: BenchmarkUnlocalizedEditEvent[];
@@ -1210,6 +1256,7 @@ export function buildBenchmarkExperienceCard(input: {
         raw: truncate(redactTraceText(signature.raw), 240),
       })),
     sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
+    componentObservability: buildBenchmarkExperienceComponentObservability(input.trajectoryQuality),
     taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
     taskAlignment: buildBenchmarkExperienceTaskAlignment(input.trajectoryQuality),
     specCompliance: buildBenchmarkExperienceSpecCompliance(input.trajectoryQuality),
@@ -1230,6 +1277,34 @@ export function buildBenchmarkExperienceCard(input: {
     warnings: input.trajectoryQuality.warnings
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceComponentObservability(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceComponentObservability {
+  const editEvents = quality.componentEditEvents
+    .map((event) => ({
+      ...event,
+      tool: truncate(redactTraceText(event.tool), 80),
+      target: truncate(redactTraceText(event.target), 180),
+      reason: truncate(redactTraceText(event.reason), 180),
+    }))
+    .slice(0, 20);
+  return {
+    editCount: quality.componentEditCount,
+    classifiedEditCount: Math.max(0, quality.componentEditCount - quality.componentUnclassifiedEditCount),
+    unclassifiedEditCount: quality.componentUnclassifiedEditCount,
+    components: quality.componentEditComponents
+      .map((component) => ({
+        component: component.component,
+        editCount: component.editCount,
+        targets: component.targets
+          .map((target) => truncate(redactTraceText(target), 160))
+          .slice(0, 8),
+      }))
+      .slice(0, 12),
+    editEvents,
   };
 }
 
@@ -2441,6 +2516,9 @@ export function buildBenchmarkTrajectoryQuality(
   const evidenceGroundingEvents = buildBenchmarkEvidenceGroundingEvents(events);
   const broadEditContractDetected = hasBroadEditContract(events);
   const editSurface = buildBenchmarkEditSurface(events);
+  const componentEditEvents = buildBenchmarkComponentEditEvents(events);
+  const componentEditComponents = summarizeBenchmarkComponentEditEvents(componentEditEvents);
+  const componentUnclassifiedEditCount = componentEditEvents.filter((event) => event.component === 'unknown').length;
   const redundantToolCallEvents = buildBenchmarkRedundantToolCallEvents(events);
   const redundantVerifierEvents = buildBenchmarkRedundantVerifierEvents(events);
   const blindRepairEvents = buildBenchmarkBlindRepairEvents(events);
@@ -3259,6 +3337,10 @@ export function buildBenchmarkTrajectoryQuality(
     longHorizonSignals,
     noEditContractDetected,
     editAfterNoEditContract,
+    componentEditCount: componentEditEvents.length,
+    componentUnclassifiedEditCount,
+    componentEditComponents,
+    componentEditEvents,
     editTargetCount: editTargetEvidence.total,
     localizedEditTargetCount: editTargetEvidence.localized,
     unlocalizedEditTargetEvents: editTargetEvidence.unlocalized,
@@ -3355,7 +3437,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -5289,6 +5371,121 @@ function buildBenchmarkEditSurface(events: BenchmarkTraceEvent[]): { targets: st
   return { targets: Array.from(targets.values()).slice(0, 40) };
 }
 
+export function buildBenchmarkComponentEditEvents(events: BenchmarkTraceEvent[]): BenchmarkComponentEditEvent[] {
+  const componentEvents: BenchmarkComponentEditEvent[] = [];
+  for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
+    if (!isEditEvent(event)) continue;
+    const targets = editedTargetsForEvent(event);
+    if (targets.length === 0) {
+      componentEvents.push({
+        seq: event.seq,
+        tool: event.tool,
+        target: truncate(redactTraceText(event.target || event.tool), 240),
+        component: 'unknown',
+        reason: 'edit event did not expose a parseable file target',
+      });
+      continue;
+    }
+    for (const target of targets) {
+      const classified = classifyBenchmarkHarnessComponent(target);
+      componentEvents.push({
+        seq: event.seq,
+        tool: event.tool,
+        target: truncate(redactTraceText(target), 240),
+        component: classified.component,
+        reason: classified.reason,
+      });
+    }
+  }
+  return componentEvents.slice(0, 80);
+}
+
+function summarizeBenchmarkComponentEditEvents(events: BenchmarkComponentEditEvent[]): BenchmarkComponentEditSummary[] {
+  const byComponent = new Map<BenchmarkHarnessComponentKind, { editCount: number; targets: Map<string, string> }>();
+  for (const event of events) {
+    const summary = byComponent.get(event.component) ?? { editCount: 0, targets: new Map<string, string>() };
+    summary.editCount++;
+    const key = normalizeTracePath(event.target) || event.target.toLowerCase();
+    if (summary.targets.size < 12 && !summary.targets.has(key)) summary.targets.set(key, event.target);
+    byComponent.set(event.component, summary);
+  }
+  return Array.from(byComponent.entries())
+    .map(([component, summary]) => ({
+      component,
+      editCount: summary.editCount,
+      targets: Array.from(summary.targets.values()).slice(0, 12),
+    }))
+    .sort((a, b) => b.editCount - a.editCount || a.component.localeCompare(b.component))
+    .slice(0, 16);
+}
+
+function classifyBenchmarkHarnessComponent(target: string): { component: BenchmarkHarnessComponentKind; reason: string } {
+  const normalized = normalizeTracePath(target);
+  if (!normalized) {
+    return { component: 'unknown', reason: 'target path was empty or unparsable' };
+  }
+  const parts = normalized.split('/').filter(Boolean);
+  const base = parts.at(-1) ?? normalized;
+  const stem = base.replace(/\.[^.]+$/, '');
+  const dependency = classifyDependencyFileTarget(normalized);
+
+  if (base === 'longtermmemory.md' || base === 'long-term-memory.md' || base === 'long_term_memory.md') {
+    return { component: 'long_term_memory', reason: 'path is the harness long-term memory file' };
+  }
+  if (base === 'shorttermmemory.md' || base === 'short-term-memory.md' || base === 'short_term_memory.md') {
+    return { component: 'short_term_memory', reason: 'path is the harness short-term memory file' };
+  }
+  if (/^(?:systemprompt|system-prompt|system_prompt|prompt|instructions?)\.(?:md|txt|ya?ml)$/i.test(base)
+    || /(^|\/)(?:system_prompts?|prompts?)\//i.test(normalized)) {
+    return { component: 'system_prompt', reason: 'path is a harness system prompt or prompt asset' };
+  }
+  if (/\.tool\.ya?ml$/i.test(base) || /(^|\/)tool_descriptions?\//i.test(normalized)) {
+    return { component: 'tool_description', reason: 'path is a tool description/schema file' };
+  }
+  if (/^code_agent\.ya?ml$/i.test(base) || /(^|\/)(?:agent|agents|configs?|config)\//i.test(normalized) && /\.(?:ya?ml|json|toml)$/i.test(base)) {
+    return { component: 'agent_config', reason: 'path is an agent or harness configuration file' };
+  }
+  if (/^skill\.md$/i.test(base) || /(^|\/)(?:skills?|skill)\//i.test(normalized) || /(^|\/)resources\/ecc\/skills\//i.test(normalized)) {
+    return { component: 'skill', reason: 'path is a reusable skill component' };
+  }
+  if (/(^|\/)(?:sub_agents?|sub-agents?)\//i.test(normalized)) {
+    return { component: 'sub_agent', reason: 'path is a sub-agent component' };
+  }
+  if (/(^|\/)(?:middlewares?|middleware)\//i.test(normalized)) {
+    return { component: 'middleware', reason: 'path is a middleware component' };
+  }
+  if (/^benchmark-trace\.ts$/i.test(base) || /(^|\/)benchmark[-_]?trace\//i.test(normalized)) {
+    return { component: 'benchmark_trace', reason: 'path is benchmark trace or observability middleware' };
+  }
+  if (/(^|\/)(?:tools?|tooling)\//i.test(normalized) || /(^|\/)src\/tools\//i.test(normalized)) {
+    return { component: 'tool_implementation', reason: 'path is a tool implementation component' };
+  }
+  if (/resources\/(?:terminal_bench|kbench|hal|exgentic|open_agent_leaderboard)\//i.test(normalized)
+    || /(^|\/)ventipus_agent(\/|\.py$)/i.test(normalized)
+    || /(^|\/)(?:adapter|adapters|runner)\.(?:mjs|js|ts|py)$/i.test(normalized)) {
+    return { component: 'adapter', reason: 'path belongs to a packaged benchmark adapter or agent card' };
+  }
+  if (detectTestHarnessEditRisk(normalized)) {
+    return { component: 'test_or_verifier', reason: 'path resembles a test, verifier, harness, or benchmark instruction artifact' };
+  }
+  if (dependency) {
+    return {
+      component: dependency.kind === 'manifest' ? 'dependency_manifest' : 'dependency_lockfile',
+      reason: `path is a ${dependency.ecosystem} dependency ${dependency.kind}`,
+    };
+  }
+  if (/\.(?:md|mdx|rst|txt|adoc)$/i.test(base) || /(^|\/)(?:docs?|documentation)\//i.test(normalized)) {
+    return { component: 'documentation', reason: 'path is documentation or prose guidance' };
+  }
+  if (isLargeEditSurfaceTarget(normalized)) {
+    return { component: 'source_code', reason: 'path is product source/config code outside a known harness component' };
+  }
+  if (stem) {
+    return { component: 'source_code', reason: 'path is a file target outside a known harness component' };
+  }
+  return { component: 'unknown', reason: 'path did not match a known component surface' };
+}
+
 function isLargeEditSurfaceTarget(target: string): boolean {
   if (!target || isCommonNonSourceReference(target)) return false;
   const base = target.split('/').at(-1) ?? target;
@@ -7129,6 +7326,14 @@ function tri(value: boolean | null): string {
 
 function formatPercent(value: number | null): string {
   return value === null ? 'n/a' : `${value.toFixed(2)}%`;
+}
+
+function formatBenchmarkComponentSummary(components: BenchmarkComponentEditSummary[]): string {
+  if (components.length === 0) return 'none';
+  return components
+    .slice(0, 8)
+    .map((component) => `${component.component}:${component.editCount}`)
+    .join('|');
 }
 
 function statusLabel(value: 'ok' | 'error' | null): string {
