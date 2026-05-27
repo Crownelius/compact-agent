@@ -300,6 +300,14 @@ function readFlagValue(argv, index, flag) {
     process.stdout.write(path.resolve(binDir, '..', 'resources', 'exgentic', 'ventipus_agent') + '\n');
     process.exit(0);
   }
+  const agentCardIdx = argv.indexOf('--print-open-agent-card');
+  if (agentCardIdx !== -1) {
+    const path = __require('node:path');
+    const { fileURLToPath } = __require('node:url');
+    const binDir = path.dirname(fileURLToPath(import.meta.url));
+    process.stdout.write(path.resolve(binDir, '..', 'resources', 'open_agent_leaderboard', 'ventipus-agent-card.md') + '\n');
+    process.exit(0);
+  }
 })();
 
 import('../dist/index.js');

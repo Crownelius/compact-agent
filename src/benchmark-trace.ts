@@ -117,6 +117,9 @@ export interface OpenAgentLeaderboardDraft {
   model_name: string;
   total_sessions: number;
   planned_sessions: number;
+  completed_sessions: number | null;
+  incomplete_sessions: number | null;
+  missing_sessions: number | null;
   successful_sessions: number | null;
   benchmark_score: number | null;
   average_score: number | null;
@@ -136,6 +139,7 @@ export interface OpenAgentLeaderboardDraft {
   percent_unfinished: number | null;
   percent_error: number | null;
   compact_process_score: number;
+  subset_name: string | null;
   compact_final_answer_completion: BenchmarkFinalAnswerEvidence['finalAnswerCompletion'];
   compact_latest_verification_status: BenchmarkVerificationEvidence['lastVerificationStatus'];
   compact_verification_count: number;
@@ -780,6 +784,10 @@ export function buildOpenAgentLeaderboardDraft(
     || finalAnswerEvidence.finalAnswerCompletion === 'incomplete'
     ? 0
     : (events.length > 0 || finalAnswerEvidence.mentionsVerification ? 1 : null);
+  const incompleteSessions = finalAnswerEvidence.finalAnswerCompletion === 'blocked'
+    || finalAnswerEvidence.finalAnswerCompletion === 'incomplete'
+    ? 1
+    : 0;
   const percentError = events.length > 0 && events.every((event) => event.status === 'error') ? 1 : 0;
   const compactWarnings = Array.from(new Set([
     ...trajectoryQuality.warnings,
@@ -800,6 +808,9 @@ export function buildOpenAgentLeaderboardDraft(
     model_name: input.config.model,
     total_sessions: 1,
     planned_sessions: 1,
+    completed_sessions: finished,
+    incomplete_sessions: incompleteSessions,
+    missing_sessions: 0,
     successful_sessions: null,
     benchmark_score: null,
     average_score: null,
@@ -819,6 +830,7 @@ export function buildOpenAgentLeaderboardDraft(
     percent_unfinished: finished === null ? null : 1 - finished,
     percent_error: percentError,
     compact_process_score: trajectoryQuality.processScore,
+    subset_name: extractBenchmarkSubsetName(input.messages),
     compact_final_answer_completion: finalAnswerEvidence.finalAnswerCompletion,
     compact_latest_verification_status: verificationEvidence.lastVerificationStatus,
     compact_verification_count: events.filter((event) => event.verification).length,
@@ -868,6 +880,17 @@ function formatBenchmarkName(slug: string): string {
     terminalbench: 'Terminal-Bench',
   };
   return names[slug] ?? slug;
+}
+
+function extractBenchmarkSubsetName(messages: Message[]): string | null {
+  const text = messages.map(messageText).join('\n');
+  const subset = text.match(/\b(?:subset|split)\s*[:=]\s*([A-Za-z0-9_.-]+)/i);
+  if (subset?.[1]) return subset[1];
+  if (/\btest_normal\b/i.test(text)) return 'test_normal';
+  if (/\bairline\b/i.test(text)) return 'airline';
+  if (/\bretail\b/i.test(text)) return 'retail';
+  if (/\btelecom\b/i.test(text)) return 'telecom';
+  return null;
 }
 
 function messageText(message: Message): string {

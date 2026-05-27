@@ -223,6 +223,8 @@ For HAL, `ventipus --print-hal-agent` prints a custom-agent directory containing
 
 For Exgentic/Open Agent Leaderboard, `ventipus --print-exgentic-agent` prints a custom Exgentic `Agent` package. Add its parent `resources/exgentic` directory to `PYTHONPATH` and pass `VentipusAgent(...)` to Exgentic's Python `evaluate(...)`, or copy it into an Exgentic checkout under `src/exgentic/agents/ventipus_agent/` and register the `ventipus_agent` slug for CLI use. The adapter shells out to ventipus in `/benchmark` mode on each Exgentic `react()` step, asks for one machine-readable action JSON object, maps that back to the benchmark's `ActionType`, stores prompt/stdout/stderr/trace artifacts under Exgentic's session agent directory, and reports ventipus `summary.json` estimated cost when available.
 
+`ventipus --print-open-agent-card` prints a packaged Open Agent Leaderboard-style agent card documenting Ventipus identity, architecture, tools, memory, supported environments, evaluation artifact policy, limitations, and run commands. The card is submission metadata only; leaderboard claims still require official harness output.
+
 ---
 
 ## Permissions and safety

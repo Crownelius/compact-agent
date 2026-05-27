@@ -36,6 +36,24 @@ describe('Exgentic adapter packaging', () => {
     expect(normalize(out)).toBe(normalize(adapterDir));
   });
 
+  it('ships and prints an Open Agent Leaderboard agent card', () => {
+    const cardPath = join(process.cwd(), 'resources', 'open_agent_leaderboard', 'ventipus-agent-card.md');
+    expect(existsSync(cardPath)).toBe(true);
+    const card = readFileSync(cardPath, 'utf-8');
+    expect(card).toContain('name: Ventipus');
+    expect(card).toContain('## Architecture');
+    expect(card).toContain('## Memory');
+    expect(card).toContain('## Evaluation Results');
+    expect(card).toContain('submissionReady:false');
+    expect(card).toContain('ventipus --print-exgentic-agent');
+
+    const out = execFileSync('node', ['bin/ventipus.js', '--print-open-agent-card'], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    }).trim();
+    expect(normalize(out)).toBe(normalize(cardPath));
+  });
+
   it('accepts common harness CLI flags before the Exgentic utility flag', () => {
     const out = execFileSync('node', [
       'bin/ventipus.js',
