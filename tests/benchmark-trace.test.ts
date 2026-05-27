@@ -688,6 +688,7 @@ describe('benchmark trace artifacts', () => {
       role: 'assistant',
       content: [
         'Root cause: src/app.ts formats billing totals with a raw decimal because npm test fails with AssertionError expecting 12.30.',
+        'Targeted fix: update src/app.ts to render billing totals with fixed two-decimal formatting.',
         'Prediction: changing src/app.ts should make npm test pass.',
         'At-risk regression: public route names could change while formatting billing totals.',
       ].join('\n'),
@@ -744,6 +745,8 @@ describe('benchmark trace artifacts', () => {
       editCount: 1,
       predictedEditCount: 1,
       verifiedPredictionCount: 1,
+      targetedFixCount: 1,
+      missingTargetedFixCount: 0,
       regressionForecastCount: 1,
       missingRegressionForecastCount: 0,
       editPredictions: [{
@@ -751,6 +754,8 @@ describe('benchmark trace artifacts', () => {
         tool: 'edit_file',
         target: 'src/app.ts',
         prediction: 'changing src/app.ts should make npm test pass.',
+        targetedFix: 'update src/app.ts to render billing totals with fixed two-decimal formatting.',
+        requiresTargetedFix: true,
         predictedRegression: 'public route names could change while formatting billing totals.',
         nextVerifierSeq: 5,
         nextVerifierStatus: 'ok',
@@ -1006,7 +1011,10 @@ describe('benchmark trace artifacts', () => {
     ];
     const messages: Message[] = [{
       role: 'assistant',
-      content: 'Prediction: changing src/app.ts should make npm test pass.',
+      content: [
+        'Targeted fix: update src/app.ts so the failing assertion observes the new value.',
+        'Prediction: changing src/app.ts should make npm test pass.',
+      ].join('\n'),
       tool_calls: [{
         id: 'tc-edit',
         type: 'function',
@@ -1033,6 +1041,8 @@ describe('benchmark trace artifacts', () => {
       accepted: false,
       editCount: 1,
       predictedEditCount: 1,
+      targetedFixCount: 1,
+      missingTargetedFixCount: 0,
       regressionForecastCount: 0,
       missingRegressionForecastCount: 1,
       confirmedPredictionCount: 1,
@@ -5301,6 +5311,7 @@ describe('benchmark trace artifacts', () => {
     const messages: Message[] = [{
       role: 'assistant',
       content: [
+        'Targeted fix: update src/parser.ts to trim parser input before returning it.',
         'Prediction: updating src/parser.ts should make npm test -- parser pass.',
         'At-risk regression: tokenizer whitespace behavior could change.',
       ].join('\n'),
@@ -5328,6 +5339,7 @@ describe('benchmark trace artifacts', () => {
     expect(quality.rootCauseHypothesisRisk).toBe(true);
     expect(quality.rootCauseHypothesisSignalCount).toBe(1);
     expect(quality.processDefects.map((defect) => defect.code)).toContain('missing_root_cause_hypothesis');
+    expect(quality.processDefects.map((defect) => defect.code)).not.toContain('missing_targeted_fix_manifest');
     expect(quality.warnings.join('\n')).toContain('root-cause hypothesis risk');
     expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('root_cause=no root_cause_risk=yes root_cause_signals=1');
     expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('Root cause:/Diagnosis:/Hypothesis: line');
@@ -5364,6 +5376,7 @@ describe('benchmark trace artifacts', () => {
       role: 'assistant',
       content: [
         'Root cause: src/parser.ts returns raw input because npm test -- parser fails with AssertionError at src/parser.ts.',
+        'Targeted fix: update src/parser.ts to trim parser input before returning it.',
         'Prediction: trimming in src/parser.ts should make npm test -- parser pass.',
         'At-risk regression: tokenizer whitespace behavior could change.',
       ].join('\n'),
@@ -5383,6 +5396,68 @@ describe('benchmark trace artifacts', () => {
     expect(quality.rootCauseHypothesisSignalCount).toBe(0);
     expect(quality.processDefects.map((defect) => defect.code)).not.toContain('missing_root_cause_hypothesis');
     expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('root_cause=yes root_cause_risk=no root_cause_signals=0');
+  });
+
+  it('requires a targeted-fix manifest before repair edits after conclusive failed verifiers', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix parser trimming',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'FAIL src/parser.test.ts\nAssertionError: expected " x " to equal "x"\nat src/parser.ts:1:1',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' },
+        output: 'Updated src/parser.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+    const messages: Message[] = [{
+      role: 'assistant',
+      content: [
+        'Root cause: src/parser.ts returns raw input because npm test -- parser fails with AssertionError at src/parser.ts.',
+        'Prediction: trimming in src/parser.ts should make npm test -- parser pass.',
+        'At-risk regression: tokenizer whitespace behavior could change.',
+      ].join('\n'),
+      tool_calls: [{
+        id: 'tc1',
+        type: 'function',
+        function: {
+          name: 'edit_file',
+          arguments: JSON.stringify({ file_path: 'src/parser.ts', old_string: 'return input;', new_string: 'return input.trim();' }),
+        },
+      }],
+    }];
+
+    const quality = buildBenchmarkTrajectoryQuality(events, buildBenchmarkUsageSummary([]), messages);
+    expect(quality.targetedFixCount).toBe(0);
+    expect(quality.missingTargetedFixCount).toBe(1);
+    expect(quality.targetedFixManifestRisk).toBe(true);
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('missing_targeted_fix_manifest');
+    expect(quality.warnings.join('\n')).toContain('targeted-fix manifest risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events, [], messages)).toContain('targeted_fixes=0 missing_targeted_fixes=1 targeted_fix_risk=yes');
+    expect(buildBenchmarkCompletionReminder(events, [], messages)).toContain('Targeted fix:/Fix plan');
   });
 
   it('accepts a pre-edit candidate-file dossier recorded in assistant reasoning', () => {

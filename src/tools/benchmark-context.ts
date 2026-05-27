@@ -1072,6 +1072,10 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
     ?? finiteNumber(changeEvaluation.predictedEditCount);
   const verifiedPredictionCount = finiteNumber(decision.verifiedPredictionCount)
     ?? finiteNumber(changeEvaluation.confirmedPredictionCount);
+  const targetedFixCount = finiteNumber(decision.targetedFixCount)
+    ?? finiteNumber(changeEvaluation.targetedFixCount);
+  const missingTargetedFixCount = finiteNumber(decision.missingTargetedFixCount)
+    ?? finiteNumber(changeEvaluation.missingTargetedFixCount);
   const regressionForecastCount = finiteNumber(decision.regressionForecastCount)
     ?? finiteNumber(changeEvaluation.regressionForecastCount);
   const missingRegressionForecastCount = finiteNumber(decision.missingRegressionForecastCount)
@@ -1099,17 +1103,21 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
       const editSeq = finiteNumber(prediction.editSeq);
       const target = typeof prediction.target === 'string' ? prediction.target.trim() : '';
       const text = typeof prediction.prediction === 'string' ? prediction.prediction.trim() : '';
+      const targetedFix = typeof prediction.targetedFix === 'string' ? prediction.targetedFix.trim() : '';
       const regression = typeof prediction.predictedRegression === 'string' ? prediction.predictedRegression.trim() : '';
       const status = typeof prediction.nextVerifierStatus === 'string' ? prediction.nextVerifierStatus.trim() : '';
       if (!text) return [];
+      const fixSuffix = targetedFix ? `; fix:${targetedFix}` : '';
       const regressionSuffix = regression ? `; regression:${regression}` : '';
-      return [`#${editSeq ?? '?'} ${target || 'edit'} -> ${status || 'unverified'}: ${text}${regressionSuffix}`];
+      return [`#${editSeq ?? '?'} ${target || 'edit'} -> ${status || 'unverified'}: ${text}${fixSuffix}${regressionSuffix}`];
     })
     .map((prediction) => truncateContractSignal(redactTraceText(prediction), 180));
   return [
     `decision=edits:${editCount ?? 0}`,
     `predicted:${predictedEditCount ?? 0}`,
     `verified:${verifiedPredictionCount ?? 0}`,
+    targetedFixCount != null ? `targeted_fixes:${targetedFixCount}` : null,
+    missingTargetedFixCount != null ? `missing_targeted_fixes:${missingTargetedFixCount}` : null,
     regressionForecastCount != null ? `regression_forecasts:${regressionForecastCount}` : null,
     missingRegressionForecastCount != null ? `missing_regression_forecasts:${missingRegressionForecastCount}` : null,
     status ? `change_status:${status}` : null,
@@ -1132,6 +1140,7 @@ function summarizePriorChangeEvaluationForReuse(summary: Record<string, unknown>
   const regressionCycleCount = finiteNumber(changeEvaluation.regressionCycleCount) ?? 0;
   const broadRegressionFailureCount = finiteNumber(changeEvaluation.broadRegressionFailureCount) ?? 0;
   const unpredictedEditCount = finiteNumber(changeEvaluation.unpredictedEditCount) ?? 0;
+  const missingTargetedFixCount = finiteNumber(changeEvaluation.missingTargetedFixCount) ?? 0;
   const missingRegressionForecastCount = finiteNumber(changeEvaluation.missingRegressionForecastCount) ?? 0;
   const unverifiedPredictionCount = finiteNumber(changeEvaluation.unverifiedPredictionCount) ?? 0;
 
@@ -1141,6 +1150,7 @@ function summarizePriorChangeEvaluationForReuse(summary: Record<string, unknown>
     && regressionCycleCount <= 0
     && broadRegressionFailureCount <= 0
     && unpredictedEditCount <= 0
+    && missingTargetedFixCount <= 0
     && missingRegressionForecastCount <= 0
     && unverifiedPredictionCount <= 0) {
     return { harmReasons: [], scoreBonus: 0 };
@@ -1154,6 +1164,7 @@ function summarizePriorChangeEvaluationForReuse(summary: Record<string, unknown>
   if (regressionCycleCount > 0) harmReasons.push(`regression_cycles=${regressionCycleCount}`);
   if (broadRegressionFailureCount > 0) harmReasons.push(`broad_regression_failures=${broadRegressionFailureCount}`);
   if (unpredictedEditCount > 0) harmReasons.push(`unpredicted_edits=${unpredictedEditCount}`);
+  if (missingTargetedFixCount > 0) harmReasons.push(`missing_targeted_fixes=${missingTargetedFixCount}`);
   if (missingRegressionForecastCount > 0) harmReasons.push(`missing_regression_forecasts=${missingRegressionForecastCount}`);
   if (unverifiedPredictionCount > 0) harmReasons.push(`unverified_predictions=${unverifiedPredictionCount}`);
 
@@ -1964,7 +1975,7 @@ function classifyPriorExperienceHarm(input: {
   if (successfulVerificationCount === 0) reasons.push('no successful verifier');
   if (input.processScore != null && input.processScore < 70) reasons.push(`low process score ${input.processScore}`);
   const harmfulDefects = input.defectCodes.filter((code) =>
-    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_regression_forecast|missing_root_cause_hypothesis|trajectory_cleanup_needed|pibench_proactivity_ledger_risk|proactivity_ledger_risk)/.test(code),
+    /(?:leakage|test_harness_edit_without_contract|blind_repair_after_failed_verifier|no_passing|latest_post_edit_verifier_failed|missing_final_post_edit_validation|missing_post_edit_validation|unresolved_environment_setup_failure|inconclusive_verifier_failure|edit_despite_no_edit_contract|weak_change_manifest|missing_targeted_fix_manifest|missing_regression_forecast|missing_root_cause_hypothesis|trajectory_cleanup_needed|pibench_proactivity_ledger_risk|proactivity_ledger_risk)/.test(code),
   );
   if (harmfulDefects.length > 0) reasons.push(`defects=${harmfulDefects.slice(0, 4).join('|')}`);
   if (input.finalAnswerEvidence.claimsIncomplete === true || input.finalAnswerEvidence.claimsBlocked === true) {

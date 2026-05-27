@@ -731,6 +731,79 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('evidence:missing_root_cause_before_repair_edit fail#3 edit#4');
   }, 15_000);
 
+  it('routes missing targeted-fix prior runs to prior-experience warnings', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-27-targeted-fix-prior');
+    mkdirSync(priorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    writeFileSync(join(root, 'TASK.md'), '- Must trim parser input.\n');
+    writeFileSync(join(root, 'src', 'parser.ts'), 'export const parse = (input: string) => input;\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T09:50:00.000Z',
+      verificationCommands: ['npm test -- parser'],
+      changedFiles: ['src/parser.ts'],
+      usage: {
+        totalTokens: 1800,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 90,
+        successfulVerificationCount: 1,
+        processDefects: [
+          { code: 'missing_targeted_fix_manifest' },
+        ],
+      },
+      changeEvaluation: {
+        status: 'confirmed',
+        accepted: true,
+        editCount: 1,
+        predictedEditCount: 1,
+        targetedFixCount: 0,
+        missingTargetedFixCount: 1,
+        regressionForecastCount: 1,
+        missingRegressionForecastCount: 0,
+        confirmedPredictionCount: 1,
+        contradictedPredictionCount: 0,
+        unverifiedPredictionCount: 0,
+        regressionCycleCount: 0,
+      },
+      experienceCard: {
+        decisionObservability: {
+          editCount: 1,
+          predictedEditCount: 1,
+          verifiedPredictionCount: 1,
+          targetedFixCount: 0,
+          missingTargetedFixCount: 1,
+          regressionForecastCount: 1,
+          missingRegressionForecastCount: 0,
+          editPredictions: [{
+            editSeq: 4,
+            tool: 'edit_file',
+            target: 'src/parser.ts',
+            prediction: 'trimming parser input should pass parser tests',
+            targetedFix: null,
+            requiresTargetedFix: true,
+            predictedRegression: 'tokenizer whitespace behavior could change',
+            nextVerifierSeq: 5,
+            nextVerifierStatus: 'ok',
+            nextVerifierCommand: 'npm test -- parser',
+          }],
+        },
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('avoid prior run: 2026-05-27T09:50:00.000Z');
+    expect(result.output).toContain('reason=defects=missing_targeted_fix_manifest|missing_targeted_fixes=1');
+    expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,targeted_fixes:0,missing_targeted_fixes:1');
+  }, 15_000);
+
   it('routes context-bloated prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     const traceDir = join(root, '.ventipus', 'benchmark-runs');
