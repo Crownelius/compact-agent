@@ -276,9 +276,22 @@ function compactExperienceCard(card) {
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     decisionObservability: compactDecisionObservability(card.decisionObservability),
     validationReliability: compactValidationReliability(card.validationReliability),
+    contextUtilization: compactContextUtilization(card.contextUtilization),
     verificationCommands: Array.isArray(card.verificationCommands) ? card.verificationCommands.slice(0, 20) : [],
     changedFiles: Array.isArray(card.changedFiles) ? card.changedFiles.slice(0, 100) : [],
     warnings: Array.isArray(card.warnings) ? card.warnings.slice(0, 20) : [],
+  };
+}
+
+function compactContextUtilization(contextUtilization) {
+  if (!contextUtilization || typeof contextUtilization !== 'object' || Array.isArray(contextUtilization)) return undefined;
+  return {
+    inspectCount: contextUtilization.inspectCount,
+    hitCount: contextUtilization.hitCount,
+    missCount: contextUtilization.missCount,
+    utilizationPercent: contextUtilization.utilizationPercent,
+    risk: contextUtilization.risk,
+    missEvents: Array.isArray(contextUtilization.missEvents) ? contextUtilization.missEvents.slice(0, 12) : [],
   };
 }
 

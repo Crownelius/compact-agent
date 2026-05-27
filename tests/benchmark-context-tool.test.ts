@@ -501,6 +501,19 @@ describe('benchmark_context tool', () => {
           lastPostEditVerificationStatus: 'ok',
           finalVerifierCommands: ['npm test', 'npm run build'],
         },
+        contextUtilization: {
+          inspectCount: 4,
+          hitCount: 1,
+          missCount: 3,
+          utilizationPercent: 25,
+          risk: true,
+          missEvents: [{
+            seq: 2,
+            tool: 'read_file',
+            target: 'src/unrelated.ts',
+            reason: 'local read/search/list inspection did not match any edited source target',
+          }],
+        },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
         warnings: [],
@@ -519,6 +532,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('dependency=manifests:1,lockfiles:1,setup:true,setup_ok:true,validation:true,validation_ok:true,targets:node:package.json|node:package-lock.json');
     expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,predictions:#5 src/app.ts -> ok: formatting total should satisfy billing assertion');
     expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,latest:ok,commands:npm test|npm run build');
+    expect(result.output).toContain('context=inspects:4,hits:1,misses:3,utilization:25.00%,risk:true,unused:read_file#2 src/unrelated.ts');
   }, 15_000);
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {

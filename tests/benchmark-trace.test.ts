@@ -460,6 +460,14 @@ describe('benchmark trace artifacts', () => {
       lastPostEditVerificationStatus: 'ok',
       finalVerifierCommands: ['npm test'],
     });
+    expect(summary.experienceCard.contextUtilization).toMatchObject({
+      inspectCount: 2,
+      hitCount: 2,
+      missCount: 0,
+      utilizationPercent: 100,
+      risk: false,
+      missEvents: [],
+    });
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
   });
 

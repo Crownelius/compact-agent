@@ -52,6 +52,7 @@ export interface BenchmarkExperienceCard {
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   decisionObservability: BenchmarkExperienceDecisionObservability;
   validationReliability: BenchmarkExperienceValidationReliability;
+  contextUtilization: BenchmarkExperienceContextUtilization;
   verificationCommands: string[];
   changedFiles: string[];
   warnings: string[];
@@ -104,6 +105,15 @@ export interface BenchmarkExperienceValidationReliability {
   lastPostEditVerificationSeq: number | null;
   lastPostEditVerificationStatus: 'ok' | 'error' | null;
   finalVerifierCommands: string[];
+}
+
+export interface BenchmarkExperienceContextUtilization {
+  inspectCount: number;
+  hitCount: number;
+  missCount: number;
+  utilizationPercent: number | null;
+  risk: boolean;
+  missEvents: BenchmarkContextUtilizationEvent[];
 }
 
 export interface BenchmarkTraceArtifact {
@@ -787,6 +797,7 @@ export function buildBenchmarkExperienceCard(input: {
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
     validationReliability: buildBenchmarkExperienceValidationReliability(input.events, input.trajectoryQuality),
+    contextUtilization: buildBenchmarkExperienceContextUtilization(input.trajectoryQuality),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
       .slice(0, 12),
@@ -796,6 +807,26 @@ export function buildBenchmarkExperienceCard(input: {
     warnings: input.trajectoryQuality.warnings
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceContextUtilization(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceContextUtilization {
+  return {
+    inspectCount: quality.contextUtilizationInspectCount,
+    hitCount: quality.contextUtilizationHitCount,
+    missCount: quality.contextUtilizationMissCount,
+    utilizationPercent: quality.contextUtilizationPercent,
+    risk: quality.contextUtilizationRisk,
+    missEvents: quality.contextUtilizationMissEvents
+      .map((event) => ({
+        ...event,
+        tool: truncate(redactTraceText(event.tool), 80),
+        target: truncate(redactTraceText(event.target), 160),
+        reason: truncate(redactTraceText(event.reason), 180),
+      }))
+      .slice(0, 12),
   };
 }
 

@@ -624,6 +624,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorEnvironment = summarizePriorEnvironmentReconstruction(summary, quality);
     const priorDecision = summarizePriorDecisionObservability(summary);
     const priorReliability = summarizePriorValidationReliability(summary, quality);
+    const priorContext = summarizePriorContextUtilization(summary, quality);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -674,6 +675,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorDependency.text,
         priorDecision,
         priorReliability,
+        priorContext,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
       continue;
@@ -699,6 +701,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorDependency.text,
       priorDecision,
       priorReliability,
+      priorContext,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
     ].filter(Boolean).join('; ');
@@ -1047,6 +1050,50 @@ function summarizePriorValidationReliability(
     `regressions:${regressionCount ?? 0}`,
     lastStatus ? `latest:${truncateContractSignal(redactTraceText(lastStatus), 40)}` : null,
     commands.length ? `commands:${commands.join('|')}` : null,
+  ].filter(Boolean).join(',');
+}
+
+function summarizePriorContextUtilization(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): string | null {
+  const card = objectRecord(summary.experienceCard);
+  const context = objectRecord(card.contextUtilization);
+  const inspectCount = finiteNumber(context.inspectCount)
+    ?? finiteNumber(quality.contextUtilizationInspectCount);
+  const hitCount = finiteNumber(context.hitCount)
+    ?? finiteNumber(quality.contextUtilizationHitCount);
+  const missCount = finiteNumber(context.missCount)
+    ?? finiteNumber(quality.contextUtilizationMissCount);
+  const percent = finiteNumber(context.utilizationPercent)
+    ?? finiteNumber(quality.contextUtilizationPercent);
+  const risk = typeof context.risk === 'boolean'
+    ? context.risk
+    : (typeof quality.contextUtilizationRisk === 'boolean' ? quality.contextUtilizationRisk : undefined);
+  const rawMissEvents = Array.isArray(context.missEvents)
+    ? context.missEvents
+    : (Array.isArray(quality.contextUtilizationMissEvents) ? quality.contextUtilizationMissEvents : []);
+  if ((inspectCount ?? 0) <= 0 && (hitCount ?? 0) <= 0 && (missCount ?? 0) <= 0 && risk !== true) return null;
+
+  const misses = rawMissEvents
+    .slice(0, 2)
+    .flatMap((raw) => {
+      const event = objectRecord(raw);
+      const seq = finiteNumber(event.seq);
+      const tool = typeof event.tool === 'string' ? event.tool.trim() : 'inspect';
+      const target = typeof event.target === 'string' ? event.target.trim() : '';
+      if (!target) return [];
+      return [`${tool}#${seq ?? '?'} ${target}`];
+    })
+    .map((miss) => truncateContractSignal(redactTraceText(miss), 160));
+
+  return [
+    `context=inspects:${inspectCount ?? 0}`,
+    `hits:${hitCount ?? 0}`,
+    `misses:${missCount ?? 0}`,
+    percent == null ? null : `utilization:${percent.toFixed(2)}%`,
+    risk === undefined ? null : `risk:${String(risk)}`,
+    misses.length ? `unused:${misses.join(' | ')}` : null,
   ].filter(Boolean).join(',');
 }
 
