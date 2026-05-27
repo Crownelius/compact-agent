@@ -21,6 +21,7 @@ from .utils import (
     extract_action_payload,
     fold_exgentic_history,
     json_dumps,
+    repair_exgentic_action_payload,
     redact,
     safe_id,
     shortlist_exgentic_actions,
@@ -307,13 +308,30 @@ class VentipusAgentInstance(AgentInstance):
         return Path.cwd()
 
     def _action_from_payload(self, payload: ActionPayload) -> Action | None:
-        action_type = _find_action_type(getattr(self, "actions", []), payload.name)
+        actions = list(getattr(self, "actions", []) or [])
+        action_docs = [_action_type_to_doc(action) for action in actions]
+        repair = repair_exgentic_action_payload(payload, action_docs)
+        if repair.diagnostics.get("status") != "unchanged":
+            self._history.append({"role": "action_repair", "content": repair.diagnostics})
+
+        repaired_payload = repair.payload
+        action_type = _find_action_type(actions, repaired_payload.name)
         if action_type is None:
             return None
-        args = _normalize_arguments(action_type, payload.arguments, fallback_text=json_dumps(payload.arguments))
+        args = _normalize_arguments(action_type, repaired_payload.arguments, fallback_text=json_dumps(repaired_payload.arguments))
         try:
             return action_type.build_action(args)
-        except Exception:
+        except Exception as exc:
+            self._history.append(
+                {
+                    "role": "action_repair",
+                    "content": {
+                        "status": "build_failed",
+                        "action": repaired_payload.name,
+                        "error": truncate(exc, limit=1200),
+                    },
+                }
+            )
             return None
 
     def _fallback_action(self, text: str) -> Action | None:

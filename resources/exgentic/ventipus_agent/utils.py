@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Any
 
 
@@ -64,6 +65,15 @@ class ActionPayload:
 
     name: str
     arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ActionRepairResult:
+    """Deterministic repair result for benchmark action JSON."""
+
+    payload: ActionPayload
+    changed: bool
+    diagnostics: dict[str, Any]
 
 
 def redact(value: Any) -> str:
@@ -127,6 +137,14 @@ def fold_exgentic_history(
             diagnostic = _compact_ventipus_diagnostic(item, item_limit=item_limit)
             if diagnostic is not None:
                 diagnostics.append({"turn": idx, **diagnostic})
+        elif role == "action_repair":
+            diagnostics.append(
+                {
+                    "turn": idx,
+                    "kind": "action_repair",
+                    "evidence": truncate(json_dumps(item.get("content"), limit=item_limit), limit=item_limit),
+                }
+            )
 
     latest_observation = observations[-1] if observations else None
     latest_action = actions[-1] if actions else None
@@ -142,6 +160,49 @@ def fold_exgentic_history(
         "action_counts": action_counts,
         "discipline": _folding_discipline(profile),
     }
+
+
+def repair_exgentic_action_payload(
+    payload: ActionPayload,
+    action_docs: list[dict[str, Any]],
+) -> ActionRepairResult:
+    """Repair near-miss action names and argument keys before ActionType build.
+
+    This is intentionally deterministic and conservative. It fixes common model
+    output drift such as camelCase action names, case-only mismatches, and
+    schema-key casing/separator mistakes, while leaving unresolved names intact
+    so the caller can still fail or fallback explicitly.
+    """
+
+    docs = [doc for doc in action_docs or [] if isinstance(doc, dict) and doc.get("name")]
+    matched_doc, match_reason, match_score = _resolve_action_doc(payload.name, docs)
+    repaired_name = str(matched_doc.get("name")) if matched_doc else payload.name
+    repaired_args, arg_diagnostics = _repair_action_arguments(
+        payload.arguments,
+        matched_doc.get("arguments_schema") if matched_doc else None,
+    )
+
+    changed = repaired_name != payload.name or repaired_args != payload.arguments
+    if matched_doc is None:
+        status = "unresolved_action_name"
+    elif changed:
+        status = "repaired"
+    else:
+        status = "unchanged"
+
+    diagnostics = {
+        "status": status,
+        "original_name": payload.name,
+        "repaired_name": repaired_name,
+        "name_match_reason": match_reason,
+        "name_match_score": round(match_score, 3),
+        **arg_diagnostics,
+    }
+    return ActionRepairResult(
+        payload=ActionPayload(name=repaired_name, arguments=repaired_args),
+        changed=changed,
+        diagnostics=diagnostics,
+    )
 
 
 def shortlist_exgentic_actions(
@@ -298,6 +359,93 @@ def _folding_discipline(profile: str) -> str:
     if profile == "tau2":
         return "Carry forward policy constraints, customer intent, tool results, and pending confirmations before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
+
+
+def _resolve_action_doc(
+    name: str,
+    docs: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str, float]:
+    raw = str(name or "")
+    if not raw:
+        return None, "empty", 0.0
+
+    for doc in docs:
+        candidate = str(doc.get("name") or "")
+        if candidate == raw:
+            return doc, "exact", 1.0
+
+    lowered = raw.lower()
+    for doc in docs:
+        candidate = str(doc.get("name") or "")
+        if candidate.lower() == lowered:
+            return doc, "case_insensitive", 1.0
+
+    normalized = _normalized_identifier(raw)
+    for doc in docs:
+        candidate = str(doc.get("name") or "")
+        if _normalized_identifier(candidate) == normalized:
+            return doc, "normalized_identifier", 1.0
+
+    best_doc: dict[str, Any] | None = None
+    best_score = 0.0
+    second_score = 0.0
+    for doc in docs:
+        candidate = str(doc.get("name") or "")
+        candidate_norm = _normalized_identifier(candidate)
+        score = SequenceMatcher(None, normalized, candidate_norm).ratio() if normalized and candidate_norm else 0.0
+        if normalized and candidate_norm and (normalized in candidate_norm or candidate_norm in normalized):
+            score = max(score, 0.82)
+        if score > best_score:
+            second_score = best_score
+            best_score = score
+            best_doc = doc
+        elif score > second_score:
+            second_score = score
+
+    if best_doc is not None and best_score >= 0.82 and best_score - second_score >= 0.04:
+        return best_doc, "fuzzy_identifier", best_score
+    return None, "unresolved", best_score
+
+
+def _repair_action_arguments(
+    arguments: dict[str, Any],
+    schema: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    args = dict(arguments or {})
+    schema_keys = _schema_property_keys(schema)
+    if not schema_keys:
+        return args, {
+            "argument_key_repairs": [],
+            "dropped_argument_keys": [],
+            "schema_keys": [],
+        }
+
+    key_by_normalized = {_normalized_identifier(key): key for key in schema_keys}
+    repaired: dict[str, Any] = {}
+    key_repairs: list[dict[str, str]] = []
+    dropped: list[str] = []
+
+    for key, value in args.items():
+        text_key = str(key)
+        if text_key in schema_keys:
+            repaired[text_key] = value
+            continue
+        canonical = key_by_normalized.get(_normalized_identifier(text_key))
+        if canonical is not None:
+            repaired[canonical] = value
+            key_repairs.append({"from": text_key, "to": canonical})
+        else:
+            dropped.append(text_key)
+
+    return repaired, {
+        "argument_key_repairs": key_repairs,
+        "dropped_argument_keys": dropped,
+        "schema_keys": schema_keys[:24],
+    }
+
+
+def _normalized_identifier(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
 
 def _latest_history_content(history: list[dict[str, Any]], role: str) -> Any | None:

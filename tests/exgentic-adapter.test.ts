@@ -32,6 +32,7 @@ describe('Exgentic adapter packaging', () => {
     expect(agent).toContain('## Available action names');
     expect(agent).toContain('## Recommended action shortlist');
     expect(agent).toContain('shortlist_exgentic_actions');
+    expect(agent).toContain('repair_exgentic_action_payload');
     expect(agent).toContain('## Folded session state');
     expect(agent).toContain('fold_exgentic_history');
     expect(agent).toContain('return "appworld"');
@@ -150,6 +151,14 @@ describe('Exgentic adapter packaging', () => {
         stdout: 'unknown action selected',
         stderr: 'schema mismatch for action',
       },
+      {
+        role: 'action_repair',
+        content: {
+          status: 'repaired',
+          original_name: 'LookupOrder',
+          repaired_name: 'lookup_order',
+        },
+      },
     ];
     const script = [
       `import json, sys`,
@@ -175,6 +184,7 @@ describe('Exgentic adapter packaging', () => {
     expect(folded.latest_action.actions[0].argument_keys).toEqual(['order_id', 'verbose']);
     expect(folded.action_counts.lookup_order).toBe(1);
     expect(folded.diagnostics[0].evidence).toContain('schema mismatch');
+    expect(JSON.stringify(folded.diagnostics)).toContain('LookupOrder');
     expect(JSON.stringify(folded)).not.toContain('large harmless model transcript large harmless model transcript large harmless model transcript');
   });
 
@@ -229,6 +239,62 @@ describe('Exgentic adapter packaging', () => {
     expect(parsed.pending.deferred_completion_actions).toContain('finish');
     expect(parsed.done.completion_ready).toBe(true);
     expect(parsed.done.shortlisted_actions.map((item: { name: string }) => item.name)).toContain('finish');
+  });
+
+  it('repairs near-miss Exgentic action names and argument keys before dispatch', () => {
+    const actionDocs = [
+      {
+        name: 'lookup_order',
+        description: 'Look up order and customer state',
+        is_finish: false,
+        is_message: false,
+        arguments_schema: { properties: { order_id: { type: 'string' }, include_history: { type: 'boolean' } } },
+      },
+      {
+        name: 'finish',
+        description: 'Finish with the final answer',
+        is_finish: true,
+        is_message: false,
+        arguments_schema: { properties: { answer: { type: 'string' } } },
+      },
+    ];
+    const script = [
+      `import json, sys`,
+      `sys.path.insert(0, ${JSON.stringify(adapterDir)})`,
+      `import utils`,
+      `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
+      `payload = utils.ActionPayload(name="LookupOrder", arguments={"OrderID": "ord-1", "includeHistory": True, "debug": "drop"})`,
+      `repaired = utils.repair_exgentic_action_payload(payload, actions)`,
+      `unresolved = utils.repair_exgentic_action_payload(utils.ActionPayload(name="teleport", arguments={"x": 1}), actions)`,
+      `print(json.dumps({`,
+      `  "payload": {"name": repaired.payload.name, "arguments": repaired.payload.arguments},`,
+      `  "changed": repaired.changed,`,
+      `  "diagnostics": repaired.diagnostics,`,
+      `  "unresolved": unresolved.diagnostics,`,
+      `}, sort_keys=True))`,
+    ].join('\n');
+    const out = execFileSync('python', ['-c', script], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        PYTHONDONTWRITEBYTECODE: '1',
+      },
+    }).trim();
+    const parsed = JSON.parse(out);
+    expect(parsed.changed).toBe(true);
+    expect(parsed.payload).toEqual({
+      name: 'lookup_order',
+      arguments: { order_id: 'ord-1', include_history: true },
+    });
+    expect(parsed.diagnostics.status).toBe('repaired');
+    expect(parsed.diagnostics.name_match_reason).toBe('normalized_identifier');
+    expect(parsed.diagnostics.argument_key_repairs).toEqual([
+      { from: 'OrderID', to: 'order_id' },
+      { from: 'includeHistory', to: 'include_history' },
+    ]);
+    expect(parsed.diagnostics.dropped_argument_keys).toEqual(['debug']);
+    expect(parsed.unresolved.status).toBe('unresolved_action_name');
   });
 
   it('compiles the Python adapter files without writing __pycache__ into resources', () => {

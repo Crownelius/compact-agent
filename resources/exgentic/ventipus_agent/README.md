@@ -14,7 +14,10 @@ shortlist before the full schema list, matching the Open Agent leaderboard
 finding that action-scaffold details matter while preserving compatibility with
 every available benchmark action. Long sessions use a folded history ledger
 that preserves latest observations, selected actions, action counts, and
-diagnostics without reinjecting bulky raw stdout into every step.
+diagnostics without reinjecting bulky raw stdout into every step. Before
+dispatch, near-miss action JSON is repaired conservatively: action names are
+matched by case/identifier normalization, schema argument keys are canonicalized,
+and unknown extra keys are dropped when the benchmark exposes a fixed schema.
 
 ## Python API use
 
