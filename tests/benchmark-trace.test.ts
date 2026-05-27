@@ -231,9 +231,11 @@ describe('benchmark trace artifacts', () => {
       failureSignatures: [],
       taskContract: {
         signalCount: 0,
+        signals: [],
         checklistAfterContext: null,
         checklistComplete: null,
         incompleteCount: 0,
+        incompleteItems: [],
       },
       verificationCommands: ['npm test'],
       changedFiles: ['src/app.ts'],
@@ -243,6 +245,18 @@ describe('benchmark trace artifacts', () => {
 
   it('builds compact experience cards for future benchmark replay', () => {
     const events = [
+      makeBenchmarkTraceEvent({
+        seq: 0,
+        tool: 'benchmark_context',
+        input: { path: 'C:/repo' },
+        output: [
+          '## Task Contract Signals',
+          '- TASK.md: Must show billing totals with two decimal places.',
+          '- TASK.md: Do not change public route names.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 5,
+      }),
       makeBenchmarkTraceEvent({
         seq: 1,
         tool: 'read_file',
@@ -362,7 +376,14 @@ describe('benchmark trace artifacts', () => {
     });
     expect(summary.experienceCard.changedFiles).toEqual(['src/app.ts']);
     expect(summary.experienceCard.verificationCommands).toEqual(['npm test']);
-    expect(summary.experienceCard.taskContract.signalCount).toBe(0);
+    expect(summary.experienceCard.taskContract).toMatchObject({
+      signalCount: 2,
+      signals: [
+        'TASK.md: Must show billing totals with two decimal places.',
+        'TASK.md: Do not change public route names.',
+      ],
+      incompleteItems: [],
+    });
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
   });
 

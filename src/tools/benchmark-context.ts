@@ -149,7 +149,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const harnessFiles = findBenchmarkHarnessFiles(sortedFiles);
     const harnessHints = summarizeBenchmarkHarnessHints(sortedFiles, verifierCommands);
     const methodHints = summarizeBenchmarkMethodHints(instructions, carefulFiles, verifierCommands, serviceHints, harnessHints, ciHints);
-    const priorExperience = summarizePriorBenchmarkExperienceSummary(root, sortedFiles, verifierCommands);
+    const priorExperience = summarizePriorBenchmarkExperienceSummary(root, sortedFiles, verifierCommands, taskContractSignals);
     const experienceHints = priorExperience.hints;
     const experienceWarnings = priorExperience.warnings;
     const toolHints = detectTools([
@@ -446,6 +446,7 @@ export function summarizePriorBenchmarkExperienceSummary(
   root: string,
   files: string[],
   verifierCommands: string[],
+  currentTaskContractSignals: string[] = [],
 ): BenchmarkExperienceSummary {
   if (/^(0|false|off|no)$/i.test(process.env.VENTIPUS_BENCHMARK_EXPERIENCE || '')) {
     return { hints: [], warnings: [] };
@@ -459,6 +460,9 @@ export function summarizePriorBenchmarkExperienceSummary(
   const fileSet = new Set(files.map(normalizePath));
   const fileBasenames = new Set(files.map((file) => basename(file).toLowerCase()));
   const verifierSet = new Set(verifierCommands.map(normalizeExperienceText));
+  const currentContractSet = new Set(currentTaskContractSignals
+    .map(normalizeContractSignalForMatch)
+    .filter(Boolean));
 
   const candidates = globSync('**/summary.json', {
     cwd: baseDir,
@@ -503,6 +507,8 @@ export function summarizePriorBenchmarkExperienceSummary(
       .map((defect) => objectRecord(defect).code)
       .filter((code): code is string => typeof code === 'string')
       .slice(0, 12);
+    const priorTaskContractSignals = priorTaskContractSignalsFromSummary(summary);
+    const contractOverlap = summarizeTaskContractOverlap(priorTaskContractSignals, currentContractSet);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -511,6 +517,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     relevanceScore += Math.min(20, changedFiles.filter((file) => fileSet.has(file)).length * 5);
     relevanceScore += Math.min(12, changedFiles.filter((file) => fileBasenames.has(basename(file).toLowerCase())).length * 3);
     relevanceScore += Math.min(12, verificationCommands.filter((cmd) => verifierSet.has(normalizeExperienceText(cmd))).length * 6);
+    relevanceScore += Math.min(18, contractOverlap.length * 6);
     if (relevanceScore < 18) continue;
 
     const harmReasons = classifyPriorExperienceHarm({
@@ -543,6 +550,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
         `verifiers=${redactTraceText(verifiers)}`,
         `changed=${redactTraceText(changed)}`,
+        contractOverlap.length ? `contract_overlap=${redactTraceText(contractOverlap.join(' | '))}` : null,
         priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
@@ -563,6 +571,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       `changed=${redactTraceText(changed)}`,
       replayCheckpoints.length ? `replay=${redactTraceText(replayCheckpoints.join(' | '))}` : null,
       priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
+      contractOverlap.length ? `contract_overlap=${redactTraceText(contractOverlap.join(' | '))}` : null,
       contractText,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
@@ -613,6 +622,19 @@ function uniqueNormalizedStrings(values: string[]): string[] {
   const seen = new Set<string>();
   for (const value of values) {
     const clean = normalizePath(value).trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+function uniqueExperienceStrings(values: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const clean = value.replace(/\s+/g, ' ').trim();
     const key = clean.toLowerCase();
     if (!clean || seen.has(key)) continue;
     seen.add(key);
@@ -784,6 +806,35 @@ function summarizePriorFailureSignatures(summary: Record<string, unknown>): stri
   return out;
 }
 
+function priorTaskContractSignalsFromSummary(summary: Record<string, unknown>): string[] {
+  const card = objectRecord(summary.experienceCard);
+  const taskContract = objectRecord(card.taskContract);
+  return uniqueExperienceStrings(stringsFromUnknown(taskContract.signals)
+    .map((signal) => truncateContractSignal(redactTraceText(signal), 220)))
+    .slice(0, 20);
+}
+
+function summarizeTaskContractOverlap(priorSignals: string[], currentContractSet: Set<string>): string[] {
+  if (priorSignals.length === 0 || currentContractSet.size === 0) return [];
+  const matches: string[] = [];
+  for (const signal of priorSignals) {
+    const normalized = normalizeContractSignalForMatch(signal);
+    if (!normalized) continue;
+    let matched = currentContractSet.has(normalized);
+    if (!matched && normalized.length >= 12) {
+      for (const current of currentContractSet) {
+        if (current.length < 12) continue;
+        if (normalized.includes(current) || current.includes(normalized)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (matched) matches.push(truncateContractSignal(signal, 140));
+  }
+  return uniqueExperienceStrings(matches).slice(0, 4);
+}
+
 function summarizePriorTaskContractUse(summary: Record<string, unknown>, quality: Record<string, unknown>): string | null {
   const card = objectRecord(summary.experienceCard);
   const taskContract = objectRecord(card.taskContract);
@@ -843,6 +894,19 @@ function classifyPriorExperienceHarm(input: {
 
 function normalizeExperienceText(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function normalizeContractSignalForMatch(value: string): string {
+  return normalizeContractLine(value)
+    .replace(/^(?:[a-z0-9._-]+[\\/])*[a-z0-9._-]+\.[a-z0-9]+:\d+:\s*/i, '')
+    .replace(/^(?:[a-z0-9._-]+[\\/])*[a-z0-9._-]+\.[a-z0-9]+:\s*/i, '')
+    .replace(/^[a-z0-9._-]+(?:[\\/][a-z0-9._-]+)+:\d+:\s*/i, '')
+    .replace(/^[a-z0-9._-]+(?:[\\/][a-z0-9._-]+)+:\s*/i, '')
+    .replace(/^(?:description|instruction|instructions|prompt|task)\s*:\s*/i, '')
+    .replace(/[`"'.,;:!?()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 function summarizeTaskContractSignals(root: string, instructions: string[]): string[] {

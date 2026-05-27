@@ -350,6 +350,13 @@ describe('benchmark_context tool', () => {
     mkdirSync(priorRunDir, { recursive: true });
     process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      '',
+      '## Acceptance Criteria',
+      '- Must show billing totals with two decimal places.',
+      '',
+    ].join('\n'));
     writeFileSync(join(root, 'src', 'app.ts'), 'export const total = 12.3;\n');
     writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
       cwd: root,
@@ -401,9 +408,13 @@ describe('benchmark_context tool', () => {
         },
         taskContract: {
           signalCount: 2,
+          signals: [
+            'TASK.md: Must show billing totals with two decimal places.',
+          ],
           checklistAfterContext: true,
           checklistComplete: true,
           incompleteCount: 0,
+          incompleteItems: [],
         },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
@@ -417,6 +428,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('previous run: 2026-05-27T09:00:00.000Z');
     expect(result.output).toContain('replay=read_file#2 src/app.ts | failing_verifier#3 npm test');
     expect(result.output).toContain('failures=npm test tests=billing totals render with fixed decimals files=src/app.ts errors=AssertionError: expected 12.3 to equal 12.30');
+    expect(result.output).toContain('contract_overlap=TASK.md: Must show billing totals with two decimal places.');
     expect(result.output).toContain('contract=signals:2,checklist_after_context:true,complete:true');
   });
 

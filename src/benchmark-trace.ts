@@ -63,9 +63,11 @@ export interface BenchmarkExperienceReplayCheckpoint {
 
 export interface BenchmarkExperienceTaskContract {
   signalCount: number;
+  signals: string[];
   checklistAfterContext: boolean | null;
   checklistComplete: boolean | null;
   incompleteCount: number;
+  incompleteItems: BenchmarkTodoIncompleteItem[];
 }
 
 export interface BenchmarkTraceArtifact {
@@ -669,12 +671,7 @@ export function buildBenchmarkExperienceCard(input: {
         raw: truncate(redactTraceText(signature.raw), 240),
       })),
     sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
-    taskContract: {
-      signalCount: input.trajectoryQuality.taskContractSignalCount,
-      checklistAfterContext: input.trajectoryQuality.taskContractChecklistAfterContext,
-      checklistComplete: input.trajectoryQuality.taskContractChecklistComplete,
-      incompleteCount: input.trajectoryQuality.todoIncompleteCount,
-    },
+    taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
       .slice(0, 12),
@@ -685,6 +682,33 @@ export function buildBenchmarkExperienceCard(input: {
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
   };
+}
+
+function buildBenchmarkExperienceTaskContract(
+  events: BenchmarkTraceEvent[],
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceTaskContract {
+  return {
+    signalCount: quality.taskContractSignalCount,
+    signals: extractBenchmarkExperienceTaskContractSignals(events),
+    checklistAfterContext: quality.taskContractChecklistAfterContext,
+    checklistComplete: quality.taskContractChecklistComplete,
+    incompleteCount: quality.todoIncompleteCount,
+    incompleteItems: quality.todoIncompleteItems
+      .map((item) => ({
+        status: item.status,
+        content: truncate(redactTraceText(item.content), 160),
+      }))
+      .slice(0, 10),
+  };
+}
+
+function extractBenchmarkExperienceTaskContractSignals(events: BenchmarkTraceEvent[]): string[] {
+  return uniqueStrings(events
+    .filter((event) => event.tool === 'benchmark_context')
+    .flatMap((event) => extractTaskContractSignalLines(event.outputPreview))
+    .map((line) => truncate(redactTraceText(line), 220)))
+    .slice(0, 12);
 }
 
 function buildBenchmarkExperienceReplayCheckpoints(events: BenchmarkTraceEvent[]): BenchmarkExperienceReplayCheckpoint[] {
