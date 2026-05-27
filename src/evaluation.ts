@@ -260,6 +260,7 @@ export type BenchmarkProfile =
   | 'swe-cycle'
   | 'swe-ci'
   | 'swe-prbench'
+  | 'tml-bench'
   | 'ci-repair'
   | 'wildclaw'
   | 'arc-agi'
@@ -318,6 +319,17 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   'pull-request-review': 'swe-prbench',
   codereviewbench: 'swe-prbench',
   'code-review-bench': 'swe-prbench',
+  tml: 'tml-bench',
+  tmlbench: 'tml-bench',
+  'tml-bench': 'tml-bench',
+  tabularml: 'tml-bench',
+  'tabular-ml': 'tml-bench',
+  kaggleml: 'tml-bench',
+  'kaggle-ml': 'tml-bench',
+  kagglebench: 'tml-bench',
+  'kaggle-bench': 'tml-bench',
+  datascience: 'tml-bench',
+  'data-science': 'tml-bench',
   cirepair: 'ci-repair',
   'ci-repair': 'ci-repair',
   ci_repair: 'ci-repair',
@@ -468,6 +480,14 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - For each finding, cite the exact file/line or diff hunk, describe impact, confidence, and the minimal reproduction or verifier that would confirm it. Prefer a few high-signal findings over broad style commentary.
 - Do not read oracle/gold review comments, hidden human feedback, expected findings, or benchmark result files before writing your review.
 - Cross-check suspected issues against current source/tests before finalizing, but do not let unrelated context dilute the review. If no actionable issue is supported, say that explicitly and note residual evidence gaps.`;
+    case 'tml-bench':
+      return `Profile: TML-Bench / Kaggle-style tabular ML task
+- Treat the task as an end-to-end tabular ML benchmark under a time budget. Success means producing a valid submission artifact that matches the required sample_submission schema and can be scored on private holdout labels.
+- Build the data contract first: train/test/sample submission paths, ID columns, target column, metric, row counts, categorical/numeric/text/date columns, missing-value policy, and final submission path.
+- Establish a simple reliable baseline before adding complexity. Use an honest validation split or cross-validation, fixed seeds, leakage checks, robust preprocessing, and fast models before expensive ensembles.
+- Do not read hidden labels, private holdout targets, leaderboard answer files, oracle submissions, result files, or benchmark scoring internals. Treat any private split outside the agent workspace as untouchable.
+- Validate the generated submission locally before finalizing: exact columns/order, row count equals test set, no NaN/inf where forbidden, predictions in legal range/classes, deterministic rerun if feasible, and metric/log output recorded.
+- Prefer correctness and reproducibility over speculative leaderboard chasing. If time is short, ship a valid baseline with clear evidence rather than an invalid high-complexity pipeline.`;
     case 'ci-repair':
       return `Profile: CI-Repair style repository workflow validation
 - Treat the task as repository-level CI repair or patch validation unless current evidence says otherwise.
@@ -567,6 +587,7 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If the task mentions SWE-Cycle, SWE-Judge, FullCycle, EnvSetup, CodeImpl, TestGen, run_script, parsing_script, selected_test_files_to_run, environment_setup_commit, before_repo_set_cmd, or bare-repo issue resolution, follow the SWE-Cycle profile.
 - If the task mentions SWE-CI, current/target commits, test gaps, maintainability over repository evolution, or the run_tests -> define_requirements -> modify_code loop, follow the SWE-CI profile.
 - If the task mentions SWE-PRBench, PRBench, pull request review, code review quality, human review comments, changed files plus diff_patch, or Type1/Type2/Type3 review issue classes, follow the SWE-PRBench profile.
+- If the task mentions TML-Bench, tabular ML, Kaggle-style competition, sample_submission, private holdout scoring, train/test CSVs, or valid submission artifacts, follow the TML-Bench profile.
 - If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
 - If the task mentions WildClawBench, native-runtime agent work, OpenClaw, multimodal/social/search/safety categories, or long-horizon harness comparison, follow the WildClawBench profile.
 - If the task mentions ARC Prize, ARC-AGI, Kaggle ARC, grid abstractions, or no-instructions turn-based environments, follow the ARC-AGI profile.
@@ -605,6 +626,7 @@ Use this workflow as the default benchmark strategy:
    - If benchmark_context shows prior \`replay=\` checkpoints, treat them as a ranked hypothesis trail: verify the current task still matches, retry only the relevant read/search/verifier steps, and ignore any prior pattern listed under warnings.
    - For long-horizon roadmap, SaaS, mobile, WebDevBench, SWE-Cycle, or SWE-CI tasks, keep the checklist milestone-based so partially completed acceptance nodes, canaries, lifecycle phases, CI-loop requirements, and production-readiness gaps stay visible.
    - For SWE-PRBench or PR-review tasks, keep a diff-first finding ledger and resist broad context expansion unless a specific suspected issue needs nearby source, tests, or API contract evidence.
+   - For TML-Bench/Kaggle tabular ML tasks, keep a data-contract and submission-validity ledger before modeling so hidden-label leakage and invalid submissions are caught early.
    - For AppWorld, BrowseComp+, and tau2 tasks, keep an action/source/policy ledger so environment changes and citations are auditable.
 
 4. Validate like a verifier.

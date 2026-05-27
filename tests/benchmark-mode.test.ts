@@ -40,6 +40,9 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('swe-prbench')).toBe('swe-prbench');
     expect(normalizeBenchmarkProfile('prbench')).toBe('swe-prbench');
     expect(normalizeBenchmarkProfile('pull-request-review')).toBe('swe-prbench');
+    expect(normalizeBenchmarkProfile('tml-bench')).toBe('tml-bench');
+    expect(normalizeBenchmarkProfile('kaggle-ml')).toBe('tml-bench');
+    expect(normalizeBenchmarkProfile('tabular-ml')).toBe('tml-bench');
     expect(normalizeBenchmarkProfile('wildclawbench')).toBe('wildclaw');
     expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
     expect(normalizeBenchmarkProfile('spec-bench')).toBe('specbench');
@@ -84,6 +87,10 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('swe-prbench review pull request feedback')).toEqual({
       profile: 'swe-prbench',
       task: 'review pull request feedback',
+    });
+    expect(splitBenchmarkArgs('tml-bench build valid sample_submission baseline')).toEqual({
+      profile: 'tml-bench',
+      task: 'build valid sample_submission baseline',
     });
     expect(splitBenchmarkArgs('wildclaw solve BrowseComp task')).toEqual({
       profile: 'wildclaw',
@@ -217,6 +224,18 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('severity-rated review findings');
     expect(prompt).toContain('hidden human feedback');
     expect(prompt).toContain('Do not inspect gold patches');
+  });
+
+  it('builds TML-Bench prompts around valid Kaggle tabular submissions', () => {
+    const prompt = buildBenchmarkPrompt('train a tabular ML baseline and write sample_submission.csv', '/workspace', 'tml-bench');
+    expect(prompt).toContain('TML-Bench / Kaggle-style tabular ML task');
+    expect(prompt).toContain('sample_submission schema');
+    expect(prompt).toContain('data contract');
+    expect(prompt).toContain('honest validation split');
+    expect(prompt).toContain('hidden labels');
+    expect(prompt).toContain('private holdout');
+    expect(prompt).toContain('exact columns/order');
+    expect(prompt).toContain('valid baseline');
   });
 
   it('builds WildClawBench prompts around native-runtime agent contracts', () => {

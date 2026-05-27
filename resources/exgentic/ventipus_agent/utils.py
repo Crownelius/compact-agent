@@ -472,6 +472,8 @@ def _folding_discipline(profile: str) -> str:
         return "Carry forward current/target commits, test gaps, inferred requirements, touched files, verifier deltas, and unresolved regressions before selecting the next action."
     if profile == "swe-prbench":
         return "Carry forward PR title/description, changed files, diff hunks, suspected findings, evidence gaps, and context-expansion reasons before selecting the next action."
+    if profile == "tml-bench":
+        return "Carry forward train/test/sample submission paths, ID/target columns, metric, validation split, leakage checks, model artifacts, submission path, and validity evidence before selecting the next action."
     return "Use the folded ledger as orientation, then rely on the latest observation and available action schemas for the next action."
 
 
@@ -931,6 +933,15 @@ def _profile_action_prior(profile: str, name: str, action_text: str) -> tuple[fl
             return 3, "SWE-PRBench prior: deliver severity-rated review findings once evidence is sufficient"
         if re.search(r"\b(edit|patch|modify|update|write|apply)\b", text):
             return -3, "SWE-PRBench prior: defer code edits unless the review task explicitly asks for patches"
+    elif profile == "tml-bench":
+        if re.search(r"\b(data|dataset|train|test|sample[_ -]?submission|schema|columns?|target|id|metric|read|inspect|list|search|get|query)\b", text):
+            return 6, "TML-Bench prior: establish data contract and submission schema before modeling"
+        if re.search(r"\b(validate|validation|split|cv|cross[-_ ]?validation|leakage|baseline|score|metric|check)\b", text):
+            return 6, "TML-Bench prior: honest validation and leakage checks before submission"
+        if re.search(r"\b(train|fit|model|pipeline|preprocess|feature|predict)\b", text):
+            return 4, "TML-Bench prior: build a reliable tabular baseline before complex ensembling"
+        if re.search(r"\b(submit|submission|save|write|export|finish|answer|final)\b", text):
+            return 4, "TML-Bench prior: produce and validate a schema-compatible submission artifact"
     else:
         if re.search(r"\b(observe|read|search|list|get|lookup|inspect|query)\b", text):
             return 4, "generic prior: inspect available state before irreversible actions"

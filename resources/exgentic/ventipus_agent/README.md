@@ -8,7 +8,7 @@ The adapter implements Exgentic's `Agent` / `AgentInstance` split. On each
 non-interactive `/benchmark` mode, asks ventipus to finish with one JSON
 action object, then maps that JSON back to an Exgentic `ActionType`.
 It auto-selects specialized `/benchmark` profiles for AppWorld, BrowseComp+,
-tau2, ARC, SaaS, roadmap, mobile, WebDevBench, SWE-Cycle, SWE-CI, and SWE-PRBench-style tasks from the task, context, and
+tau2, ARC, SaaS, roadmap, mobile, WebDevBench, SWE-Cycle, SWE-CI, SWE-PRBench, and TML-Bench-style tasks from the task, context, and
 available action schemas. It also builds a deterministic recommended action
 shortlist before the full schema list, including required argument keys and
 redacted exact latest-observation/context hints when those required values are
@@ -42,6 +42,10 @@ For SWE-PRBench-style PR review tasks, it keeps PR metadata, changed files, diff
 hunks, suspected findings, evidence gaps, and context-expansion reasons visible
 so the agent produces severity-rated findings instead of drifting into broad
 repo inspection or unsolicited patch generation.
+For TML-Bench-style tabular ML tasks, it keeps the data contract, metric,
+validation split, leakage checks, model artifact, submission path, and submission
+validity evidence visible so the agent favors a reproducible valid baseline over
+an invalid high-complexity attempt.
 
 ## Python API use
 

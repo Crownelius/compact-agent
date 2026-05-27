@@ -41,10 +41,13 @@ describe('Exgentic adapter packaging', () => {
     expect(agent).toContain('return "swe-cycle"');
     expect(agent).toContain('return "swe-ci"');
     expect(agent).toContain('return "swe-prbench"');
+    expect(agent).toContain('return "tml-bench"');
     expect(agent).toContain('return "webdevbench"');
     const utils = readFileSync(utilsPath, 'utf-8');
     expect(utils).toContain('SWE-PRBench prior');
+    expect(utils).toContain('TML-Bench prior');
     expect(utils).toContain('swe-prbench');
+    expect(utils).toContain('tml-bench');
   });
 
   it('prints the packaged Exgentic agent directory from the CLI wrapper', () => {

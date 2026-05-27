@@ -378,6 +378,11 @@ describe('benchmark trace artifacts', () => {
         benchmarkName: 'SWE-PRBench',
       },
       {
+        prompt: '/benchmark tml-bench train tabular ML baseline and create sample_submission.csv',
+        benchmark: 'tmlbench',
+        benchmarkName: 'TML-Bench',
+      },
+      {
         prompt: '/benchmark wildclaw solve BrowseComp task',
         benchmark: 'wildclawbench',
         benchmarkName: 'WildClawBench',

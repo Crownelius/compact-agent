@@ -209,6 +209,17 @@ def _profile_for_task(task: dict[str, Any]) -> str:
     ):
         return "swe-prbench"
     if (
+        "tml-bench" in task_text
+        or "tmlbench" in task_text
+        or "tabular ml" in task_text
+        or "kaggle-style" in task_text
+        or "kaggle style" in task_text
+        or "sample_submission" in task_text
+        or "private holdout" in task_text
+        or ("train.csv" in task_text and "test.csv" in task_text and "submission" in task_text)
+    ):
+        return "tml-bench"
+    if (
         "saasbench" in task_text
         or "saas-bench" in task_text
         or "enterprise saas" in task_text
@@ -312,6 +323,8 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         lines.append("This is a SWE-CI-style repository evolution task. Track current/target commits, test gaps, requirement derivation, and CI-loop validation across run_tests -> define_requirements -> modify_code.")
     elif profile == "swe-prbench":
         lines.append("This is a SWE-PRBench-style pull request review task. Inspect PR metadata and diff first, expand context only for concrete suspected issues, and return severity-rated review findings with file/line evidence instead of patching unless explicitly requested.")
+    elif profile == "tml-bench":
+        lines.append("This is a TML-Bench/Kaggle-style tabular ML task. Build the data contract first, avoid hidden-label leakage, train an honest baseline, and produce a sample_submission-compatible artifact with validation evidence.")
     elif _is_usaco_task(task):
         lines.append("This is a USACO-style programming task. Produce the final code solution in the final response.")
     else:

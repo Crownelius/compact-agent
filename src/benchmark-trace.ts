@@ -2083,6 +2083,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\bswe[-_ ]?cycle\b|\bswe[-_ ]?judge\b|\bfullcycle\b/i.test(text)) return 'swecycle';
   if (/\bswe[-_ ]?ci\b/i.test(text)) return 'sweci';
   if (/\bswe[-_ ]?pr(?:[-_ ]?bench)?\b|\bpr[-_ ]?bench\b|\bpull\s+request\s+review\b|\bcode\s+review\s+quality\b/i.test(text)) return 'sweprbench';
+  if (/\btml[-_ ]?bench\b|\btabular\s+ml\b|\bkaggle[-_\s]?style\b|\bsample_submission\b|\bprivate\s+holdout\b/i.test(text)) return 'tmlbench';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
   if (/\bswe[- ]bench\b/i.test(text)) return 'swebench';
@@ -2104,6 +2105,7 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'swecycle' || cleaned === 'swecyclebench' || cleaned === 'fullcycle' || cleaned === 'swejudge') return 'swecycle';
   if (cleaned === 'sweci' || cleaned === 'swecibench') return 'sweci';
   if (cleaned === 'swepr' || cleaned === 'sweprbench' || cleaned === 'prbench' || cleaned === 'prreview' || cleaned === 'pullrequestreview' || cleaned === 'codereviewbench') return 'sweprbench';
+  if (cleaned === 'tml' || cleaned === 'tmlbench' || cleaned === 'tabularml' || cleaned === 'kaggleml' || cleaned === 'kagglebench' || cleaned === 'datascience') return 'tmlbench';
   if (cleaned === 'cirepair' || cleaned === 'cirepairbench' || cleaned === 'ci') return 'cirepairbench';
   if (cleaned === 'wildclaw' || cleaned === 'wildclawbench' || cleaned === 'wcbench') return 'wildclawbench';
   if (cleaned === 'arc' || cleaned === 'arcagi' || cleaned === 'arcagi3' || cleaned === 'arcprize') return 'arcagi3';
@@ -2133,6 +2135,7 @@ function formatBenchmarkName(slug: string): string {
     saasbench: 'SaaSBench',
     specbench: 'SpecBench',
     sweprbench: 'SWE-PRBench',
+    tmlbench: 'TML-Bench',
     swecycle: 'SWE-Cycle',
     sweci: 'SWE-CI',
     swebench: 'SWE-bench',
