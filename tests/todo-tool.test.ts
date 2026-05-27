@@ -94,6 +94,7 @@ describe('todo prompt guidance', () => {
     const prompt = buildSystemPrompt(cfg, cwd, 'benchmark', 'fix a multi-step task');
     expect(prompt).toContain('todo_write');
     expect(prompt).toContain('multi-step work');
+    expect(prompt).toContain('github_repo_digest');
   });
 
   it('guards benchmark skill disclosure with context-first fit checks', () => {

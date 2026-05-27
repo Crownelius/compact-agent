@@ -5304,7 +5304,8 @@ function isVerifierLoopProgressEvent(event: BenchmarkTraceEvent): boolean {
     || event.tool === 'todo_write'
     || event.tool === 'web_search'
     || event.tool === 'web_fetch'
-    || event.tool === 'research_sources';
+    || event.tool === 'research_sources'
+    || event.tool === 'github_repo_digest';
 }
 
 function isFailureInspectionEvent(event: BenchmarkTraceEvent): boolean {
@@ -5424,7 +5425,7 @@ function normalizeVerifierCommand(command: string): string {
 
 function redundantToolCallFingerprint(event: BenchmarkTraceEvent): string | null {
   if (event.status !== 'ok') return null;
-  if (!['benchmark_context', 'read_file', 'grep', 'glob', 'list_dir', 'web_search', 'web_fetch', 'research_sources'].includes(event.tool)) {
+  if (!['benchmark_context', 'read_file', 'grep', 'glob', 'list_dir', 'web_search', 'web_fetch', 'research_sources', 'github_repo_digest'].includes(event.tool)) {
     return null;
   }
   const input = normalizePreviewForFingerprint(event.inputPreview);
@@ -6271,7 +6272,7 @@ function getPiBenchContext(
 } {
   const messageTextBlock = messages.map(messageText).join('\n');
   const contextEventTextBlock = events
-    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources' || event.tool === 'github_repo_digest')
     .map((event) => `${event.target}\n${event.inputPreview}\n${event.outputPreview}`)
     .join('\n');
   const detectionText = `${messageTextBlock}\n${contextEventTextBlock}`;
@@ -6342,7 +6343,7 @@ function emptyBenchmarkProactivityContextContract(): BenchmarkProactivityContext
 function isPiBenchActionEvent(event: BenchmarkTraceEvent): boolean {
   if (event.verification) return false;
   if (isInspectionEvent(event)) return false;
-  if ([BENCHMARK_INVALID_TOOL_ACTION_TOOL, 'research_sources', 'todo_write'].includes(event.tool)) return false;
+  if ([BENCHMARK_INVALID_TOOL_ACTION_TOOL, 'research_sources', 'github_repo_digest', 'todo_write'].includes(event.tool)) return false;
   if (event.status === 'error') return false;
   return true;
 }
@@ -6387,7 +6388,7 @@ export function buildBenchmarkLongHorizonSignals(
   const finalEditPassingVerificationCount = options.finalEditPassingVerificationCount
     ?? (firstEditSeq == null ? 0 : events.filter((event) => event.verification && event.status === 'ok' && event.seq > firstEditSeq).length);
   const firstContextSeq = options.firstTaskContractSeq
-    ?? firstSeq(events, (event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    ?? firstSeq(events, (event) => event.tool === 'benchmark_context' || event.tool === 'research_sources' || event.tool === 'github_repo_digest')
     ?? 0;
 
   if (firstEditSeq != null && context.swecycle && taskContractChecklistAfterContext !== true) {
@@ -6660,7 +6661,7 @@ function benchmarkTaskAlignmentCandidateStrings(event: BenchmarkTraceEvent): str
 function hasSpecComplianceContext(events: BenchmarkTraceEvent[], messages: Message[] = []): boolean {
   const messageTextBlock = messages.map(messageText).join('\n');
   const eventTextBlock = events
-    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources' || event.tool === 'github_repo_digest')
     .map((event) => `${event.target}\n${event.inputPreview}\n${event.outputPreview}`)
     .join('\n');
   const text = `${messageTextBlock}\n${eventTextBlock}`;
@@ -6682,7 +6683,7 @@ function getLongHorizonContext(
 } {
   const messageTextBlock = messages.map(messageText).join('\n');
   const eventTextBlock = events
-    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources')
+    .filter((event) => event.tool === 'benchmark_context' || event.tool === 'research_sources' || event.tool === 'github_repo_digest')
     .map((event) => `${event.target}\n${event.inputPreview}\n${event.outputPreview}`)
     .join('\n');
   const text = `${messageTextBlock}\n${eventTextBlock}`;
@@ -7319,6 +7320,8 @@ function summarizeTarget(tool: string, input: Record<string, unknown>): string {
     case 'web_search':
     case 'research_sources':
       return String(input.query ?? input.q ?? '');
+    case 'github_repo_digest':
+      return String(input.repo ?? '');
     default:
       return truncate(JSON.stringify(input), 160);
   }

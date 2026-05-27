@@ -541,6 +541,8 @@ describe('research_sources tool', () => {
     expect(prompt).toContain('kind:"all"');
     expect(prompt).toContain('source:"kaggle"');
     expect(prompt).toContain('kaggle_kind:"both"');
+    expect(prompt).toContain('github_repo_digest');
+    expect(prompt).toContain('component surface signals');
   });
 
   it('formats targeted benchmark coverage notes without leaking credentials', () => {

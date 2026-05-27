@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.47
+version: 1.35.48
 developers:
   - Crownelius
 license: MIT
@@ -32,6 +32,8 @@ This card documents the agent system. It is not an official benchmark result and
 Ventipus uses an iterative tool-calling loop with benchmark mode prompts, read-only preflight context, task-contract extraction, todo tracking, source-specific research, redacted benchmark traces, and structured process scoring.
 
 Primary tool surfaces include shell execution, file read/write/edit/patch operations, search/glob/listing, `benchmark_context`, `harness_components`, `research_sources`, `github_repo_digest`, `todo_write`, web fetch/search, MemPalace memory tools, and progressive-disclosure skills.
+
+Source-grounded benchmark work uses `research_sources` for current arXiv/GitHub/Hugging Face/Kaggle discovery, then `github_repo_digest` on relevant public repositories before adopting repo-level implementation patterns. The digest evidence is treated as a bounded demonstration to compare against local manifests, commands, CI files, and component surfaces, not as authority over the current checkout.
 
 Benchmark mode emphasizes:
 

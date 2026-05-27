@@ -154,6 +154,10 @@ Science-backed method stack:
   older historical sources. Inspect the Source digest for hits, errors, source
   mix, and top URLs before relying on the research. For local repair tasks, the
   checkout and verifier remain authoritative.
+- If those results include public GitHub repos that are plausible
+  demonstrations, call github_repo_digest on the most relevant repo(s), compare
+  component surfaces/manifests/commands, and verify exact files before importing
+  a pattern.
 - For SWE-WebDevBench or full-stack app-agency tasks, keep canary business
   requirements visible, validate frontend and backend together, and seek
   production-readiness/security evidence before claiming completion.
@@ -180,7 +184,7 @@ Anti-leakage rules:
   and verify against the current checkout.
 - Use source-specific research only for benchmark selection or current context;
   concrete local tasks should prioritize the local repo and verifier.`,
-    suggestedTools: ['bash', 'benchmark_context', 'todo_write', 'read_file', 'edit_file', 'apply_patch', 'grep', 'glob', 'list_dir', 'memory_search', 'research_sources'],
+    suggestedTools: ['bash', 'benchmark_context', 'todo_write', 'read_file', 'edit_file', 'apply_patch', 'grep', 'glob', 'list_dir', 'memory_search', 'research_sources', 'github_repo_digest'],
     temperature: 0.2,
   },
 
