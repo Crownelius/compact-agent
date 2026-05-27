@@ -10,7 +10,13 @@
  * sides of that balance.
  */
 import { afterEach, describe, it, expect } from 'vitest';
-import { countTailRepetitions, resolveFirstTokenTimeoutMs } from '../src/query.js';
+import {
+  countTailRepetitions,
+  fallbackModelForKnownFlakyTurn,
+  isKnownFlakyOpenRouterModel,
+  isTurnCancelKeySequence,
+  resolveFirstTokenTimeoutMs,
+} from '../src/query.js';
 
 describe('countTailRepetitions', () => {
   // Most tests use a tiny window so they read naturally. The production
@@ -168,5 +174,61 @@ describe('resolveFirstTokenTimeoutMs', () => {
       provider: 'OpenRouter (Any Model)',
       model: 'openrouter/owl-alpha',
     })).toBe(1234);
+  });
+});
+
+describe('known flaky model preflight', () => {
+  const originalAllowFlaky = process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+
+  afterEach(() => {
+    if (originalAllowFlaky === undefined) {
+      delete process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+    } else {
+      process.env.VENTIPUS_ALLOW_FLAKY_MODELS = originalAllowFlaky;
+    }
+  });
+
+  it('detects OpenRouter preview models that should not take the first submitted turn', () => {
+    expect(isKnownFlakyOpenRouterModel({
+      provider: 'OpenRouter (Any Model)',
+      model: 'openrouter/owl-alpha',
+    })).toBe(true);
+    expect(isKnownFlakyOpenRouterModel({
+      provider: 'OpenRouter (Any Model)',
+      model: 'openrouter/free',
+    })).toBe(false);
+    expect(isKnownFlakyOpenRouterModel({
+      provider: 'Ollama',
+      model: 'local/owl-alpha',
+    })).toBe(false);
+  });
+
+  it('uses the configured fallback unless the user explicitly allows flaky models', () => {
+    const cfg = {
+      apiKey: 'sk-test',
+      baseURL: 'https://openrouter.ai/api/v1',
+      model: 'openrouter/owl-alpha',
+      fallbackModel: 'openrouter/free',
+      provider: 'OpenRouter (Any Model)',
+      permissionMode: 'yolo' as const,
+      maxTokens: 128,
+      temperature: 0.3,
+    };
+
+    delete process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+    expect(fallbackModelForKnownFlakyTurn(cfg)).toBe('openrouter/free');
+
+    process.env.VENTIPUS_ALLOW_FLAKY_MODELS = '1';
+    expect(fallbackModelForKnownFlakyTurn(cfg)).toBeNull();
+  });
+});
+
+describe('turn cancel key sequence parsing', () => {
+  it('recognizes raw F5 and Shift+F5 escape sequences used by Windows/xterm terminals', () => {
+    expect(isTurnCancelKeySequence(Buffer.from('\x1b[15~'))).toBe(true);
+    expect(isTurnCancelKeySequence(Buffer.from('\x1b[15;2~'))).toBe(true);
+    expect(isTurnCancelKeySequence(Buffer.from('\x1b[15;5~'))).toBe(true);
+    expect(isTurnCancelKeySequence(Buffer.from('\x1b[A'))).toBe(false);
+    expect(isTurnCancelKeySequence(Buffer.from('hello'))).toBe(false);
   });
 });

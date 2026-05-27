@@ -55,6 +55,13 @@ const _thinkingHintShownForSession = new Set<string>();
 
 const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 60_000;
 const FLAKY_FIRST_TOKEN_TIMEOUT_MS = 20_000;
+const KNOWN_FLAKY_OPENROUTER_MODEL_PATTERNS = [
+  'owl-alpha',
+  'horizon-alpha',
+  'horizon-beta',
+  'optimus-alpha',
+  'quasar-alpha',
+] as const;
 
 function envTimeoutMs(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -67,17 +74,18 @@ function envTimeoutMs(name: string, fallback: number): number {
 export function resolveFirstTokenTimeoutMs(
   config: Pick<VentipusConfig, 'model' | 'provider'>,
 ): number {
-  const model = String(config.model || '').toLowerCase();
-  const provider = String(config.provider || '').toLowerCase();
-  const flaky = provider.includes('openrouter') && [
-    'owl-alpha',
-    'horizon-alpha',
-    'horizon-beta',
-    'optimus-alpha',
-    'quasar-alpha',
-  ].some((pattern) => model.includes(pattern));
+  const flaky = isKnownFlakyOpenRouterModel(config);
   const fallback = flaky ? FLAKY_FIRST_TOKEN_TIMEOUT_MS : DEFAULT_FIRST_TOKEN_TIMEOUT_MS;
   return envTimeoutMs('VENTIPUS_FIRST_TOKEN_TIMEOUT_MS', fallback);
+}
+
+export function isKnownFlakyOpenRouterModel(
+  config: Pick<VentipusConfig, 'model' | 'provider'>,
+): boolean {
+  const model = String(config.model || '').toLowerCase();
+  const provider = String(config.provider || '').toLowerCase();
+  return provider.includes('openrouter')
+    && KNOWN_FLAKY_OPENROUTER_MODEL_PATTERNS.some((pattern) => model.includes(pattern));
 }
 
 function fallbackModelForTurn(
@@ -87,6 +95,34 @@ function fallbackModelForTurn(
   const fallback = config.fallbackModel;
   if (usedFallbackModel || !fallback || fallback === config.model) return null;
   return fallback;
+}
+
+export function fallbackModelForKnownFlakyTurn(
+  config: VentipusConfig,
+  usedFallbackModel: boolean = false,
+): string | null {
+  if (process.env.VENTIPUS_ALLOW_FLAKY_MODELS === '1') return null;
+  if (!isKnownFlakyOpenRouterModel(config)) return null;
+  return fallbackModelForTurn(config, usedFallbackModel);
+}
+
+export function isTurnCancelKeySequence(chunk: Buffer): boolean {
+  const seq = chunk.toString('utf8');
+  return (
+    seq === '\x1b[15~' ||
+    seq === '\x1b[15;2~' ||
+    seq === '\x1b[15;5~' ||
+    seq === '\x1b[15;6~' ||
+    seq === '\x1b[15;3~'
+  );
+}
+
+function printInteractiveTurnAccepted(config: VentipusConfig): void {
+  if (process.env.VENTIPUS_NON_INTERACTIVE === '1') return;
+  if (!process.stdout.isTTY) return;
+  console.log(theme.dim(
+    `  submitted to ${config.provider} · ${config.model}. Waiting for the first model event; Esc or F5 cancels.`,
+  ));
 }
 
 /**
@@ -253,6 +289,18 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
     if (chunk[0] === 0x1B && chunk.length === 1 && detached) {
       if (steerHandler) {
         try { steerHandler(); } catch { /* never break input on a steer error */ }
+      }
+      return;
+    }
+    // Windows Terminal and several xterm-compatible terminals encode
+    // F5 / Shift+F5 as escape sequences. readline does not reliably
+    // surface the shifted variant as key.name='f5' on Windows, so handle
+    // the raw bytes here while input is suppressed. During an active turn,
+    // bare F5 is also treated as cancel because dictation cannot sensibly
+    // start while the model/tool chain owns stdin.
+    if (detached && isTurnCancelKeySequence(chunk)) {
+      if (steerHandler) {
+        try { steerHandler(); } catch { /* never break input on a cancel error */ }
       }
       return;
     }
@@ -1117,6 +1165,19 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // user's configured fallbackModel. After we use it, this latches so we
   // don't bounce back and forth between failing models in a single chain.
   let usedFallbackModel = false;
+  const immediateFallback = fallbackModelForKnownFlakyTurn(ctx.config, usedFallbackModel);
+  if (immediateFallback) {
+    usedFallbackModel = true;
+    const failedModel = ctx.config.model;
+    ctx.config.model = immediateFallback;
+    resetClient();
+    console.log(theme.warning(
+      `  ${sym.warn} ${failedModel} is a known-stuck OpenRouter preview model; switching this turn to ${immediateFallback}.`,
+    ));
+    console.log(theme.dim('    Override only if you really want it: VENTIPUS_ALLOW_FLAKY_MODELS=1'));
+  }
+
+  printInteractiveTurnAccepted(ctx.config);
 
   // Tracks whether ANY reasoning tokens arrived across the entire chain.
   // Used at chain-end to print a one-time "/thinking is ON but this model

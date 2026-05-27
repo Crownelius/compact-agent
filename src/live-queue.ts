@@ -123,9 +123,12 @@ function drawBox(text: string): void {
   stdout.write(ANSI.moveTo(boxRow, 1));
   stdout.write(ANSI.clearLine);
 
-  const prefix = '  ▶ queued next: ';
+  const hasQueuedText = text.trim().length > 0;
+  const prefix = hasQueuedText ? '  > type-ahead: ' : '  > active turn: ';
   const budget = Math.max(20, cols - prefix.length - 2);
-  let display = text || '(type ahead; Shift+F5 cancels current model call)';
+  let display = hasQueuedText
+    ? text
+    : 'waiting for model; Esc/F5 cancels, type to prepare the next prompt';
   // Show the END of the text (most recently typed) when overflowing
   if (display.length > budget) {
     display = '…' + display.slice(display.length - budget + 1);
@@ -133,9 +136,10 @@ function drawBox(text: string): void {
   // Replace any CR/LF in the display so they don't break the box layout
   display = display.replace(/[\r\n]+/g, ' ⏎ ');
 
-  // Soft-styled prefix + content. Bold for the marker, dim for "queued:",
-  // normal for the text itself.
-  stdout.write(ANSI.bold + '  ▶' + ANSI.reset + ANSI.dim + ' queued next: ' + ANSI.reset + display);
+  // Soft-styled prefix + content. The empty state describes the active
+  // model call, not a queued prompt, so users don't think their submitted
+  // task was moved into the queue.
+  stdout.write(ANSI.bold + '  >' + ANSI.reset + ANSI.dim + (hasQueuedText ? ' type-ahead: ' : ' active turn: ') + ANSI.reset + display);
 
   // Restore cursor to where streaming was writing
   stdout.write(ANSI.restoreCursor);

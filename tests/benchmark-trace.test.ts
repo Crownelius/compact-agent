@@ -9,6 +9,7 @@ import {
   buildBenchmarkDependencyEditEvents,
   buildBenchmarkEnvironmentSetupEvents,
   buildBenchmarkEnvironmentSetupFailureEvents,
+  buildBenchmarkEvidenceGroundingEvents,
   buildBenchmarkFailureUnalignedRepairEvents,
   buildBenchmarkIncompleteVerifierEvents,
   buildBenchmarkInvalidToolActionEvents,
@@ -245,6 +246,9 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.contextUtilizationPercent).toBeNull();
     expect(summary.trajectoryQuality.contextUtilizationRisk).toBe(false);
     expect(summary.trajectoryQuality.contextUtilizationMissEvents).toEqual([]);
+    expect(summary.trajectoryQuality.evidenceGroundingRisk).toBe(false);
+    expect(summary.trajectoryQuality.evidenceGroundingEventCount).toBe(0);
+    expect(summary.trajectoryQuality.evidenceGroundingEvents).toEqual([]);
     expect(summary.trajectoryQuality.redundantToolCallCount).toBe(0);
     expect(summary.trajectoryQuality.redundantToolCallEvents).toEqual([]);
     expect(summary.trajectoryQuality.redundantVerifierCount).toBe(0);
@@ -4202,6 +4206,133 @@ describe('benchmark trace artifacts', () => {
     expect(quality.warnings.join('\n')).toContain('low context utilization');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('context_utilization=33.33% context_hits=2/6 context_misses=4 context_risk=yes');
     expect(buildBenchmarkCompletionReminder(events)).toContain('narrow broad context gathering');
+  });
+
+  it('flags stale edit evidence reused without refreshing current file state', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix src/app.ts behavior',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const value = 1;',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'missing', new_string: 'present' },
+        output: 'Error: old_string not found in src/app.ts',
+        isError: true,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'value = 1', new_string: 'value = 2' },
+        output: 'Updated src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- src/app.ts' },
+        output: 'diff --git a/src/app.ts b/src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const grounding = buildBenchmarkEvidenceGroundingEvents(events);
+    expect(grounding).toEqual([
+      expect.objectContaining({
+        seq: 5,
+        tool: 'edit_file',
+        target: 'src/app.ts',
+        staleSeq: 4,
+        staleTool: 'edit_file',
+        reason: expect.stringContaining('stale/no-effect'),
+      }),
+    ]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.evidenceGroundingRisk).toBe(true);
+    expect(quality.evidenceGroundingEventCount).toBe(1);
+    expect(quality.warnings.join('\n')).toContain('evidence-grounding risk');
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('evidence_grounding_without_refresh');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('evidence_grounding=1');
+  });
+
+  it('does not flag a stale edit retry after the target file is re-read', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'Task: fix src/app.ts behavior',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'missing', new_string: 'present' },
+        output: 'Error: old_string not found in src/app.ts',
+        isError: true,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export const value = 1;',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'value = 1', new_string: 'value = 2' },
+        output: 'Updated src/app.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    expect(buildBenchmarkEvidenceGroundingEvents(events)).toEqual([]);
   });
 
   it('flags large source edit surfaces without a broad-change task contract', () => {

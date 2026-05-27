@@ -28,12 +28,14 @@ function config(): VentipusConfig {
 describe('runQuery provider liveness recovery', () => {
   const originalTimeout = process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS;
   const originalNonInteractive = process.env.VENTIPUS_NON_INTERACTIVE;
+  const originalAllowFlaky = process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
 
   beforeEach(() => {
     vi.mocked(streamChat).mockReset();
     vi.mocked(resetClient).mockReset();
     process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS = '1';
     process.env.VENTIPUS_NON_INTERACTIVE = '0';
+    delete process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
   });
 
   afterEach(() => {
@@ -47,9 +49,48 @@ describe('runQuery provider liveness recovery', () => {
     } else {
       process.env.VENTIPUS_NON_INTERACTIVE = originalNonInteractive;
     }
+    if (originalAllowFlaky === undefined) {
+      delete process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+    } else {
+      process.env.VENTIPUS_ALLOW_FLAKY_MODELS = originalAllowFlaky;
+    }
+  });
+
+  it('preemptively switches known-stuck OpenRouter preview models to the fallback before the API call', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* (
+      cfg: VentipusConfig,
+    ) {
+      yield { type: 'text', content: `model=${cfg.model}` };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    const messages: Message[] = [{ role: 'user', content: 'Say hi' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-query-flaky-preflight-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(cfg.model).toBe('openrouter/free');
+    expect(resetClient).toHaveBeenCalledTimes(1);
+    expect(streamChat).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(streamChat).mock.calls[0][0].model).toBe('openrouter/free');
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'model=openrouter/free' });
   });
 
   it('retries with the fallback model when the primary model never sends a first stream event', async () => {
+    process.env.VENTIPUS_ALLOW_FLAKY_MODELS = '1';
+
     vi.mocked(streamChat).mockImplementation(async function* (
       cfg: VentipusConfig,
       _messages: Message[],

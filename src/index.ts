@@ -14,7 +14,7 @@ import {
   getOpenAICodexAuthStatus,
   runCodexLogin,
 } from './openai-oauth.js';
-import { runQuery } from './query.js';
+import { isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import type { VentipusConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
@@ -3460,7 +3460,8 @@ async function main(): Promise<void> {
       const name = (key.name || '').toLowerCase();
       const seq = (key.sequence || '');
       const lookup = name || seq;
-      if (!INTERCEPT.has(lookup)) return;
+      const rawF5CancelSequence = seq ? isTurnCancelKeySequence(Buffer.from(seq, 'utf8')) : false;
+      if (!INTERCEPT.has(lookup) && !rawF5CancelSequence) return;
       // While the command selector / inline-suggest is open it takes
       // exclusive control of stdin via its own `data` listener. The
       // hotkey listener must bail entirely — otherwise Esc would
@@ -3505,6 +3506,18 @@ async function main(): Promise<void> {
           speak(text, config, { voiceId: tts.assistantVoiceId }).catch(() => { /* noop */ });
         }
       };
+
+      // During an active model/tool turn, F5 means cancel even if the
+      // terminal did not preserve Shift metadata. Windows Terminal commonly
+      // reports Shift+F5 as a raw escape sequence or bare f5 depending on
+      // mode, and the previous path silently fell through when voice was off.
+      const activeTurnCtl = (globalThis as { __turnAbortCtl?: AbortController | null }).__turnAbortCtl;
+      const f5LikeKey = name === 'f5' || rawF5CancelSequence;
+      if (f5LikeKey && activeTurnCtl && !activeTurnCtl.signal.aborted) {
+        try { activeTurnCtl.abort(); } catch { /* noop */ }
+        announce('F5', 'Turn cancelled. Partial response kept.');
+        return;
+      }
 
       // STATUS hotkeys always work, even when voice is off and even when
       // there's no TTS key — they print to stdout so an OS-level screen
