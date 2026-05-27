@@ -1,6 +1,6 @@
 ---
 name: Ventipus
-version: 1.35.0
+version: 1.35.5
 developers:
   - Crownelius
 license: MIT
@@ -66,7 +66,7 @@ Benchmark mode is designed for SWE-bench-style code repair, terminal tasks, cont
 
 ## Evaluation Results
 
-Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt`, and `open-agent-leaderboard-draft.json` artifacts when benchmark trace output is enabled. The draft row follows the public Open Agent Leaderboard result-column shape where local trace evidence can support it, but remains `submissionReady:false` until an official harness supplies benchmark-owned scores and session success evidence.
+Ventipus writes `summary.json`, `trace.jsonl`, `worktree.patch`, `git-status.txt`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, and `submission-bundle-manifest.json` artifacts when benchmark trace output is enabled. The draft row follows the public Open Agent Leaderboard result-column shape where local trace evidence can support it, but remains `submissionReady:false` until an official harness supplies benchmark-owned scores and session success evidence. The submission bundle manifest indexes artifact paths and SHA-256 hashes, summarizes verifier/usage/process evidence, and lists missing official fields so local traces are not mistaken for leaderboard scores.
 
 Official results should be produced through Exgentic, HAL, Terminal-Bench, KBench, or another benchmark-owned grader before submission.
 

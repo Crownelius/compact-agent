@@ -23,6 +23,7 @@ describe('Terminal-Bench adapter packaging', () => {
     expect(adapter).toContain('.ventipus/benchmark-summary.json');
     expect(adapter).toContain('.ventipus/benchmark-trace.jsonl');
     expect(adapter).toContain('.ventipus/agent-context-compiled.jsonl');
+    expect(adapter).toContain('.ventipus/submission-bundle-manifest.json');
     expect(adapter).toContain('.ventipus/benchmark.patch');
     expect(adapter).toContain('redact_ventipus_artifact');
     expect(adapter).toContain('sk-or-v1-[A-Za-z0-9_-]+');
@@ -39,6 +40,7 @@ describe('Terminal-Bench adapter packaging', () => {
     expect(adapter).toContain('trace summary: .ventipus/benchmark-summary.json');
     expect(adapter).toContain('tool trace: .ventipus/benchmark-trace.jsonl');
     expect(adapter).toContain('context compilation: .ventipus/agent-context-compiled.jsonl');
+    expect(adapter).toContain('submission bundle: .ventipus/submission-bundle-manifest.json');
   });
 
   it('prefers offline/local install sources before registry install', () => {

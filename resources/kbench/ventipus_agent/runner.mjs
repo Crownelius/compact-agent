@@ -153,6 +153,7 @@ function compactTraceSummary(traceSummary) {
     usage: summary.usage,
     experienceCard,
     agentContextCompilation: compactAgentContextCompilation(summary.agentContextCompilation),
+    submissionBundleManifest: compactSubmissionBundleManifest(summary.submissionBundleManifest),
     changedFiles: Array.isArray(summary.changedFiles) ? summary.changedFiles.slice(0, 100) : [],
     worktreeChangedFiles: Array.isArray(summary.worktreeChangedFiles) ? summary.worktreeChangedFiles.slice(0, 100) : [],
     artifacts: Array.isArray(summary.artifacts) ? summary.artifacts.slice(0, 20) : [],
@@ -293,6 +294,29 @@ function compactAgentContextCompilation(compilation) {
       sourceResearchCoverage: metadata.sourceResearchCoverage,
       warnings: Array.isArray(metadata.warnings) ? metadata.warnings.slice(0, 20) : [],
     },
+  };
+}
+
+function compactSubmissionBundleManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return undefined;
+  return {
+    version: manifest.version,
+    format: manifest.format,
+    submissionReady: manifest.submissionReady,
+    reason: truncate(manifest.reason || '', 500),
+    officialResultRequired: manifest.officialResultRequired,
+    missingOfficialFields: Array.isArray(manifest.missingOfficialFields) ? manifest.missingOfficialFields.slice(0, 20) : [],
+    benchmark: manifest.benchmark,
+    benchmarkName: manifest.benchmarkName,
+    sessionId: manifest.sessionId,
+    provider: manifest.provider,
+    model: manifest.model,
+    summaryContainer: manifest.summaryContainer,
+    artifacts: Array.isArray(manifest.artifacts) ? manifest.artifacts.slice(0, 50) : [],
+    verification: manifest.verification,
+    usage: manifest.usage,
+    process: manifest.process,
+    leaderboardDraft: manifest.leaderboardDraft,
   };
 }
 

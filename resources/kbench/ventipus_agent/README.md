@@ -34,7 +34,8 @@ latest post-edit verifier signals, post-edit and final-state
 diff-review signals, final-edit validation stability/lucky-pass signals, broad-validation signals,
 CI-derived validation signals,
 source-research recency signals,
-process-defect scoring, and trajectory-quality fields are copied to
+process-defect scoring, submission bundle manifest readiness/hash metadata,
+and trajectory-quality fields are copied to
 `benchmarkResult.traceSummary` for harness-side scoring. `benchmarkResult.usage`
 also aliases the native usage block for cost-aware leaderboards. Native verifier
 trace previews preserve both head and tail output so final test summaries survive
@@ -48,6 +49,9 @@ hit/error counts, targeted/fresh coverage, recency windows, top URLs, and
 Kaggle fallback status. When present, `benchmarkResult.traceSummary` also
 includes the redacted ACC-style task/context/answer compilation from the native
 Ventipus trace for retrieval, replay, or training-data curation.
+It also includes `submissionBundleManifest` when present, so leaderboard
+submission tooling can inspect artifact hashes and missing official score/session
+fields without parsing the full summary.
 
 Inside benchmark mode, the read-only `benchmark_context` preflight also surfaces
 CI workflow run commands plus setup actions, env key names, service containers,

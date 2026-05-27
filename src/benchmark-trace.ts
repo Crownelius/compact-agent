@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigDir } from './config.js';
@@ -39,6 +40,7 @@ export interface BenchmarkTraceSummary {
   trajectoryQuality: BenchmarkTrajectoryQuality;
   experienceCard: BenchmarkExperienceCard;
   agentContextCompilation: BenchmarkAgentContextCompilation;
+  submissionBundleManifest: BenchmarkSubmissionBundleManifest;
   finalAssistant: string;
   events: BenchmarkTraceEvent[];
 }
@@ -159,11 +161,69 @@ export interface BenchmarkAgentContextCompilation {
 }
 
 export interface BenchmarkTraceArtifact {
-  kind: 'patch' | 'git-status' | 'open-agent-leaderboard-draft' | 'agent-context-compilation';
+  kind: 'patch' | 'git-status' | 'open-agent-leaderboard-draft' | 'agent-context-compilation' | 'submission-bundle-manifest';
   path: string;
   contentType: string;
   description: string;
   sizeBytes: number;
+  sha256?: string;
+}
+
+export interface BenchmarkSubmissionBundleManifest {
+  version: 1;
+  format: 'ventipus-submission-bundle-manifest-v1';
+  source: 'ventipus benchmark trace';
+  createdAt: string;
+  submissionReady: boolean;
+  reason: string;
+  officialResultRequired: boolean;
+  missingOfficialFields: string[];
+  benchmark: string;
+  benchmarkName: string;
+  sessionId: string;
+  mode: string;
+  provider: string;
+  model: string;
+  summaryContainer: {
+    path: string | null;
+    contentType: 'application/json';
+    hashNote: string;
+  };
+  artifacts: BenchmarkSubmissionBundleArtifact[];
+  verification: {
+    count: number;
+    latestStatus: BenchmarkVerificationEvidence['lastVerificationStatus'];
+    successfulCount: number;
+    commands: string[];
+  };
+  usage: {
+    callCount: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  };
+  process: {
+    score: number;
+    warningCount: number;
+    defectCount: number;
+    invalidToolActionCount: number;
+    invalidToolActionPercent: number;
+  };
+  leaderboardDraft: {
+    submissionReady: boolean;
+    reason: string;
+    missingOfficialFields: string[];
+  };
+}
+
+export interface BenchmarkSubmissionBundleArtifact {
+  kind: BenchmarkTraceArtifact['kind'] | 'trace-jsonl';
+  path: string;
+  contentType: string;
+  description: string;
+  role: string;
+  requiredForClaim: boolean;
+  sizeBytes: number;
+  sha256: string;
 }
 
 export interface BenchmarkUsageEvent {
@@ -794,7 +854,7 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
     finalAssistantText,
   });
 
-  return {
+  const summary: BenchmarkTraceSummary = {
     version: 1,
     sessionId: input.sessionId,
     mode: input.mode,
@@ -818,9 +878,12 @@ export function buildBenchmarkTraceSummary(input: BenchmarkTraceWriteInput): Ben
     trajectoryQuality,
     experienceCard,
     agentContextCompilation,
+    submissionBundleManifest: emptyBenchmarkSubmissionBundleManifest(input, endedAtMs),
     finalAssistant: finalAssistantText,
     events,
   };
+  summary.submissionBundleManifest = buildBenchmarkSubmissionBundleManifest(summary, {});
+  return summary;
 }
 
 function buildBenchmarkAgentContextCompilation(input: {
@@ -1321,6 +1384,188 @@ export function buildOpenAgentLeaderboardDraft(
     compact_warnings: compactWarnings,
     missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
   };
+}
+
+interface BenchmarkSubmissionBundleManifestBuildOptions {
+  summaryPath?: string | null;
+  tracePath?: string | null;
+  traceText?: string | null;
+  extraArtifacts?: BenchmarkSubmissionBundleArtifact[];
+}
+
+function emptyBenchmarkSubmissionBundleManifest(
+  input: BenchmarkTraceWriteInput,
+  endedAtMs: number,
+): BenchmarkSubmissionBundleManifest {
+  const benchmark = extractBenchmarkSlug(input.messages);
+  return {
+    version: 1,
+    format: 'ventipus-submission-bundle-manifest-v1',
+    source: 'ventipus benchmark trace',
+    createdAt: new Date(endedAtMs).toISOString(),
+    submissionReady: false,
+    reason: 'Benchmark trace has not been written yet; official harness score and session evidence are still required.',
+    officialResultRequired: true,
+    missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
+    benchmark,
+    benchmarkName: formatBenchmarkName(benchmark),
+    sessionId: truncate(redactTraceText(input.sessionId), 120),
+    mode: truncate(redactTraceText(input.mode), 40),
+    provider: truncate(redactTraceText(input.config.provider), 80),
+    model: truncate(redactTraceText(input.config.model), 160),
+    summaryContainer: {
+      path: null,
+      contentType: 'application/json',
+      hashNote: 'summary.json embeds this manifest, so its digest is intentionally omitted to avoid a self-referential hash.',
+    },
+    artifacts: [],
+    verification: {
+      count: 0,
+      latestStatus: null,
+      successfulCount: 0,
+      commands: [],
+    },
+    usage: {
+      callCount: 0,
+      totalTokens: 0,
+      estimatedCostUsd: 0,
+    },
+    process: {
+      score: 0,
+      warningCount: 0,
+      defectCount: 0,
+      invalidToolActionCount: 0,
+      invalidToolActionPercent: 0,
+    },
+    leaderboardDraft: {
+      submissionReady: false,
+      reason: 'Official harness score and session evidence are required.',
+      missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
+    },
+  };
+}
+
+function buildBenchmarkSubmissionBundleManifest(
+  summary: BenchmarkTraceSummary,
+  options: BenchmarkSubmissionBundleManifestBuildOptions,
+): BenchmarkSubmissionBundleManifest {
+  const missingOfficialFields = uniqueStrings(
+    summary.openAgentLeaderboardDraft.missingOfficialFields.length > 0
+      ? summary.openAgentLeaderboardDraft.missingOfficialFields
+      : ['benchmark_score', 'successful_sessions', 'session_results'],
+  );
+  const submissionReady = summary.openAgentLeaderboardDraft.submissionReady === true
+    && missingOfficialFields.length === 0;
+  const artifacts = [
+    ...summary.artifacts
+      .map(convertTraceArtifactToSubmissionArtifact)
+      .filter((artifact): artifact is BenchmarkSubmissionBundleArtifact => Boolean(artifact)),
+    ...(options.extraArtifacts ?? []),
+  ];
+  if (options.tracePath && typeof options.traceText === 'string') {
+    artifacts.push({
+      kind: 'trace-jsonl',
+      path: options.tracePath,
+      contentType: 'application/jsonl',
+      description: 'Raw redacted benchmark event trace written by Ventipus.',
+      role: 'raw event trace for replay and audit',
+      requiredForClaim: true,
+      sizeBytes: Buffer.byteLength(options.traceText),
+      sha256: sha256Hex(options.traceText),
+    });
+  }
+
+  return {
+    version: 1,
+    format: 'ventipus-submission-bundle-manifest-v1',
+    source: 'ventipus benchmark trace',
+    createdAt: summary.endedAt,
+    submissionReady,
+    reason: submissionReady
+      ? 'Official benchmark score and session evidence are present.'
+      : 'Not submission-ready: official harness score, successful session count, and benchmark-owned session results are still required before claiming leaderboard performance.',
+    officialResultRequired: true,
+    missingOfficialFields,
+    benchmark: summary.openAgentLeaderboardDraft.benchmark,
+    benchmarkName: summary.openAgentLeaderboardDraft.benchmark_name,
+    sessionId: truncate(redactTraceText(summary.sessionId), 120),
+    mode: truncate(redactTraceText(summary.mode), 40),
+    provider: truncate(redactTraceText(summary.provider), 80),
+    model: truncate(redactTraceText(summary.model), 160),
+    summaryContainer: {
+      path: options.summaryPath ?? null,
+      contentType: 'application/json',
+      hashNote: 'summary.json embeds this manifest, so its digest is intentionally omitted to avoid a self-referential hash.',
+    },
+    artifacts,
+    verification: {
+      count: summary.verificationCount,
+      latestStatus: summary.verificationEvidence.lastVerificationStatus,
+      successfulCount: summary.trajectoryQuality.successfulVerificationCount,
+      commands: summary.verificationCommands
+        .map((command) => truncate(redactTraceText(command), 180))
+        .slice(0, 20),
+    },
+    usage: {
+      callCount: summary.usage.callCount,
+      totalTokens: summary.usage.totalTokens,
+      estimatedCostUsd: summary.usage.estimatedCostUsd,
+    },
+    process: {
+      score: summary.trajectoryQuality.processScore,
+      warningCount: summary.trajectoryQuality.warnings.length,
+      defectCount: summary.trajectoryQuality.processDefects.length,
+      invalidToolActionCount: summary.trajectoryQuality.invalidToolActionCount,
+      invalidToolActionPercent: summary.trajectoryQuality.invalidToolActionPercent,
+    },
+    leaderboardDraft: {
+      submissionReady: summary.openAgentLeaderboardDraft.submissionReady,
+      reason: summary.openAgentLeaderboardDraft.reason,
+      missingOfficialFields,
+    },
+  };
+}
+
+function convertTraceArtifactToSubmissionArtifact(
+  artifact: BenchmarkTraceArtifact,
+): BenchmarkSubmissionBundleArtifact | null {
+  if (!artifact.sha256) return null;
+  return {
+    kind: artifact.kind,
+    path: artifact.path,
+    contentType: artifact.contentType,
+    description: artifact.description,
+    role: benchmarkTraceArtifactRole(artifact.kind),
+    requiredForClaim: benchmarkTraceArtifactRequiredForClaim(artifact.kind),
+    sizeBytes: artifact.sizeBytes,
+    sha256: artifact.sha256,
+  };
+}
+
+function benchmarkTraceArtifactRole(kind: BenchmarkTraceArtifact['kind']): string {
+  switch (kind) {
+    case 'patch':
+      return 'worktree diff for code-result reproducibility';
+    case 'git-status':
+      return 'changed-file inventory for audit';
+    case 'open-agent-leaderboard-draft':
+      return 'draft row mapped to Open Agent Leaderboard result columns';
+    case 'agent-context-compilation':
+      return 'ACC-style trajectory compilation for retrieval, replay, or training-data curation';
+    case 'submission-bundle-manifest':
+      return 'artifact index and submission readiness declaration';
+  }
+}
+
+function benchmarkTraceArtifactRequiredForClaim(kind: BenchmarkTraceArtifact['kind']): boolean {
+  return kind === 'patch'
+    || kind === 'git-status'
+    || kind === 'open-agent-leaderboard-draft'
+    || kind === 'submission-bundle-manifest';
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
 }
 
 function extractBenchmarkSlug(messages: Message[]): string {
@@ -4531,8 +4776,10 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
   const jsonlPath = join(dir, 'trace.jsonl');
   const leaderboardDraftPath = join(dir, 'open-agent-leaderboard-draft.json');
   const agentContextCompilationPath = join(dir, 'agent-context-compiled.jsonl');
+  const submissionBundleManifestPath = join(dir, 'submission-bundle-manifest.json');
   const leaderboardDraftText = JSON.stringify(summary.openAgentLeaderboardDraft, null, 2);
   const agentContextCompilationText = `${JSON.stringify(summary.agentContextCompilation)}\n`;
+  const traceText = summary.events.map((event) => JSON.stringify(event)).join('\n') + '\n';
   writeFileSync(leaderboardDraftPath, leaderboardDraftText, 'utf-8');
   summary.artifacts.push({
     kind: 'open-agent-leaderboard-draft',
@@ -4540,6 +4787,7 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
     contentType: 'application/json',
     description: 'Draft Open Agent Leaderboard-style row from ventipus trace metadata; not an official benchmark result.',
     sizeBytes: Buffer.byteLength(leaderboardDraftText),
+    sha256: sha256Hex(leaderboardDraftText),
   });
   writeFileSync(agentContextCompilationPath, agentContextCompilationText, 'utf-8');
   summary.artifacts.push({
@@ -4548,9 +4796,25 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
     contentType: 'application/jsonl',
     description: 'Redacted ACC-style task/context/answer record compiled from this benchmark trajectory for retrieval, replay, or training data curation.',
     sizeBytes: Buffer.byteLength(agentContextCompilationText),
+    sha256: sha256Hex(agentContextCompilationText),
+  });
+  summary.submissionBundleManifest = buildBenchmarkSubmissionBundleManifest(summary, {
+    summaryPath,
+    tracePath: jsonlPath,
+    traceText,
+  });
+  const submissionBundleManifestText = JSON.stringify(summary.submissionBundleManifest, null, 2);
+  writeFileSync(submissionBundleManifestPath, submissionBundleManifestText, 'utf-8');
+  summary.artifacts.push({
+    kind: 'submission-bundle-manifest',
+    path: submissionBundleManifestPath,
+    contentType: 'application/json',
+    description: 'Hash-bearing artifact index and submission-readiness declaration for benchmark evidence bundles.',
+    sizeBytes: Buffer.byteLength(submissionBundleManifestText),
+    sha256: sha256Hex(submissionBundleManifestText),
   });
   writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
-  writeFileSync(jsonlPath, summary.events.map((event) => JSON.stringify(event)).join('\n') + '\n', 'utf-8');
+  writeFileSync(jsonlPath, traceText, 'utf-8');
   return { dir, summaryPath, jsonlPath };
 }
 
@@ -4570,6 +4834,7 @@ function collectBenchmarkTraceArtifacts(cwd: string, dir: string): { artifacts: 
       contentType: 'text/x-diff',
       description: 'Redacted git diff from the benchmark worktree after the run.',
       sizeBytes: Buffer.byteLength(redacted),
+      sha256: sha256Hex(redacted),
     });
   }
 
@@ -4584,6 +4849,7 @@ function collectBenchmarkTraceArtifacts(cwd: string, dir: string): { artifacts: 
       contentType: 'text/plain',
       description: 'Redacted git status from the benchmark worktree after the run.',
       sizeBytes: Buffer.byteLength(redacted),
+      sha256: sha256Hex(redacted),
     });
     changedFiles.push(...parseGitStatusFiles(redacted));
   }

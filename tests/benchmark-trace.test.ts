@@ -4988,6 +4988,36 @@ describe('benchmark trace artifacts', () => {
     expect(compiledText).toContain('"format":"ventipus-agent-context-compilation-v1"');
     expect(compiledText).toContain('Latest verifier status: ok.');
     expect(compiledText).not.toContain(config.apiKey);
+    const manifestArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'submission-bundle-manifest');
+    expect(manifestArtifact).toBeTruthy();
+    expect(manifestArtifact.sha256).toMatch(/^[a-f0-9]{64}$/);
+    const manifest = JSON.parse(readFileSync(manifestArtifact.path, 'utf-8'));
+    expect(manifest).toMatchObject({
+      version: 1,
+      format: 'ventipus-submission-bundle-manifest-v1',
+      source: 'ventipus benchmark trace',
+      submissionReady: false,
+      officialResultRequired: true,
+      benchmark: 'ventipus_agent_benchmark',
+      benchmarkName: 'Ventipus Benchmark',
+      missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
+      verification: {
+        count: 1,
+        latestStatus: 'ok',
+        successfulCount: 1,
+        commands: ['pytest'],
+      },
+    });
+    expect(manifest.reason).toContain('official harness score');
+    expect(manifest.summaryContainer.path).toBe(written!.summaryPath);
+    expect(manifest.summaryContainer.hashNote).toContain('self-referential hash');
+    expect(manifest.artifacts.map((artifact: { kind: string }) => artifact.kind)).toEqual(expect.arrayContaining([
+      'open-agent-leaderboard-draft',
+      'agent-context-compilation',
+      'trace-jsonl',
+    ]));
+    expect(manifest.artifacts.every((artifact: { sha256: string }) => /^[a-f0-9]{64}$/.test(artifact.sha256))).toBe(true);
+    expect(JSON.stringify(manifest)).not.toContain(config.apiKey);
   });
 
   it('writes redacted git patch artifacts for benchmark worktrees', () => {
@@ -5031,7 +5061,9 @@ describe('benchmark trace artifacts', () => {
     expect(summary.worktreeChangedFiles).toContain('untracked.txt');
     expect(summary.artifacts.map((a: { kind: string }) => a.kind)).toContain('patch');
     expect(summary.artifacts.map((a: { kind: string }) => a.kind)).toContain('git-status');
+    expect(summary.submissionBundleManifest.artifacts.map((a: { kind: string }) => a.kind)).toEqual(expect.arrayContaining(['patch', 'git-status', 'trace-jsonl']));
     const patch = summary.artifacts.find((a: { kind: string; path: string }) => a.kind === 'patch');
+    expect(patch.sha256).toMatch(/^[a-f0-9]{64}$/);
     const patchText = readFileSync(patch.path, 'utf-8');
     expect(patchText).toContain('+after');
     expect(patchText).toContain('staged content');
