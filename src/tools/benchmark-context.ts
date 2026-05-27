@@ -5,6 +5,8 @@ import { globSync } from 'glob';
 import { getConfigDir } from '../config.js';
 import { redactTraceText } from '../benchmark-trace.js';
 import type { BenchmarkExperienceReplayCheckpoint } from '../benchmark-trace.js';
+import { isMemoryEnabled, search as searchMemPalace } from '../mempalace/index.js';
+import type { SearchHit } from '../mempalace/types.js';
 import { resolveUserPath } from './path-utils.js';
 import type { Tool, ToolResult } from './types.js';
 
@@ -86,6 +88,12 @@ export interface BenchmarkExperienceSummary {
   warnings: BenchmarkExperienceHint[];
 }
 
+interface BenchmarkMemoryHint {
+  id: string;
+  score: number;
+  line: string;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -152,6 +160,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const priorExperience = summarizePriorBenchmarkExperienceSummary(root, sortedFiles, verifierCommands, taskContractSignals);
     const experienceHints = priorExperience.hints;
     const experienceWarnings = priorExperience.warnings;
+    const memoryHints = summarizeBenchmarkMemoryHints(root, manifests, instructionExcerpts, taskContractSignals);
     const toolHints = detectTools([
       'git', 'node', 'npm', 'pnpm', 'yarn', 'bun', 'python', 'python3',
       'pip', 'pytest', 'uv', 'pipenv', 'cargo', 'go', 'java', 'mvn', 'gradle',
@@ -254,6 +263,14 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
         ? 'Do not copy these prior patterns without fresh current-task evidence; treat them as failure modes to avoid.'
         : '',
       '',
+      '## Relevant MemPalace Memories',
+      memoryHints.length
+        ? formatList(memoryHints.map((hint) => hint.line), 6)
+        : '(no relevant MemPalace memories found)',
+      memoryHints.length
+        ? 'Treat MemPalace memories as hypotheses. Current task files, verifier output, and explicit user instructions override remembered facts.'
+        : '',
+      '',
       '## Git State',
       git,
       '',
@@ -267,6 +284,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '7. If CI workflow hints are present, reconstruct required CI setup/env/services and include relevant CI test/build/lint commands in the validation ladder before finalizing.',
       '8. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
       '9. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
+      '10. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
     ];
 
     return { output: lines.filter((line, i, arr) => line || arr[i - 1] !== '').join('\n'), isError: false };
@@ -317,6 +335,87 @@ function summarizeBenchmarkMethodHints(
   hints.push('source research trigger: for agent-improvement, benchmark-methodology, model, dataset, or leaderboard work, use research_sources before synthesis with arXiv papers; GitHub github_kind:"all"; Hugging Face kind:"all"; Kaggle kaggle_kind:"both"; and recent_days:90 unless older historical evidence is explicitly needed.');
   hints.push('source research digest: after research_sources, inspect Source digest hits/errors/source mix/top URLs; refine the query or state the coverage gap before relying on weak source evidence.');
   return hints;
+}
+
+function summarizeBenchmarkMemoryHints(
+  root: string,
+  manifests: string[],
+  instructionExcerpts: string[],
+  taskContractSignals: string[],
+): BenchmarkMemoryHint[] {
+  if (/^(0|false|off|no)$/i.test(process.env.VENTIPUS_BENCHMARK_MEMORY || '')) return [];
+  if (!isMemoryEnabled()) return [];
+
+  const queries = buildBenchmarkMemoryQueries(root, manifests, instructionExcerpts, taskContractSignals);
+  if (queries.length === 0) return [];
+
+  const hitsById = new Map<string, { hit: SearchHit; score: number }>();
+  for (const query of queries) {
+    let hits: SearchHit[] = [];
+    try {
+      hits = searchMemPalace(query, root, { scope: 'both', limit: 5 });
+    } catch {
+      continue;
+    }
+    for (const hit of hits) {
+      const current = hitsById.get(hit.drawer.id);
+      if (!current || hit.score > current.score) {
+        hitsById.set(hit.drawer.id, { hit, score: hit.score });
+      }
+    }
+  }
+
+  return Array.from(hitsById.values())
+    .filter(({ score }) => score >= 1)
+    .sort((a, b) => b.score - a.score || b.hit.drawer.updatedAt.localeCompare(a.hit.drawer.updatedAt))
+    .slice(0, 6)
+    .map(({ hit, score }) => {
+      const drawer = hit.drawer;
+      const tagText = drawer.tags.length ? ` tags=${drawer.tags.slice(0, 6).join('|')}` : '';
+      const excerpt = truncateContractSignal(redactTraceText(drawer.content.replace(/\s+/g, ' ').trim()), 240);
+      return {
+        id: drawer.id,
+        score,
+        line: `memory#${drawer.id} ${drawer.scope}:${drawer.wing}/${drawer.room} score=${score.toFixed(2)}${tagText}: ${excerpt}`,
+      };
+    });
+}
+
+function buildBenchmarkMemoryQueries(
+  root: string,
+  manifests: string[],
+  instructionExcerpts: string[],
+  taskContractSignals: string[],
+): string[] {
+  const raw: string[] = [basename(normalizePath(root))];
+  const packageName = readPackageName(root, manifests);
+  if (packageName) raw.push(packageName);
+  raw.push(...taskContractSignals.slice(0, 4).map(stripContractSignalPrefix));
+  raw.push(...instructionExcerpts.slice(0, 3).map(stripContractSignalPrefix));
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of raw) {
+    const query = value
+      .replace(/[`"'()[\]{}]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const key = query.toLowerCase();
+    if (query.length < 3 || seen.has(key)) continue;
+    seen.add(key);
+    out.push(truncateContractSignal(query, 180));
+  }
+  return out.slice(0, 8);
+}
+
+function stripContractSignalPrefix(value: string): string {
+  return value
+    .replace(/^(?:[a-z0-9._-]+[\\/])*[a-z0-9._-]+\.[a-z0-9]+:\d+:\s*/i, '')
+    .replace(/^(?:[a-z0-9._-]+[\\/])*[a-z0-9._-]+\.[a-z0-9]+:\s*/i, '')
+    .replace(/^[a-z0-9._-]+(?:[\\/][a-z0-9._-]+)+:\d+:\s*/i, '')
+    .replace(/^[a-z0-9._-]+(?:[\\/][a-z0-9._-]+)+:\s*/i, '')
+    .replace(/^(?:description|instruction|instructions|prompt|task)\s*:\s*/i, '')
+    .trim();
 }
 
 function summarizeInstructionExcerpts(root: string, instructions: string[]): string[] {
@@ -1021,6 +1120,18 @@ function readPackageScripts(root: string, manifests: string[]): Array<{ name: st
       .slice(0, 40);
   } catch {
     return [];
+  }
+}
+
+function readPackageName(root: string, manifests: string[]): string | null {
+  if (!manifests.includes('package.json')) return null;
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')) as { name?: unknown };
+    return typeof pkg.name === 'string' && pkg.name.trim()
+      ? pkg.name.trim()
+      : null;
+  } catch {
+    return null;
   }
 }
 

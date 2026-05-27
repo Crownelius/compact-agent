@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { BenchmarkContextTool } from '../src/tools/benchmark-context.js';
 import { getToolByName } from '../src/tools/index.js';
+import { addDrawer } from '../src/mempalace/index.js';
 
 const roots: string[] = [];
 
@@ -430,6 +431,41 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('failures=npm test tests=billing totals render with fixed decimals files=src/app.ts errors=AssertionError: expected 12.3 to equal 12.30');
     expect(result.output).toContain('contract_overlap=TASK.md: Must show billing totals with two decimal places.');
     expect(result.output).toContain('contract=signals:2,checklist_after_context:true,complete:true');
+  });
+
+  it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({
+      name: 'billing-fixture',
+      scripts: { test: 'vitest run' },
+    }));
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      '',
+      '## Acceptance Criteria',
+      '- Must show billing totals with two decimal places.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'src', 'app.ts'), 'export const total = 12.3;\n');
+    addDrawer({
+      wing: 'projects',
+      room: 'billing-fixture',
+      content: 'billing-fixture lesson: totals should be formatted with fixed two decimal places before rendering invoices.',
+      tags: ['billing-fixture', 'benchmark', 'formatting'],
+      importance: 0.9,
+      scope: 'project',
+      cwd: root,
+    });
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('Relevant MemPalace Memories');
+    expect(result.output).toContain('project:projects/billing-fixture');
+    expect(result.output).toContain('totals should be formatted with fixed two decimal places');
+    expect(result.output).toContain('Treat MemPalace memories as hypotheses');
+    expect(result.output).toContain('verify each remembered fact against current files');
   });
 
   it('reports missing paths as errors', async () => {
