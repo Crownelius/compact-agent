@@ -272,9 +272,26 @@ function compactExperienceCard(card) {
     failureSignatures: Array.isArray(card.failureSignatures) ? card.failureSignatures.slice(0, 10) : [],
     sourceResearchCoverage: card.sourceResearchCoverage,
     taskContract: card.taskContract,
+    dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     verificationCommands: Array.isArray(card.verificationCommands) ? card.verificationCommands.slice(0, 20) : [],
     changedFiles: Array.isArray(card.changedFiles) ? card.changedFiles.slice(0, 100) : [],
     warnings: Array.isArray(card.warnings) ? card.warnings.slice(0, 20) : [],
+  };
+}
+
+function compactDependencyUpgrade(dependencyUpgrade) {
+  if (!dependencyUpgrade || typeof dependencyUpgrade !== 'object' || Array.isArray(dependencyUpgrade)) return undefined;
+  return {
+    manifestEditCount: dependencyUpgrade.manifestEditCount,
+    lockfileEditCount: dependencyUpgrade.lockfileEditCount,
+    manifestEdits: Array.isArray(dependencyUpgrade.manifestEdits) ? dependencyUpgrade.manifestEdits.slice(0, 12) : [],
+    lockfileEdits: Array.isArray(dependencyUpgrade.lockfileEdits) ? dependencyUpgrade.lockfileEdits.slice(0, 12) : [],
+    setupAfterManifestEdit: dependencyUpgrade.setupAfterManifestEdit,
+    passingSetupAfterManifestEdit: dependencyUpgrade.passingSetupAfterManifestEdit,
+    validationAfterManifestEdit: dependencyUpgrade.validationAfterManifestEdit,
+    passingValidationAfterManifestEdit: dependencyUpgrade.passingValidationAfterManifestEdit,
+    firstSetupAfterManifestEditSeq: dependencyUpgrade.firstSetupAfterManifestEditSeq,
+    firstValidationAfterManifestEditSeq: dependencyUpgrade.firstValidationAfterManifestEditSeq,
   };
 }
 

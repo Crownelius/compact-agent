@@ -417,6 +417,30 @@ describe('benchmark_context tool', () => {
           incompleteCount: 0,
           incompleteItems: [],
         },
+        dependencyUpgrade: {
+          manifestEditCount: 1,
+          lockfileEditCount: 1,
+          manifestEdits: [{
+            seq: 5,
+            tool: 'apply_patch',
+            target: 'package.json',
+            ecosystem: 'node',
+            kind: 'manifest',
+          }],
+          lockfileEdits: [{
+            seq: 5,
+            tool: 'apply_patch',
+            target: 'package-lock.json',
+            ecosystem: 'node',
+            kind: 'lockfile',
+          }],
+          setupAfterManifestEdit: true,
+          passingSetupAfterManifestEdit: true,
+          validationAfterManifestEdit: true,
+          passingValidationAfterManifestEdit: true,
+          firstSetupAfterManifestEditSeq: 6,
+          firstValidationAfterManifestEditSeq: 7,
+        },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
         warnings: [],
@@ -431,6 +455,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('failures=npm test tests=billing totals render with fixed decimals files=src/app.ts errors=AssertionError: expected 12.3 to equal 12.30');
     expect(result.output).toContain('contract_overlap=TASK.md: Must show billing totals with two decimal places.');
     expect(result.output).toContain('contract=signals:2,checklist_after_context:true,complete:true');
+    expect(result.output).toContain('dependency=manifests:1,lockfiles:1,setup:true,setup_ok:true,validation:true,validation_ok:true,targets:node:package.json|node:package-lock.json');
   });
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {

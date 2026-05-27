@@ -2716,6 +2716,41 @@ describe('benchmark trace artifacts', () => {
     expect(quality.firstDependencyValidationAfterManifestEditSeq).toBe(7);
     expect(quality.processDefects).toEqual([]);
     expect(quality.warnings).toEqual([]);
+
+    const summary = buildBenchmarkTraceSummary({
+      sessionId: 'session-dependency-upgrade',
+      mode: 'benchmark',
+      cwd: 'C:/repo',
+      config,
+      startedAtMs: 1000,
+      endedAtMs: 3000,
+      messages: [],
+      events,
+    });
+    expect(summary.experienceCard.dependencyUpgrade).toMatchObject({
+      manifestEditCount: 1,
+      lockfileEditCount: 1,
+      setupAfterManifestEdit: true,
+      passingSetupAfterManifestEdit: true,
+      validationAfterManifestEdit: true,
+      passingValidationAfterManifestEdit: true,
+      firstSetupAfterManifestEditSeq: 6,
+      firstValidationAfterManifestEditSeq: 7,
+      manifestEdits: [{
+        seq: 5,
+        tool: 'apply_patch',
+        target: 'package.json',
+        ecosystem: 'node',
+        kind: 'manifest',
+      }],
+      lockfileEdits: [{
+        seq: 5,
+        tool: 'apply_patch',
+        target: 'package-lock.json',
+        ecosystem: 'node',
+        kind: 'lockfile',
+      }],
+    });
   });
 
   it('warns when full skills are loaded before local context or in bulk', () => {

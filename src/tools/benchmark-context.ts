@@ -608,6 +608,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       .slice(0, 12);
     const priorTaskContractSignals = priorTaskContractSignalsFromSummary(summary);
     const contractOverlap = summarizeTaskContractOverlap(priorTaskContractSignals, currentContractSet);
+    const priorDependency = summarizePriorDependencyUpgrade(summary, quality);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -615,6 +616,9 @@ export function summarizePriorBenchmarkExperienceSummary(
     if (summaryCwd && basename(summaryCwd) === rootBase) relevanceScore += 12;
     relevanceScore += Math.min(20, changedFiles.filter((file) => fileSet.has(file)).length * 5);
     relevanceScore += Math.min(12, changedFiles.filter((file) => fileBasenames.has(basename(file).toLowerCase())).length * 3);
+    relevanceScore += Math.min(8, priorDependency.targets
+      .filter((target) => matchesCurrentFileReference(target, fileSet, fileBasenames))
+      .length * 4);
     relevanceScore += Math.min(12, verificationCommands.filter((cmd) => verifierSet.has(normalizeExperienceText(cmd))).length * 6);
     relevanceScore += Math.min(18, contractOverlap.length * 6);
     if (relevanceScore < 18) continue;
@@ -651,6 +655,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         `changed=${redactTraceText(changed)}`,
         contractOverlap.length ? `contract_overlap=${redactTraceText(contractOverlap.join(' | '))}` : null,
         priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
+        priorDependency.text,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
       continue;
@@ -672,6 +677,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorFailures.length ? `failures=${redactTraceText(priorFailures.join(' | '))}` : null,
       contractOverlap.length ? `contract_overlap=${redactTraceText(contractOverlap.join(' | '))}` : null,
       contractText,
+      priorDependency.text,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
     ].filter(Boolean).join('; ');
@@ -946,6 +952,105 @@ function summarizePriorTaskContractUse(summary: Record<string, unknown>, quality
     ? taskContract.checklistComplete
     : quality.taskContractChecklistComplete;
   return `contract=signals:${signals},checklist_after_context:${String(afterContext)},complete:${String(complete)}`;
+}
+
+function summarizePriorDependencyUpgrade(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): { text: string | null; targets: string[] } {
+  const card = objectRecord(summary.experienceCard);
+  const dependency = objectRecord(card.dependencyUpgrade);
+  const manifestEdits = summarizePriorDependencyEditEvents(
+    Array.isArray(dependency.manifestEdits) ? dependency.manifestEdits : quality.dependencyManifestEditEvents,
+  );
+  const lockfileEdits = summarizePriorDependencyEditEvents(
+    Array.isArray(dependency.lockfileEdits) ? dependency.lockfileEdits : quality.dependencyLockfileEditEvents,
+  );
+  const manifestEditCount = finiteNumber(dependency.manifestEditCount)
+    ?? finiteNumber(quality.dependencyManifestEditCount)
+    ?? manifestEdits.length;
+  const lockfileEditCount = finiteNumber(dependency.lockfileEditCount)
+    ?? finiteNumber(quality.dependencyLockfileEditCount)
+    ?? lockfileEdits.length;
+  const setupAfterManifestEdit = firstBooleanOrNull(
+    dependency.setupAfterManifestEdit,
+    quality.dependencySetupAfterManifestEdit,
+  );
+  const passingSetupAfterManifestEdit = firstBooleanOrNull(
+    dependency.passingSetupAfterManifestEdit,
+    quality.passingDependencySetupAfterManifestEdit,
+  );
+  const validationAfterManifestEdit = firstBooleanOrNull(
+    dependency.validationAfterManifestEdit,
+    quality.dependencyValidationAfterManifestEdit,
+  );
+  const passingValidationAfterManifestEdit = firstBooleanOrNull(
+    dependency.passingValidationAfterManifestEdit,
+    quality.passingDependencyValidationAfterManifestEdit,
+  );
+  const targets = uniqueNormalizedStrings([...manifestEdits, ...lockfileEdits]
+    .map((event) => event.target)
+    .slice(0, 12));
+
+  if ((manifestEditCount ?? 0) <= 0 && (lockfileEditCount ?? 0) <= 0 && targets.length === 0) {
+    return { text: null, targets };
+  }
+
+  const targetLabels = uniqueExperienceStrings([...manifestEdits, ...lockfileEdits]
+    .map((event) => `${event.ecosystem || 'unknown'}:${event.target}`)
+    .map((label) => truncateContractSignal(redactTraceText(label), 140)))
+    .slice(0, 4);
+  const text = [
+    `dependency=manifests:${manifestEditCount ?? 0}`,
+    `lockfiles:${lockfileEditCount ?? 0}`,
+    `setup:${formatDependencyTriState(setupAfterManifestEdit)}`,
+    `setup_ok:${formatDependencyTriState(passingSetupAfterManifestEdit)}`,
+    `validation:${formatDependencyTriState(validationAfterManifestEdit)}`,
+    `validation_ok:${formatDependencyTriState(passingValidationAfterManifestEdit)}`,
+    targetLabels.length ? `targets:${targetLabels.join('|')}` : null,
+  ].filter(Boolean).join(',');
+  return { text, targets };
+}
+
+function summarizePriorDependencyEditEvents(value: unknown): Array<{ target: string; ecosystem: string }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ target: string; ecosystem: string }> = [];
+  for (const raw of value) {
+    const event = objectRecord(raw);
+    const target = typeof event.target === 'string'
+      ? normalizePath(redactTraceText(event.target)).trim()
+      : '';
+    if (!target) continue;
+    const ecosystem = typeof event.ecosystem === 'string'
+      ? truncateContractSignal(redactTraceText(event.ecosystem), 40)
+      : 'unknown';
+    out.push({ target: truncateContractSignal(target, 140), ecosystem });
+  }
+  const seen = new Set<string>();
+  return out.filter((event) => {
+    const key = `${event.ecosystem.toLowerCase()}\0${event.target.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 12);
+}
+
+function booleanOrNullFromUnknown(value: unknown): boolean | null | undefined {
+  if (typeof value === 'boolean') return value;
+  if (value === null) return null;
+  return undefined;
+}
+
+function firstBooleanOrNull(...values: unknown[]): boolean | null | undefined {
+  for (const value of values) {
+    const parsed = booleanOrNullFromUnknown(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function formatDependencyTriState(value: boolean | null | undefined): string {
+  return value === undefined ? 'unknown' : String(value);
 }
 
 function isPriorEditTool(tool: string): boolean {

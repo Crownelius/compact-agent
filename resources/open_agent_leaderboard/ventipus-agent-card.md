@@ -47,7 +47,7 @@ Benchmark mode emphasizes:
 
 Ventipus includes MemPalace-backed project and global memory. In benchmark mode, `benchmark_context` can surface bounded relevant memories and prior local benchmark experience cards. These are explicitly framed as hypotheses that must be verified against current task files and verifier output.
 
-Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, source-research coverage, verification commands, changed files, and warnings.
+Benchmark traces write compact `experienceCard` summaries with replay checkpoints, failure signatures, task-contract state and signals, dependency-upgrade setup-validation evidence, source-research coverage, verification commands, changed files, and warnings.
 
 ## Models
 

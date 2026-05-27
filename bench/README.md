@@ -183,17 +183,17 @@ The adapter (`ventipus_agent_adapter.py`) is a 130-line Python module that:
    at a pinned version, then seeds a minimal `~/.ventipus/config.json`
    so the setup wizard doesn't block on stdin.
 2. **Runs** — the harness execs `ventipus --non-interactive --perm yolo`
-   with the task description piped via heredoc on stdin. Compact-agent
+   with the task description piped via heredoc on stdin. Ventipus
    runs autonomously (yolo perms → no permission prompts, agentic loop
    until it stops calling tools).
 3. **Reports** — the harness scores by the post-run filesystem state of
-   the container against task expectations. Compact-agent's exit code
+   the container against task expectations. Ventipus's exit code
    doesn't matter; what matters is whether the files / commands / state
    match what the task wanted.
 
 ## How --prompt mode works (under the hood)
 
-Compact-agent v1.33.7+ ships these CLI flags for harness drivers:
+Ventipus v1.33.7+ ships these CLI flags for harness drivers:
 
 | Flag                       | Effect                                                      |
 | -------------------------- | ----------------------------------------------------------- |

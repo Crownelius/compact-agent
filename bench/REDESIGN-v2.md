@@ -233,7 +233,7 @@ Source: Goose, OpenHands.
 Currently ventipus has hard-coded TypeScript tools. The research strongly suggests an **MCP-only** architecture where every capability is a server. Benefits:
 - Tools are versioned, swappable, A/B-testable without forking the agent
 - Users can add their own tools by writing an MCP server (already standard)
-- Compact-agent's "ECC skills" surface could collapse into MCP servers
+- Ventipus's "ECC skills" surface could collapse into MCP servers
 
 This is a v3 conversation — too disruptive for v2. But the design should leave room.
 

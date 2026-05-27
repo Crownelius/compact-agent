@@ -48,6 +48,7 @@ export interface BenchmarkExperienceCard {
   failureSignatures: BenchmarkVerifierFailureSignature[];
   sourceResearchCoverage: SourceResearchCoverage;
   taskContract: BenchmarkExperienceTaskContract;
+  dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   verificationCommands: string[];
   changedFiles: string[];
   warnings: string[];
@@ -228,6 +229,19 @@ export interface BenchmarkDependencyEditEvent {
   target: string;
   ecosystem: string;
   kind: 'manifest' | 'lockfile';
+}
+
+export interface BenchmarkExperienceDependencyUpgrade {
+  manifestEditCount: number;
+  lockfileEditCount: number;
+  manifestEdits: BenchmarkDependencyEditEvent[];
+  lockfileEdits: BenchmarkDependencyEditEvent[];
+  setupAfterManifestEdit: boolean | null;
+  passingSetupAfterManifestEdit: boolean | null;
+  validationAfterManifestEdit: boolean | null;
+  passingValidationAfterManifestEdit: boolean | null;
+  firstSetupAfterManifestEditSeq: number | null;
+  firstValidationAfterManifestEditSeq: number | null;
 }
 
 export interface BenchmarkSkillViewEvent {
@@ -722,6 +736,7 @@ export function buildBenchmarkExperienceCard(input: {
       })),
     sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
     taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
+    dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
       .slice(0, 12),
@@ -731,6 +746,37 @@ export function buildBenchmarkExperienceCard(input: {
     warnings: input.trajectoryQuality.warnings
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceDependencyUpgrade(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceDependencyUpgrade {
+  return {
+    manifestEditCount: quality.dependencyManifestEditCount,
+    lockfileEditCount: quality.dependencyLockfileEditCount,
+    manifestEdits: quality.dependencyManifestEditEvents
+      .map(compactBenchmarkDependencyEditEvent)
+      .slice(0, 8),
+    lockfileEdits: quality.dependencyLockfileEditEvents
+      .map(compactBenchmarkDependencyEditEvent)
+      .slice(0, 8),
+    setupAfterManifestEdit: quality.dependencySetupAfterManifestEdit,
+    passingSetupAfterManifestEdit: quality.passingDependencySetupAfterManifestEdit,
+    validationAfterManifestEdit: quality.dependencyValidationAfterManifestEdit,
+    passingValidationAfterManifestEdit: quality.passingDependencyValidationAfterManifestEdit,
+    firstSetupAfterManifestEditSeq: quality.firstDependencySetupAfterManifestEditSeq,
+    firstValidationAfterManifestEditSeq: quality.firstDependencyValidationAfterManifestEditSeq,
+  };
+}
+
+function compactBenchmarkDependencyEditEvent(event: BenchmarkDependencyEditEvent): BenchmarkDependencyEditEvent {
+  return {
+    seq: event.seq,
+    tool: truncate(redactTraceText(event.tool), 80),
+    target: truncate(redactTraceText(event.target), 160),
+    ecosystem: truncate(redactTraceText(event.ecosystem), 80),
+    kind: event.kind,
   };
 }
 
@@ -845,7 +891,7 @@ export function buildOpenAgentLeaderboardDraft(
     version: 1,
     source: 'ventipus benchmark trace',
     submissionReady: false,
-    reason: 'Compact-agent trace draft lacks official benchmark_score, successful_sessions, and benchmark-owned session_results. Run an official harness such as Exgentic, HAL, Terminal-Bench, or KBench before submitting or claiming leaderboard performance.',
+    reason: 'Ventipus trace draft lacks official benchmark_score, successful_sessions, and benchmark-owned session_results. Run an official harness such as Exgentic, HAL, Terminal-Bench, or KBench before submitting or claiming leaderboard performance.',
     agent: 'ventipus_agent',
     agent_name: 'Ventipus',
     benchmark,

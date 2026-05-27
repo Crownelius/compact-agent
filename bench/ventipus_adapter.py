@@ -250,7 +250,7 @@ class VentipusAgent(AbstractInstalledAgent):
         benchmark with a key you've budgeted for.
         """
         env = {}
-        # Compact-agent reads OPENAI_API_KEY when baseURL is configured.
+        # Ventipus reads OPENAI_API_KEY when baseURL is configured.
         # OpenRouter, NVIDIA, DeepSeek, etc all key off this same env.
         key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not key:
