@@ -8,6 +8,7 @@ import {
   buildBenchmarkBlindRepairEvents,
   buildBenchmarkEnvironmentSetupEvents,
   buildBenchmarkEnvironmentSetupFailureEvents,
+  buildBenchmarkFailureUnalignedRepairEvents,
   buildBenchmarkIncompleteVerifierEvents,
   buildBenchmarkInvalidToolActionEvents,
   buildBenchmarkLeakageRiskEvents,
@@ -209,6 +210,9 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.redundantVerifierEvents).toEqual([]);
     expect(summary.trajectoryQuality.blindRepairCount).toBe(0);
     expect(summary.trajectoryQuality.blindRepairEvents).toEqual([]);
+    expect(summary.trajectoryQuality.failureAlignedRepairCount).toBe(0);
+    expect(summary.trajectoryQuality.failureUnalignedRepairCount).toBe(0);
+    expect(summary.trajectoryQuality.failureUnalignedRepairEvents).toEqual([]);
     expect(summary.trajectoryQuality.postEditRegressionCycleCount).toBe(0);
     expect(summary.trajectoryQuality.postEditRegressionCycleEvents).toEqual([]);
     expect(summary.trajectoryQuality.scratchArtifactPermissionDetected).toBe(false);
@@ -2190,6 +2194,187 @@ describe('benchmark trace artifacts', () => {
     ];
 
     expect(buildBenchmarkBlindRepairEvents(failureFileEvents)).toEqual([]);
+  });
+
+  it('flags repair edits that ignore parsed source failure-file evidence', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/config.ts' },
+        output: 'export const mode = "old";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'FAIL src/app.ts\nsrc/app.ts:42: AssertionError: expected old to equal new\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'grep',
+        input: { pattern: 'mode', path: 'src/config.ts' },
+        output: 'src/config.ts:1:export const mode = "old";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'edit_file',
+        input: { file_path: 'src/config.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'bash',
+        input: { command: 'git diff -- src/config.ts' },
+        output: 'diff --git a/src/config.ts b/src/config.ts',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test' },
+        output: 'Tests: 100 passed, 100 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const unaligned = buildBenchmarkFailureUnalignedRepairEvents(events);
+    expect(unaligned).toEqual([{
+      failedVerificationSeq: 3,
+      editSeq: 5,
+      command: 'npm test -- app',
+      failureFiles: ['src/app.ts'],
+      inspectedTargets: ['/mode/ in src/config.ts'],
+      editTarget: 'src/config.ts',
+      reason: 'repair inspected only targets that did not match parsed source failure files before editing elsewhere',
+    }]);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.failureAlignedRepairCount).toBe(0);
+    expect(quality.failureUnalignedRepairCount).toBe(1);
+    expect(quality.failureUnalignedRepairEvents).toEqual(unaligned);
+    expect(quality.blindRepairEvents).toEqual([]);
+    expect(quality.unlocalizedEditTargetEvents).toEqual([]);
+    expect(quality.processDefects.map((defect) => defect.code)).toEqual(['failure_unaligned_repair']);
+    expect(quality.processDefects[0]).toMatchObject({
+      category: 'localization',
+      severity: 'medium',
+      seq: 5,
+    });
+    expect(quality.processScore).toBe(90);
+    expect(quality.warnings.join('\n')).toContain('failed-verifier repair target was not aligned with parsed source failure files');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('failure_aligned_repairs=0 failure_unaligned_repairs=1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('parsed source failure files');
+  });
+
+  it('allows repairs that edit or inspect parsed source failure files', () => {
+    const directEditEvents = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'export function app() { return "old"; }',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'FAIL src/app.ts\nsrc/app.ts:42: AssertionError\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'edit_file',
+        input: { file_path: 'src/app.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+    expect(buildBenchmarkFailureUnalignedRepairEvents(directEditEvents)).toEqual([]);
+    expect(buildBenchmarkTrajectoryQuality(directEditEvents).failureAlignedRepairCount).toBe(1);
+
+    const inspectedFailureEvents = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/config.ts' },
+        output: 'export const mode = "old";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- app' },
+        output: 'FAIL src/app.ts\nsrc/app.ts:42: AssertionError\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'read_file',
+        input: { file_path: 'src/app.ts' },
+        output: 'import { mode } from "./config";',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'edit_file',
+        input: { file_path: 'src/config.ts', old_string: 'old', new_string: 'new' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+    ];
+    expect(buildBenchmarkFailureUnalignedRepairEvents(inspectedFailureEvents)).toEqual([]);
+    expect(buildBenchmarkTrajectoryQuality(inspectedFailureEvents).failureAlignedRepairCount).toBe(1);
   });
 
   it('flags verifier failures that look like unresolved environment setup failures', () => {

@@ -301,6 +301,9 @@ export interface BenchmarkTrajectoryQuality {
   redundantVerifierEvents: BenchmarkRedundantVerifierEvent[];
   blindRepairCount: number;
   blindRepairEvents: BenchmarkBlindRepairEvent[];
+  failureAlignedRepairCount: number;
+  failureUnalignedRepairCount: number;
+  failureUnalignedRepairEvents: BenchmarkFailureUnalignedRepairEvent[];
   postEditRegressionCycleCount: number;
   postEditRegressionCycleEvents: BenchmarkPostEditRegressionCycleEvent[];
   scratchArtifactPermissionDetected: boolean;
@@ -457,6 +460,16 @@ export interface BenchmarkBlindRepairEvent {
   failedVerificationSeq: number;
   editSeq: number;
   command: string;
+  editTarget: string;
+  reason: string;
+}
+
+export interface BenchmarkFailureUnalignedRepairEvent {
+  failedVerificationSeq: number;
+  editSeq: number;
+  command: string;
+  failureFiles: string[];
+  inspectedTargets: string[];
   editTarget: string;
   reason: string;
 }
@@ -1095,6 +1108,7 @@ export function buildBenchmarkTrajectoryQuality(
   const redundantToolCallEvents = buildBenchmarkRedundantToolCallEvents(events);
   const redundantVerifierEvents = buildBenchmarkRedundantVerifierEvents(events);
   const blindRepairEvents = buildBenchmarkBlindRepairEvents(events);
+  const failureRepairAlignment = buildBenchmarkFailureRepairAlignment(events);
   const postEditRegressionCycleEvents = buildBenchmarkPostEditRegressionCycleEvents(events);
   const scratchArtifactPermissionDetected = hasScratchArtifactPermission(events);
   const scratchArtifactEvents = buildBenchmarkScratchArtifactEvents(events);
@@ -1496,6 +1510,13 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`blind repair after failed verifier: ${repairs}. Inspect the failure output or referenced files before patching again.`);
   }
+  if (failureRepairAlignment.unalignedEvents.length > 0) {
+    const repairs = failureRepairAlignment.unalignedEvents
+      .slice(0, 3)
+      .map((event) => `fail#${event.failedVerificationSeq}->edit#${event.editSeq} ${event.editTarget} (failure files: ${event.failureFiles.join(', ')})`)
+      .join('; ');
+    warnings.push(`failed-verifier repair target was not aligned with parsed source failure files: ${repairs}. Inspect the cited failure file(s) or make the cross-file dependency explicit before patching elsewhere.`);
+  }
   if (postEditRegressionCycleEvents.length > 0) {
     const cycles = postEditRegressionCycleEvents
       .slice(0, 3)
@@ -1598,6 +1619,8 @@ export function buildBenchmarkTrajectoryQuality(
     redundantToolCallEvents,
     redundantVerifierEvents,
     blindRepairEvents,
+    failureAlignedRepairCount: failureRepairAlignment.alignedCount,
+    failureUnalignedRepairEvents: failureRepairAlignment.unalignedEvents,
     postEditRegressionCycleEvents,
     scratchArtifactPermissionDetected,
     scratchArtifactEvents,
@@ -1715,6 +1738,9 @@ export function buildBenchmarkTrajectoryQuality(
     redundantVerifierEvents,
     blindRepairCount: blindRepairEvents.length,
     blindRepairEvents,
+    failureAlignedRepairCount: failureRepairAlignment.alignedCount,
+    failureUnalignedRepairCount: failureRepairAlignment.unalignedEvents.length,
+    failureUnalignedRepairEvents: failureRepairAlignment.unalignedEvents,
     postEditRegressionCycleCount: postEditRegressionCycleEvents.length,
     postEditRegressionCycleEvents,
     scratchArtifactPermissionDetected,
@@ -1769,7 +1795,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)}, edits=${quality.editCount}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -1908,6 +1934,8 @@ interface BenchmarkProcessDefectInput {
   redundantToolCallEvents: BenchmarkRedundantToolCallEvent[];
   redundantVerifierEvents: BenchmarkRedundantVerifierEvent[];
   blindRepairEvents: BenchmarkBlindRepairEvent[];
+  failureAlignedRepairCount: number;
+  failureUnalignedRepairEvents: BenchmarkFailureUnalignedRepairEvent[];
   postEditRegressionCycleEvents: BenchmarkPostEditRegressionCycleEvent[];
   scratchArtifactPermissionDetected: boolean;
   scratchArtifactEvents: BenchmarkScratchArtifactEvent[];
@@ -2281,6 +2309,19 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       input.blindRepairEvents
         .slice(0, 3)
         .map((event) => `fail#${event.failedVerificationSeq}->edit#${event.editSeq}:${event.editTarget}`)
+        .join('; '),
+    );
+  }
+  if (input.failureUnalignedRepairEvents.length > 0) {
+    add(
+      'failure_unaligned_repair',
+      'localization',
+      'medium',
+      input.failureUnalignedRepairEvents[0]?.editSeq ?? null,
+      'A repair edit followed parsed source failure-file evidence but did not edit or inspect an aligned source failure file first.',
+      input.failureUnalignedRepairEvents
+        .slice(0, 3)
+        .map((event) => `fail#${event.failedVerificationSeq}->edit#${event.editSeq}:${event.editTarget}; files=${event.failureFiles.join('|')}; inspected=${event.inspectedTargets.join('|') || 'none'}`)
         .join('; '),
     );
   }
@@ -3090,6 +3131,63 @@ export function buildBenchmarkPostEditRegressionCycleEvents(events: BenchmarkTra
   return cycles.slice(0, 20);
 }
 
+export function buildBenchmarkFailureUnalignedRepairEvents(events: BenchmarkTraceEvent[]): BenchmarkFailureUnalignedRepairEvent[] {
+  return buildBenchmarkFailureRepairAlignment(events).unalignedEvents;
+}
+
+function buildBenchmarkFailureRepairAlignment(events: BenchmarkTraceEvent[]): {
+  alignedCount: number;
+  unalignedEvents: BenchmarkFailureUnalignedRepairEvent[];
+} {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq);
+  let alignedCount = 0;
+  const unalignedEvents: BenchmarkFailureUnalignedRepairEvent[] = [];
+
+  for (let index = 0; index < sorted.length; index++) {
+    const failed = sorted[index];
+    if (!isConclusiveFailedVerification(failed)) continue;
+    const failureFiles = sourceFailureFilesForVerifier(failed);
+    if (failureFiles.length === 0) continue;
+    const failureFileSet = new Set(failureFiles.map(normalizeTracePath).filter(Boolean));
+    let alignedInspection = false;
+    const inspectedTargets: string[] = [];
+
+    for (const next of sorted.slice(index + 1)) {
+      if (next.verification) break;
+      if (isFailureInspectionEvent(next)) {
+        inspectedTargets.push(formatFailureInspectionTarget(next));
+        if (failureInspectionMatchesFiles(next, failureFileSet)) alignedInspection = true;
+        continue;
+      }
+      if (!isEditEvent(next)) continue;
+      const editTargets = supportedEditTargetsForBlindRepair(next)
+        .filter((target) => !detectTestHarnessEditRisk(target))
+        .map(normalizeTracePath)
+        .filter(Boolean);
+      if (editTargets.length === 0) break;
+      const directFailureTargetEdit = editTargets.some((target) => isLocalizedTarget(target, failureFileSet));
+      if (directFailureTargetEdit || alignedInspection) {
+        alignedCount++;
+      } else {
+        unalignedEvents.push({
+          failedVerificationSeq: failed.seq,
+          editSeq: next.seq,
+          command: truncate(redactTraceText(verifierCommandForEvent(failed)), 180),
+          failureFiles: failureFiles.slice(0, 6),
+          inspectedTargets: uniqueStrings(inspectedTargets).slice(0, 6),
+          editTarget: truncate(redactTraceText(formatEditTargetsForEvent(next)), 180),
+          reason: inspectedTargets.length === 0
+            ? 'repair edited a different source target before inspecting parsed source failure files'
+            : 'repair inspected only targets that did not match parsed source failure files before editing elsewhere',
+        });
+      }
+      break;
+    }
+  }
+
+  return { alignedCount, unalignedEvents: unalignedEvents.slice(0, 20) };
+}
+
 export function buildBenchmarkIncompleteVerifierEvents(events: BenchmarkTraceEvent[]): BenchmarkVerifierIncompleteRun[] {
   return events.flatMap((event) => {
     const incomplete = extractVerifierIncompleteRun(event);
@@ -3206,6 +3304,43 @@ function editTargetSupportedByFailureEvidence(failedVerifier: BenchmarkTraceEven
     .map(normalizeTracePath)
     .filter(Boolean)
     .some((target) => isLocalizedTarget(target, failureFiles));
+}
+
+function sourceFailureFilesForVerifier(event: BenchmarkTraceEvent): string[] {
+  const signature = extractVerifierFailureSignature(event);
+  if (!signature) return [];
+  return uniqueStrings(
+    signature.files
+      .map(normalizeTracePath)
+      .filter((file) => file && !isCommonNonSourceReference(file) && !detectTestHarnessEditRisk(file)),
+  ).slice(0, 12);
+}
+
+function failureInspectionMatchesFiles(event: BenchmarkTraceEvent, failureFiles: Set<string>): boolean {
+  if (failureFiles.size === 0) return false;
+  const evidenceTargets = new Set<string>();
+  if (isLocalContextInspectionEvent(event)) {
+    for (const ref of localContextInspectionFileReferences(event)) {
+      const normalized = normalizeTracePath(ref);
+      if (normalized) evidenceTargets.add(normalized);
+    }
+  } else if (event.tool === 'bash') {
+    for (const ref of extractFileReferences(`${event.target}\n${event.outputPreview}`)) {
+      const normalized = normalizeTracePath(ref);
+      if (normalized) evidenceTargets.add(normalized);
+    }
+  }
+  for (const failureFile of failureFiles) {
+    if (isLocalizedTarget(failureFile, evidenceTargets)) return true;
+  }
+  return false;
+}
+
+function formatFailureInspectionTarget(event: BenchmarkTraceEvent): string {
+  const input = parseEventInputPreview(event.inputPreview);
+  if (event.tool === 'bash') return truncate(redactTraceText(verifierCommandForEvent(event)), 180);
+  const target = event.target || String(input.file_path ?? input.path ?? input.pattern ?? event.tool);
+  return truncate(redactTraceText(target), 180);
 }
 
 function blindRepairReason(failedVerifier: BenchmarkTraceEvent, editEvent: BenchmarkTraceEvent): string {
@@ -3759,6 +3894,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('redundant tool calls')
     || warning.includes('redundant verifier reruns')
     || warning.includes('blind repair after failed verifier')
+    || warning.includes('failed-verifier repair target')
     || warning.includes('post-edit regression cycle')
     || warning.includes('scratch/probe artifact')
     || warning.includes('post-edit diff/status review')
@@ -3774,7 +3910,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, reduce or explicitly justify a large edit surface, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
