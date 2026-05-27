@@ -165,6 +165,8 @@ def fold_exgentic_history(
 def repair_exgentic_action_payload(
     payload: ActionPayload,
     action_docs: list[dict[str, Any]],
+    *,
+    argument_hints: Any = None,
 ) -> ActionRepairResult:
     """Repair near-miss action names and argument keys before ActionType build.
 
@@ -180,6 +182,7 @@ def repair_exgentic_action_payload(
     repaired_args, arg_diagnostics = _repair_action_arguments(
         payload.arguments,
         matched_doc.get("arguments_schema") if matched_doc else None,
+        argument_hints=argument_hints,
     )
 
     changed = repaired_name != payload.name or repaired_args != payload.arguments
@@ -410,6 +413,8 @@ def _resolve_action_doc(
 def _repair_action_arguments(
     arguments: dict[str, Any],
     schema: Any,
+    *,
+    argument_hints: Any = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     args = dict(arguments or {})
     schema_keys = _schema_property_keys(schema)
@@ -417,6 +422,7 @@ def _repair_action_arguments(
         return args, {
             "argument_key_repairs": [],
             "dropped_argument_keys": [],
+            "filled_required_arguments": [],
             "schema_keys": [],
         }
 
@@ -437,11 +443,75 @@ def _repair_action_arguments(
         else:
             dropped.append(text_key)
 
+    filled = _fill_required_arguments(repaired, schema, argument_hints)
     return repaired, {
         "argument_key_repairs": key_repairs,
         "dropped_argument_keys": dropped,
+        "filled_required_arguments": filled,
         "schema_keys": schema_keys[:24],
     }
+
+
+def _fill_required_arguments(
+    repaired: dict[str, Any],
+    schema: Any,
+    argument_hints: Any,
+) -> list[dict[str, str]]:
+    if not isinstance(schema, dict):
+        return []
+    required = [str(key) for key in schema.get("required") or [] if str(key)]
+    if not required:
+        return []
+    hint_index = _argument_hint_index(argument_hints)
+    filled: list[dict[str, str]] = []
+    existing = {_normalized_identifier(key) for key in repaired.keys()}
+
+    for key in required:
+        norm = _normalized_identifier(key)
+        if not norm or norm in existing:
+            continue
+        match = hint_index.get(norm)
+        if match is None:
+            continue
+        value, source = match
+        if value is None:
+            continue
+        repaired[key] = value
+        existing.add(norm)
+        filled.append({"key": key, "source": source})
+    return filled
+
+
+def _argument_hint_index(value: Any) -> dict[str, tuple[Any, str]]:
+    index: dict[str, tuple[Any, str]] = {}
+
+    def visit(item: Any, path: str) -> None:
+        if isinstance(item, dict):
+            for key, child in item.items():
+                key_text = str(key)
+                child_path = f"{path}.{key_text}" if path else key_text
+                norm = _normalized_identifier(key_text)
+                if norm and norm not in index and _hint_value_is_usable(child):
+                    index[norm] = (child, child_path)
+                visit(child, child_path)
+        elif isinstance(item, list):
+            for idx, child in enumerate(item[:50]):
+                visit(child, f"{path}[{idx}]" if path else f"[{idx}]")
+
+    visit(value, "")
+    return index
+
+
+def _hint_value_is_usable(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (bool, int, float)):
+        return True
+    if isinstance(value, (dict, list)):
+        return bool(value)
+    return True
 
 
 def _normalized_identifier(value: Any) -> str:

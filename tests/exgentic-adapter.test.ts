@@ -248,7 +248,10 @@ describe('Exgentic adapter packaging', () => {
         description: 'Look up order and customer state',
         is_finish: false,
         is_message: false,
-        arguments_schema: { properties: { order_id: { type: 'string' }, include_history: { type: 'boolean' } } },
+        arguments_schema: {
+          properties: { order_id: { type: 'string' }, include_history: { type: 'boolean' } },
+          required: ['order_id', 'include_history'],
+        },
       },
       {
         name: 'finish',
@@ -263,8 +266,9 @@ describe('Exgentic adapter packaging', () => {
       `sys.path.insert(0, ${JSON.stringify(adapterDir)})`,
       `import utils`,
       `actions = json.loads(${JSON.stringify(JSON.stringify(actionDocs))})`,
-      `payload = utils.ActionPayload(name="LookupOrder", arguments={"OrderID": "ord-1", "includeHistory": True, "debug": "drop"})`,
-      `repaired = utils.repair_exgentic_action_payload(payload, actions)`,
+      `payload = utils.ActionPayload(name="LookupOrder", arguments={"includeHistory": True, "debug": "drop"})`,
+      `hints = {"latest_observation": {"order_id": "ord-1", "status": "pending"}}`,
+      `repaired = utils.repair_exgentic_action_payload(payload, actions, argument_hints=hints)`,
       `unresolved = utils.repair_exgentic_action_payload(utils.ActionPayload(name="teleport", arguments={"x": 1}), actions)`,
       `print(json.dumps({`,
       `  "payload": {"name": repaired.payload.name, "arguments": repaired.payload.arguments},`,
@@ -290,8 +294,10 @@ describe('Exgentic adapter packaging', () => {
     expect(parsed.diagnostics.status).toBe('repaired');
     expect(parsed.diagnostics.name_match_reason).toBe('normalized_identifier');
     expect(parsed.diagnostics.argument_key_repairs).toEqual([
-      { from: 'OrderID', to: 'order_id' },
       { from: 'includeHistory', to: 'include_history' },
+    ]);
+    expect(parsed.diagnostics.filled_required_arguments).toEqual([
+      { key: 'order_id', source: 'latest_observation.order_id' },
     ]);
     expect(parsed.diagnostics.dropped_argument_keys).toEqual(['debug']);
     expect(parsed.unresolved.status).toBe('unresolved_action_name');

@@ -17,7 +17,9 @@ that preserves latest observations, selected actions, action counts, and
 diagnostics without reinjecting bulky raw stdout into every step. Before
 dispatch, near-miss action JSON is repaired conservatively: action names are
 matched by case/identifier normalization, schema argument keys are canonicalized,
-and unknown extra keys are dropped when the benchmark exposes a fixed schema.
+required schema fields are filled from exact latest-observation/context keys
+when available, and unknown extra keys are dropped when the benchmark exposes a
+fixed schema.
 
 ## Python API use
 

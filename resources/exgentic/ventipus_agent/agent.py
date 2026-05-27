@@ -310,7 +310,14 @@ class VentipusAgentInstance(AgentInstance):
     def _action_from_payload(self, payload: ActionPayload) -> Action | None:
         actions = list(getattr(self, "actions", []) or [])
         action_docs = [_action_type_to_doc(action) for action in actions]
-        repair = repair_exgentic_action_payload(payload, action_docs)
+        repair = repair_exgentic_action_payload(
+            payload,
+            action_docs,
+            argument_hints={
+                "context": getattr(self, "context", {}) or {},
+                "latest_observation": self._latest_observation_data(),
+            },
+        )
         if repair.diagnostics.get("status") != "unchanged":
             self._history.append({"role": "action_repair", "content": repair.diagnostics})
 
@@ -352,6 +359,12 @@ class VentipusAgentInstance(AgentInstance):
             return preferred.build_action(args)
         except Exception:
             return None
+
+    def _latest_observation_data(self) -> Any:
+        for item in reversed(self._history):
+            if isinstance(item, dict) and item.get("role") == "observation":
+                return item.get("content")
+        return None
 
 
 def _split_command(command: str) -> list[str]:
