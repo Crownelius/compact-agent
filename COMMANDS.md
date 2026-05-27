@@ -117,7 +117,7 @@ These trigger an LLM workflow with an injected prompt. `/tdd`, `/review`, `/secu
 | `/refactor-clean` | Alias of `/refactor` — same dispatch. |
 | `/e2e <feature>` | Generate E2E tests (Playwright/Cypress/Puppeteer, auto-detected). |
 | `/eval <criteria> [target]` | Evaluate the project against custom criteria. |
-| `/benchmark [profile] <task>` | Benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `generic`. Aliases: `/bench`, `/leaderboard`. |
+| `/benchmark [profile] <task>` | Benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `wildclaw`, `arc-agi`, `generic`. Aliases: `/bench`, `/leaderboard`. |
 | `/plan <task>` | Structured implementation planning, no edits. |
 | `/update-docs` | Sync documentation files with current code. |
 

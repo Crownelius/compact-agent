@@ -38,6 +38,8 @@ describe('KBench adapter packaging', () => {
     expect(runner).toContain('VENTIPUS_BASH_TIMEOUT_MS');
     expect(runner).toContain("'swe-chain'");
     expect(runner).toContain("'ci-repair'");
+    expect(runner).toContain("'wildclaw'");
+    expect(runner).toContain("'arc-agi'");
   });
 
   it('prints the packaged KBench adapter directory from the CLI wrapper', () => {

@@ -123,7 +123,7 @@ Agents are pulled from the bundled ECC harness. Each runs against an empty tool 
 | `/keys add\|remove\|status\|clear` | Manage the key-rotation pool. |
 | `/swarm <agents> <task>` | Parallel multi-agent fan-out. |
 | `/source-research <topic>` | Research arXiv, GitHub repos/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions before synthesis. |
-| `/benchmark <task>` | Run a benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `generic`. |
+| `/benchmark <task>` | Run a benchmark-grade issue/terminal workflow. Profiles: `swe-bench`, `terminal-bench`, `swe-context`, `swe-chain`, `ci-repair`, `wildclaw`, `arc-agi`, `generic`. |
 | `/tdd <feature>` | TDD workflow — failing test first. |
 | `/review [target]` | Severity-rated code review. |
 | `/audit` | Local project health check. Nothing leaves your machine. |

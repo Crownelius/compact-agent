@@ -312,6 +312,16 @@ describe('benchmark trace artifacts', () => {
         benchmark: 'cirepairbench',
         benchmarkName: 'CI-Repair-Bench',
       },
+      {
+        prompt: '/benchmark wildclaw solve BrowseComp task',
+        benchmark: 'wildclawbench',
+        benchmarkName: 'WildClawBench',
+      },
+      {
+        prompt: '/benchmark arc-agi solve Kaggle ARC task',
+        benchmark: 'arcagi3',
+        benchmarkName: 'ARC-AGI-3',
+      },
     ];
 
     for (const testCase of cases) {

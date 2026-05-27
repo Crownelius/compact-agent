@@ -258,6 +258,8 @@ export type BenchmarkProfile =
   | 'swe-context'
   | 'swe-chain'
   | 'ci-repair'
+  | 'wildclaw'
+  | 'arc-agi'
   | 'generic';
 
 const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
@@ -285,6 +287,17 @@ const BENCHMARK_ALIASES: Record<string, BenchmarkProfile> = {
   ci: 'ci-repair',
   sweci: 'ci-repair',
   'swe-ci': 'ci-repair',
+  wildclaw: 'wildclaw',
+  wildclawbench: 'wildclaw',
+  'wildclaw-bench': 'wildclaw',
+  wcbench: 'wildclaw',
+  arc: 'arc-agi',
+  arcagi: 'arc-agi',
+  arcagi3: 'arc-agi',
+  'arc-agi': 'arc-agi',
+  'arc-agi-3': 'arc-agi',
+  arcprize: 'arc-agi',
+  'arc-prize': 'arc-agi',
   generic: 'generic',
 };
 
@@ -341,6 +354,20 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - Localize from failing CI logs to source files; inspect parsed source failure files before editing elsewhere.
 - Run the matching CI-derived verifier commands after edits, then broader validation when available.
 - Document irreproducible external-service or missing-secret cases instead of treating them as passing validation.`;
+    case 'wildclaw':
+      return `Profile: WildClawBench style native-runtime agent task
+- Treat the task as long-horizon real work inside the provided agent/runtime environment, not as only a repository patch.
+- Identify the sub-benchmark or category first: productivity, coding, social/API workflow, search/retrieval, multimodal creative synthesis, or safety alignment.
+- Preserve the harness action schema, expected artifact paths, and side-effect contract before acting.
+- For browser/search/email/calendar/API tasks, verify state changes and cite sources or files used; for coding tasks, run the provided verifier or a targeted reproduction.
+- Do not inspect hidden grading scripts, injected ground truth, prior submission result files, or answer keys.`;
+    case 'arc-agi':
+      return `Profile: ARC-AGI-3 / ARC Prize interactive reasoning task
+- Treat the task as an interactive environment where the agent must explore, infer the goal, model dynamics, and plan efficient action sequences.
+- Establish the environment API, action budget, scoring signal, output artifact, and train/public versus hidden evaluation boundary before solving.
+- Prefer small deterministic hypotheses, controlled experiments, and explicit state/action traces over broad guessing.
+- Validate hypotheses on visible examples or public environments before producing final actions or submission artifacts.
+- Do not hardcode hidden answers, overfit to leaderboard quirks, use external network calls during Kaggle-style evaluation, or claim a score without official harness output.`;
     case 'generic':
       return `Profile: generic benchmark task
 - Identify the benchmark contract from local files and task text.
@@ -354,6 +381,8 @@ function benchmarkProfileSection(profile: BenchmarkProfile): string {
 - If related prior cases or memory are part of the challenge, follow the SWE-ContextBench profile.
 - If the task is a chained dependency, release, package, or API upgrade, follow the SWE-Chain profile.
 - If the task centers on a CI failure, GitHub Actions, workflow logs, or repository patch validation, follow the CI-Repair profile.
+- If the task mentions WildClawBench, native-runtime agent work, OpenClaw, multimodal/social/search/safety categories, or long-horizon harness comparison, follow the WildClawBench profile.
+- If the task mentions ARC Prize, ARC-AGI, Kaggle ARC, grid abstractions, or no-instructions turn-based environments, follow the ARC-AGI profile.
 - Otherwise follow the generic benchmark profile.`;
   }
 }
@@ -423,6 +452,7 @@ ${preflightSnapshot}
 1. Establish the success oracle.
    - Use the automatic preflight snapshot above. Call \`benchmark_context\` only if the environment changes or the snapshot is incomplete.
    - Find the verifier, test command, hidden/visible test boundary, or expected artifact.
+   - For WildClawBench or ARC-AGI work, first identify the sub-benchmark, action/output contract, scoring signal, and public/hidden boundary before assuming this is a patch task.
    - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
 
 2. Localize before editing.

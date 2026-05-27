@@ -139,6 +139,26 @@ def _is_usaco_task(task: dict[str, Any]) -> bool:
 def _profile_for_task(task: dict[str, Any]) -> str:
     if _is_patch_task(task):
         return "swe-bench"
+    task_text = json.dumps(task, ensure_ascii=False).lower()
+    if "terminal-bench" in task_text or "terminalbench" in task_text:
+        return "terminal-bench"
+    if (
+        "wildclaw" in task_text
+        or "openclaw" in task_text
+        or "browsecomp" in task_text
+        or "ossworld" in task_text
+        or "bfcl" in task_text
+        or "webwalkerqa" in task_text
+    ):
+        return "wildclaw"
+    if (
+        "arc-agi" in task_text
+        or "arc_agi" in task_text
+        or "arc prize" in task_text
+        or "arc-prize" in task_text
+        or "kaggle arc" in task_text
+    ):
+        return "arc-agi"
     return "generic"
 
 

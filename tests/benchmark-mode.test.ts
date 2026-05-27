@@ -32,6 +32,8 @@ describe('benchmark mode and prompt', () => {
     expect(normalizeBenchmarkProfile('swechain')).toBe('swe-chain');
     expect(normalizeBenchmarkProfile('ci-repair-bench')).toBe('ci-repair');
     expect(normalizeBenchmarkProfile('swe-ci')).toBe('ci-repair');
+    expect(normalizeBenchmarkProfile('wildclawbench')).toBe('wildclaw');
+    expect(normalizeBenchmarkProfile('arc-prize')).toBe('arc-agi');
     expect(normalizeBenchmarkProfile('unknown')).toBe('auto');
   });
 
@@ -51,6 +53,14 @@ describe('benchmark mode and prompt', () => {
     expect(splitBenchmarkArgs('ci-repair fix failing github actions')).toEqual({
       profile: 'ci-repair',
       task: 'fix failing github actions',
+    });
+    expect(splitBenchmarkArgs('wildclaw solve BrowseComp task')).toEqual({
+      profile: 'wildclaw',
+      task: 'solve BrowseComp task',
+    });
+    expect(splitBenchmarkArgs('arc-agi solve grid abstraction')).toEqual({
+      profile: 'arc-agi',
+      task: 'solve grid abstraction',
     });
     expect(splitBenchmarkArgs('fix parser bug')).toEqual({
       profile: 'auto',
@@ -110,5 +120,23 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('Reconstruct CI locally');
     expect(prompt).toContain('services, containers, matrix language versions');
     expect(prompt).toContain('missing-secret cases');
+  });
+
+  it('builds WildClawBench prompts around native-runtime agent contracts', () => {
+    const prompt = buildBenchmarkPrompt('solve BrowseComp and safety alignment task', '/workspace', 'wildclaw');
+    expect(prompt).toContain('WildClawBench style native-runtime agent task');
+    expect(prompt).toContain('sub-benchmark');
+    expect(prompt).toContain('action schema');
+    expect(prompt).toContain('browser/search/email/calendar/API');
+    expect(prompt).toContain('hidden grading scripts');
+  });
+
+  it('builds ARC-AGI prompts around interactive exploration and no leakage', () => {
+    const prompt = buildBenchmarkPrompt('solve the Kaggle ARC environment', '/workspace', 'arc-agi');
+    expect(prompt).toContain('ARC-AGI-3 / ARC Prize');
+    expect(prompt).toContain('interactive environment');
+    expect(prompt).toContain('train/public versus hidden evaluation boundary');
+    expect(prompt).toContain('output artifact');
+    expect(prompt).toContain('Do not hardcode hidden answers');
   });
 });

@@ -1656,6 +1656,8 @@ function extractBenchmarkSlug(messages: Message[]): string {
   const profile = (slashMatch?.[1] ?? '').toLowerCase().trim();
   if (profile) return normalizeBenchmarkSlug(profile);
 
+  if (/\bwild[-_ ]?claw(?:[-_ ]?bench)?\b/i.test(text)) return 'wildclawbench';
+  if (/\barc[-_ ]?agi(?:[-_ ]?3)?\b|\barc[-_ ]?prize\b|\bkaggle\s+arc\b/i.test(text)) return 'arcagi3';
   if (/\bswe[-_ ]?chain\b/i.test(text)) return 'swechain';
   if (/\bci[-_ ]?repair(?:[-_ ]?bench)?\b|\bswe[-_ ]?ci\b/i.test(text)) return 'cirepairbench';
   if (/\bterminal[- ]bench\b/i.test(text)) return 'terminalbench';
@@ -1676,6 +1678,8 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'swecontext') return 'swecontext';
   if (cleaned === 'swechain' || cleaned === 'chain' || cleaned === 'upgrade') return 'swechain';
   if (cleaned === 'cirepair' || cleaned === 'cirepairbench' || cleaned === 'sweci' || cleaned === 'ci') return 'cirepairbench';
+  if (cleaned === 'wildclaw' || cleaned === 'wildclawbench' || cleaned === 'wcbench') return 'wildclawbench';
+  if (cleaned === 'arc' || cleaned === 'arcagi' || cleaned === 'arcagi3' || cleaned === 'arcprize') return 'arcagi3';
   if (cleaned === 'taubench' || cleaned === 'tau' || cleaned === 'tau2') return 'tau2';
   if (cleaned === 'browsecomp' || cleaned === 'browsecompplus') return 'browsecompplus';
   return cleaned || 'ventipus_agent_benchmark';
@@ -1689,12 +1693,14 @@ function formatBenchmarkName(slug: string): string {
     ventipus_agent_benchmark: 'Ventipus Benchmark',
     gsm8k: 'GSM8K',
     hotpotqa: 'HotpotQA',
+    arcagi3: 'ARC-AGI-3',
     cirepairbench: 'CI-Repair-Bench',
     swebench: 'SWE-bench',
     swechain: 'SWE-Chain',
     swecontext: 'SWE-context',
     tau2: 'Tau Bench 2',
     terminalbench: 'Terminal-Bench',
+    wildclawbench: 'WildClawBench',
   };
   return names[slug] ?? slug;
 }

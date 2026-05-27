@@ -24,6 +24,8 @@ describe('HAL adapter packaging', () => {
     expect(adapter).toContain('["diff", "--binary", "--no-ext-diff"]');
     expect(adapter).toContain('finalAssistant');
     expect(adapter).toContain('ORACLE_FIELD_RE');
+    expect(adapter).toContain('return "wildclaw"');
+    expect(adapter).toContain('return "arc-agi"');
   });
 
   it('prints the packaged HAL agent directory from the CLI wrapper', () => {
