@@ -626,6 +626,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorReliability = summarizePriorValidationReliability(summary, quality);
     const priorContext = summarizePriorContextUtilization(summary, quality);
     const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
+    const priorSourceResearch = summarizePriorSourceResearchCoverage(summary, quality);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -677,6 +678,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorDecision,
         priorReliability,
         priorContext,
+        priorSourceResearch,
         priorEfficiency,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
@@ -704,6 +706,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorDecision,
       priorReliability,
       priorContext,
+      priorSourceResearch,
       priorEfficiency,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
@@ -1097,6 +1100,93 @@ function summarizePriorContextUtilization(
     percent == null ? null : `utilization:${percent.toFixed(2)}%`,
     risk === undefined ? null : `risk:${String(risk)}`,
     misses.length ? `unused:${misses.join(' | ')}` : null,
+  ].filter(Boolean).join(',');
+}
+
+function summarizePriorSourceResearchCoverage(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): string | null {
+  const card = objectRecord(summary.experienceCard);
+  const cardCoverage = objectRecord(card.sourceResearchCoverage);
+  const qualityCoverage = objectRecord(quality.sourceResearchCoverage);
+  const coverage = Object.keys(cardCoverage).length > 0 ? cardCoverage : qualityCoverage;
+  const callCount = finiteNumber(coverage.callCount);
+  const sourceHitCount = finiteNumber(coverage.sourceHitCount);
+  const sourceErrorCount = finiteNumber(coverage.sourceErrorCount);
+  const freshTargetedCoverage = typeof coverage.freshTargetedCoverage === 'boolean'
+    ? coverage.freshTargetedCoverage
+    : undefined;
+  const completeTargetedCoverage = typeof coverage.completeTargetedCoverage === 'boolean'
+    ? coverage.completeTargetedCoverage
+    : undefined;
+  const kaggleCompetitionsSkipped = typeof coverage.kaggleCompetitionsSkipped === 'boolean'
+    ? coverage.kaggleCompetitionsSkipped
+    : undefined;
+  const sourceKinds = [
+    coverage.arxiv === true ? 'arxiv' : null,
+    coverage.github === true ? 'github' : null,
+    coverage.huggingface === true ? 'huggingface' : null,
+    coverage.kaggle === true ? 'kaggle' : null,
+  ].filter((kind): kind is string => Boolean(kind));
+  const githubKinds = stringsFromUnknown(coverage.githubKinds)
+    .map((kind) => truncateContractSignal(redactTraceText(kind), 40))
+    .slice(0, 3);
+  const huggingFaceKinds = stringsFromUnknown(coverage.huggingFaceKinds)
+    .map((kind) => truncateContractSignal(redactTraceText(kind), 40))
+    .slice(0, 3);
+  const kaggleKinds = stringsFromUnknown(coverage.kaggleKinds)
+    .map((kind) => truncateContractSignal(redactTraceText(kind), 40))
+    .slice(0, 3);
+  const resultSources = stringsFromUnknown(coverage.resultSources)
+    .map((source) => truncateContractSignal(redactTraceText(source), 40))
+    .slice(0, 6);
+  const recentDays = Array.isArray(coverage.recentDays)
+    ? coverage.recentDays
+      .flatMap((value) => {
+        const days = finiteNumber(value);
+        return days == null ? [] : [String(days)];
+      })
+      .slice(0, 3)
+    : [];
+  const topUrls = stringsFromUnknown(coverage.topUrls)
+    .map((url) => truncateContractSignal(redactTraceText(url), 120))
+    .slice(0, 3);
+  const notes = stringsFromUnknown(coverage.coverageNotes)
+    .map((note) => truncateContractSignal(redactTraceText(note), 80))
+    .slice(0, 3);
+
+  if (
+    (callCount ?? 0) <= 0
+    && (sourceHitCount ?? 0) <= 0
+    && (sourceErrorCount ?? 0) <= 0
+    && sourceKinds.length === 0
+    && githubKinds.length === 0
+    && huggingFaceKinds.length === 0
+    && kaggleKinds.length === 0
+    && resultSources.length === 0
+    && recentDays.length === 0
+    && topUrls.length === 0
+    && notes.length === 0
+  ) {
+    return null;
+  }
+
+  return [
+    `source_research=calls:${callCount ?? 0}`,
+    `hits:${sourceHitCount ?? 0}`,
+    `errors:${sourceErrorCount ?? 0}`,
+    sourceKinds.length ? `sources:${sourceKinds.join('|')}` : null,
+    githubKinds.length ? `github:${githubKinds.join('|')}` : null,
+    huggingFaceKinds.length ? `hf:${huggingFaceKinds.join('|')}` : null,
+    kaggleKinds.length ? `kaggle:${kaggleKinds.join('|')}` : null,
+    resultSources.length ? `result_sources:${resultSources.join('|')}` : null,
+    completeTargetedCoverage === undefined ? null : `targeted:${String(completeTargetedCoverage)}`,
+    freshTargetedCoverage === undefined ? null : `fresh:${String(freshTargetedCoverage)}`,
+    kaggleCompetitionsSkipped === undefined ? null : `kaggle_skipped:${String(kaggleCompetitionsSkipped)}`,
+    recentDays.length ? `recent_days:${recentDays.join('|')}` : null,
+    topUrls.length ? `top:${topUrls.join('|')}` : null,
+    notes.length ? `notes:${notes.join('|')}` : null,
   ].filter(Boolean).join(',');
 }
 

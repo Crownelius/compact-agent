@@ -42,7 +42,10 @@ noisy install/build logs. `benchmarkResult.experienceCard` includes bounded
 decision-observability predictions for edits and validation-reliability evidence
 for final verifier stability, broad validation, and CI-derived validation, plus
 context-utilization precision/miss evidence for retrieval-aware scoring and
-run-efficiency action/usage/cost evidence for cost-aware scoring.
+run-efficiency action/usage/cost evidence for cost-aware scoring. Prior
+experience hints also expose compact source-research coverage, including
+hit/error counts, targeted/fresh coverage, recency windows, top URLs, and
+Kaggle fallback status.
 
 Inside benchmark mode, the read-only `benchmark_context` preflight also surfaces
 CI workflow run commands plus setup actions, env key names, service containers,
