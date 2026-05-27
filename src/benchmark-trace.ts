@@ -51,6 +51,7 @@ export interface BenchmarkExperienceCard {
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
   decisionObservability: BenchmarkExperienceDecisionObservability;
+  validationReliability: BenchmarkExperienceValidationReliability;
   verificationCommands: string[];
   changedFiles: string[];
   warnings: string[];
@@ -88,6 +89,21 @@ export interface BenchmarkExperienceEditPrediction {
   nextVerifierSeq: number | null;
   nextVerifierStatus: 'ok' | 'error' | null;
   nextVerifierCommand: string | null;
+}
+
+export interface BenchmarkExperienceValidationReliability {
+  lastEditSeq: number | null;
+  finalEditVerificationCount: number;
+  finalEditPassingVerificationCount: number;
+  stableValidationAfterLastEdit: boolean | null;
+  broadValidationAfterLastEdit: boolean | null;
+  passingBroadValidationAfterLastEdit: boolean | null;
+  ciValidationAfterLastEdit: boolean | null;
+  passingCiValidationAfterLastEdit: boolean | null;
+  postEditRegressionCycleCount: number;
+  lastPostEditVerificationSeq: number | null;
+  lastPostEditVerificationStatus: 'ok' | 'error' | null;
+  finalVerifierCommands: string[];
 }
 
 export interface BenchmarkTraceArtifact {
@@ -770,6 +786,7 @@ export function buildBenchmarkExperienceCard(input: {
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
     decisionObservability: buildBenchmarkExperienceDecisionObservability(input.messages, input.events),
+    validationReliability: buildBenchmarkExperienceValidationReliability(input.events, input.trajectoryQuality),
     verificationCommands: input.verificationCommands
       .map((command) => truncate(redactTraceText(command), 180))
       .slice(0, 12),
@@ -779,6 +796,34 @@ export function buildBenchmarkExperienceCard(input: {
     warnings: input.trajectoryQuality.warnings
       .map((warning) => truncate(redactTraceText(warning), 220))
       .slice(0, 8),
+  };
+}
+
+function buildBenchmarkExperienceValidationReliability(
+  events: BenchmarkTraceEvent[],
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkExperienceValidationReliability {
+  const lastEditSeq = quality.lastEditSeq;
+  const finalVerifierCommands = lastEditSeq == null
+    ? []
+    : uniqueStrings(events
+      .filter((event) => event.verification && event.seq > lastEditSeq)
+      .map((event) => truncate(redactTraceText(verifierCommandForEvent(event)), 180)))
+      .slice(0, 8);
+
+  return {
+    lastEditSeq: quality.lastEditSeq,
+    finalEditVerificationCount: quality.finalEditVerificationCount,
+    finalEditPassingVerificationCount: quality.finalEditPassingVerificationCount,
+    stableValidationAfterLastEdit: quality.stableValidationAfterLastEdit,
+    broadValidationAfterLastEdit: quality.broadValidationAfterLastEdit,
+    passingBroadValidationAfterLastEdit: quality.passingBroadValidationAfterLastEdit,
+    ciValidationAfterLastEdit: quality.ciValidationAfterLastEdit,
+    passingCiValidationAfterLastEdit: quality.passingCiValidationAfterLastEdit,
+    postEditRegressionCycleCount: quality.postEditRegressionCycleCount,
+    lastPostEditVerificationSeq: quality.lastPostEditVerificationSeq,
+    lastPostEditVerificationStatus: quality.lastPostEditVerificationStatus,
+    finalVerifierCommands,
   };
 }
 

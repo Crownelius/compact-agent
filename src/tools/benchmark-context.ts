@@ -623,6 +623,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorDependency = summarizePriorDependencyUpgrade(summary, quality);
     const priorEnvironment = summarizePriorEnvironmentReconstruction(summary, quality);
     const priorDecision = summarizePriorDecisionObservability(summary);
+    const priorReliability = summarizePriorValidationReliability(summary, quality);
 
     let relevanceScore = 0;
     const summaryCwd = typeof summary.cwd === 'string' ? normalizePath(summary.cwd).toLowerCase() : '';
@@ -672,6 +673,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorEnvironment.text,
         priorDependency.text,
         priorDecision,
+        priorReliability,
       ].filter(Boolean).join('; ');
       warnings.push({ path: summaryPath, score: relevanceScore, line });
       continue;
@@ -696,6 +698,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorEnvironment.text,
       priorDependency.text,
       priorDecision,
+      priorReliability,
       usageText,
       visibleDefects.length ? `defects=${redactTraceText(visibleDefects.join('|'))}` : null,
     ].filter(Boolean).join('; ');
@@ -998,6 +1001,52 @@ function summarizePriorDecisionObservability(summary: Record<string, unknown>): 
     `predicted:${predictedEditCount ?? 0}`,
     `verified:${verifiedPredictionCount ?? 0}`,
     predictions.length ? `predictions:${predictions.join(' | ')}` : null,
+  ].filter(Boolean).join(',');
+}
+
+function summarizePriorValidationReliability(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): string | null {
+  const card = objectRecord(summary.experienceCard);
+  const reliability = objectRecord(card.validationReliability);
+  const finalVerifierCount = finiteNumber(reliability.finalEditVerificationCount)
+    ?? finiteNumber(quality.finalEditVerificationCount);
+  const finalPassingCount = finiteNumber(reliability.finalEditPassingVerificationCount)
+    ?? finiteNumber(quality.finalEditPassingVerificationCount);
+  const regressionCount = finiteNumber(reliability.postEditRegressionCycleCount)
+    ?? finiteNumber(quality.postEditRegressionCycleCount);
+  const stable = firstBooleanOrNull(reliability.stableValidationAfterLastEdit, quality.stableValidationAfterLastEdit);
+  const broad = firstBooleanOrNull(reliability.passingBroadValidationAfterLastEdit, quality.passingBroadValidationAfterLastEdit);
+  const ci = firstBooleanOrNull(reliability.passingCiValidationAfterLastEdit, quality.passingCiValidationAfterLastEdit);
+  const lastStatus = typeof reliability.lastPostEditVerificationStatus === 'string'
+    ? reliability.lastPostEditVerificationStatus.trim()
+    : (typeof quality.lastPostEditVerificationStatus === 'string' ? quality.lastPostEditVerificationStatus.trim() : '');
+  const commands = uniqueExperienceStrings(stringsFromUnknown(reliability.finalVerifierCommands)
+    .map((command) => truncateContractSignal(redactTraceText(command), 120)))
+    .slice(0, 3);
+
+  if (
+    (finalVerifierCount ?? 0) <= 0
+    && (finalPassingCount ?? 0) <= 0
+    && stable === undefined
+    && broad === undefined
+    && ci === undefined
+    && (regressionCount ?? 0) <= 0
+    && commands.length === 0
+  ) {
+    return null;
+  }
+
+  return [
+    `reliability=final_verifiers:${finalVerifierCount ?? 0}`,
+    `final_ok:${finalPassingCount ?? 0}`,
+    `stable:${formatDependencyTriState(stable)}`,
+    `broad_ok:${formatDependencyTriState(broad)}`,
+    `ci_ok:${formatDependencyTriState(ci)}`,
+    `regressions:${regressionCount ?? 0}`,
+    lastStatus ? `latest:${truncateContractSignal(redactTraceText(lastStatus), 40)}` : null,
+    commands.length ? `commands:${commands.join('|')}` : null,
   ].filter(Boolean).join(',');
 }
 

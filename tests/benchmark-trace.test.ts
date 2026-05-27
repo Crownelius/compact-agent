@@ -446,6 +446,20 @@ describe('benchmark trace artifacts', () => {
         nextVerifierCommand: 'npm test',
       }],
     });
+    expect(summary.experienceCard.validationReliability).toMatchObject({
+      lastEditSeq: 4,
+      finalEditVerificationCount: 1,
+      finalEditPassingVerificationCount: 1,
+      stableValidationAfterLastEdit: true,
+      broadValidationAfterLastEdit: true,
+      passingBroadValidationAfterLastEdit: true,
+      ciValidationAfterLastEdit: null,
+      passingCiValidationAfterLastEdit: null,
+      postEditRegressionCycleCount: 0,
+      lastPostEditVerificationSeq: 5,
+      lastPostEditVerificationStatus: 'ok',
+      finalVerifierCommands: ['npm test'],
+    });
     expect(JSON.stringify(summary.experienceCard)).not.toContain('sk-test-should-not-appear');
   });
 

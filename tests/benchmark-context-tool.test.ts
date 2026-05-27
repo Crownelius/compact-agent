@@ -487,6 +487,20 @@ describe('benchmark_context tool', () => {
             nextVerifierCommand: 'npm test',
           }],
         },
+        validationReliability: {
+          lastEditSeq: 5,
+          finalEditVerificationCount: 2,
+          finalEditPassingVerificationCount: 2,
+          stableValidationAfterLastEdit: true,
+          broadValidationAfterLastEdit: true,
+          passingBroadValidationAfterLastEdit: true,
+          ciValidationAfterLastEdit: false,
+          passingCiValidationAfterLastEdit: false,
+          postEditRegressionCycleCount: 0,
+          lastPostEditVerificationSeq: 7,
+          lastPostEditVerificationStatus: 'ok',
+          finalVerifierCommands: ['npm test', 'npm run build'],
+        },
         verificationCommands: ['npm test'],
         changedFiles: ['src/app.ts'],
         warnings: [],
@@ -504,6 +518,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('environment=setup_failures:1,unresolved:0,setup:1,setup_ok:1,commands:npm ci,failures:javascript dependency or build artifact missing');
     expect(result.output).toContain('dependency=manifests:1,lockfiles:1,setup:true,setup_ok:true,validation:true,validation_ok:true,targets:node:package.json|node:package-lock.json');
     expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,predictions:#5 src/app.ts -> ok: formatting total should satisfy billing assertion');
+    expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,latest:ok,commands:npm test|npm run build');
   }, 15_000);
 
   it('surfaces bounded MemPalace memories as benchmark hypotheses', async () => {

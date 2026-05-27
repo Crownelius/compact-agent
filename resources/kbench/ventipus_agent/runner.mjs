@@ -275,9 +275,28 @@ function compactExperienceCard(card) {
     environmentReconstruction: compactEnvironmentReconstruction(card.environmentReconstruction),
     dependencyUpgrade: compactDependencyUpgrade(card.dependencyUpgrade),
     decisionObservability: compactDecisionObservability(card.decisionObservability),
+    validationReliability: compactValidationReliability(card.validationReliability),
     verificationCommands: Array.isArray(card.verificationCommands) ? card.verificationCommands.slice(0, 20) : [],
     changedFiles: Array.isArray(card.changedFiles) ? card.changedFiles.slice(0, 100) : [],
     warnings: Array.isArray(card.warnings) ? card.warnings.slice(0, 20) : [],
+  };
+}
+
+function compactValidationReliability(validationReliability) {
+  if (!validationReliability || typeof validationReliability !== 'object' || Array.isArray(validationReliability)) return undefined;
+  return {
+    lastEditSeq: validationReliability.lastEditSeq,
+    finalEditVerificationCount: validationReliability.finalEditVerificationCount,
+    finalEditPassingVerificationCount: validationReliability.finalEditPassingVerificationCount,
+    stableValidationAfterLastEdit: validationReliability.stableValidationAfterLastEdit,
+    broadValidationAfterLastEdit: validationReliability.broadValidationAfterLastEdit,
+    passingBroadValidationAfterLastEdit: validationReliability.passingBroadValidationAfterLastEdit,
+    ciValidationAfterLastEdit: validationReliability.ciValidationAfterLastEdit,
+    passingCiValidationAfterLastEdit: validationReliability.passingCiValidationAfterLastEdit,
+    postEditRegressionCycleCount: validationReliability.postEditRegressionCycleCount,
+    lastPostEditVerificationSeq: validationReliability.lastPostEditVerificationSeq,
+    lastPostEditVerificationStatus: validationReliability.lastPostEditVerificationStatus,
+    finalVerifierCommands: Array.isArray(validationReliability.finalVerifierCommands) ? validationReliability.finalVerifierCommands.slice(0, 12) : [],
   };
 }
 
