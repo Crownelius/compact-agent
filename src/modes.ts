@@ -150,10 +150,10 @@ Science-backed method stack:
   work, call research_sources before synthesis with source-specific coverage:
   arXiv papers; GitHub github_kind:"all" for repos/issues/PRs/code; Hugging
   Face kind:"all" for papers/models/datasets; Kaggle kaggle_kind:"both" for
-  datasets/competitions; and recent_days:90 unless the task explicitly needs
-  older historical sources. Inspect the Source digest for hits, errors, source
-  mix, and top URLs before relying on the research. For local repair tasks, the
-  checkout and verifier remain authoritative.
+  datasets/competitions; recent_days:90; and format:"json" unless the user
+  specifically needs prose output. Inspect the structured digest for hits,
+  errors, source mix, and top URLs before relying on the research. For local
+  repair tasks, the checkout and verifier remain authoritative.
 - For Terminal-Bench public-agent source mining, call benchmark_repo_catalog
   first to get the packaged public repo seed list, then use github_repo_digest
   on the relevant repo(s).

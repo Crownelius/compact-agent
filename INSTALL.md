@@ -1,24 +1,24 @@
-# Installing Ventipus
+# Installing Cawdex
 
-Ventipus is a universal AI coding CLI for the terminal. After install you
-get a `ventipus` command that drops you into an interactive REPL with
+Cawdex is terminal coding agents with a mind for the whole repo. After install you
+get a `cawdex` command that drops you into an interactive REPL with
 80+ slash commands, multi-agent orchestration, a bundled
 [everything-claude-code][ecc] skill library, and Hermes self-improving mode.
 
 This guide covers installation, first-run setup, and the basics of pointing
-Ventipus at any OpenAI-compatible API.
+Cawdex at any OpenAI-compatible API.
 
 ## TL;DR
 
 **Single command** (Node 18+ required):
 
 ```bash
-npm install -g ventipus
-ventipus --doctor
-ventipus
+npm install -g cawdex
+cawdex --doctor
+cawdex
 ```
 
-`ventipus --doctor` checks the install, registry metadata, config, MemPalace, research credentials, and benchmark adapters without printing token values. First run launches the setup wizard.
+`cawdex --doctor` checks the install, registry metadata, config, MemPalace, research credentials, and benchmark adapters without printing token values. First run launches the setup wizard.
 
 Inside the REPL, type `/walkthrough` for an agent-led tour, `/help` for a
 quick command list, or see [COMMANDS.md](COMMANDS.md) for a complete
@@ -31,30 +31,30 @@ reference of every slash command. `Ctrl+C` exits.
   one key works across hundreds of models (including free ones). See the
   [Providers](#providers) section below for alternatives.
 - **A POSIX-like shell** (macOS, Linux, WSL, or Git Bash on Windows). PowerShell
-  and CMD work too — Ventipus spawns Git Bash for shell commands on Windows.
+  and CMD work too — Cawdex spawns Git Bash for shell commands on Windows.
 
 ## Install from npm
 
 ```bash
-npm install -g ventipus
+npm install -g cawdex
 ```
 
 Verify:
 
 ```bash
-ventipus --help     # show help
-ventipus --doctor   # install/config readiness check
-ventipus            # launch the REPL
+cawdex --help       # show help
+cawdex --doctor     # install/config readiness check
+cawdex              # launch the REPL
 ```
 
-To uninstall later: `npm uninstall -g ventipus`.
+The legacy `ventipus` command is still installed as an alias for existing workflows. To uninstall later: `npm uninstall -g cawdex`.
 
 ### Pre-publish alternative: install from GitHub
 
 If you want the latest commit before it lands on the registry:
 
 ```bash
-npm install -g github:Crownelius/Ventipus
+npm install -g github:Crownelius/cawdex
 ```
 
 Same package, fetched from the repo's default branch. npm runs the
@@ -62,30 +62,30 @@ Same package, fetched from the repo's default branch. npm runs the
 
 ## Install from source (for development)
 
-If you want to hack on Ventipus itself, clone and link:
+If you want to hack on Cawdex itself, clone and link:
 
 ```bash
-git clone https://github.com/Crownelius/Ventipus.git
-cd Ventipus
+git clone https://github.com/Crownelius/cawdex.git
+cd cawdex
 npm install            # also runs prepare/tsc automatically
-npm link               # global `ventipus` points at this checkout
+npm link               # global `cawdex` points at this checkout
 ```
 
 Now edits in `src/` take effect after `npx tsc` (or `npm run build`). To
-uninstall the global shim: `npm unlink -g ventipus`.
+uninstall the global shim: `npm unlink -g cawdex`.
 
 ### Without `npm link`
 
 If you prefer not to touch your global bin:
 
 ```bash
-node ./bin/ventipus.js                                   # always run from here
-alias ventipus='node /full/path/to/Ventipus/bin/ventipus.js'   # or alias it
+node ./bin/cawdex.js                                     # always run from here
+alias cawdex='node /full/path/to/cawdex/bin/cawdex.js'   # or alias it
 ```
 
 ## First-run setup
 
-The first time you run `ventipus`, the setup wizard fires. It asks for:
+The first time you run `cawdex`, the setup wizard fires. It asks for:
 
 1. **Provider.** OpenRouter is the recommended default — one key, hundreds of
    models, including free tiers. Other options: OpenAI, GLM (ZhipuAI), Ollama,
@@ -101,14 +101,14 @@ The first time you run `ventipus`, the setup wizard fires. It asks for:
    non-destructive ops), or `yolo` (approve everything — fastest, riskiest).
    Default is `ask`. You can change later with `/perm <mode>`.
 
-Your config is saved to `~/.ventipus/config.json` and Ventipus drops
+Your config is saved to `~/.ventipus/config.json` and Cawdex drops
 into the REPL.
 
 To re-run the wizard later: type `/config` inside the REPL.
 
 ## Providers
 
-Ventipus talks to anything that speaks the OpenAI Chat Completions API.
+Cawdex talks to anything that speaks the OpenAI Chat Completions API.
 Suggested setups:
 
 | Provider | Base URL | Notes |
@@ -130,7 +130,7 @@ proxy.
 After setup, try:
 
 ```
-ventipus
+cawdex
 ```
 
 You should see the splash, banner, and a `❯ ` prompt. Then:
@@ -144,11 +144,11 @@ You should see the splash, banner, and a `❯ ` prompt. Then:
 ❯ /exit
 ```
 
-If `ventipus` isn't found after `npm link`, see [Troubleshooting](#troubleshooting).
+If `cawdex` isn't found after `npm link`, see [Troubleshooting](#troubleshooting).
 
 ## What gets installed
 
-Ventipus is local-first:
+Cawdex is local-first:
 
 ```
 ~/.ventipus/
@@ -174,7 +174,7 @@ see the install state.
 
 ## ECC: zero-configuration skill bundle
 
-The first time you run Ventipus, you'll see this line during startup:
+The first time you run Cawdex, you'll see this line during startup:
 
 ```
 ECC ready: 33 skills, 16 agents, 9 commands, 7 rule sets.
@@ -198,13 +198,13 @@ Refresh anytime with `/ecc-install`. Disable a specific hook by editing
 ## Updating
 
 ```bash
-npm install -g ventipus@latest          # re-fetches the latest published version
+npm install -g cawdex@latest            # re-fetches the latest published version
 ```
 
 If you installed from a source clone:
 
 ```bash
-cd Ventipus
+cd cawdex
 git pull
 npm install            # in case dependencies changed
 npx tsc                # rebuild
@@ -213,8 +213,8 @@ npx tsc                # rebuild
 ## Uninstall
 
 ```bash
-npm uninstall -g ventipus         # if installed via npm install -g
-npm unlink -g ventipus            # if installed via `npm link` from a source clone
+npm uninstall -g cawdex           # if installed via npm install -g
+npm unlink -g cawdex              # if installed via `npm link` from a source clone
 rm -rf ~/.ventipus                # local state (config, sessions, instincts, etc.)
 ```
 
@@ -223,14 +223,14 @@ If you set up hooks or wrote skills, back up `~/.ventipus/skills/` and
 
 ## Troubleshooting
 
-### `ventipus: command not found`
+### `cawdex: command not found`
 
 `npm link` didn't put the bin shim on PATH. Verify:
 
 ```bash
 npm prefix -g          # this dir should be on PATH
-ls "$(npm prefix -g)/bin/ventipus*"   # POSIX
-ls "$(npm prefix -g)/ventipus*"       # Windows
+ls "$(npm prefix -g)/bin/cawdex*"     # POSIX
+ls "$(npm prefix -g)/cawdex*"         # Windows
 ```
 
 If it's there but not on PATH, add `npm prefix -g`'s bin dir to your shell's
@@ -238,7 +238,7 @@ PATH. On Windows that's `%APPDATA%\npm` by default.
 
 ### `DEP0040 DeprecationWarning: punycode`
 
-Cosmetic. Ventipus's bin already includes a filter that drops this one
+Cosmetic. Cawdex's bin already includes a filter that drops this one
 specific deprecation. If you still see it, you're running an older build —
 `npx tsc` again and retry.
 
@@ -252,7 +252,7 @@ web_search`) and the model self-corrects on the next iteration.
 ### Free-tier rate limits (429)
 
 OpenRouter free tier is 20 requests/minute and 200 requests/day. The model
-provider sometimes lower-bounds further. Ventipus retries 429s up to 3
+provider sometimes lower-bounds further. Cawdex retries 429s up to 3
 times with backoff. If you're hitting limits often, switch to a paid tier
 or use a local Ollama model — both are configured via `/config`.
 
@@ -264,12 +264,12 @@ asking — fine for sandboxes, dangerous for your main checkout.
 
 ### Where do I report bugs?
 
-[github.com/Crownelius/Ventipus/issues](https://github.com/Crownelius/Ventipus/issues).
+[github.com/Crownelius/cawdex/issues](https://github.com/Crownelius/cawdex/issues).
 Include your Node version, OS, the slash command you ran, and the model.
 
 ## Next steps
 
-- Run `/walkthrough` inside Ventipus for an interactive tour.
+- Run `/walkthrough` inside Cawdex for an interactive tour.
 - See [README.md](README.md) for the feature reference and slash-command list.
 - Try `/mode hermes` for self-improving learning-loop mode (search past
   sessions, distill skills from experience, propose what's worth banking

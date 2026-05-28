@@ -27,7 +27,7 @@ describe('KBench adapter packaging', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
     expect(manifest).toMatchObject({
       schemaVersion: 'kbench.adapter/v1',
-      id: 'ventipus',
+      id: 'cawdex',
       kind: 'node',
       entry: './runner.mjs',
     });
@@ -67,7 +67,7 @@ describe('KBench adapter packaging', () => {
     expect(normalize(out)).toBe(normalize(adapterDir));
   });
 
-  it('runs the adapter protocol against a fake ventipus command', () => {
+  it('runs the adapter protocol against a fake cawdex command', () => {
     const dir = tempDir();
     const fakeAgent = join(dir, 'fake-agent.mjs');
     writeFileSync(join(dir, 'fixture.txt'), 'before\n', 'utf-8');
@@ -101,7 +101,7 @@ describe('KBench adapter packaging', () => {
       '  }), "utf-8");',
       '  writeFileSync(join(runDir, "trace.jsonl"), "", "utf-8");',
       '}',
-      'process.stdout.write("fake ventipus complete sk-or-v1-dummysecret\\n");',
+      'process.stdout.write("fake cawdex complete sk-or-v1-dummysecret\\n");',
       'process.stderr.write("fake diagnostic hf_abcdefghijklmnop\\n");',
     ].join('\n'), 'utf-8');
     const payload = {
@@ -133,7 +133,7 @@ describe('KBench adapter packaging', () => {
     const output = JSON.parse(result.stdout);
     expect(output.ok).toBe(true);
     expect(output.status).toBe('ok');
-    expect(output.finalText).toContain('fake ventipus complete');
+    expect(output.finalText).toContain('fake cawdex complete');
     expect(output.benchmarkResult.profile).toBe('swe-bench');
     expect(output.benchmarkResult.verificationEvidence).toMatchObject({
       lastVerificationSeq: 7,
@@ -452,8 +452,8 @@ describe('KBench adapter packaging', () => {
       processDefects: [],
     });
     expect(output.artifacts.some((a: { kind: string }) => a.kind === 'stdout')).toBe(true);
-    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'ventipus-summary')).toBe(true);
-    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'ventipus-tool-trace')).toBe(true);
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'cawdex-summary')).toBe(true);
+    expect(output.artifacts.some((a: { kind: string }) => a.kind === 'cawdex-tool-trace')).toBe(true);
     expect(output.artifacts.some((a: { kind: string }) => a.kind === 'patch')).toBe(true);
     expect(output.artifacts.some((a: { kind: string }) => a.kind === 'git-status')).toBe(true);
     const instructionArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'instruction');
@@ -463,7 +463,7 @@ describe('KBench adapter packaging', () => {
     expect(instructionText).not.toContain('npm_abcdefghijklmnop');
     const stdoutArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'stdout');
     const stdoutText = readFileSync(stdoutArtifact.path, 'utf-8');
-    expect(stdoutText).toContain('fake ventipus complete');
+    expect(stdoutText).toContain('fake cawdex complete');
     expect(stdoutText).toContain('sk-or-v1-[REDACTED]');
     expect(stdoutText).not.toContain('sk-or-v1-dummysecret');
     const stderrArtifact = output.artifacts.find((a: { kind: string }) => a.kind === 'stderr');

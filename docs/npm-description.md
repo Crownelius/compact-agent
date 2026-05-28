@@ -1,10 +1,10 @@
 # npm description and tagline
 
-The current `package.json` description is already accurate (updated in commit `cab63fc`). This file holds longer-form variants for the npm page hook and any future tagline copy.
+The current `package.json` description is the Cawdex rebrand baseline. This file holds longer-form variants for the npm page hook and any future tagline copy.
 
 ## package.json `"description"` (current, in repo)
 
-> Terminal AI coding CLI. Speaks any OpenAI-compatible API (OpenRouter, OpenAI, NVIDIA, Ollama, LM Studio, DeepSeek). Modes, slash commands, multi-agent swarming, key-rotation pool, optional voice + screen-reader, sandbox + permission gates, persistent input box, bundled everything-claude-code skills.
+> Cawdex — terminal coding agents with a mind for the whole repo. Speaks any OpenAI-compatible API with repo-aware context, benchmark tracing, MemPalace memory, and terminal-first agent workflows.
 
 ## Alternate one-liner (if you want it shorter)
 
@@ -12,7 +12,7 @@ The current `package.json` description is already accurate (updated in commit `c
 
 ## npm page hook (2 sentences)
 
-Agentic coding CLIs are great until you're locked to one vendor's API and pricing — free, local, and open-weight models stay out of reach, and you can't pool multiple free-tier keys to keep working past a rate limit. ventipus keeps the full agent (9 modes, 130+ commands, ECC v2.0 skills, multi-agent swarm, OS sandbox, voice + screen-reader) and lets you point it at any OpenAI-compatible backend, swapping models mid-session with `/model` and pooling keys with `/keys add`.
+Agentic coding CLIs are great until you're locked to one vendor's API and pricing — free, local, and open-weight models stay out of reach, and you can't pool multiple free-tier keys to keep working past a rate limit. Cawdex keeps the full agent surface and lets you point it at any OpenAI-compatible backend, swapping models mid-session with `/model` and pooling keys with `/keys add`.
 
 ## Tagline candidates
 
@@ -24,4 +24,4 @@ Agentic coding CLIs are great until you're locked to one vendor's API and pricin
 
 Current keywords are correct: `ai`, `agent`, `cli`, `coding-assistant`, `claude`, `openrouter`, `openai`, `anthropic`, `ollama`, `hermes`, `tdd`, `everything-claude-code`, `accessibility`, `voice`, `whisper`, `tts`, `screen-reader`, `dictation`, `blind`, `memory`, `mempalace`, `knowledge-graph`.
 
-Worth adding for discovery: `nvidia`, `swarm`, `multi-agent`, `sandbox`, `ventipus`.
+Worth keeping for discovery: `nvidia`, `swarm`, `multi-agent`, `sandbox`, `ventipus` as the legacy alias.

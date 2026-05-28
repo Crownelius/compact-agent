@@ -75,13 +75,20 @@ describe('Exgentic adapter packaging', () => {
     expect(help).toContain('--doctor');
     expect(help).not.toContain('First-time Setup');
 
+    const cawdexHelp = execFileSync('node', ['bin/cawdex.js', '--help'], {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+    });
+    expect(cawdexHelp).toContain('cawdex [options]');
+    expect(cawdexHelp).toContain('Legacy alias:');
+
     const version = execFileSync('node', ['bin/ventipus.js', '--version'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
     }).trim();
     expect(version).toBe(pkg.version);
     expect(pkg.bin).toMatchObject({
-      cawdex: 'bin/ventipus.js',
+      cawdex: 'bin/cawdex.js',
       ventipus: 'bin/ventipus.js',
     });
   });

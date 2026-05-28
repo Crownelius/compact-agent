@@ -1,10 +1,10 @@
-# ventipus vs. claude-code, Aider, and single-vendor CLIs
+# Cawdex vs. claude-code, Aider, and single-vendor CLIs
 
 claude-code-style terminal UX, but the transport is OpenAI-compatible — so the agent runs on OpenRouter, NVIDIA NIM, DeepSeek, GLM, a local Ollama model, or anything else that speaks Chat Completions. Add multiple keys for the same provider and the agent round-robins through them with per-key cool-down on rate-limit / quota errors.
 
 ```bash
-npm install -g ventipus
-ventipus
+npm install -g cawdex
+cawdex
 ```
 
 ## The problem these tools share
@@ -21,13 +21,13 @@ If you want to use a $0.14/M-token open model, a local Ollama checkpoint on your
 
 The obvious workaround is to wrap a different SDK per provider. That means re-implementing tool-calling, prompt assembly, streaming, retries, and mode wiring for each backend — and you still can't switch mid-task without dropping context.
 
-ventipus puts the entire agent surface behind one OpenAI-compatible transport. Swap models with `/model`, swap providers with `/provider`, add a second key with `/keys add`, and the tools, modes, and skills come with you.
+Cawdex puts the entire agent surface behind one OpenAI-compatible transport. Swap models with `/model`, swap providers with `/provider`, add a second key with `/keys add`, and the tools, modes, and skills come with you.
 
 ## Side by side
 
-| Capability | ventipus | claude-code | Aider | Cursor CLI |
+| Capability | Cawdex | claude-code | Aider | Cursor CLI |
 | :--- | :--- | :--- | :--- | :--- |
-| Install | `npm i -g ventipus` | vendor CLI | `pip install aider-chat` | vendor CLI |
+| Install | `npm i -g cawdex` | vendor CLI | `pip install aider-chat` | vendor CLI |
 | Backend | Any OpenAI-compatible API | Anthropic only | Multi-provider via LiteLLM | Vendor gateway |
 | Switch model mid-session | `/model`, `/provider`, `/route` | model only, same vendor | restart | restricted |
 | Run local models (Ollama, LM Studio) | yes | no | yes | no |
@@ -68,12 +68,12 @@ ventipus puts the entire agent surface behind one OpenAI-compatible transport. S
 - Pick **claude-code** if you're committed to Anthropic and want the first-party experience.
 - Pick **Aider** if you mainly want a code-editing pair-programmer with git integration and don't need modes, skills, planning, or parallel agents.
 - Pick a **vendor CLI** (Cursor, Copilot) if you want the IDE-integrated path and are fine with vendor routing.
-- Pick **ventipus** if you want the full agent surface but need to choose your own backend — local model, open weights, cheaper provider, or several rotated per task.
+- Pick **Cawdex** if you want the full agent surface but need to choose your own backend — local model, open weights, cheaper provider, or several rotated per task.
 
 ## Next steps
 
-- Install: `npm install -g ventipus`
-- Run: `ventipus`
+- Install: `npm install -g cawdex`
+- Run: `cawdex`
 - Commands reference: [../COMMANDS.md](../COMMANDS.md)
 - Install notes: [../INSTALL.md](../INSTALL.md)
 - License: MIT

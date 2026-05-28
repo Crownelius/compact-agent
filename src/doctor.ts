@@ -167,7 +167,7 @@ function hasEnv(env: NodeJS.ProcessEnv, ...keys: string[]): boolean {
 }
 
 function resolveDoctorConfigDir(env: NodeJS.ProcessEnv): string {
-  return envValue(env, 'VENTIPUS_HOME') || getConfigDir();
+  return envValue(env, 'CAWDEX_HOME', 'VENTIPUS_HOME') || getConfigDir();
 }
 
 function configSnapshot(env: NodeJS.ProcessEnv): {
@@ -181,15 +181,17 @@ function configSnapshot(env: NodeJS.ProcessEnv): {
   const raw = exists ? readJson(path) : null;
   const config: Partial<VentipusConfig> = raw ? raw as Partial<VentipusConfig> : {};
 
-  if (envValue(env, 'VENTIPUS_PROVIDER')) config.provider = envValue(env, 'VENTIPUS_PROVIDER')!;
-  if (envValue(env, 'VENTIPUS_MODEL_OVERRIDE', 'VENTIPUS_MODEL')) {
-    config.model = envValue(env, 'VENTIPUS_MODEL_OVERRIDE', 'VENTIPUS_MODEL')!;
+  if (envValue(env, 'CAWDEX_PROVIDER', 'VENTIPUS_PROVIDER')) {
+    config.provider = envValue(env, 'CAWDEX_PROVIDER', 'VENTIPUS_PROVIDER')!;
   }
-  if (envValue(env, 'VENTIPUS_BASE_URL_OVERRIDE', 'VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL')) {
-    config.baseURL = envValue(env, 'VENTIPUS_BASE_URL_OVERRIDE', 'VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL')!;
+  if (envValue(env, 'CAWDEX_MODEL_OVERRIDE', 'VENTIPUS_MODEL_OVERRIDE', 'CAWDEX_MODEL', 'VENTIPUS_MODEL')) {
+    config.model = envValue(env, 'CAWDEX_MODEL_OVERRIDE', 'VENTIPUS_MODEL_OVERRIDE', 'CAWDEX_MODEL', 'VENTIPUS_MODEL')!;
   }
-  if (envValue(env, 'VENTIPUS_API_KEY_OVERRIDE', 'VENTIPUS_API_KEY')) config.apiKey = '__configured__';
-  const apiKeyEnv = envValue(env, 'VENTIPUS_API_KEY_ENV');
+  if (envValue(env, 'CAWDEX_BASE_URL_OVERRIDE', 'VENTIPUS_BASE_URL_OVERRIDE', 'CAWDEX_BASE_URL', 'VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL')) {
+    config.baseURL = envValue(env, 'CAWDEX_BASE_URL_OVERRIDE', 'VENTIPUS_BASE_URL_OVERRIDE', 'CAWDEX_BASE_URL', 'VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL')!;
+  }
+  if (envValue(env, 'CAWDEX_API_KEY_OVERRIDE', 'VENTIPUS_API_KEY_OVERRIDE', 'CAWDEX_API_KEY', 'VENTIPUS_API_KEY')) config.apiKey = '__configured__';
+  const apiKeyEnv = envValue(env, 'CAWDEX_API_KEY_ENV', 'VENTIPUS_API_KEY_ENV');
   if (apiKeyEnv && envValue(env, apiKeyEnv)) config.apiKey = '__configured__';
   if (!config.apiKey && hasEnv(env, 'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'NVIDIA_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GLM_API_KEY', 'ZHIPUAI_API_KEY')) {
     config.apiKey = '__configured__';
@@ -251,6 +253,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
 
   const packageFiles = [
     join(packageRoot, 'package.json'),
+    join(packageRoot, 'bin', 'cawdex.js'),
     join(packageRoot, 'bin', 'ventipus.js'),
     join(packageRoot, 'dist', 'index.js'),
   ];
@@ -260,7 +263,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     label: 'Package files',
     status: missingPackageFiles.length === 0 ? 'pass' : 'fail',
     detail: missingPackageFiles.length === 0
-      ? 'package.json, bin/ventipus.js, and dist/index.js are present.'
+      ? 'package.json, bin/cawdex.js, bin/ventipus.js, and dist/index.js are present.'
       : `Missing ${missingPackageFiles.length} required package file(s).`,
     hint: missingPackageFiles.length > 0 ? `Run npm run build or reinstall Cawdex. Missing: ${missingPackageFiles.map((p) => p.replace(packageRoot, '.')).join(', ')}` : undefined,
   });
@@ -276,7 +279,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
 
   if (includeRegistry) {
     const registry = npm.ok
-      ? commandResult('npm', ['view', 'ventipus', 'version', '--json'], { timeoutMs: 10000, cwd, env })
+      ? commandResult('npm', ['view', pkg.name, 'version', '--json'], { timeoutMs: 10000, cwd, env })
       : null;
     let status: DoctorStatus = 'warn';
     let detail = 'Skipped because npm is unavailable.';
@@ -299,7 +302,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
       label: 'npm registry',
       status,
       detail,
-      hint: status === 'pass' ? undefined : 'Run npm install -g ventipus@latest after registry metadata catches up; this package now installs the cawdex command alias.',
+      hint: status === 'pass' ? undefined : 'Run npm install -g cawdex@latest after registry metadata catches up; the legacy ventipus command remains an alias.',
     });
   } else {
     add(checks, {
@@ -320,7 +323,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     label: 'Global binary',
     status: lookup.ok ? 'pass' : 'warn',
     detail: lookup.ok ? `${lookupName} resolves on PATH (${firstLine(lookup.stdout)}).` : 'cawdex/ventipus is not currently found on PATH.',
-    hint: lookup.ok ? undefined : 'If this is a dev checkout, node bin/ventipus.js still works. For global use, run npm install -g ventipus@latest and reopen the shell.',
+    hint: lookup.ok ? undefined : 'If this is a dev checkout, node bin/cawdex.js still works. For global use, run npm install -g cawdex@latest and reopen the shell.',
   });
 
   const git = commandResult('git', ['--version'], { timeoutMs: 5000, cwd, env });
@@ -340,7 +343,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     detail: config.exists
       ? config.parseOk ? `Readable config at ${config.path}.` : `Config exists but is not valid JSON at ${config.path}.`
       : `No config file at ${config.path}.`,
-    hint: config.exists ? undefined : 'Run cawdex once interactively, or use env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.',
+    hint: config.exists ? undefined : 'Run cawdex once interactively, or use env config such as OPENROUTER_API_KEY and CAWDEX_MODEL.',
   });
 
   const provider = providerPreset(config.config.provider, config.config.baseURL);

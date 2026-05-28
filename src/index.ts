@@ -3288,7 +3288,7 @@ async function main(): Promise<void> {
 
   // First-run ECC install — silent if already installed, silent if resources missing.
   // Also re-installs when the saved state's version is older than the bundle's
-  // BUNDLE_VERSION (so an `npm i -g ventipus@latest` upgrade picks up the
+  // BUNDLE_VERSION (so an `npm i -g cawdex@latest` upgrade picks up the
   // refreshed corpus without manual /reset-hooks).
   const eccState = loadEccState();
   const needsReimport = eccState && eccState.version !== ECC_BUNDLE_VERSION;

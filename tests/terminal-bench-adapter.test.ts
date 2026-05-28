@@ -14,7 +14,7 @@ describe('Terminal-Bench adapter packaging', () => {
     expect(adapter).toContain('AbstractInstalledAgent');
     expect(adapter).toContain('VentipusTerminalBenchAgent');
     expect(adapter).toContain('/benchmark terminal-bench');
-    expect(adapter).toContain('ventipus');
+    expect(adapter).toContain('Cawdex');
     expect(adapter).toContain('--perm yolo');
     expect(adapter).toContain('VENTIPUS_BASH_TIMEOUT_MS');
     expect(adapter).toContain('VENTIPUS_BUNDLE_ROOT');
@@ -53,9 +53,10 @@ describe('Terminal-Bench adapter packaging', () => {
     expect(setup).toContain('install_from_bundle_root "$PACKAGE_ROOT"');
     expect(setup).toContain('install_from_tarball "$candidate"');
     expect(setup).toContain('npm install -g');
-    expect(setup).toContain('ventipus@latest');
+    expect(setup).toContain('cawdex@latest');
+    expect(setup).toContain('command -v cawdex');
     expect(setup).toContain('command -v ventipus');
-    expect(setup.indexOf('command -v ventipus')).toBeLessThan(setup.indexOf('apt-get update'));
+    expect(setup.indexOf('command -v cawdex')).toBeLessThan(setup.indexOf('apt-get update'));
     expect(setup.indexOf('try_offline_install')).toBeLessThan(setup.lastIndexOf('VENTIPUS_INSTALL_SPEC'));
   });
 

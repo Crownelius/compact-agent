@@ -1,2 +1,2 @@
-# ventipus HAL adapter has no Python dependencies.
-# It shells out to the installed ventipus CLI.
+# Cawdex HAL adapter has no Python dependencies.
+# It shells out to the installed cawdex CLI.

@@ -4,6 +4,28 @@ import type { VentipusConfig } from '../src/types.js';
 import { PROVIDERS } from '../src/types.js';
 
 const ENV_KEYS = [
+  'CAWDEX_PROVIDER',
+  'CAWDEX_API_KEY',
+  'CAWDEX_BASE_URL',
+  'CAWDEX_MODEL',
+  'CAWDEX_MODEL_OVERRIDE',
+  'CAWDEX_FALLBACK_MODEL',
+  'CAWDEX_FALLBACK_MODEL_OVERRIDE',
+  'CAWDEX_MAX_TOKENS',
+  'CAWDEX_MAX_TOKENS_OVERRIDE',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE',
+  'CAWDEX_MAX_TURNS',
+  'CAWDEX_MAX_TURNS_OVERRIDE',
+  'CAWDEX_TEMPERATURE',
+  'CAWDEX_TEMPERATURE_OVERRIDE',
+  'CAWDEX_PERMISSION',
+  'CAWDEX_MEMORY',
+  'CAWDEX_THEME',
+  'CAWDEX_SHOW_THINKING',
+  'CAWDEX_BASE_URL_OVERRIDE',
+  'CAWDEX_API_KEY_OVERRIDE',
+  'CAWDEX_API_KEY_ENV',
   'VENTIPUS_PROVIDER',
   'VENTIPUS_PROVIDER',
   'VENTIPUS_API_KEY',
@@ -88,6 +110,26 @@ describe('environment config bootstrap', () => {
     expect(cfg?.showThinking).toBe(false);
   });
 
+  it('accepts cawdex env aliases for provider, model, and runtime knobs', () => {
+    clearEnv();
+    process.env.CAWDEX_PROVIDER = 'deepseek';
+    process.env.CAWDEX_API_KEY = 'sk-test-cawdex-deepseek';
+    process.env.CAWDEX_MODEL = 'deepseek-coder';
+    process.env.CAWDEX_MAX_TURNS = '7';
+    process.env.CAWDEX_PERMISSION = 'auto';
+    process.env.CAWDEX_MEMORY = 'false';
+    process.env.CAWDEX_SHOW_THINKING = 'false';
+
+    const cfg = loadConfigFromEnv();
+    expect(cfg?.provider).toBe(PROVIDERS.deepseek.name);
+    expect(cfg?.apiKey).toBe('sk-test-cawdex-deepseek');
+    expect(cfg?.model).toBe('deepseek-coder');
+    expect(cfg?.maxTurns).toBe(7);
+    expect(cfg?.permissionMode).toBe('auto');
+    expect(cfg?.memory?.enabled).toBe(false);
+    expect(cfg?.showThinking).toBe(false);
+  });
+
   it('supports local custom OpenAI-compatible endpoints without an API key', () => {
     clearEnv();
     process.env.VENTIPUS_BASE_URL = 'http://127.0.0.1:1234/v1';
@@ -127,6 +169,21 @@ describe('runtime config overrides', () => {
     expect(cfg.maxTurns).toBe(12);
     expect(cfg.temperature).toBe(0.1);
     expect(cfg.contextWindowTokens).toBe(64000);
+  });
+
+  it('applies cawdex runtime override aliases to an existing config', () => {
+    clearEnv();
+    process.env.CAWDEX_MODEL_OVERRIDE = 'new-cawdex-model';
+    process.env.CAWDEX_BASE_URL_OVERRIDE = 'https://cawdex.example/v1';
+    process.env.CAWDEX_MAX_TURNS_OVERRIDE = '5';
+    process.env.CAWDEX_TEMPERATURE_OVERRIDE = '0.2';
+
+    const cfg = applyRuntimeConfigOverrides(baseConfig);
+
+    expect(cfg.model).toBe('new-cawdex-model');
+    expect(cfg.baseURL).toBe('https://cawdex.example/v1');
+    expect(cfg.maxTurns).toBe(5);
+    expect(cfg.temperature).toBe(0.2);
   });
 
   it('can source a per-run API key from a named environment variable', () => {

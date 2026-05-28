@@ -629,6 +629,7 @@ describe('research_sources tool', () => {
     expect(prompt).toContain('research_sources');
     expect(prompt).toContain('source:"arxiv"');
     expect(prompt).toContain('recent_days:90');
+    expect(prompt).toContain('format:"json"');
     expect(prompt).toContain('source:"github"');
     expect(prompt).toContain('github_kind:"all"');
     expect(prompt).toContain('source:"huggingface"');

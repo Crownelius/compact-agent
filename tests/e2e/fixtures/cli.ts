@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 
 /**
  * CLI Page Object — encapsulates spawning, interacting with, and asserting
- * on the Ventipus CLI process. Mirrors the Page Object Model pattern used
+ * on the Cawdex CLI process. Mirrors the Page Object Model pattern used
  * in browser E2E tests but adapted for a REPL-based CLI application.
  */
 export class VentipusCLI {

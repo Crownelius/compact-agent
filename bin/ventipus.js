@@ -3,7 +3,7 @@
 // Catches the warning when it's emitted late (after this runs), but does NOT
 // catch warnings fired during Node's ESM bootstrap (before any user code).
 // For a fully clean stderr, invoke Cawdex via:
-//   node --no-deprecation bin/ventipus.js
+//   node --no-deprecation bin/cawdex.js
 //   NODE_OPTIONS=--no-deprecation cawdex
 (() => {
   const orig = process.emitWarning;

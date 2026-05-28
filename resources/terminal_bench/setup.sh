@@ -4,6 +4,10 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." 2>/dev/null && pwd || true)"
 
+if command -v cawdex >/dev/null 2>&1; then
+  cawdex --print-terminal-bench-adapter >/dev/null
+  exit 0
+fi
 if command -v ventipus >/dev/null 2>&1; then
   ventipus --print-terminal-bench-adapter >/dev/null
   exit 0
@@ -31,14 +35,26 @@ ensure_node_npm() {
 
 install_from_bundle_root() {
   root="$1"
-  if [ -z "$root" ] || [ ! -f "$root/bin/ventipus.js" ] || [ ! -d "$root/dist" ]; then
+  if [ -z "$root" ] || [ ! -d "$root/dist" ]; then
+    return 1
+  fi
+  entry="$root/bin/cawdex.js"
+  if [ ! -f "$entry" ]; then
+    entry="$root/bin/ventipus.js"
+  fi
+  if [ ! -f "$entry" ]; then
     return 1
   fi
   if [ -d "$root/node_modules" ] && command -v node >/dev/null 2>&1; then
     mkdir -p /usr/local/bin
+    cat > /usr/local/bin/cawdex <<EOF
+#!/bin/sh
+exec node "$entry" "\$@"
+EOF
+    chmod +x /usr/local/bin/cawdex
     cat > /usr/local/bin/ventipus <<EOF
 #!/bin/sh
-exec node "$root/bin/ventipus.js" "\$@"
+exec cawdex "\$@"
 EOF
     chmod +x /usr/local/bin/ventipus
     return 0
@@ -80,7 +96,7 @@ try_offline_install() {
   if install_from_bundle_root "$PACKAGE_ROOT"; then
     return 0
   fi
-  for candidate in "$SCRIPT_DIR"/ventipus*.tgz "$PACKAGE_ROOT"/ventipus*.tgz; do
+  for candidate in "$SCRIPT_DIR"/cawdex*.tgz "$PACKAGE_ROOT"/cawdex*.tgz "$SCRIPT_DIR"/ventipus*.tgz "$PACKAGE_ROOT"/ventipus*.tgz; do
     if install_from_tarball "$candidate"; then
       return 0
     fi
@@ -89,7 +105,7 @@ try_offline_install() {
 }
 
 if try_offline_install; then
-  ventipus --print-terminal-bench-adapter >/dev/null
+  cawdex --print-terminal-bench-adapter >/dev/null
   exit 0
 fi
 
@@ -100,6 +116,6 @@ fi
 
 ensure_node_npm
 
-npm install -g "${VENTIPUS_INSTALL_SPEC:-ventipus@latest}" --no-audit --no-fund
+npm install -g "${VENTIPUS_INSTALL_SPEC:-cawdex@latest}" --no-audit --no-fund
 
-ventipus --print-terminal-bench-adapter >/dev/null
+cawdex --print-terminal-bench-adapter >/dev/null

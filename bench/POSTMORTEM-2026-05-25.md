@@ -58,7 +58,7 @@ The pdp11 case is the smoking gun: at 375K tokens the model literally forgot it 
 
 ### 3. ❗ Network-disabled containers break our install (1 trial, niche but ugly)
 
-**Root cause**: `broken-networking` is a task that intentionally breaks the container's network. Our adapter's install script (`apt-get install nodejs` + `npm i -g ventipus`) needs the internet. Result: install fails silently, agent never starts, both panes are completely empty, harness throws `parse_error`.
+**Root cause**: `broken-networking` is a task that intentionally breaks the container's network. Our adapter's install script (`apt-get install nodejs` + `npm i -g cawdex`) needs the internet. Result: install fails silently, agent never starts, both panes are completely empty, harness throws `parse_error`.
 
 **Fix in `bench/ventipus_agent_adapter.py`**:
 

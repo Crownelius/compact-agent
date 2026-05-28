@@ -2,18 +2,18 @@
 
 Terminal coding agents with a mind for the whole repo.
 
-[![npm](https://img.shields.io/npm/v/ventipus?color=cyan)](https://www.npmjs.com/package/ventipus)
+[![npm](https://img.shields.io/npm/v/cawdex?color=cyan)](https://www.npmjs.com/package/cawdex)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A518.0-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
 ```bash
-npm install -g ventipus
+npm install -g cawdex
 cawdex --doctor
 cawdex --openai-oauth-smoke
 cawdex
 ```
 
-The npm package is still `ventipus` during the compatibility phase, but it installs both `cawdex` and `ventipus` commands. `cawdex --doctor` checks the global install, npm registry metadata, provider config, MemPalace, research credentials, and benchmark adapter packaging without printing token values. `cawdex --openai-oauth-smoke` tests Codex OAuth auth, request creation, and streaming without printing tokens. First run prompts you for a provider, key, model, and permission mode. After that, `cawdex` from any directory drops you into a REPL with a persistent bottom-anchored input box.
+The npm package is `cawdex` and installs both the primary `cawdex` command and the legacy `ventipus` alias. `cawdex --doctor` checks the global install, npm registry metadata, provider config, MemPalace, research credentials, and benchmark adapter packaging without printing token values. `cawdex --openai-oauth-smoke` tests Codex OAuth auth, request creation, and streaming without printing tokens. First run prompts you for a provider, key, model, and permission mode. After that, `cawdex` from any directory drops you into a REPL with a persistent bottom-anchored input box.
 
 ---
 
@@ -184,7 +184,7 @@ tb run \
   --task-id hello-world
 ```
 
-The adapter installs `ventipus@latest` inside the task container. Set `VENTIPUS_INSTALL_SPEC` to pin a local tarball, npm tag, or exact version, and pass `VENTIPUS_PROVIDER`, `VENTIPUS_MODEL`, `VENTIPUS_MAX_TURNS`, plus the relevant provider key env var for reproducible leaderboard runs. If your benchmark image already has `ventipus` on `PATH`, setup skips network installation entirely; this is the preferred path for network-disabled tasks. For offline harnesses, set `VENTIPUS_BUNDLE_ROOT` to an unpacked ventipus tree with `bin/`, `dist/`, and `node_modules/`, or `VENTIPUS_BUNDLE_TARBALL` to a local `.tgz`; the setup script checks those before falling back to the npm registry. Terminal-Bench runs also write `.ventipus/benchmark-summary.json`, `.ventipus/benchmark-trace.jsonl`, `.ventipus/agent-context-compiled.jsonl`, `.ventipus/change-evaluation.json`, `.ventipus/submission-bundle-manifest.json`, `.ventipus/benchmark.patch`, and `.ventipus/git-status.txt` when available; patch/status artifacts are redacted and the patch includes unstaged, staged, and untracked file diffs where git can render them.
+The adapter installs `cawdex@latest` inside the task container. Set `VENTIPUS_INSTALL_SPEC` to pin a local tarball, npm tag, or exact version, and pass `CAWDEX_PROVIDER`/`VENTIPUS_PROVIDER`, `CAWDEX_MODEL`/`VENTIPUS_MODEL`, `CAWDEX_MAX_TURNS`/`VENTIPUS_MAX_TURNS`, plus the relevant provider key env var for reproducible leaderboard runs. If your benchmark image already has `cawdex` or the legacy `ventipus` alias on `PATH`, setup skips network installation entirely; this is the preferred path for network-disabled tasks. For offline harnesses, set `VENTIPUS_BUNDLE_ROOT` to an unpacked Cawdex tree with `bin/`, `dist/`, and `node_modules/`, or `VENTIPUS_BUNDLE_TARBALL` to a local `.tgz`; the setup script checks those before falling back to the npm registry. Terminal-Bench runs also write `.ventipus/benchmark-summary.json`, `.ventipus/benchmark-trace.jsonl`, `.ventipus/agent-context-compiled.jsonl`, `.ventipus/change-evaluation.json`, `.ventipus/submission-bundle-manifest.json`, `.ventipus/benchmark.patch`, and `.ventipus/git-status.txt` when available; patch/status artifacts are redacted and the patch includes unstaged, staged, and untracked file diffs where git can render them.
 
 Benchmark adapters default `VENTIPUS_BASH_TIMEOUT_MS` to `300000` so long installs, broad test runs, and model loads do not fail before the task timeout. Inside a task, the `bash` tool also accepts `timeoutMs` or `timeoutSec` up to 30 minutes, plus `background:true` for services with log capture. Foreground bash calls that time out or return truncated output save the full stdout/stderr under `.ventipus/bash-output/` and return the log path in the tool result.
 
@@ -214,7 +214,7 @@ Interactive turns are acknowledged before provider I/O starts, and active turns 
 
 Bundled ECC skills are exposed with progressive disclosure: the system prompt shows only Level-0 skill names and descriptions, and `skill_view` loads the full prompt body only after a fit check. In benchmark mode the prompt asks the agent to inspect `benchmark_context` and local repo evidence before loading a skill, prefer one strongly domain/version-matched skill, and treat local files plus verifier output as authoritative.
 
-`research_sources` queries GitHub repositories by default; set `github_kind:"issues"`, `"pulls"`, `"code"`, or `"all"` when benchmark work needs implementation details, issue reports, or PR repair patterns. It queries Hugging Face papers, models, and datasets; set `kind:"papers"` to scan only HF daily papers or `kind:"all"` for the full HF sweep. Use `recent_days` for newest-science work; it filters arXiv and GitHub repo/issue/pull queries at the source, sorts Hugging Face models/datasets by `lastModified`, sorts Kaggle datasets by `updated` and competitions by `recentlyCreated`, and filters stale dated HF/Kaggle hits when metadata is available. GitHub code search has no supported pushed/updated qualifier, so code hits are reported as implementation examples rather than freshness proof. Benchmark trajectories treat complete arXiv/GitHub/Hugging Face/Kaggle research without a recency window as stale evidence until justified. It also queries Kaggle datasets and, when Kaggle auth is configured, competitions; set `kaggle_kind:"competitions"` for leaderboard surfaces only. Output starts with coverage notes and a source digest, preserves deterministic arXiv/GitHub/Hugging Face/Kaggle ordering for reproducible traces, and reports requested recency plus whether Kaggle competitions were skipped because auth was unavailable. It can use optional Hugging Face and Kaggle credentials without writing them into Cawdex state. For Hugging Face it reads `HF_TOKEN`, compatible token env aliases, `HF_TOKEN_PATH`, or the standard Hugging Face token cache. For Kaggle it reads `KAGGLE_API_TOKEN`, `KAGGLE_CONFIG_DIR/access_token`, `KAGGLE_USERNAME` plus `KAGGLE_KEY`, or legacy `kaggle.json`. The `/sources` slash command runs the same tool locally, so `cawdex --prompt "/sources coding agent verification --limit 3"` can produce source evidence even when you do not want to spend a model call; flags include `--source`, `--github`, `--hf`, `--kaggle`, `--recent`, and `--limit`. The `benchmark_repo_catalog` tool and `/benchmark-repos` command expose a packaged Terminal-Bench 2.0 public-repo seed catalog for source mining; use `--all` to include related/partial mappings and follow any useful hit with `/repo-digest`. The `github_repo_digest` tool and `/repo-digest` command take a GitHub URL or `owner/repo` from source results and return bounded repository metadata, tree/file language counts, manifests, CI files, likely commands from key files, redacted excerpts, and AHE-style component surface signals. Example: `cawdex --prompt "/repo-digest openai/codex --files 500 --text-files 6"`.
+`research_sources` queries GitHub repositories by default; set `github_kind:"issues"`, `"pulls"`, `"code"`, or `"all"` when benchmark work needs implementation details, issue reports, or PR repair patterns. It queries Hugging Face papers, models, and datasets; set `kind:"papers"` to scan only HF daily papers or `kind:"all"` for the full HF sweep. Use `recent_days` for newest-science work; it filters arXiv and GitHub repo/issue/pull queries at the source, sorts Hugging Face models/datasets by `lastModified`, sorts Kaggle datasets by `updated` and competitions by `recentlyCreated`, and filters stale dated HF/Kaggle hits when metadata is available. GitHub code search has no supported pushed/updated qualifier, so code hits are reported as implementation examples rather than freshness proof. Benchmark trajectories treat complete arXiv/GitHub/Hugging Face/Kaggle research without a recency window as stale evidence until justified. It also queries Kaggle datasets and, when Kaggle auth is configured, competitions; set `kaggle_kind:"competitions"` for leaderboard surfaces only. Output starts with coverage notes and a source digest, preserves deterministic arXiv/GitHub/Hugging Face/Kaggle ordering for reproducible traces, and reports requested recency plus whether Kaggle competitions were skipped because auth was unavailable. Use `format:"json"` for benchmark/leaderboard work so traces can score the structured digest directly. It can use optional Hugging Face and Kaggle credentials without writing them into Cawdex state. For Hugging Face it reads `HF_TOKEN`, compatible token env aliases, `HF_TOKEN_PATH`, or the standard Hugging Face token cache. For Kaggle it reads `KAGGLE_API_TOKEN`, `KAGGLE_CONFIG_DIR/access_token`, `KAGGLE_USERNAME` plus `KAGGLE_KEY`, or legacy `kaggle.json`. The `/sources` slash command runs the same tool locally, so `cawdex --prompt "/sources coding agent verification --limit 3 --json"` can produce source evidence even when you do not want to spend a model call; flags include `--source`, `--github`, `--hf`, `--kaggle`, `--recent`, `--limit`, and `--json`. The `benchmark_repo_catalog` tool and `/benchmark-repos` command expose a packaged Terminal-Bench 2.0 public-repo seed catalog for source mining; use `--all` to include related/partial mappings and follow any useful hit with `/repo-digest`. The `github_repo_digest` tool and `/repo-digest` command take a GitHub URL or `owner/repo` from source results and return bounded repository metadata, tree/file language counts, manifests, CI files, likely commands from key files, redacted excerpts, and AHE-style component surface signals. Example: `cawdex --prompt "/repo-digest openai/codex --files 500 --text-files 6"`.
 
 In non-interactive runs, Cawdex also guards against empty engagement: benchmark mode expects at least two concrete tool calls before accepting a final no-tool response, then forces a direct re-engagement prompt if the model tries to stop early. Set `VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE=0` to disable this for answer-only harnesses.
 
@@ -313,7 +313,7 @@ Built with blind / low-vision users in mind. `/accessibility screenReader on` st
 | **Shift+F5 / F6** | Soft-cancel current turn · panic-stop TTS (5s suppression window) |
 | **Shift+F12** | Read the hotkey list aloud (discoverability without sighted help) |
 
-Every binding prints to stdout first, then layers TTS on top only if an ElevenLabs key is configured — so users running ventipus alongside their OS-level screen reader get the announcements without paying for TTS.
+Every binding prints to stdout first, then layers TTS on top only if an ElevenLabs key is configured — so users running Cawdex alongside their OS-level screen reader get the announcements without paying for TTS.
 
 Key choice rationale: bare F-keys and Shift+F-keys are the only space that's both screen-reader-safe (no Insert / CapsLock / Ctrl+Option modifier collisions with NVDA, JAWS, Narrator, Orca, or VoiceOver) and terminal-safe (no `readline` collisions). F11 and F12 specifically are browser-reserved keys that terminals don't grab.
 
@@ -324,15 +324,15 @@ Voice setup: `/voice config` saves API keys, `/voice on` enables, `/voice test` 
 ## From source
 
 ```bash
-git clone https://github.com/Crownelius/ventipus.git
-cd ventipus
+git clone https://github.com/Crownelius/cawdex.git
+cd cawdex
 npm install
 npm link
 ```
 
 Rebuild after edits with `npm run build` (or `npx tsc`). The `prepare` script also runs `tsc` on `npm install`, so a clean clone produces a working `dist/` without an extra step.
 
-Update: `npm install -g ventipus@latest`. Uninstall: `npm uninstall -g ventipus && rm -rf ~/.ventipus`.
+Update: `npm install -g cawdex@latest`. Uninstall: `npm uninstall -g cawdex && rm -rf ~/.ventipus`.
 
 ---
 
@@ -352,4 +352,4 @@ Bundles content from:
 - [everything-claude-code](https://github.com/Crownelius/everything-claude-code) — skill / agent / hook harness
 - [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) — Hermes mode reference
 
-[Bug reports](https://github.com/Crownelius/ventipus/issues) · [Install guide](INSTALL.md) · [Commands](COMMANDS.md) · [npm](https://www.npmjs.com/package/ventipus)
+[Bug reports](https://github.com/Crownelius/cawdex/issues) · [Install guide](INSTALL.md) · [Commands](COMMANDS.md) · [npm](https://www.npmjs.com/package/cawdex)

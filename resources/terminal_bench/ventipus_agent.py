@@ -1,10 +1,10 @@
-"""Terminal-Bench adapter for ventipus.
+"""Terminal-Bench adapter for Cawdex.
 
 Usage:
     tb run --agent-import-path resources.terminal_bench.ventipus_agent:VentipusTerminalBenchAgent ...
 
 The adapter installs the npm package in the task container, then runs
-ventipus in non-interactive benchmark mode with the task instruction.
+Cawdex in non-interactive benchmark mode with the task instruction.
 """
 
 from __future__ import annotations
@@ -24,11 +24,11 @@ except ImportError:  # terminal-bench moved this in newer releases
 
 
 class VentipusTerminalBenchAgent(AbstractInstalledAgent):
-    """Run ventipus as an installed command-line agent."""
+    """Run Cawdex as an installed command-line agent."""
 
     @staticmethod
     def name() -> str:
-        return "ventipus"
+        return "cawdex"
 
     def __init__(
         self,
@@ -55,7 +55,7 @@ class VentipusTerminalBenchAgent(AbstractInstalledAgent):
             "VENTIPUS_MEMORY": os.environ.get("VENTIPUS_MEMORY", "0"),
             "VENTIPUS_BASH_TIMEOUT_MS": os.environ.get("VENTIPUS_BASH_TIMEOUT_MS", "300000"),
             "VENTIPUS_INSTALL_SPEC": self._install_spec
-            or os.environ.get("VENTIPUS_INSTALL_SPEC", "ventipus@latest"),
+            or os.environ.get("VENTIPUS_INSTALL_SPEC", "cawdex@latest"),
         }
 
         passthrough = [
@@ -109,7 +109,7 @@ class VentipusTerminalBenchAgent(AbstractInstalledAgent):
     def _run_agent_commands(self, task_description: str) -> list[TerminalCommand]:
         instruction = "/benchmark terminal-bench " + task_description
         agent_command = (
-            "ventipus "
+            "cawdex "
             f"--prompt {shlex.quote(instruction)} "
             "--perm yolo "
             "--benchmark-trace-dir .ventipus/trace"

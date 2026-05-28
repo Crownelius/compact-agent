@@ -1,7 +1,7 @@
-"""HAL custom-agent adapter for ventipus.
+"""HAL custom-agent adapter for Cawdex.
 
 HAL expects a module-level run(input, **kwargs) function. This adapter keeps
-ventipus framework-agnostic by launching the installed CLI in headless
+Cawdex framework-agnostic by launching the installed CLI in headless
 benchmark mode, then returning the artifact shape expected by common HAL tasks.
 """
 
@@ -321,7 +321,7 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
         f"/benchmark {profile} HAL task {task_id}",
         "",
         "You are running inside the Holistic Agent Leaderboard harness.",
-        "Use ventipus benchmark discipline: inspect local files, patch only what is needed, run targeted verification, and preserve trace evidence.",
+        "Use Cawdex benchmark discipline: inspect local files, patch only what is needed, run targeted verification, and preserve trace evidence.",
     ]
     if profile == "swe-bench":
         lines.extend([
@@ -363,9 +363,9 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
 
 
 def _base_command() -> list[str]:
-    command = os.environ.get("VENTIPUS_HAL_COMMAND", "ventipus")
+    command = os.environ.get("CAWDEX_HAL_COMMAND") or os.environ.get("VENTIPUS_HAL_COMMAND", "cawdex")
     parts = shlex.split(command, posix=os.name != "nt")
-    return parts or ["ventipus"]
+    return parts or ["cawdex"]
 
 
 def _append_flag(args: list[str], flag: str, value: Any) -> None:
@@ -421,7 +421,7 @@ def _run_ventipus(task_id: str, prompt: str, kwargs: dict[str, Any]) -> AgentRun
         returncode = completed.returncode
     except subprocess.TimeoutExpired as exc:
         stdout = _redact(exc.stdout)
-        stderr = _redact(exc.stderr) + f"\nventipus timed out after {timeout}s"
+        stderr = _redact(exc.stderr) + f"\nCawdex timed out after {timeout}s"
         returncode = 124
 
     (trace_dir / "hal-stdout.txt").write_text(stdout, encoding="utf-8")
@@ -515,7 +515,7 @@ def _submission_for_task(task: dict[str, Any], run_result: AgentRun) -> Any:
 
 
 def run(input: dict[str, dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
-    """Run ventipus for HAL.
+    """Run Cawdex for HAL.
 
     Patch-style tasks return {task_id: patch}. ScienceAgentBench-style tasks
     return a trajectory string. AppWorld-style tasks return "Completed" after
@@ -523,7 +523,7 @@ def run(input: dict[str, dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
     a response field, matching HAL's USACO-style pattern.
     """
     if not isinstance(input, dict):
-        raise TypeError("ventipus HAL adapter expects input to be a dictionary")
+        raise TypeError("Cawdex HAL adapter expects input to be a dictionary")
 
     patch_task_ids = [
         str(task_id)
@@ -531,7 +531,7 @@ def run(input: dict[str, dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
         if isinstance(task, dict) and _is_patch_task(task)
     ]
     if len(patch_task_ids) > 1:
-        raise ValueError("ventipus HAL adapter expects one patch-style task per checked-out worktree")
+        raise ValueError("Cawdex HAL adapter expects one patch-style task per checked-out worktree")
 
     output: dict[str, Any] = {}
     for task_id, task in input.items():

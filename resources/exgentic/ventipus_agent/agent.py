@@ -1,4 +1,4 @@
-"""Exgentic/Open Agent Leaderboard adapter for ventipus."""
+"""Exgentic/Open Agent Leaderboard adapter for Cawdex."""
 
 from __future__ import annotations
 
@@ -31,14 +31,14 @@ from .utils import (
 
 
 class VentipusAgent(Agent):
-    """Host-side Exgentic config for ventipus."""
+    """Host-side Exgentic config for Cawdex."""
 
-    display_name: ClassVar[str] = "Ventipus"
+    display_name: ClassVar[str] = "Cawdex"
     slug_name: ClassVar[str] = "ventipus_agent"
 
     model: str = "openrouter/free"
     provider: str | None = None
-    command: str = Field(default_factory=lambda: os.environ.get("VENTIPUS_EXGENTIC_COMMAND", "ventipus"))
+    command: str = Field(default_factory=lambda: os.environ.get("CAWDEX_EXGENTIC_COMMAND") or os.environ.get("VENTIPUS_EXGENTIC_COMMAND", "cawdex"))
     permission: str = "yolo"
     max_steps: int = 50
     max_turns: int | None = None
@@ -91,14 +91,14 @@ class VentipusAgent(Agent):
 
 
 class VentipusAgentInstance(AgentInstance):
-    """Per-session Exgentic runtime that asks ventipus for the next action."""
+    """Per-session Exgentic runtime that asks Cawdex for the next action."""
 
     def __init__(
         self,
         session_id: str,
         model: str = "openrouter/free",
         provider: str | None = None,
-        command: str = "ventipus",
+        command: str = "cawdex",
         permission: str = "yolo",
         max_steps: int = 50,
         max_turns: int | None = None,
@@ -160,7 +160,7 @@ class VentipusAgentInstance(AgentInstance):
             self._history.append({"role": "selected_action", "content": _single_action_to_data(action)})
             return action
 
-        fallback = self._fallback_action(combined or "ventipus produced no output")
+        fallback = self._fallback_action(combined or "Cawdex produced no output")
         if fallback is not None:
             self._history.append({"role": "selected_action", "content": _single_action_to_data(fallback)})
         return fallback
@@ -387,7 +387,7 @@ class VentipusAgentInstance(AgentInstance):
 
 def _split_command(command: str) -> list[str]:
     parts = shlex.split(command, posix=os.name != "nt")
-    return parts or ["ventipus"]
+    return parts or ["cawdex"]
 
 
 def _append_flag(args: list[str], flag: str, value: Any) -> None:

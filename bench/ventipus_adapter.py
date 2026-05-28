@@ -1,10 +1,10 @@
 """
-Terminal-Bench v2 adapter for ventipus.
+Terminal-Bench v2 adapter for Cawdex.
 
 Implements the AbstractInstalledAgent interface so the harness can:
-  1. Install ventipus into the task's Docker container.
-  2. Hand the task description to ventipus on stdin.
-  3. Let ventipus run autonomously (--non-interactive + yolo perms)
+  1. Install Cawdex into the task's Docker container.
+  2. Hand the task description to Cawdex on stdin.
+  3. Let Cawdex run autonomously (--non-interactive + yolo perms)
      against the task workspace, executing whatever shell commands it
      decides it needs to solve the task.
 
@@ -25,10 +25,10 @@ Requirements on the host:
   - uv (https://docs.astral.sh/uv/)
   - Docker (the harness spawns one container per task)
   - terminal-bench installed in the active uv env
-  - Network access to npmjs.com (the install step pulls ventipus)
+  - Network access to npmjs.com (the install step pulls cawdex)
   - OPENROUTER_API_KEY (or whichever provider) in the host environment;
     the adapter forwards it into the container as OPENAI_API_KEY +
-    OPENAI_BASE_URL so ventipus's setup wizard skips on startup.
+    OPENAI_BASE_URL so Cawdex's setup wizard skips on startup.
 
 Model selection: defaults to owl-alpha via OpenRouter (free + fast for
 benchmarking). Override per-run with:
@@ -55,13 +55,13 @@ from terminal_bench.agents.installed_agents.abstract_installed_agent import (
 )
 
 
-# Pinned to a known-working ventipus release. Bump as new versions
+# Pinned to a known-working Cawdex release. Bump as new versions
 # ship; the bench results depend on the exact agent build, so we want
 # this reproducible.
 #
-# 1.33.7 is the first release with --prompt-file non-interactive mode,
-# which is what the adapter relies on to drive the agent without a TTY.
-VENTIPUS_VERSION = "1.33.7"
+# 1.35.58 is the Cawdex rebrand baseline with --prompt-file,
+# cawdex/ventipus bin aliases, and benchmark trace support.
+VENTIPUS_VERSION = "1.35.58"
 
 # Default model. owl-alpha is free on OpenRouter and tends to be fast
 # enough for benchmark turnaround. Swap to claude-sonnet-4 or
@@ -71,8 +71,8 @@ DEFAULT_MODEL = "openrouter/owl-alpha"
 # Install script — runs INSIDE the task container. The harness mounts
 # the script and execs it once at container startup, before any task
 # command runs. We:
-#   1. install Node 20 (ventipus needs node>=18)
-#   2. npm install -g ventipus@<version>
+#   1. install Node 20 (Cawdex needs node>=18)
+#   2. npm install -g cawdex@<version>
 #   3. seed a minimal config so the setup wizard doesn't prompt
 #
 # The harness expects an executable shell script at the path we return
@@ -85,14 +85,14 @@ set -euo pipefail
 # The t-bench base images (e.g. ghcr.io/laude-institute/t-bench/python-3-13)
 # are intentionally minimal — no curl, no gnupg, no node. Install the
 # prerequisites first, THEN the NodeSource setup script, THEN node, THEN
-# ventipus. Each layer guards against the previous already being
+# Cawdex. Each layer guards against the previous already being
 # installed so re-running the script is idempotent.
 if ! command -v curl >/dev/null 2>&1; then
   apt-get update -y
   apt-get install -y --no-install-recommends curl ca-certificates gnupg
 fi
 
-# Node 20 (ventipus's engines field requires >=18). The setup_20.x
+# Node 20 (Cawdex's engines field requires >=18). The setup_20.x
 # script writes /etc/apt/sources.list.d/nodesource.list + key, then
 # apt-get install -y nodejs pulls a single deb that includes npm.
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -dv -f2 | cut -d. -f1)" -lt 18 ]; then
@@ -100,15 +100,15 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -dv -f2 | cut -d. -f1
   apt-get install -y --no-install-recommends nodejs
 fi
 
-# Install ventipus globally so it's on PATH.
-npm install -g ventipus@__VENTIPUS_VERSION__
+# Install Cawdex globally so it's on PATH.
+npm install -g cawdex@__VENTIPUS_VERSION__
 
-# Seed ventipus config so the setup wizard skips and the agent
+# Seed Cawdex config so the setup wizard skips and the agent
 # launches straight into a working state. The wizard would block on
 # stdin otherwise — terminal-bench drives the agent via piped stdin
 # only for the task description, not for setup.
 #
-# CRITICAL: bake the API key into the config file. ventipus's
+# CRITICAL: bake the API key into the config file. Cawdex's
 # configExists() check returns false when cfg.apiKey is empty (even
 # if OPENAI_API_KEY is set in the env) because the wizard-skip
 # decision is based on the saved config alone. Setting apiKey here
@@ -117,7 +117,7 @@ npm install -g ventipus@__VENTIPUS_VERSION__
 # Heredoc is unquoted so ${OPENAI_API_KEY} and ${MODEL} expand. The
 # API key is alphanumeric + dashes so no shell-quoting hazards.
 if [ -z "${OPENAI_API_KEY:-}" ]; then
-  echo "ventipus install failed: OPENAI_API_KEY not in env" >&2
+  echo "cawdex install failed: OPENAI_API_KEY not in env" >&2
   exit 1
 fi
 mkdir -p "$HOME/.ventipus"
@@ -136,28 +136,28 @@ cat > "$HOME/.ventipus/config.json" <<EOF
 EOF
 
 # API key gets forwarded via OPENAI_API_KEY env (set by the harness from
-# the host). ventipus reads OPENAI_API_KEY at startup when the
+# the host). Cawdex reads OPENAI_API_KEY at startup when the
 # baseURL config field is set.
 #
 # Sanity-check that the binary is on PATH — DO NOT actually exec
-# ventipus here. ventipus has no --version flag; invoking
+# Cawdex here. Cawdex has a --version flag, but the adapter only needs a path check.
 # it with any non-recognized argument falls through to REPL mode,
 # which blocks forever on stdin in a headless container.
-if command -v ventipus >/dev/null 2>&1; then
-  echo "ventipus install complete: $(command -v ventipus)"
+if command -v cawdex >/dev/null 2>&1; then
+  echo "cawdex install complete: $(command -v cawdex)"
 else
-  echo "ventipus install failed: not on PATH"
+  echo "cawdex install failed: not on PATH"
   exit 1
 fi
 """
 
 
 class VentipusAgent(AbstractInstalledAgent):
-    """Terminal-bench adapter for ventipus."""
+    """Terminal-bench adapter for Cawdex."""
 
     @staticmethod
     def name() -> str:
-        return "ventipus"
+        return "cawdex"
 
     def __init__(self, model: str = DEFAULT_MODEL, version: str = VENTIPUS_VERSION, **kwargs):
         super().__init__(**kwargs)
@@ -211,7 +211,7 @@ class VentipusAgent(AbstractInstalledAgent):
              Base64 is opaque, single-line, and survives the
              harness's mangling.
 
-          2. Invoke `ventipus --prompt-file /tmp/tb_task.txt --perm yolo`.
+          2. Invoke `cawdex --prompt-file /tmp/tb_task.txt --perm yolo`.
              Reads the prompt verbatim, runs one runQuery chain with
              permission gates auto-approved (yolo), exits 0 on success
              or 1 on chain failure.
@@ -225,7 +225,7 @@ class VentipusAgent(AbstractInstalledAgent):
         # Single-line base64 round-trip. The whole task description —
         # apostrophes, quotes, newlines, backticks, dollar signs —
         # passes through unchanged. The trailing newline ensures
-        # ventipus reads a clean prompt.
+        # Cawdex reads a clean prompt.
         b64 = base64.b64encode(task_description.encode("utf-8")).decode("ascii")
         write_task = (
             'export PATH="$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH" && '
@@ -234,7 +234,7 @@ class VentipusAgent(AbstractInstalledAgent):
         return [
             TerminalCommand(command=write_task, max_timeout_sec=10.0, block=True),
             TerminalCommand(
-                command="ventipus --prompt-file /tmp/tb_task.txt --perm yolo",
+                command="cawdex --prompt-file /tmp/tb_task.txt --perm yolo",
                 max_timeout_sec=1800.0,  # 30 minutes per task
                 block=True,
             ),
@@ -250,12 +250,12 @@ class VentipusAgent(AbstractInstalledAgent):
         benchmark with a key you've budgeted for.
         """
         env = {}
-        # Ventipus reads OPENAI_API_KEY when baseURL is configured.
+        # Cawdex reads OPENAI_API_KEY when baseURL is configured.
         # OpenRouter, NVIDIA, DeepSeek, etc all key off this same env.
         key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not key:
             raise RuntimeError(
-                "ventipus benchmark requires OPENROUTER_API_KEY (or OPENAI_API_KEY) "
+                "cawdex benchmark requires OPENROUTER_API_KEY (or OPENAI_API_KEY) "
                 "in the host environment. Set it before invoking `tb run`."
             )
         env["OPENAI_API_KEY"] = key

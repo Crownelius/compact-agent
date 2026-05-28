@@ -1,11 +1,11 @@
-# ventipus for Exgentic
+# Cawdex for Exgentic
 
-This directory is a custom Exgentic agent package for running ventipus in
+This directory is a custom Exgentic agent package for running Cawdex in
 Open Agent Leaderboard style evaluations.
 
 The adapter implements Exgentic's `Agent` / `AgentInstance` split. On each
-`react()` step it writes an Exgentic prompt, launches ventipus in
-non-interactive `/benchmark` mode, asks ventipus to finish with one JSON
+`react()` step it writes an Exgentic prompt, launches Cawdex in
+non-interactive `/benchmark` mode, asks Cawdex to finish with one JSON
 action object, then maps that JSON back to an Exgentic `ActionType`.
 It auto-selects specialized `/benchmark` profiles for AppWorld, BrowseComp+,
 tau2, ARC, SaaS, roadmap, mobile, WebDevBench, SWE-Cycle, SWE-CI, SWE-PRBench, TML-Bench, and Pi-Bench-style tasks from the task, context, and
@@ -21,7 +21,7 @@ dispatch, near-miss action JSON is repaired conservatively: action names are
 matched by case/identifier normalization, schema argument keys are canonicalized,
 required schema fields are filled from exact latest-observation/context keys
 when available, and unknown extra keys are dropped when the benchmark exposes a
-fixed schema. If ventipus produces malformed or missing action JSON, the adapter
+fixed schema. If Cawdex produces malformed or missing action JSON, the adapter
 uses the same shortlist and exact required-argument hints to select a viable
 non-finish action while the latest observation is still pending, instead of
 falling straight to a finish/message action. When a selected action is followed
@@ -86,7 +86,7 @@ Then add a registry entry:
 
 ```python
 "ventipus_agent": RegistryEntry(
-    display_name="Ventipus",
+    display_name="Cawdex",
     module="exgentic.agents.ventipus_agent.agent",
     class_name="VentipusAgent",
 ),
@@ -101,14 +101,14 @@ exgentic evaluate --benchmark gsm8k --agent ventipus_agent --model openrouter/fr
 
 ## Configuration
 
-- `VENTIPUS_EXGENTIC_COMMAND` overrides the command, default `ventipus`.
-- `VENTIPUS_INSTALL_SPEC` controls `setup.sh`, default `ventipus@latest`.
-- `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, and other ventipus provider env vars
-  are passed through by the launched ventipus process.
+- `CAWDEX_EXGENTIC_COMMAND` or `VENTIPUS_EXGENTIC_COMMAND` overrides the command, default `cawdex`.
+- `VENTIPUS_INSTALL_SPEC` controls `setup.sh`, default `cawdex@latest`.
+- `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, and other Cawdex provider env vars
+  are passed through by the launched Cawdex process.
 - `model`, `provider`, `max_turns`, `max_tokens`, `context_window_tokens`,
-  `temperature`, and `output_format` become ventipus CLI flags.
+  `temperature`, and `output_format` become Cawdex CLI flags.
 - `extra_env` and `extra_args` let Exgentic experiments pass additional
-  ventipus settings without modifying this adapter.
+  Cawdex settings without modifying this adapter.
 
-The adapter reports ventipus's `summary.json` estimated cost to Exgentic
+The adapter reports Cawdex's `summary.json` estimated cost to Exgentic
 when `VENTIPUS_BENCHMARK_TRACE_DIR` output is present.

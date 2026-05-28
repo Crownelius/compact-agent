@@ -70,7 +70,7 @@ const TEST_CONFIG = {
 };
 fs.writeFileSync(path.join(TMP_HOME, 'config.json'), JSON.stringify(TEST_CONFIG, null, 2));
 
-// ── Import Ventipus internals ──────────────────────────────────────
+// ── Import Cawdex internals ────────────────────────────────────────
 const dist = path.join(PROJECT_ROOT, 'dist', 'index.js');
 if (!fs.existsSync(dist)) {
   console.error('dist/index.js missing. Run: npx tsc');

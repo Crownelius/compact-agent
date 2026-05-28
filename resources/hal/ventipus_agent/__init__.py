@@ -1,1 +1,1 @@
-"""HAL adapter package for ventipus."""
+"""HAL adapter package for Cawdex."""

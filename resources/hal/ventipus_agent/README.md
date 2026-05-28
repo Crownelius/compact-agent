@@ -1,12 +1,12 @@
-# ventipus HAL adapter
+# Cawdex HAL adapter
 
-This directory is a HAL-style custom agent package. It exposes `run(input, **kwargs)` in `main.py` and shells out to the installed `ventipus` CLI in non-interactive benchmark mode.
+This directory is a HAL-style custom agent package. It exposes `run(input, **kwargs)` in `main.py` and shells out to the installed `cawdex` CLI in non-interactive benchmark mode.
 
 Defaults:
 
 - SWE-bench-like tasks return a git patch string.
 - ScienceAgentBench-like tasks return a solution/trajectory string.
-- AppWorld-like tasks return `Completed` after a successful ventipus run.
+- AppWorld-like tasks return `Completed` after a successful Cawdex run.
 - WebDevBench-like tasks are routed to the `webdevbench` benchmark profile, which keeps canary requirements plus frontend-backend and production/security validation evidence visible.
 - SWE-Cycle-like tasks are routed to the `swe-cycle` benchmark profile, which keeps lifecycle phase, environment setup, implementation, verification-test generation, and static/dynamic judge evidence visible.
 - SWE-CI-like tasks are routed to the `swe-ci` benchmark profile, which keeps current/target commits, test gaps, inferred requirements, and CI-loop verifier deltas visible.
@@ -19,6 +19,6 @@ Defaults:
 
 Useful overrides:
 
-- `VENTIPUS_HAL_COMMAND`: command used to invoke ventipus, default `ventipus`.
+- `CAWDEX_HAL_COMMAND` or `VENTIPUS_HAL_COMMAND`: command used to invoke Cawdex, default `cawdex`.
 - `VENTIPUS_HAL_TIMEOUT_SEC`: per-task timeout, default `1800`.
-- HAL `-A model_name=...`, `-A provider=...`, `-A max_turns=...`, and `-A output_format=...` are forwarded to ventipus CLI flags when present.
+- HAL `-A model_name=...`, `-A provider=...`, `-A max_turns=...`, and `-A output_format=...` are forwarded to Cawdex CLI flags when present.

@@ -17,7 +17,7 @@ type GitHubKind = 'repositories' | 'issues' | 'pulls' | 'code' | 'all';
 type HuggingFaceKind = 'models' | 'datasets' | 'papers' | 'both' | 'all';
 type KaggleKind = 'datasets' | 'competitions' | 'both';
 
-const USER_AGENT = 'cawdex/1.x (+https://github.com/Crownelius/ventipus)';
+const USER_AGENT = 'cawdex/1.x (+https://github.com/Crownelius/cawdex)';
 
 interface SourceHit {
   source: string;

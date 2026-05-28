@@ -1,4 +1,4 @@
-# Skill Templates for Ventipus CLI
+# Skill Templates for Cawdex CLI
 
 > Generated from analysis of git history, source conventions, and recurring development workflows.
 > Each skill is a reusable prompt template with `{{placeholders}}` for dynamic values.
@@ -153,7 +153,7 @@ git commit -m "test: add tests for {{MODULE_NAME}}"
 ```bash
 git diff --stat
 git diff src/{{FILE}}.ts
-# Use /review in Ventipus for AI-assisted review
+# Use /review in Cawdex for AI-assisted review
 ```
 
 **Validation**:
@@ -166,7 +166,7 @@ git diff src/{{FILE}}.ts
 
 ## Skill 6: `module-creation-workflow`
 
-**Description**: Create a new self-contained module following Ventipus conventions.
+**Description**: Create a new self-contained module following Cawdex conventions.
 
 **Trigger Patterns**: "create module", "new module", "add module", "scaffold"
 
@@ -230,14 +230,14 @@ git commit -m "feat: add {{MODULE_NAME}} module"
 
 ## Skill 8: `config-change-workflow`
 
-**Description**: Safely modify Ventipus configuration — API keys, providers, models, permissions.
+**Description**: Safely modify Cawdex configuration — API keys, providers, models, permissions.
 
 **Trigger Patterns**: "change config", "update config", "set model", "change provider", "config"
 
 **Steps**:
 1. **Read current config** — `read_file` on `~/.ventipus/config.json` or use `/config`.
 2. **Validate change** — Ensure the new value is valid (URL format, known provider, valid model).
-3. **Apply change** — Edit `config.json` or use Ventipus's `/model`, `/provider`, `/perm` commands.
+3. **Apply change** — Edit `config.json` or use Cawdex's `/model`, `/provider`, `/perm` commands.
 4. **Verify** — Reload config and confirm the change took effect.
 5. **Test connection** — Send a test message to verify the new provider/model works.
 
@@ -287,7 +287,7 @@ cat ~/.ventipus/hooks.json
 
 ## Skill 10: `build-and-release-workflow`
 
-**Description**: Full build, test, and release cycle for Ventipus itself.
+**Description**: Full build, test, and release cycle for Cawdex itself.
 
 **Trigger Patterns**: "build", "release", "publish", "npm publish", "deploy"
 

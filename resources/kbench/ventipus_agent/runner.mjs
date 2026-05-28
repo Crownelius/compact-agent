@@ -119,10 +119,10 @@ function collectTraceRefs(traceDir) {
         stack.push(full);
       } else if (entry.name === 'summary.json' || entry.name === 'trace.jsonl') {
         refs.push({
-          kind: entry.name === 'trace.jsonl' ? 'ventipus-tool-trace' : 'ventipus-summary',
+          kind: entry.name === 'trace.jsonl' ? 'cawdex-tool-trace' : 'cawdex-summary',
           path: full,
           contentType: entry.name.endsWith('.jsonl') ? 'application/jsonl' : 'application/json',
-          description: `ventipus ${entry.name}`,
+          description: `Cawdex ${entry.name}`,
         });
       }
     }
@@ -562,13 +562,13 @@ function collectGitArtifactRefs(workdir, artifactRoot) {
 
   const diff = buildWorktreePatch(workdir);
   if (diff.trim()) {
-    const patchPath = join(artifactRoot, 'ventipus.patch');
+    const patchPath = join(artifactRoot, 'cawdex.patch');
     writeFileSync(patchPath, redact(diff), 'utf8');
     refs.push({
       kind: 'patch',
       path: patchPath,
       contentType: 'text/x-diff',
-      description: 'Redacted git diff after ventipus run.',
+      description: 'Redacted git diff after Cawdex run.',
     });
   }
 
@@ -584,7 +584,7 @@ function collectGitArtifactRefs(workdir, artifactRoot) {
       kind: 'git-status',
       path: statusPath,
       contentType: 'text/plain',
-      description: 'Redacted git status after ventipus run.',
+      description: 'Redacted git status after Cawdex run.',
     });
   }
 
@@ -632,7 +632,7 @@ try {
 }
 
 if (payload.mode !== 'task') {
-  fail('unsupported_capability', 'ventipus KBench adapter currently supports task mode only.');
+  fail('unsupported_capability', 'Cawdex KBench adapter currently supports task mode only.');
   process.exit(0);
 }
 
@@ -648,22 +648,22 @@ const workdir = config.workDir || env.workdir || env.repoPath || taskEnv.workdir
 const artifactRoot = config.storeDir
   || process.env.VENTIPUS_KBENCH_ARTIFACT_DIR
   || (() => {
-    const dir = join(tmpdir(), `ventipus-kbench-${process.pid}-${Date.now()}`);
+    const dir = join(tmpdir(), `cawdex-kbench-${process.pid}-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
     return dir;
   })();
 mkdirSync(artifactRoot, { recursive: true });
 
-const stdoutPath = join(artifactRoot, 'ventipus.stdout.txt');
-const stderrPath = join(artifactRoot, 'ventipus.stderr.txt');
+const stdoutPath = join(artifactRoot, 'cawdex.stdout.txt');
+const stderrPath = join(artifactRoot, 'cawdex.stderr.txt');
 const instructionPath = join(artifactRoot, 'instruction.txt');
-const traceDir = join(artifactRoot, 'ventipus-trace');
+const traceDir = join(artifactRoot, 'cawdex-trace');
 mkdirSync(dirname(stdoutPath), { recursive: true });
 writeFileSync(instructionPath, redact(instruction), 'utf8');
 
-const commandParts = splitCommand(process.env.VENTIPUS_KBENCH_COMMAND || 'ventipus');
+const commandParts = splitCommand(process.env.CAWDEX_KBENCH_COMMAND || process.env.VENTIPUS_KBENCH_COMMAND || 'cawdex');
 if (!commandParts.length) {
-  fail('invalid_adapter', 'VENTIPUS_KBENCH_COMMAND resolved to an empty command.');
+  fail('invalid_adapter', 'CAWDEX_KBENCH_COMMAND resolved to an empty command.');
   process.exit(0);
 }
 
@@ -717,11 +717,11 @@ const traceSummary = compactTraceSummary(readLatestTraceSummary(traceDir));
 const workdirUsed = existsSync(workdir) ? workdir : process.cwd();
 const gitRefs = collectGitArtifactRefs(workdirUsed, artifactRoot);
 const stdoutLines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-const finalText = stdoutLines.at(-1) || stdout.trim() || (ok ? 'ventipus completed.' : 'ventipus produced no stdout.');
+const finalText = stdoutLines.at(-1) || stdout.trim() || (ok ? 'Cawdex completed.' : 'Cawdex produced no stdout.');
 const artifacts = [
-  { kind: 'instruction', path: instructionPath, contentType: 'text/plain', description: 'KBench task instruction passed to ventipus.' },
-  { kind: 'stdout', path: stdoutPath, contentType: 'text/plain', description: 'ventipus stdout.' },
-  { kind: 'stderr', path: stderrPath, contentType: 'text/plain', description: 'ventipus stderr.' },
+  { kind: 'instruction', path: instructionPath, contentType: 'text/plain', description: 'KBench task instruction passed to Cawdex.' },
+  { kind: 'stdout', path: stdoutPath, contentType: 'text/plain', description: 'Cawdex stdout.' },
+  { kind: 'stderr', path: stderrPath, contentType: 'text/plain', description: 'Cawdex stderr.' },
   ...gitRefs,
   ...traceRefs,
 ];
@@ -735,7 +735,7 @@ const output = {
   artifacts,
   trace: traceRefs.length ? { native: traceRefs } : undefined,
   benchmarkResult: {
-    mode: 'ventipus-kbench',
+    mode: 'cawdex-kbench',
     benchmark,
     profile,
     exitCode,
@@ -746,7 +746,7 @@ const output = {
     usage: traceSummary?.usage,
   },
   error: ok ? undefined : {
-    message: truncate(stderr.trim() || stdout.trim() || result.error?.message || `ventipus exited with code ${exitCode}`, 2000),
+    message: truncate(stderr.trim() || stdout.trim() || result.error?.message || `Cawdex exited with code ${exitCode}`, 2000),
   },
 };
 

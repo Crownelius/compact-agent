@@ -1,6 +1,6 @@
 {
   "schemaVersion": "kbench.adapter/v1",
-  "id": "ventipus",
+  "id": "cawdex",
   "kind": "node",
   "entry": "./runner.mjs",
   "version": "0.1.0",

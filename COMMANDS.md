@@ -12,7 +12,7 @@ If you're new, run `cawdex` then type `/walkthrough` for an agent-led tour.
 
 ## 1. Shell invocation
 
-After `npm install -g ventipus`, you have both the new `cawdex` command and the legacy `ventipus` alias:
+After `npm install -g cawdex`, you have both the primary `cawdex` command and the legacy `ventipus` alias:
 
 ```bash
 cawdex
@@ -387,9 +387,11 @@ Any tool name you see in error output other than these (e.g. `web_search_exa`, `
 
 These affect the REPL's runtime behavior. Set in your shell before launching `cawdex` (`ventipus` remains a legacy alias).
 
+For env-built provider config, the new `CAWDEX_*` spellings are accepted alongside the legacy `VENTIPUS_*` names for provider, base URL, model, fallback model, token/turn/context limits, temperature, permission, memory, theme, thinking, and per-run overrides.
+
 | Variable | Default | Purpose |
 |---|---|---|
-| `VENTIPUS_HOME` | `~/.ventipus` | Override config/state directory (useful for tests, sandboxes, and harnesses). |
+| `CAWDEX_HOME` / `VENTIPUS_HOME` | `~/.ventipus` | Override config/state directory (useful for tests, sandboxes, and harnesses). `VENTIPUS_HOME` remains supported for existing installs. |
 | `VENTIPUS_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
 | `VENTIPUS_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
 | `VENTIPUS_ENV_CONFIG` | (unset) | In non-interactive mode, prefer provider settings from env even if `config.json` exists. |
@@ -431,9 +433,9 @@ These affect the REPL's runtime behavior. Set in your shell before launching `ca
 | `VENTIPUS_BENCHMARK_MEMORY` | `1` | Set `0` to disable relevant MemPalace memories in `benchmark_context`. Remembered facts are always framed as hypotheses and must be verified against current task files and verifier output. |
 | `VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE` | `2` in benchmark, `1` otherwise | Non-interactive empty-engagement guard; set `0` to allow immediate no-tool final answers. |
 | `VENTIPUS_API_KEY_ENV` | (unset) | Name of an env var whose value should be used as the per-run API key; used by `--api-key-env`. |
-| `VENTIPUS_INSTALL_SPEC` | `ventipus@latest` | Terminal-Bench adapter npm install spec; pin to a version, tag, or tarball for reproducibility. If `ventipus` is already on `PATH`, setup skips network install. |
-| `VENTIPUS_BUNDLE_ROOT` | (unset) | Terminal-Bench offline install source: unpacked ventipus tree with `bin/`, `dist/`, and preferably `node_modules/`. |
-| `VENTIPUS_BUNDLE_TARBALL` | (unset) | Terminal-Bench offline/local install source: path to a ventipus `.tgz` checked before the npm registry. |
+| `VENTIPUS_INSTALL_SPEC` | `cawdex@latest` | Terminal-Bench adapter npm install spec; pin to a version, tag, or tarball for reproducibility. If `cawdex` or legacy `ventipus` is already on `PATH`, setup skips network install. |
+| `VENTIPUS_BUNDLE_ROOT` | (unset) | Terminal-Bench offline install source: unpacked Cawdex tree with `bin/`, `dist/`, and preferably `node_modules/`. |
+| `VENTIPUS_BUNDLE_TARBALL` | (unset) | Terminal-Bench offline/local install source: path to a Cawdex `.tgz` checked before the npm registry. |
 | `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `NVIDIA_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GLM_API_KEY`, `ZHIPUAI_API_KEY` | (unset) | Provider-specific key env vars used by env-built configs. |
 | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HUGGINGFACE_TOKEN`, `HUGGINGFACE_API_KEY`, `HF_API_KEY` | token file fallback | Optional Hugging Face auth for `research_sources` papers/models/datasets; also checks `HF_TOKEN_PATH`, `HF_HOME/token`, and the default Hugging Face token cache. |
 | `KAGGLE_API_TOKEN`, `KAGGLE_TOKEN` | token file fallback | Optional Kaggle bearer auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/access_token`. |
@@ -464,21 +466,21 @@ Adapter path helpers:
 
 HAL-specific adapter env:
 
-- `VENTIPUS_HAL_COMMAND` overrides the command used by the HAL adapter; default `ventipus`.
+- `CAWDEX_HAL_COMMAND` or `VENTIPUS_HAL_COMMAND` overrides the command used by the HAL adapter; default `cawdex`.
 - `VENTIPUS_HAL_TRACE_DIR` controls HAL adapter logs/traces; default `.ventipus/hal-trace`.
 - `VENTIPUS_HAL_TIMEOUT_SEC` controls the per-task adapter timeout; default `1800`.
 - `VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS=1` disables the default oracle-field filter for harnesses that intentionally expose those fields.
 
 Exgentic-specific adapter env:
 
-- `VENTIPUS_EXGENTIC_COMMAND` overrides the command used by the Exgentic adapter; default `ventipus`.
-- `VENTIPUS_INSTALL_SPEC` controls Exgentic `setup.sh`; default `ventipus@latest`.
+- `CAWDEX_EXGENTIC_COMMAND` or `VENTIPUS_EXGENTIC_COMMAND` overrides the command used by the Exgentic adapter; default `cawdex`.
+- `VENTIPUS_INSTALL_SPEC` controls Exgentic `setup.sh`; default `cawdex@latest`.
 
 ---
 
 ## 5. Files & state
 
-Cawdex is local-first. Everything currently lives in `~/.ventipus/` (or `$VENTIPUS_HOME` if set) for compatibility:
+Cawdex is local-first. Everything currently lives in `~/.ventipus/` (or `$CAWDEX_HOME` / `$VENTIPUS_HOME` if set) for compatibility:
 
 ```
 ~/.ventipus/

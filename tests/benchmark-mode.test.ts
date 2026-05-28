@@ -22,8 +22,9 @@ describe('benchmark mode and prompt', () => {
     expect(mode.systemPromptAddition).toContain('github_kind:"all"');
     expect(mode.systemPromptAddition).toContain('kaggle_kind:"both"');
     expect(mode.systemPromptAddition).toContain('recent_days:90');
+    expect(mode.systemPromptAddition).toContain('format:"json"');
     expect(mode.systemPromptAddition).toContain('replay=');
-    expect(mode.systemPromptAddition).toContain('Source digest');
+    expect(mode.systemPromptAddition).toContain('structured digest');
     expect(mode.systemPromptAddition).toContain('benchmark_repo_catalog');
     expect(mode.systemPromptAddition).toContain('github_repo_digest');
   });
@@ -176,7 +177,8 @@ describe('benchmark mode and prompt', () => {
     expect(prompt).toContain('kind:"all"');
     expect(prompt).toContain('kaggle_kind:"both"');
     expect(prompt).toContain('recent_days:90');
-    expect(prompt).toContain('Source digest');
+    expect(prompt).toContain('format:"json"');
+    expect(prompt).toContain('structured source digest');
     expect(prompt).toContain('benchmark_repo_catalog');
     expect(prompt).toContain('github_repo_digest');
     expect(prompt).toContain('replay=');

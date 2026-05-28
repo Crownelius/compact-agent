@@ -2,13 +2,13 @@
 
 ## Title
 
-Show HN: ventipus — claude-code-style terminal agent for any OpenAI-compatible API
+Show HN: Cawdex — terminal coding agents with a mind for the whole repo
 
 ## Body
 
 I wanted the claude-code REPL experience — tools, modes, skills, planning — but on the model and provider of my choice. Locking the whole agent surface to one vendor's API ruled out cheap open-weight models, local Ollama runs, NVIDIA NIM, and rotating providers per task. Wrapping a new SDK per backend means re-implementing tools, modes, and streaming for each one, and you still can't switch mid-task without losing context.
 
-ventipus puts the full agent behind one OpenAI-compatible transport. Point it at OpenRouter, NVIDIA NIM, DeepSeek, GLM, a local Ollama or LM Studio endpoint, or any custom gateway. Swap models with `/model`, providers with `/provider`, mid-session, without losing context.
+Cawdex puts the full agent behind one OpenAI-compatible transport. Point it at OpenRouter, NVIDIA NIM, DeepSeek, GLM, a local Ollama or LM Studio endpoint, or any custom gateway. Swap models with `/model`, providers with `/provider`, mid-session, without losing context.
 
 A few things that aren't in the other agent CLIs:
 
@@ -27,11 +27,11 @@ The rest of the surface:
 - Zero telemetry; state in `~/.ventipus/`; MIT, TypeScript, Node 18+
 
 ```bash
-npm install -g ventipus
-ventipus
+npm install -g cawdex
+cawdex
 ```
 
 Feedback on the mode set, the provider list, and the swarm fan-out pattern is especially welcome.
 
-GitHub: https://github.com/Crownelius/ventipus
-npm: https://www.npmjs.com/package/ventipus
+GitHub: https://github.com/Crownelius/cawdex
+npm: https://www.npmjs.com/package/cawdex

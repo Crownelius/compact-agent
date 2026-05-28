@@ -3,7 +3,7 @@ import { VentipusCLI } from './cli.js';
 /**
  * Login Page Object — encapsulates the setup wizard / login flow.
  *
- * The "login" for Ventipus is the first-run setup wizard that walks the
+ * The "login" for Cawdex is the first-run setup wizard that walks the
  * user through: provider selection → API key → model → permission mode.
  * This page object drives that flow programmatically via stdin/stdout.
  */

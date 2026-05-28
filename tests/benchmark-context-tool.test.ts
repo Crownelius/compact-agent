@@ -352,6 +352,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('kind:"all"');
     expect(result.output).toContain('kaggle_kind:"both"');
     expect(result.output).toContain('recent_days:90');
+    expect(result.output).toContain('format:"json"');
     expect(result.output).toContain('Prior Benchmark Experience Hints');
     expect(result.output).toContain('previous run: 2026-05-26T12:00:00.000Z');
     expect(result.output).toContain('process_score=96');

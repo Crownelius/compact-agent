@@ -1,6 +1,6 @@
-# ventipus KBench Adapter
+# Cawdex KBench Adapter
 
-This directory is a KBench `custom-adapter` for ventipus.
+This directory is a KBench `custom-adapter` for Cawdex.
 
 ```bash
 kbench run \
@@ -12,7 +12,7 @@ kbench run \
 ```
 
 The runner reads the KBench JSON payload from `KBENCH_ADAPTER_INPUT` or stdin,
-invokes `ventipus --prompt "/benchmark ..."` in task mode, and emits one
+invokes `cawdex --prompt "/benchmark ..."` in task mode, and emits one
 `AdapterRunnerOutput` JSON object to stdout.
 Known KBench slugs are mapped to benchmark profiles before dispatch:
 `swe`/`swe-bench`, `tb2`/`terminal-bench`, `terminalworld`/`terminal-world`,
@@ -23,7 +23,7 @@ Known KBench slugs are mapped to benchmark profiles before dispatch:
 `generic`.
 
 The output includes redacted instruction/stdout/stderr artifact refs, native
-ventipus trace refs, and redacted git patch/status refs when the task
+Cawdex trace refs, and redacted git patch/status refs when the task
 worktree is a git repo. If a native `summary.json` exists, compact verifier
 evidence, including parsed counts, compact failure signatures, and final-answer
 verification-claim plus incomplete/blocked completion evidence, usage/cost
@@ -58,7 +58,7 @@ experience hints also expose compact source-research coverage, including
 hit/error counts, targeted/fresh coverage, recency windows, top URLs, and
 Kaggle fallback status. When present, `benchmarkResult.traceSummary` also
 includes the redacted ACC-style task/context/answer compilation from the native
-Ventipus trace for retrieval, replay, or training-data curation.
+Cawdex trace for retrieval, replay, or training-data curation.
 It also includes `changeEvaluation` and `submissionBundleManifest` when present, so leaderboard
 submission tooling can inspect artifact hashes and missing official score/session
 fields without parsing the full summary.
@@ -97,11 +97,11 @@ silently submitted while the harness is still running.
 
 Useful env vars:
 
-- `VENTIPUS_KBENCH_COMMAND`: command used to launch ventipus, default `ventipus`.
+- `CAWDEX_KBENCH_COMMAND` or `VENTIPUS_KBENCH_COMMAND`: command used to launch Cawdex, default `cawdex`.
 - `VENTIPUS_KBENCH_PERMISSION`: permission flag value, default `yolo`.
-- `VENTIPUS_KBENCH_EXTRA_ARGS`: extra ventipus CLI flags.
+- `VENTIPUS_KBENCH_EXTRA_ARGS`: extra Cawdex CLI flags.
 - `VENTIPUS_KBENCH_ARTIFACT_DIR`: directory for redacted instruction/stdout/stderr and trace files.
-- `VENTIPUS_BASH_TIMEOUT_MS`: default ventipus `bash` tool timeout; the adapter defaults to `300000` when unset.
+- `VENTIPUS_BASH_TIMEOUT_MS`: default Cawdex `bash` tool timeout; the adapter defaults to `300000` when unset.
 
-Provider keys should be passed via normal ventipus env config or KBench's
-`--api-key-env`, which the runner forwards as ventipus `--api-key-env`.
+Provider keys should be passed via normal Cawdex env config or KBench's
+`--api-key-env`, which the runner forwards as Cawdex `--api-key-env`.

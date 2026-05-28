@@ -671,8 +671,8 @@ Use this workflow as the default benchmark strategy:
    - Treat failures as feedback for the next localization loop; do not final-answer on plausible-but-unverified changes.
 
 5. Use current science only when it helps the task.
-   - For benchmark-methodology, agent-improvement, model, dataset, or leaderboard work, call \`research_sources\` before synthesis with source-specific coverage: arXiv papers; GitHub \`github_kind:"all"\` for repos/issues/PRs/code; Hugging Face \`kind:"all"\` for papers/models/datasets; Kaggle \`kaggle_kind:"both"\` for datasets/competitions; and \`recent_days:90\` unless older historical evidence is explicitly needed.
-   - Check the \`Source digest\` before relying on research: if hits are zero, errors are nonzero, or a source family is missing, refine the query or call out the coverage gap.
+   - For benchmark-methodology, agent-improvement, model, dataset, or leaderboard work, call \`research_sources\` before synthesis with source-specific coverage: arXiv papers; GitHub \`github_kind:"all"\` for repos/issues/PRs/code; Hugging Face \`kind:"all"\` for papers/models/datasets; Kaggle \`kaggle_kind:"both"\` for datasets/competitions; \`recent_days:90\`; and \`format:"json"\` unless older historical evidence or prose output is explicitly needed.
+   - Check the structured source digest before relying on research: if hits are zero, errors are nonzero, or a source family is missing, refine the query or call out the coverage gap.
    - For Terminal-Bench public-agent comparisons, call \`benchmark_repo_catalog\` first to identify known public competitor/source repos, then call \`github_repo_digest\` on the relevant repo(s).
    - If source research returns public GitHub repos that could serve as implementation demonstrations, call \`github_repo_digest\` on the most relevant repo(s), compare manifests, likely commands, CI files, and component surface signals, then verify exact local files before importing any pattern.
    - For local repository repair, prioritize the checkout and verifier over external popularity signals.
@@ -716,7 +716,7 @@ ${preflightSnapshot}
    - For SpecBench or reward-hacking work, distinguish the natural-language specification from the visible validation suite, then plan a broad/generalization check after visible tests pass.
    - For RoadmapBench/SaaSBench/SWE-Bench Mobile/SWE-WebDevBench/SWE-Cycle/SWE-CI work, identify roadmap milestones, validation nodes, canary requirements, lifecycle phases, current/target commit boundaries, test gaps, platform/integration verifiers, production-readiness/security checks, and any version-upgrade or product-flow compatibility boundary before treating this as a local bug fix.
    - For AppWorld/BrowseComp+/tau2 work, identify available actions, required source/policy evidence, finish action, and state-observation loop before taking environment actions.
-   - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, and \`recent_days:90\`.
+   - If this is a benchmark-research, agent-improvement, model/dataset, or leaderboard question, use \`research_sources\` before synthesis with targeted kinds: GitHub \`github_kind:"all"\`, Hugging Face \`kind:"all"\`, Kaggle \`kaggle_kind:"both"\`, \`recent_days:90\`, and \`format:"json"\`.
    - For Terminal-Bench source mining, query \`benchmark_repo_catalog\` before ad hoc web discovery.
    - When that research identifies relevant public GitHub repos, use \`github_repo_digest\` before relying on repo-level implementation patterns.
 

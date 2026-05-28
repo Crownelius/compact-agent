@@ -216,6 +216,7 @@ const COMPONENTS: ComponentSpec[] = [
       'src/model-router.ts',
       'src/openrouter-models.ts',
       'src/cost-tracker.ts',
+      'bin/cawdex.js',
       'bin/ventipus.js',
     ],
     tests: [

@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import { PROVIDERS, type VentipusConfig } from './types.js';
 
 // Cawdex keeps config, sessions, skills, memory, and benchmark artifacts
-// under ~/.ventipus by default. VENTIPUS_HOME can point tests, sandboxes, or
-// harnesses at an isolated state directory.
+// under ~/.ventipus by default for compatibility. CAWDEX_HOME is the new
+// spelling; VENTIPUS_HOME remains a legacy alias for existing installs.
 export const CONFIG_DIR_NAME = '.ventipus';
 
 // Resolve the config dir LAZILY (every call) instead of caching at
@@ -17,6 +17,7 @@ export const CONFIG_DIR_NAME = '.ventipus';
 // observable cost on the hot path.
 function resolveConfigDir(): string {
   return (
+    process.env.CAWDEX_HOME ||
     process.env.VENTIPUS_HOME ||
     join(homedir(), CONFIG_DIR_NAME)
   );
@@ -152,6 +153,19 @@ export function loadConfig(): VentipusConfig {
 type ProviderKey = keyof typeof PROVIDERS;
 
 const ENV_KEYS = [
+  'CAWDEX_PROVIDER',
+  'CAWDEX_API_KEY',
+  'CAWDEX_BASE_URL',
+  'CAWDEX_MODEL',
+  'CAWDEX_FALLBACK_MODEL',
+  'CAWDEX_MAX_TOKENS',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS',
+  'CAWDEX_MAX_TURNS',
+  'CAWDEX_TEMPERATURE',
+  'CAWDEX_PERMISSION',
+  'CAWDEX_MEMORY',
+  'CAWDEX_THEME',
+  'CAWDEX_SHOW_THINKING',
   'VENTIPUS_PROVIDER',
   'VENTIPUS_API_KEY',
   'VENTIPUS_BASE_URL',
@@ -203,7 +217,7 @@ function firstEnv(...keys: string[]): string | undefined {
 }
 
 function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } | null {
-  const explicit = normalizeProviderKey(firstEnv('VENTIPUS_PROVIDER'));
+  const explicit = normalizeProviderKey(firstEnv('CAWDEX_PROVIDER', 'VENTIPUS_PROVIDER'));
   if (explicit) {
     return { providerKey: explicit, apiKey: apiKeyForProvider(explicit) };
   }
@@ -218,7 +232,7 @@ function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } |
 }
 
 function apiKeyForProvider(providerKey: ProviderKey): string | undefined {
-  const explicit = firstEnv('VENTIPUS_API_KEY');
+  const explicit = firstEnv('CAWDEX_API_KEY', 'VENTIPUS_API_KEY');
   if (explicit) return explicit;
   switch (providerKey) {
     case 'openrouter': return firstEnv('OPENROUTER_API_KEY');
@@ -235,8 +249,8 @@ function envWasProvided(): boolean {
   return ENV_KEYS.some((key) => !!process.env[key]?.trim());
 }
 
-function envNumber(name: string, min?: number): number | undefined {
-  const raw = firstEnv(name);
+function envNumber(name: string | string[], min?: number): number | undefined {
+  const raw = Array.isArray(name) ? firstEnv(...name) : firstEnv(name);
   if (!raw) return undefined;
   const value = Number(raw);
   if (!Number.isFinite(value)) return undefined;
@@ -244,8 +258,8 @@ function envNumber(name: string, min?: number): number | undefined {
   return value;
 }
 
-function envFlag(name: string): boolean | undefined {
-  const raw = firstEnv(name);
+function envFlag(name: string | string[]): boolean | undefined {
+  const raw = Array.isArray(name) ? firstEnv(...name) : firstEnv(name);
   if (!raw) return undefined;
   if (/^(1|true|yes|on)$/i.test(raw)) return true;
   if (/^(0|false|no|off)$/i.test(raw)) return false;
@@ -261,8 +275,8 @@ export function loadConfigFromEnv(): VentipusConfig | null {
   if (!envWasProvided()) return null;
 
   const inferred = inferProviderFromEnv();
-  const explicitBaseURL = firstEnv('VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL');
-  const explicitModel = firstEnv('VENTIPUS_MODEL');
+  const explicitBaseURL = firstEnv('CAWDEX_BASE_URL', 'VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL');
+  const explicitModel = firstEnv('CAWDEX_MODEL', 'VENTIPUS_MODEL');
   const providerKey = inferred?.providerKey ?? (explicitBaseURL || explicitModel ? 'custom' : null);
   if (!providerKey) return null;
 
@@ -279,29 +293,29 @@ export function loadConfigFromEnv(): VentipusConfig | null {
     baseURL,
     model,
     provider: preset.name,
-    fallbackModel: firstEnv('VENTIPUS_FALLBACK_MODEL'),
+    fallbackModel: firstEnv('CAWDEX_FALLBACK_MODEL', 'VENTIPUS_FALLBACK_MODEL'),
   };
 
-  const maxTokens = envNumber('VENTIPUS_MAX_TOKENS', 1);
+  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS', 'VENTIPUS_MAX_TOKENS'], 1);
   if (maxTokens) config.maxTokens = Math.floor(maxTokens);
-  const contextWindowTokens = envNumber('VENTIPUS_CONTEXT_WINDOW_TOKENS', 1);
+  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS', 'VENTIPUS_CONTEXT_WINDOW_TOKENS'], 1);
   if (contextWindowTokens) config.contextWindowTokens = Math.floor(contextWindowTokens);
-  const maxTurns = envNumber('VENTIPUS_MAX_TURNS', 1);
+  const maxTurns = envNumber(['CAWDEX_MAX_TURNS', 'VENTIPUS_MAX_TURNS'], 1);
   if (maxTurns) config.maxTurns = Math.floor(maxTurns);
-  const temperature = envNumber('VENTIPUS_TEMPERATURE', 0);
+  const temperature = envNumber(['CAWDEX_TEMPERATURE', 'VENTIPUS_TEMPERATURE'], 0);
   if (temperature !== undefined) config.temperature = temperature;
 
-  const permission = firstEnv('VENTIPUS_PERMISSION');
+  const permission = firstEnv('CAWDEX_PERMISSION', 'VENTIPUS_PERMISSION');
   if (permission === 'ask' || permission === 'auto' || permission === 'yolo') {
     config.permissionMode = permission;
   }
-  const memoryEnabled = envFlag('VENTIPUS_MEMORY');
+  const memoryEnabled = envFlag(['CAWDEX_MEMORY', 'VENTIPUS_MEMORY']);
   if (memoryEnabled !== undefined) {
     config.memory = { ...(config.memory || {}), enabled: memoryEnabled };
   }
-  const showThinking = envFlag('VENTIPUS_SHOW_THINKING');
+  const showThinking = envFlag(['CAWDEX_SHOW_THINKING', 'VENTIPUS_SHOW_THINKING']);
   if (showThinking !== undefined) config.showThinking = showThinking;
-  const theme = firstEnv('VENTIPUS_THEME');
+  const theme = firstEnv('CAWDEX_THEME', 'VENTIPUS_THEME');
   if (theme === 'full' || theme === 'compact' || theme === 'minimal') config.theme = theme;
 
   if (providerKey === 'openrouter' && !config.fallbackModel) {
@@ -335,24 +349,24 @@ export function applyRuntimeConfigOverrides(config: VentipusConfig): VentipusCon
     openaiAuth: config.openaiAuth ? { ...config.openaiAuth } : config.openaiAuth,
   };
 
-  const model = firstEnv('VENTIPUS_MODEL_OVERRIDE');
+  const model = firstEnv('CAWDEX_MODEL_OVERRIDE', 'VENTIPUS_MODEL_OVERRIDE');
   if (model) next.model = model;
-  const fallbackModel = firstEnv('VENTIPUS_FALLBACK_MODEL_OVERRIDE');
+  const fallbackModel = firstEnv('CAWDEX_FALLBACK_MODEL_OVERRIDE', 'VENTIPUS_FALLBACK_MODEL_OVERRIDE');
   if (fallbackModel) next.fallbackModel = fallbackModel;
-  const baseURL = firstEnv('VENTIPUS_BASE_URL_OVERRIDE');
+  const baseURL = firstEnv('CAWDEX_BASE_URL_OVERRIDE', 'VENTIPUS_BASE_URL_OVERRIDE');
   if (baseURL) next.baseURL = baseURL;
-  const apiKey = firstEnv('VENTIPUS_API_KEY_OVERRIDE');
+  const apiKey = firstEnv('CAWDEX_API_KEY_OVERRIDE', 'VENTIPUS_API_KEY_OVERRIDE');
   if (apiKey) next.apiKey = apiKey;
-  const apiKeyEnv = firstEnv('VENTIPUS_API_KEY_ENV');
+  const apiKeyEnv = firstEnv('CAWDEX_API_KEY_ENV', 'VENTIPUS_API_KEY_ENV');
   if (apiKeyEnv && process.env[apiKeyEnv]?.trim()) next.apiKey = process.env[apiKeyEnv]!.trim();
 
-  const maxTokens = envNumber('VENTIPUS_MAX_TOKENS_OVERRIDE', 1);
+  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS_OVERRIDE', 'VENTIPUS_MAX_TOKENS_OVERRIDE'], 1);
   if (maxTokens) next.maxTokens = Math.floor(maxTokens);
-  const contextWindowTokens = envNumber('VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE', 1);
+  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE', 'VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE'], 1);
   if (contextWindowTokens) next.contextWindowTokens = Math.floor(contextWindowTokens);
-  const maxTurns = envNumber('VENTIPUS_MAX_TURNS_OVERRIDE', 1);
+  const maxTurns = envNumber(['CAWDEX_MAX_TURNS_OVERRIDE', 'VENTIPUS_MAX_TURNS_OVERRIDE'], 1);
   if (maxTurns) next.maxTurns = Math.floor(maxTurns);
-  const temperature = envNumber('VENTIPUS_TEMPERATURE_OVERRIDE', 0);
+  const temperature = envNumber(['CAWDEX_TEMPERATURE_OVERRIDE', 'VENTIPUS_TEMPERATURE_OVERRIDE'], 0);
   if (temperature !== undefined) next.temperature = temperature;
 
   validateConfig(next);

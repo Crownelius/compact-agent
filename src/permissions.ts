@@ -22,7 +22,7 @@ import { evaluateCommand } from './execpolicy.js';
  *
  * @param tool - The tool being invoked
  * @param input - The tool's input arguments
- * @param config - Current Ventipus configuration (may be mutated if user types "always")
+ * @param config - Current Cawdex configuration (may be mutated if user types "always")
  * @param rl - Readline interface for prompting the user
  * @returns True if the tool call is allowed, false if denied
  */

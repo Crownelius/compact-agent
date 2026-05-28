@@ -60,7 +60,7 @@ describe('OpenAI Codex OAuth helpers', () => {
     for (const key of envKeys) delete process.env[key];
   });
 
-  it('reads Codex CLI auth.json without requiring Ventipus to store tokens', () => {
+  it('reads Codex CLI auth.json without requiring Cawdex to store tokens', () => {
     const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
     try {
       mkdirSync(home, { recursive: true });

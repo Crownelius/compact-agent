@@ -99,7 +99,7 @@ export interface Tunnel {
  * drawers because triples express *facts* (small, atomic, queryable in
  * aggregate) whereas drawers express *content* (larger, narrative).
  *
- * Example: ("rsfit", "owns", "Ventipus") or ("ventipus", "uses",
+ * Example: ("rsfit", "owns", "Cawdex") or ("cawdex", "uses",
  * "OpenRouter").
  */
 export interface KGTriple {
