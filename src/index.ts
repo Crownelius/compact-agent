@@ -145,7 +145,7 @@ import {
 } from './voice.js';
 import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage, type RecordController } from './audio.js';
 import { applyScreenReader, summarize } from './accessibility.js';
-import { COMMAND_CATALOG, completeSlashCommandNames } from './command-palette.js';
+import { COMMAND_CATALOG, completeSlashCommandNames, resolveCommandEntry, suggestCommandEntries } from './command-palette.js';
 import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand, type InlineSuggestResult } from './inline-suggest.js';
 import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 
@@ -187,6 +187,35 @@ function applyModelSelection(
 }
 
 // ── Setup Wizard ──────────────────────────────────────────
+function printCommandHelp(query: string): void {
+  const resolved = resolveCommandEntry(query);
+  const h = theme.header;
+  const d = theme.dim;
+  const c = theme.command;
+
+  if (!resolved) {
+    const suggestions = suggestCommandEntries(query, 5);
+    console.log(chalk.yellow(`  Unknown command: ${query.trim() || '(empty)'}`));
+    if (suggestions.length > 0) {
+      console.log(d('  Did you mean: ') + suggestions.map((entry) => c(entry.command)).join(d(', ')));
+    } else {
+      console.log(d('  Run /help for the full command reference or type / to search commands.'));
+    }
+    return;
+  }
+
+  const { entry, alias } = resolved;
+  console.log(h(`\n  ${entry.command}`));
+  if (alias) console.log(d('  Alias: ') + c(alias) + d(` -> ${entry.command}`));
+  console.log(d('  Category: ') + entry.category);
+  console.log(d('  Usage:    ') + c(entry.usage ?? entry.command));
+  if (entry.aliases && entry.aliases.length > 0) {
+    console.log(d('  Aliases:  ') + entry.aliases.map((item) => c(item)).join(d(', ')));
+  }
+  console.log(d('  Summary:  ') + entry.description);
+  console.log(d('\n  Tip: type / to search commands, then Enter to place the selected command in the prompt.\n'));
+}
+
 async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig): Promise<CawdexConfig> {
   console.log(chalk.bold.cyan(`\n  ${BRAND_NAME} — First-time Setup\n`));
   const providerKeys = Object.keys(PROVIDERS);
@@ -734,6 +763,10 @@ export function handleSlashCommand(
       const h = theme.header;
       const d = theme.dim;
       const c = theme.command;
+      if (args.trim()) {
+        printCommandHelp(args);
+        return { handled: true };
+      }
       // Inline status line: confirms ECC is on (and how many skills it brings)
       // without giving it its own section. ECC has no user-facing commands;
       // it works automatically.

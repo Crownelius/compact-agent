@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -212,6 +212,34 @@ describe('Smoke Tests — handleSlashCommand', () => {
       }
     });
   }
+
+  it('prints focused command help for canonical commands and aliases', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const res = handleSlashCommand('/help /bench', config, messages, session, mode);
+      expect((res as { handled: boolean }).handled).toBe(true);
+      const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).toContain('/benchmark');
+      expect(output).toContain('/bench');
+      expect(output).toContain('Alias:');
+      expect(output).toContain('Usage:');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('suggests close matches for unknown command help queries', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const res = handleSlashCommand('/help /memry', config, messages, session, mode);
+      expect((res as { handled: boolean }).handled).toBe(true);
+      const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).toContain('Unknown command');
+      expect(output).toContain('/memory');
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 describe('Non-interactive slash dispatch', () => {

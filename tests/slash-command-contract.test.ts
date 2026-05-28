@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { COMMAND_CATALOG } from '../src/command-palette.js';
+import { COMMAND_CATALOG, resolveCommandEntry, suggestCommandEntries } from '../src/command-palette.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -86,5 +86,21 @@ describe('slash command contract', () => {
       expect(entry.category.trim().length).toBeGreaterThan(0);
       expect(entry.description.trim().length).toBeGreaterThan(10);
     }
+  });
+
+  it('resolves aliases to their canonical command help entry', () => {
+    expect(resolveCommandEntry('/bench')).toMatchObject({
+      alias: '/bench',
+      entry: { command: '/benchmark' },
+    });
+    expect(resolveCommandEntry('leaderboard-repos')).toMatchObject({
+      alias: '/leaderboard-repos',
+      entry: { command: '/benchmark-repos' },
+    });
+  });
+
+  it('suggests nearby command entries for partial or unknown help queries', () => {
+    expect(suggestCommandEntries('/bench').map((entry) => entry.command)).toContain('/benchmark');
+    expect(suggestCommandEntries('memory').map((entry) => entry.command)).toContain('/memory');
   });
 });
