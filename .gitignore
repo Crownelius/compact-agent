@@ -5,8 +5,8 @@ node_modules/
 dist/
 
 # Config (contains API keys)
-# ~/.ventipus/ is the runtime config dir, not in repo
-.ventipus/
+# ~/.cawdex/ is the runtime config dir, not in repo
+.cawdex/
 
 # OS files
 .DS_Store

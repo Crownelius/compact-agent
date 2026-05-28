@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, normalize } from 'node:path';
 
 describe('HAL adapter packaging', () => {
-  const adapterDir = join(process.cwd(), 'resources', 'hal', 'ventipus_agent');
+  const adapterDir = join(process.cwd(), 'resources', 'hal', 'cawdex_agent');
   const mainPath = join(adapterDir, 'main.py');
   const requirementsPath = join(adapterDir, 'requirements.txt');
 
@@ -16,9 +16,9 @@ describe('HAL adapter packaging', () => {
     const adapter = readFileSync(mainPath, 'utf-8');
     expect(adapter).toContain('def run(input: dict[str, dict[str, Any]], **kwargs: Any)');
     expect(adapter).toContain('/benchmark {profile} HAL task');
-    expect(adapter).toContain('VENTIPUS_HAL_COMMAND');
-    expect(adapter).toContain('VENTIPUS_HAL_TRACE_DIR');
-    expect(adapter).toContain('VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS');
+    expect(adapter).toContain('CAWDEX_HAL_COMMAND');
+    expect(adapter).toContain('CAWDEX_HAL_TRACE_DIR');
+    expect(adapter).toContain('CAWDEX_HAL_INCLUDE_ORACLE_FIELDS');
     expect(adapter).toContain('--benchmark-trace-dir');
     expect(adapter).toContain('worktree.patch');
     expect(adapter).toContain('["diff", "--binary", "--no-ext-diff"]');
@@ -44,7 +44,7 @@ describe('HAL adapter packaging', () => {
   });
 
   it('prints the packaged HAL agent directory from the CLI wrapper', () => {
-    const out = execFileSync('node', ['bin/ventipus.js', '--print-hal-agent'], {
+    const out = execFileSync('node', ['bin/cawdex.js', '--print-hal-agent'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
     }).trim();
@@ -53,7 +53,7 @@ describe('HAL adapter packaging', () => {
 
   it('accepts common harness CLI flags before the HAL utility flag', () => {
     const out = execFileSync('node', [
-      'bin/ventipus.js',
+      'bin/cawdex.js',
       '--model',
       'openrouter/free',
       '--max-turns=3',
@@ -70,7 +70,7 @@ describe('HAL adapter packaging', () => {
   });
 
   it('executes the HAL run contract for SWE patch tasks without oracle leakage', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-hal-swe-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-hal-swe-'));
     try {
       writeFileSync(join(dir, 'fake_agent.py'), [
         'import json, sys',
@@ -99,9 +99,9 @@ describe('HAL adapter packaging', () => {
         env: {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: '1',
-          VENTIPUS_HAL_COMMAND: 'python fake_agent.py',
-          VENTIPUS_HAL_TRACE_DIR: join(dir, 'trace'),
-          VENTIPUS_HAL_TIMEOUT_SEC: '10',
+          CAWDEX_HAL_COMMAND: 'python fake_agent.py',
+          CAWDEX_HAL_TRACE_DIR: join(dir, 'trace'),
+          CAWDEX_HAL_TIMEOUT_SEC: '10',
         },
         encoding: 'utf-8',
       }).trim();
@@ -129,7 +129,7 @@ describe('HAL adapter packaging', () => {
   });
 
   it('returns HAL benchmark-specific response shapes for text tasks', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-hal-text-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-hal-text-'));
     try {
       writeFileSync(join(dir, 'fake_agent.py'), [
         'import json, sys',
@@ -156,9 +156,9 @@ describe('HAL adapter packaging', () => {
         env: {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: '1',
-          VENTIPUS_HAL_COMMAND: 'python fake_agent.py',
-          VENTIPUS_HAL_TRACE_DIR: join(dir, 'trace'),
-          VENTIPUS_HAL_TIMEOUT_SEC: '10',
+          CAWDEX_HAL_COMMAND: 'python fake_agent.py',
+          CAWDEX_HAL_TRACE_DIR: join(dir, 'trace'),
+          CAWDEX_HAL_TIMEOUT_SEC: '10',
         },
         encoding: 'utf-8',
       }).trim();
@@ -168,7 +168,7 @@ describe('HAL adapter packaging', () => {
         description: 'Solve it',
         response: 'final response',
       });
-      expect(result.usaco['usaco-1']).not.toHaveProperty('ventipus_agent_returncode');
+      expect(result.usaco['usaco-1']).not.toHaveProperty('cawdex_agent_returncode');
       expect(result.appworld['app-1']).toBe('Completed');
     } finally {
       rmSync(dir, { recursive: true, force: true });

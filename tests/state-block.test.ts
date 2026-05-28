@@ -15,16 +15,16 @@
  *   - Action list shows last N=8 actions
  *   - Older-action count is reported when truncated
  *   - Action args are preview-truncated (no full 30K dumps)
- *   - Respects VENTIPUS_STATE_BLOCK=0 to opt out
+ *   - Respects CAWDEX_STATE_BLOCK=0 to opt out
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { buildStateBlock } from '../src/query.js';
 import type { Message } from '../src/types.js';
 
-const ORIGINAL = process.env.VENTIPUS_STATE_BLOCK;
+const ORIGINAL = process.env.CAWDEX_STATE_BLOCK;
 afterEach(() => {
-  if (ORIGINAL === undefined) delete process.env.VENTIPUS_STATE_BLOCK;
-  else process.env.VENTIPUS_STATE_BLOCK = ORIGINAL;
+  if (ORIGINAL === undefined) delete process.env.CAWDEX_STATE_BLOCK;
+  else process.env.CAWDEX_STATE_BLOCK = ORIGINAL;
 });
 
 // Helper: build an assistant message with N tool calls
@@ -48,8 +48,8 @@ describe('buildStateBlock', () => {
     expect(buildStateBlock(msgs)).toBeNull();
   });
 
-  it('returns null when VENTIPUS_STATE_BLOCK=0', () => {
-    process.env.VENTIPUS_STATE_BLOCK = '0';
+  it('returns null when CAWDEX_STATE_BLOCK=0', () => {
+    process.env.CAWDEX_STATE_BLOCK = '0';
     const msgs: Message[] = [
       { role: 'user', content: 'do thing' },
       assistantWithCalls(['bash', '{"command":"ls"}']),

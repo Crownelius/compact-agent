@@ -12,7 +12,7 @@
 import * as readline from 'node:readline/promises';
 import chalk from 'chalk';
 import type { Tool } from './tools/types.js';
-import type { VentipusConfig } from './types.js';
+import type { CawdexConfig } from './types.js';
 import { saveConfig } from './config.js';
 import { evaluateCommand } from './execpolicy.js';
 
@@ -29,7 +29,7 @@ import { evaluateCommand } from './execpolicy.js';
 export async function checkPermission(
   tool: Tool,
   input: Record<string, unknown>,
-  config: VentipusConfig,
+  config: CawdexConfig,
   rl: readline.Interface,
 ): Promise<boolean> {
   // ── Execpolicy intent-gate (runs BEFORE other checks) ──

@@ -4,7 +4,7 @@
  * Mental model:
  *
  *   Wing     ─ a top-level domain ("projects", "people", "code", "wisdom")
- *   Room     ─ a category inside a wing ("ventipus", "abc-reborn", ...)
+ *   Room     ─ a category inside a wing ("cawdex", "abc-reborn", ...)
  *   Drawer   ─ an individual memory item: a chunk of text + tags + metadata
  *   Tunnel   ─ a directed link between two drawers, typed by relation
  *   Triple   ─ a knowledge-graph fact: (subject, predicate, object)
@@ -13,9 +13,9 @@
  * structure. Tunnels and KG triples give them relational structure.
  *
  * Two stores live side-by-side:
- *   GLOBAL   ~/.ventipus/memory/    cross-project knowledge (user prefs,
+ *   GLOBAL   ~/.cawdex/memory/    cross-project knowledge (user prefs,
  *                                    recurring patterns, skills)
- *   PROJECT  <cwd>/.ventipus/memory/  this-codebase-specific (e.g. "build
+ *   PROJECT  <cwd>/.cawdex/memory/  this-codebase-specific (e.g. "build
  *                                    is broken because X", "the queue lives
  *                                    in services/queue/...")
  *
@@ -27,8 +27,8 @@
 /**
  * Which memory store an operation targets.
  *
- *   'global'  — ~/.ventipus/memory/ (cross-project)
- *   'project' — <cwd>/.ventipus/memory/ (per-repo)
+ *   'global'  — ~/.cawdex/memory/ (cross-project)
+ *   'project' — <cwd>/.cawdex/memory/ (per-repo)
  *   'both'    — search both; writes pick based on content (global for user
  *               preferences, project for codebase facts)
  */
@@ -42,7 +42,7 @@ export type Scope = 'global' | 'project' | 'both';
 export interface Drawer {
   id: string;               // ulid-ish: timestamp + random hex
   wing: string;             // e.g. "projects"
-  room: string;             // e.g. "ventipus"
+  room: string;             // e.g. "cawdex"
   content: string;          // the actual memory text
   tags: string[];           // free-form, lowercase
   importance: number;       // 0..1, default 0.5

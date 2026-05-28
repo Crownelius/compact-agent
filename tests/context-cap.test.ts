@@ -12,19 +12,19 @@ import {
 } from '../src/compaction.js';
 import type { Message } from '../src/types.js';
 
-const ORIGINAL_CONTEXT_WINDOW = process.env.VENTIPUS_CONTEXT_WINDOW_TOKENS;
-const ORIGINAL_COMPACTION_TRIGGER = process.env.VENTIPUS_COMPACTION_TRIGGER_TOKENS;
+const ORIGINAL_CONTEXT_WINDOW = process.env.CAWDEX_CONTEXT_WINDOW_TOKENS;
+const ORIGINAL_COMPACTION_TRIGGER = process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS;
 
 afterEach(() => {
   if (ORIGINAL_CONTEXT_WINDOW === undefined) {
-    delete process.env.VENTIPUS_CONTEXT_WINDOW_TOKENS;
+    delete process.env.CAWDEX_CONTEXT_WINDOW_TOKENS;
   } else {
-    process.env.VENTIPUS_CONTEXT_WINDOW_TOKENS = ORIGINAL_CONTEXT_WINDOW;
+    process.env.CAWDEX_CONTEXT_WINDOW_TOKENS = ORIGINAL_CONTEXT_WINDOW;
   }
   if (ORIGINAL_COMPACTION_TRIGGER === undefined) {
-    delete process.env.VENTIPUS_COMPACTION_TRIGGER_TOKENS;
+    delete process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS;
   } else {
-    process.env.VENTIPUS_COMPACTION_TRIGGER_TOKENS = ORIGINAL_COMPACTION_TRIGGER;
+    process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS = ORIGINAL_COMPACTION_TRIGGER;
   }
 });
 
@@ -54,7 +54,7 @@ describe('inferContextWindowTokens', () => {
   });
 
   it('uses environment override before model heuristics', () => {
-    process.env.VENTIPUS_CONTEXT_WINDOW_TOKENS = '96000';
+    process.env.CAWDEX_CONTEXT_WINDOW_TOKENS = '96000';
     expect(inferContextWindowTokens({ model: 'anthropic/claude-sonnet-4' })).toBe(96_000);
   });
 
@@ -77,7 +77,7 @@ describe('rolling compaction config', () => {
   });
 
   it('allows an explicit compaction trigger override', () => {
-    process.env.VENTIPUS_COMPACTION_TRIGGER_TOKENS = '12345';
+    process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS = '12345';
     expect(compactionTriggerTokens({ model: 'openai/gpt-4o' })).toBe(12_345);
   });
 });
@@ -85,7 +85,7 @@ describe('rolling compaction config', () => {
 describe('partitionMessagesForCompaction', () => {
   it('pins the original user task when it would otherwise be summarized away', () => {
     const messages: Message[] = [
-      { role: 'user', content: 'original goal: fix ventipus' },
+      { role: 'user', content: 'original goal: fix cawdex' },
       { role: 'assistant', content: 'old analysis' },
       { role: 'user', content: 'old follow-up' },
       { role: 'assistant', content: 'old answer' },
@@ -98,10 +98,10 @@ describe('partitionMessagesForCompaction', () => {
 
     expect(partition.pinnedFirstUser).toBe(true);
     expect(partition.pinnedPrefix).toHaveLength(1);
-    expect(partition.oldMessages.some((m) => m.content === 'original goal: fix ventipus')).toBe(false);
-    expect(compacted[0].content).toBe('original goal: fix ventipus');
+    expect(partition.oldMessages.some((m) => m.content === 'original goal: fix cawdex')).toBe(false);
+    expect(compacted[0].content).toBe('original goal: fix cawdex');
     expect(compacted[1].content).toContain('CONVERSATION SUMMARY');
-    expect(compacted.filter((m) => m.content === 'original goal: fix ventipus')).toHaveLength(1);
+    expect(compacted.filter((m) => m.content === 'original goal: fix cawdex')).toHaveLength(1);
   });
 
   it('does not duplicate the original user task when it is still recent', () => {

@@ -60,12 +60,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path("path/to/resources/exgentic").resolve()))
 
-from ventipus_agent import VentipusAgent
+from cawdex_agent import CawdexAgent
 from exgentic.interfaces.lib import evaluate
 
 results = evaluate(
     benchmark="gsm8k",
-    agent=VentipusAgent(
+    agent=CawdexAgent(
         model="openrouter/free",
         provider="openrouter",
         max_turns=8,
@@ -79,30 +79,30 @@ results = evaluate(
 For Exgentic CLI usage, copy this directory into an Exgentic checkout at:
 
 ```text
-src/exgentic/agents/ventipus_agent/
+src/exgentic/agents/cawdex_agent/
 ```
 
 Then add a registry entry:
 
 ```python
-"ventipus_agent": RegistryEntry(
+"cawdex_agent": RegistryEntry(
     display_name="Cawdex",
-    module="exgentic.agents.ventipus_agent.agent",
-    class_name="VentipusAgent",
+    module="exgentic.agents.cawdex_agent.agent",
+    class_name="CawdexAgent",
 ),
 ```
 
 After that:
 
 ```bash
-exgentic install --agent ventipus_agent --local
-exgentic evaluate --benchmark gsm8k --agent ventipus_agent --model openrouter/free
+exgentic install --agent cawdex_agent --local
+exgentic evaluate --benchmark gsm8k --agent cawdex_agent --model openrouter/free
 ```
 
 ## Configuration
 
-- `CAWDEX_EXGENTIC_COMMAND` or `VENTIPUS_EXGENTIC_COMMAND` overrides the command, default `cawdex`.
-- `VENTIPUS_INSTALL_SPEC` controls `setup.sh`, default `cawdex@latest`.
+- `CAWDEX_EXGENTIC_COMMAND` or `CAWDEX_EXGENTIC_COMMAND` overrides the command, default `cawdex`.
+- `CAWDEX_INSTALL_SPEC` controls `setup.sh`, default `cawdex@latest`.
 - `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, and other Cawdex provider env vars
   are passed through by the launched Cawdex process.
 - `model`, `provider`, `max_turns`, `max_tokens`, `context_window_tokens`,
@@ -111,4 +111,4 @@ exgentic evaluate --benchmark gsm8k --agent ventipus_agent --model openrouter/fr
   Cawdex settings without modifying this adapter.
 
 The adapter reports Cawdex's `summary.json` estimated cost to Exgentic
-when `VENTIPUS_BENCHMARK_TRACE_DIR` output is present.
+when `CAWDEX_BENCHMARK_TRACE_DIR` output is present.

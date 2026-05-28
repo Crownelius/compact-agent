@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { PROVIDERS, type VentipusConfig } from '../src/types.js';
+import { PROVIDERS, type CawdexConfig } from '../src/types.js';
 import { routeModel, switchModel } from '../src/model-router.js';
 
-function cfg(model = 'anthropic/claude-sonnet-4'): VentipusConfig {
+function cfg(model = 'anthropic/claude-sonnet-4'): CawdexConfig {
   return {
     apiKey: 'sk-test',
     baseURL: PROVIDERS.openrouter.baseURL,

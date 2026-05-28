@@ -4,18 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildAutoRepoMapBlock, generateCodeMap } from '../src/codemaps.js';
 
-const ORIGINAL_REPO_MAP = process.env.VENTIPUS_REPO_MAP;
+const ORIGINAL_REPO_MAP = process.env.CAWDEX_REPO_MAP;
 
 afterEach(() => {
   if (ORIGINAL_REPO_MAP === undefined) {
-    delete process.env.VENTIPUS_REPO_MAP;
+    delete process.env.CAWDEX_REPO_MAP;
   } else {
-    process.env.VENTIPUS_REPO_MAP = ORIGINAL_REPO_MAP;
+    process.env.CAWDEX_REPO_MAP = ORIGINAL_REPO_MAP;
   }
 });
 
 function fixture(): string {
-  const cwd = mkdtempSync(join(tmpdir(), 'ventipus-codemap-'));
+  const cwd = mkdtempSync(join(tmpdir(), 'cawdex-codemap-'));
   mkdirSync(join(cwd, 'src'), { recursive: true });
   writeFileSync(join(cwd, 'src', 'core.ts'), 'export function core(input: string) { return input.trim(); }\n');
   writeFileSync(join(cwd, 'src', 'feature.ts'), "import { core } from './core';\nexport const feature = () => core('x');\n");
@@ -55,7 +55,7 @@ describe('automatic repo map', () => {
     const cwd = fixture();
     try {
       expect(buildAutoRepoMapBlock(cwd, 'anything', { minFiles: 10 })).toBeNull();
-      process.env.VENTIPUS_REPO_MAP = '0';
+      process.env.CAWDEX_REPO_MAP = '0';
       expect(buildAutoRepoMapBlock(cwd, 'anything', { minFiles: 5 })).toBeNull();
     } finally {
       rmSync(cwd, { recursive: true, force: true });

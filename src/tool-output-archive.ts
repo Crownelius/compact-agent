@@ -32,7 +32,7 @@ export function archiveLargeToolOutput(
   output: unknown,
 ): ArchivedToolOutput {
   const text = typeof output === 'string' ? output : JSON.stringify(output ?? '');
-  const trigger = envNumber('VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS', QUICK_TOOL_OUTPUT_TRIGGER_CHARS);
+  const trigger = envNumber('CAWDEX_TOOL_OUTPUT_ARCHIVE_CHARS', QUICK_TOOL_OUTPUT_TRIGGER_CHARS);
   if (text.length <= trigger) {
     return { output: text, archived: false };
   }

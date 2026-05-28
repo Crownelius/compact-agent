@@ -11,7 +11,7 @@ import {
   TodoWriteTool,
 } from '../src/tools/todo.js';
 import { buildSystemPrompt } from '../src/system-prompt.js';
-import type { VentipusConfig } from '../src/types.js';
+import type { CawdexConfig } from '../src/types.js';
 
 let cwdToClean: string | null = null;
 
@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 function tempCwd(): string {
-  cwdToClean = mkdtempSync(join(tmpdir(), 'ventipus-todo-'));
+  cwdToClean = mkdtempSync(join(tmpdir(), 'cawdex-todo-'));
   return cwdToClean;
 }
 
@@ -81,7 +81,7 @@ describe('todo_write tool', () => {
 describe('todo prompt guidance', () => {
   it('tells the model when to use todo_write', () => {
     const cwd = tempCwd();
-    const cfg: VentipusConfig = {
+    const cfg: CawdexConfig = {
       apiKey: 'test',
       baseURL: 'https://example.test/v1',
       model: 'openrouter/free',
@@ -100,7 +100,7 @@ describe('todo prompt guidance', () => {
 
   it('guards benchmark skill disclosure with context-first fit checks', () => {
     const cwd = tempCwd();
-    const cfg: VentipusConfig = {
+    const cfg: CawdexConfig = {
       apiKey: 'test',
       baseURL: 'https://example.test/v1',
       model: 'openrouter/free',

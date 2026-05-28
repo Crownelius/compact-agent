@@ -715,7 +715,7 @@ export async function printThinkingClose(opts: { collapse?: boolean } = {}): Pro
   // Stash for /think to re-expand on demand. Even when we don't
   // collapse, this lets the user re-read the thinking later via the
   // slash command without scrolling back.
-  (globalThis as { __ventipusLastThinking?: string }).__ventipusLastThinking = _thinkingBuffer;
+  (globalThis as { __cawdexLastThinking?: string }).__cawdexLastThinking = _thinkingBuffer;
 
   const collapse = opts.collapse !== false;
   if (!collapse || _thinkingBuffer.length === 0) return;
@@ -780,7 +780,7 @@ function _thinkingElapsed(): string {
  * thinking captured yet" message instead.
  */
 export function expandLastThinking(): boolean {
-  const text = (globalThis as { __ventipusLastThinking?: string }).__ventipusLastThinking;
+  const text = (globalThis as { __cawdexLastThinking?: string }).__cawdexLastThinking;
   if (!text) return false;
   // Pass collapse: false so the printThinkingClose at the end doesn't
   // try to ANSI-up + clear the expansion we just rendered.
@@ -939,7 +939,7 @@ export function categorizeApiError(message: string, ctx: ApiErrorContext = {}): 
       category: 'auth-bad-key', status: status ?? 401, provider, severity: 'auth',
       title: 'Authentication failed',
       why: `${provider} rejected the API key. It's missing, malformed, or revoked.`,
-      fix: 'Re-set your key with /config. Check ~/.ventipus/config.json if /config doesn\'t catch it.',
+      fix: 'Re-set your key with /config. Check ~/.cawdex/config.json if /config doesn\'t catch it.',
     };
   }
 

@@ -90,7 +90,7 @@ const IGNORE_GLOBS = [
   '**/coverage/**',
   '**/.next/**',
   '**/build/**',
-  '**/.ventipus/**',
+  '**/.cawdex/**',
   'bench/runs/**',
   'bench/tb-repo/**',
   '**/.venv/**',
@@ -217,7 +217,7 @@ const COMPONENTS: ComponentSpec[] = [
       'src/openrouter-models.ts',
       'src/cost-tracker.ts',
       'bin/cawdex.js',
-      'bin/ventipus.js',
+      'bin/cawdex.js',
     ],
     tests: [
       'tests/api-responses.test.ts',

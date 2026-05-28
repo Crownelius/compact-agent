@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { VentipusConfig } from '../src/types.js';
+import type { CawdexConfig } from '../src/types.js';
 import {
   CHATGPT_CODEX_BASE_URL,
   getOpenAICodexAuthStatus,
@@ -11,10 +11,10 @@ import {
 import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from '../src/openai-smoke.js';
 
 const envKeys = [
-  'VENTIPUS_OPENAI_ACCESS_TOKEN',
+  'CAWDEX_OPENAI_ACCESS_TOKEN',
   'OPENAI_CODEX_ACCESS_TOKEN',
   'CODEX_OPENAI_ACCESS_TOKEN',
-  'VENTIPUS_OPENAI_ACCOUNT_ID',
+  'CAWDEX_OPENAI_ACCOUNT_ID',
   'OPENAI_CODEX_ACCOUNT_ID',
   'CODEX_OPENAI_ACCOUNT_ID',
 ] as const;
@@ -26,7 +26,7 @@ function fakeJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.sig`;
 }
 
-function config(codexHome: string): VentipusConfig {
+function config(codexHome: string): CawdexConfig {
   return {
     apiKey: '',
     baseURL: CHATGPT_CODEX_BASE_URL,
@@ -61,7 +61,7 @@ describe('OpenAI Codex OAuth helpers', () => {
   });
 
   it('reads Codex CLI auth.json without requiring Cawdex to store tokens', () => {
-    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    const home = mkdtempSync(join(tmpdir(), 'cawdex-codex-'));
     try {
       mkdirSync(home, { recursive: true });
       writeFileSync(join(home, 'auth.json'), JSON.stringify({
@@ -94,10 +94,10 @@ describe('OpenAI Codex OAuth helpers', () => {
   });
 
   it('supports environment-provided tokens for keyring-only Codex installs', () => {
-    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    const home = mkdtempSync(join(tmpdir(), 'cawdex-codex-'));
     try {
-      process.env.VENTIPUS_OPENAI_ACCESS_TOKEN = 'env-access-token';
-      process.env.VENTIPUS_OPENAI_ACCOUNT_ID = 'env-account';
+      process.env.CAWDEX_OPENAI_ACCESS_TOKEN = 'env-access-token';
+      process.env.CAWDEX_OPENAI_ACCOUNT_ID = 'env-account';
 
       const auth = resolveOpenAICodexAuth(config(home));
       expect(auth?.source).toBe('env');
@@ -109,7 +109,7 @@ describe('OpenAI Codex OAuth helpers', () => {
   });
 
   it('reports missing Codex auth without throwing', () => {
-    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    const home = mkdtempSync(join(tmpdir(), 'cawdex-codex-'));
     try {
       expect(resolveOpenAICodexAuth(config(home))).toBeNull();
       const status = getOpenAICodexAuthStatus(config(home));
@@ -127,7 +127,7 @@ describe('OpenAI Codex OAuth smoke test', () => {
   });
 
   it('uses Codex OAuth config and validates streamed text without exposing tokens', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    const home = mkdtempSync(join(tmpdir(), 'cawdex-codex-'));
     try {
       mkdirSync(home, { recursive: true });
       writeFileSync(join(home, 'auth.json'), JSON.stringify({
@@ -159,7 +159,7 @@ describe('OpenAI Codex OAuth smoke test', () => {
   });
 
   it('fails before request streaming when Codex auth is missing', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'ventipus-codex-'));
+    const home = mkdtempSync(join(tmpdir(), 'cawdex-codex-'));
     try {
       let called = false;
       const result = await runOpenAICodexSmokeTest(config(home), {

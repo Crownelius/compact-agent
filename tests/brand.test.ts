@@ -4,7 +4,6 @@ import {
   BRAND_NAME,
   BRAND_SPACED_NAME,
   BRAND_TAGLINE,
-  LEGACY_CLI_NAME,
   PRIMARY_CLI_NAME,
 } from '../src/brand.js';
 
@@ -16,8 +15,7 @@ describe('Cawdex brand constants', () => {
     expect(BRAND_SPACED_NAME).toBe('C A W D E X');
   });
 
-  it('keeps cawdex primary while documenting the legacy CLI alias', () => {
+  it('uses cawdex as the only packaged CLI name', () => {
     expect(PRIMARY_CLI_NAME).toBe('cawdex');
-    expect(LEGACY_CLI_NAME).toBe('ventipus');
   });
 });

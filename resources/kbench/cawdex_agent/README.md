@@ -6,7 +6,7 @@ This directory is a KBench `custom-adapter` for Cawdex.
 kbench run \
   --benchmark swe \
   --harness custom-adapter \
-  --adapter /path/to/resources/kbench/ventipus_agent \
+  --adapter /path/to/resources/kbench/cawdex_agent \
   --model-name openrouter/free \
   --instruction "Fix the bug"
 ```
@@ -97,11 +97,11 @@ silently submitted while the harness is still running.
 
 Useful env vars:
 
-- `CAWDEX_KBENCH_COMMAND` or `VENTIPUS_KBENCH_COMMAND`: command used to launch Cawdex, default `cawdex`.
-- `VENTIPUS_KBENCH_PERMISSION`: permission flag value, default `yolo`.
-- `VENTIPUS_KBENCH_EXTRA_ARGS`: extra Cawdex CLI flags.
-- `VENTIPUS_KBENCH_ARTIFACT_DIR`: directory for redacted instruction/stdout/stderr and trace files.
-- `VENTIPUS_BASH_TIMEOUT_MS`: default Cawdex `bash` tool timeout; the adapter defaults to `300000` when unset.
+- `CAWDEX_KBENCH_COMMAND` or `CAWDEX_KBENCH_COMMAND`: command used to launch Cawdex, default `cawdex`.
+- `CAWDEX_KBENCH_PERMISSION`: permission flag value, default `yolo`.
+- `CAWDEX_KBENCH_EXTRA_ARGS`: extra Cawdex CLI flags.
+- `CAWDEX_KBENCH_ARTIFACT_DIR`: directory for redacted instruction/stdout/stderr and trace files.
+- `CAWDEX_BASH_TIMEOUT_MS`: default Cawdex `bash` tool timeout; the adapter defaults to `300000` when unset.
 
 Provider keys should be passed via normal Cawdex env config or KBench's
 `--api-key-env`, which the runner forwards as Cawdex `--api-key-env`.

@@ -1,7 +1,7 @@
 /**
  * Migration 001 — Create users table.
  *
- * Creates the users.json store at ~/.ventipus/users.json with:
+ * Creates the users.json store at ~/.cawdex/users.json with:
  *   - Empty users array
  *   - Null activeUserId
  *

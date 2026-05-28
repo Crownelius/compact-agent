@@ -30,7 +30,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/editor', description: 'Open $EDITOR for a multi-line prompt', category: 'General' },
   { command: '/history', description: 'Message count + token estimate', category: 'General' },
   { command: '/export', description: 'Export conversation (md/json/txt)', category: 'General' },
-  { command: '/walkthrough', description: 'Agent-led tour of ventipus', category: 'General' },
+  { command: '/walkthrough', description: 'Agent-led tour of cawdex', category: 'General' },
   { command: '/config', description: 'Reconfigure provider / model / key (re-runs the setup wizard)', category: 'General' },
   { command: '/theme', description: 'Change display mode (full/compact/minimal)', category: 'General' },
   { command: '/palette', description: 'Switch color palette (run /palettes to list)', category: 'General' },

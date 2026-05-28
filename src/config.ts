@@ -1,27 +1,22 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { LEGACY_STATE_DIR } from './brand.js';
-import { PROVIDERS, type VentipusConfig } from './types.js';
+import { STATE_DIR_NAME } from './brand.js';
+import { PROVIDERS, type CawdexConfig } from './types.js';
 
 // Cawdex keeps config, sessions, skills, memory, and benchmark artifacts
-// under ~/.ventipus by default for compatibility. CAWDEX_HOME is the new
-// spelling; VENTIPUS_HOME remains a legacy alias for existing installs.
-export const CONFIG_DIR_NAME = LEGACY_STATE_DIR;
+// under ~/.cawdex by default. CAWDEX_HOME can override that location.
+export const CONFIG_DIR_NAME = STATE_DIR_NAME;
 
 // Resolve the config dir LAZILY (every call) instead of caching at
 // module-load time. The cached form prevented tests + sandboxed runs
-// from overriding via VENTIPUS_HOME after the first import: the
+// from overriding via CAWDEX_HOME after the first import: the
 // first module to load would freeze the path at the user's real
 // home, and all subsequent overrides were ignored. The resolution
 // is cheap (env lookup + one join) so calling per access has no
 // observable cost on the hot path.
 function resolveConfigDir(): string {
-  return (
-    process.env.CAWDEX_HOME ||
-    process.env.VENTIPUS_HOME ||
-    join(homedir(), CONFIG_DIR_NAME)
-  );
+  return process.env.CAWDEX_HOME || join(homedir(), CONFIG_DIR_NAME);
 }
 
 function resolveConfigFile(): string {
@@ -30,8 +25,8 @@ function resolveConfigFile(): string {
 
 /**
  * Resolve the per-project state dir (codemap cache, project memory,
- * package-manager pref). Prefers `<cwd>/.ventipus`; falls back to
- * the legacy `<cwd>/.ventipus` only if it exists and the new one
+ * package-manager pref). Prefers `<cwd>/.cawdex`; falls back to
+ * the legacy `<cwd>/.cawdex` only if it exists and the new one
  * doesn't. Project dirs are NOT auto-renamed â€” they often live inside
  * repos and migrating them silently could surprise teammates / CI.
  */
@@ -39,7 +34,7 @@ export function getProjectStateDir(cwd: string): string {
   return join(cwd, CONFIG_DIR_NAME);
 }
 
-const DEFAULT_CONFIG: VentipusConfig = {
+const DEFAULT_CONFIG: CawdexConfig = {
   apiKey: '',
   baseURL: 'https://openrouter.ai/api/v1',
   model: 'openrouter/free',
@@ -134,7 +129,7 @@ export function getHomeStateDir(): string {
   return resolveConfigDir();
 }
 
-export function loadConfig(): VentipusConfig {
+export function loadConfig(): CawdexConfig {
   const configFile = resolveConfigFile();
   if (!existsSync(configFile)) {
     return { ...DEFAULT_CONFIG };
@@ -167,19 +162,19 @@ const ENV_KEYS = [
   'CAWDEX_MEMORY',
   'CAWDEX_THEME',
   'CAWDEX_SHOW_THINKING',
-  'VENTIPUS_PROVIDER',
-  'VENTIPUS_API_KEY',
-  'VENTIPUS_BASE_URL',
-  'VENTIPUS_MODEL',
-  'VENTIPUS_FALLBACK_MODEL',
-  'VENTIPUS_MAX_TOKENS',
-  'VENTIPUS_CONTEXT_WINDOW_TOKENS',
-  'VENTIPUS_MAX_TURNS',
-  'VENTIPUS_TEMPERATURE',
-  'VENTIPUS_PERMISSION',
-  'VENTIPUS_MEMORY',
-  'VENTIPUS_THEME',
-  'VENTIPUS_SHOW_THINKING',
+  'CAWDEX_PROVIDER',
+  'CAWDEX_API_KEY',
+  'CAWDEX_BASE_URL',
+  'CAWDEX_MODEL',
+  'CAWDEX_FALLBACK_MODEL',
+  'CAWDEX_MAX_TOKENS',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS',
+  'CAWDEX_MAX_TURNS',
+  'CAWDEX_TEMPERATURE',
+  'CAWDEX_PERMISSION',
+  'CAWDEX_MEMORY',
+  'CAWDEX_THEME',
+  'CAWDEX_SHOW_THINKING',
   'OPENROUTER_API_KEY',
   'OPENAI_API_KEY',
   'DEEPSEEK_API_KEY',
@@ -218,7 +213,7 @@ function firstEnv(...keys: string[]): string | undefined {
 }
 
 function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } | null {
-  const explicit = normalizeProviderKey(firstEnv('CAWDEX_PROVIDER', 'VENTIPUS_PROVIDER'));
+  const explicit = normalizeProviderKey(firstEnv('CAWDEX_PROVIDER', 'CAWDEX_PROVIDER'));
   if (explicit) {
     return { providerKey: explicit, apiKey: apiKeyForProvider(explicit) };
   }
@@ -233,7 +228,7 @@ function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } |
 }
 
 function apiKeyForProvider(providerKey: ProviderKey): string | undefined {
-  const explicit = firstEnv('CAWDEX_API_KEY', 'VENTIPUS_API_KEY');
+  const explicit = firstEnv('CAWDEX_API_KEY', 'CAWDEX_API_KEY');
   if (explicit) return explicit;
   switch (providerKey) {
     case 'openrouter': return firstEnv('OPENROUTER_API_KEY');
@@ -270,14 +265,14 @@ function envFlag(name: string | string[]): boolean | undefined {
 /**
  * Build a runtime config from environment variables for headless harnesses.
  * This intentionally does not write config.json; it lets benchmark containers
- * run ventipus with `--prompt` from API-key env vars only.
+ * run cawdex with `--prompt` from API-key env vars only.
  */
-export function loadConfigFromEnv(): VentipusConfig | null {
+export function loadConfigFromEnv(): CawdexConfig | null {
   if (!envWasProvided()) return null;
 
   const inferred = inferProviderFromEnv();
-  const explicitBaseURL = firstEnv('CAWDEX_BASE_URL', 'VENTIPUS_BASE_URL', 'OLLAMA_BASE_URL');
-  const explicitModel = firstEnv('CAWDEX_MODEL', 'VENTIPUS_MODEL');
+  const explicitBaseURL = firstEnv('CAWDEX_BASE_URL', 'CAWDEX_BASE_URL', 'OLLAMA_BASE_URL');
+  const explicitModel = firstEnv('CAWDEX_MODEL', 'CAWDEX_MODEL');
   const providerKey = inferred?.providerKey ?? (explicitBaseURL || explicitModel ? 'custom' : null);
   if (!providerKey) return null;
 
@@ -288,35 +283,35 @@ export function loadConfigFromEnv(): VentipusConfig | null {
   const keyRequired = preset.requiresKey && !baseURL.includes('localhost') && !baseURL.includes('127.0.0.1');
   if (keyRequired && !apiKey && providerKey !== 'openai-codex') return null;
 
-  const config: VentipusConfig = {
+  const config: CawdexConfig = {
     ...DEFAULT_CONFIG,
     apiKey,
     baseURL,
     model,
     provider: preset.name,
-    fallbackModel: firstEnv('CAWDEX_FALLBACK_MODEL', 'VENTIPUS_FALLBACK_MODEL'),
+    fallbackModel: firstEnv('CAWDEX_FALLBACK_MODEL', 'CAWDEX_FALLBACK_MODEL'),
   };
 
-  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS', 'VENTIPUS_MAX_TOKENS'], 1);
+  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS', 'CAWDEX_MAX_TOKENS'], 1);
   if (maxTokens) config.maxTokens = Math.floor(maxTokens);
-  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS', 'VENTIPUS_CONTEXT_WINDOW_TOKENS'], 1);
+  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS', 'CAWDEX_CONTEXT_WINDOW_TOKENS'], 1);
   if (contextWindowTokens) config.contextWindowTokens = Math.floor(contextWindowTokens);
-  const maxTurns = envNumber(['CAWDEX_MAX_TURNS', 'VENTIPUS_MAX_TURNS'], 1);
+  const maxTurns = envNumber(['CAWDEX_MAX_TURNS', 'CAWDEX_MAX_TURNS'], 1);
   if (maxTurns) config.maxTurns = Math.floor(maxTurns);
-  const temperature = envNumber(['CAWDEX_TEMPERATURE', 'VENTIPUS_TEMPERATURE'], 0);
+  const temperature = envNumber(['CAWDEX_TEMPERATURE', 'CAWDEX_TEMPERATURE'], 0);
   if (temperature !== undefined) config.temperature = temperature;
 
-  const permission = firstEnv('CAWDEX_PERMISSION', 'VENTIPUS_PERMISSION');
+  const permission = firstEnv('CAWDEX_PERMISSION', 'CAWDEX_PERMISSION');
   if (permission === 'ask' || permission === 'auto' || permission === 'yolo') {
     config.permissionMode = permission;
   }
-  const memoryEnabled = envFlag(['CAWDEX_MEMORY', 'VENTIPUS_MEMORY']);
+  const memoryEnabled = envFlag(['CAWDEX_MEMORY', 'CAWDEX_MEMORY']);
   if (memoryEnabled !== undefined) {
     config.memory = { ...(config.memory || {}), enabled: memoryEnabled };
   }
-  const showThinking = envFlag(['CAWDEX_SHOW_THINKING', 'VENTIPUS_SHOW_THINKING']);
+  const showThinking = envFlag(['CAWDEX_SHOW_THINKING', 'CAWDEX_SHOW_THINKING']);
   if (showThinking !== undefined) config.showThinking = showThinking;
-  const theme = firstEnv('CAWDEX_THEME', 'VENTIPUS_THEME');
+  const theme = firstEnv('CAWDEX_THEME', 'CAWDEX_THEME');
   if (theme === 'full' || theme === 'compact' || theme === 'minimal') config.theme = theme;
 
   if (providerKey === 'openrouter' && !config.fallbackModel) {
@@ -341,8 +336,8 @@ export function loadConfigFromEnv(): VentipusConfig | null {
  * tweak an already-loaded config for harness adapters (`--model`, `--max-turns`,
  * `--base-url`, etc.).
  */
-export function applyRuntimeConfigOverrides(config: VentipusConfig): VentipusConfig {
-  const next: VentipusConfig = {
+export function applyRuntimeConfigOverrides(config: CawdexConfig): CawdexConfig {
+  const next: CawdexConfig = {
     ...config,
     memory: config.memory ? { ...config.memory } : config.memory,
     sandbox: config.sandbox ? { ...config.sandbox } : config.sandbox,
@@ -350,24 +345,24 @@ export function applyRuntimeConfigOverrides(config: VentipusConfig): VentipusCon
     openaiAuth: config.openaiAuth ? { ...config.openaiAuth } : config.openaiAuth,
   };
 
-  const model = firstEnv('CAWDEX_MODEL_OVERRIDE', 'VENTIPUS_MODEL_OVERRIDE');
+  const model = firstEnv('CAWDEX_MODEL_OVERRIDE', 'CAWDEX_MODEL_OVERRIDE');
   if (model) next.model = model;
-  const fallbackModel = firstEnv('CAWDEX_FALLBACK_MODEL_OVERRIDE', 'VENTIPUS_FALLBACK_MODEL_OVERRIDE');
+  const fallbackModel = firstEnv('CAWDEX_FALLBACK_MODEL_OVERRIDE', 'CAWDEX_FALLBACK_MODEL_OVERRIDE');
   if (fallbackModel) next.fallbackModel = fallbackModel;
-  const baseURL = firstEnv('CAWDEX_BASE_URL_OVERRIDE', 'VENTIPUS_BASE_URL_OVERRIDE');
+  const baseURL = firstEnv('CAWDEX_BASE_URL_OVERRIDE', 'CAWDEX_BASE_URL_OVERRIDE');
   if (baseURL) next.baseURL = baseURL;
-  const apiKey = firstEnv('CAWDEX_API_KEY_OVERRIDE', 'VENTIPUS_API_KEY_OVERRIDE');
+  const apiKey = firstEnv('CAWDEX_API_KEY_OVERRIDE', 'CAWDEX_API_KEY_OVERRIDE');
   if (apiKey) next.apiKey = apiKey;
-  const apiKeyEnv = firstEnv('CAWDEX_API_KEY_ENV', 'VENTIPUS_API_KEY_ENV');
+  const apiKeyEnv = firstEnv('CAWDEX_API_KEY_ENV', 'CAWDEX_API_KEY_ENV');
   if (apiKeyEnv && process.env[apiKeyEnv]?.trim()) next.apiKey = process.env[apiKeyEnv]!.trim();
 
-  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS_OVERRIDE', 'VENTIPUS_MAX_TOKENS_OVERRIDE'], 1);
+  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS_OVERRIDE', 'CAWDEX_MAX_TOKENS_OVERRIDE'], 1);
   if (maxTokens) next.maxTokens = Math.floor(maxTokens);
-  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE', 'VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE'], 1);
+  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE', 'CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE'], 1);
   if (contextWindowTokens) next.contextWindowTokens = Math.floor(contextWindowTokens);
-  const maxTurns = envNumber(['CAWDEX_MAX_TURNS_OVERRIDE', 'VENTIPUS_MAX_TURNS_OVERRIDE'], 1);
+  const maxTurns = envNumber(['CAWDEX_MAX_TURNS_OVERRIDE', 'CAWDEX_MAX_TURNS_OVERRIDE'], 1);
   if (maxTurns) next.maxTurns = Math.floor(maxTurns);
-  const temperature = envNumber(['CAWDEX_TEMPERATURE_OVERRIDE', 'VENTIPUS_TEMPERATURE_OVERRIDE'], 0);
+  const temperature = envNumber(['CAWDEX_TEMPERATURE_OVERRIDE', 'CAWDEX_TEMPERATURE_OVERRIDE'], 0);
   if (temperature !== undefined) next.temperature = temperature;
 
   validateConfig(next);
@@ -382,7 +377,7 @@ export function applyRuntimeConfigOverrides(config: VentipusConfig): VentipusCon
 // the complexity for a defensive log message.
 const _alreadyWarnedFields = new Set<string>();
 
-function validateConfig(config: VentipusConfig): void {
+function validateConfig(config: CawdexConfig): void {
   // Validate baseURL
   if (config.baseURL && typeof config.baseURL === 'string') {
     try {
@@ -400,7 +395,7 @@ function validateConfig(config: VentipusConfig): void {
   }
 
   // Validate permissionMode
-  const validModes: VentipusConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
+  const validModes: CawdexConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
   if (!validModes.includes(config.permissionMode)) {
     console.warn(`Warning: Invalid permissionMode: ${config.permissionMode}, using 'ask'`);
     config.permissionMode = 'ask';
@@ -416,7 +411,7 @@ function validateConfig(config: VentipusConfig): void {
   }
 }
 
-export function saveConfig(config: VentipusConfig): void {
+export function saveConfig(config: CawdexConfig): void {
   mkdirSync(resolveConfigDir(), { recursive: true });
   writeFileSync(resolveConfigFile(), JSON.stringify(config, null, 2), 'utf-8');
 }
@@ -426,7 +421,7 @@ export function configExists(): boolean {
   return !!(cfg.apiKey || !requiresKey(cfg));
 }
 
-function requiresKey(cfg: VentipusConfig): boolean {
+function requiresKey(cfg: CawdexConfig): boolean {
   if (cfg.openaiAuth?.type === 'codex_oauth') return false;
   // Local providers don't need API keys
   return !cfg.baseURL.includes('localhost') && !cfg.baseURL.includes('127.0.0.1');

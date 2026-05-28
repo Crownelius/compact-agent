@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
  * on the Cawdex CLI process. Mirrors the Page Object Model pattern used
  * in browser E2E tests but adapted for a REPL-based CLI application.
  */
-export class VentipusCLI {
+export class CawdexCLI {
   private _proc: ChildProcessWithoutNullStreams | null = null;
   private _configDir: string;
   private cwd: string;
@@ -27,7 +27,7 @@ export class VentipusCLI {
    * Create an isolated temp config directory (like the existing smoke tests do).
    */
   private createTempConfigDir(): string {
-    const dir = join(tmpdir(), `ventipus-e2e-${randomUUID()}`);
+    const dir = join(tmpdir(), `cawdex-e2e-${randomUUID()}`);
     mkdirSync(dir, { recursive: true });
     return dir;
   }
@@ -71,13 +71,13 @@ export class VentipusCLI {
    * Spawn the CLI process with a clean environment.
    */
   async spawn(extraEnv: Record<string, string> = {}): Promise<void> {
-    const binPath = join(process.cwd(), 'bin', 'ventipus.js');
+    const binPath = join(process.cwd(), 'bin', 'cawdex.js');
 
     this._proc = spawn('node', [binPath], {
       cwd: this.cwd,
       env: {
         ...process.env,
-        VENTIPUS_HOME: this._configDir,
+        CAWDEX_HOME: this._configDir,
         NODE_OPTIONS: '--no-deprecation',
         ...extraEnv,
       },
@@ -93,7 +93,7 @@ export class VentipusCLI {
     });
 
     // Wait for initial prompt
-    await this.waitForOutput(/ventipus|setup|Choose a provider/i, { timeout: 10_000 });
+    await this.waitForOutput(/cawdex|setup|Choose a provider/i, { timeout: 10_000 });
   }
 
   /**
@@ -107,7 +107,7 @@ export class VentipusCLI {
     this._proc.stdin.write(input + '\n');
 
     if (waitForPrompt) {
-      await this.waitForOutput(/▶|ventipus|Choice|API Key|Model|Permission|Theme|command/i, { timeout: 5_000 });
+      await this.waitForOutput(/▶|cawdex|Choice|API Key|Model|Permission|Theme|command/i, { timeout: 5_000 });
     }
 
     return this.stdoutSince(before);

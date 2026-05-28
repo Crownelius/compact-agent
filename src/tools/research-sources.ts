@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Tool, ToolResult } from './types.js';
 
-type ResearchSource = 'all' | 'arxiv' | 'github' | 'huggingface' | 'kaggle';
+export type ResearchSource = 'all' | 'arxiv' | 'github' | 'huggingface' | 'kaggle';
 type GitHubKind = 'repositories' | 'issues' | 'pulls' | 'code' | 'all';
 type HuggingFaceKind = 'models' | 'datasets' | 'papers' | 'both' | 'all';
 type KaggleKind = 'datasets' | 'competitions' | 'both';
@@ -51,7 +51,7 @@ interface SourceDigest {
   topUrls: string[];
 }
 
-interface SourceAuthReadiness {
+export interface SourceAuthReadiness {
   arxivPublic: boolean | null;
   githubAuth: boolean | null;
   githubUnauthenticatedRateLimit: boolean | null;
@@ -1122,7 +1122,7 @@ function buildCoverageNotes(
   return notes;
 }
 
-function buildSourceAuthReadiness(
+export function buildSourceAuthReadiness(
   sources: ResearchSource[],
   kaggleKind: KaggleKind,
   env: NodeJS.ProcessEnv = process.env,

@@ -1,13 +1,13 @@
-import { VentipusCLI } from './cli.js';
+import { CawdexCLI } from './cli.js';
 
 /**
  * User Page Object — encapsulates all user management operations.
  * Maps to the /users slash command and the users.json file.
  */
 export class UsersPage {
-  private cli: VentipusCLI;
+  private cli: CawdexCLI;
 
-  constructor(cli: VentipusCLI) {
+  constructor(cli: CawdexCLI) {
     this.cli = cli;
   }
 

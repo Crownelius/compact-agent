@@ -30,15 +30,15 @@ from .utils import (
 )
 
 
-class VentipusAgent(Agent):
+class CawdexAgent(Agent):
     """Host-side Exgentic config for Cawdex."""
 
     display_name: ClassVar[str] = "Cawdex"
-    slug_name: ClassVar[str] = "ventipus_agent"
+    slug_name: ClassVar[str] = "cawdex_agent"
 
     model: str = "openrouter/free"
     provider: str | None = None
-    command: str = Field(default_factory=lambda: os.environ.get("CAWDEX_EXGENTIC_COMMAND") or os.environ.get("VENTIPUS_EXGENTIC_COMMAND", "cawdex"))
+    command: str = Field(default_factory=lambda: os.environ.get("CAWDEX_EXGENTIC_COMMAND") or os.environ.get("CAWDEX_EXGENTIC_COMMAND", "cawdex"))
     permission: str = "yolo"
     max_steps: int = 50
     max_turns: int | None = None
@@ -49,17 +49,17 @@ class VentipusAgent(Agent):
     timeout_sec: int = 1800
     memory: bool = False
     workdir: str | None = None
-    ventipus_home: str | None = None
+    cawdex_home: str | None = None
     extra_args: list[str] = Field(default_factory=list)
     extra_env: dict[str, str] = Field(default_factory=dict)
 
     @classmethod
     def _get_instance_class(cls):
-        return VentipusAgentInstance
+        return CawdexAgentInstance
 
     @classmethod
     def _get_instance_class_ref(cls) -> str:
-        return f"{cls.__module__}:VentipusAgentInstance"
+        return f"{cls.__module__}:CawdexAgentInstance"
 
     @property
     def model_name(self) -> str:  # type: ignore[override]
@@ -84,13 +84,13 @@ class VentipusAgent(Agent):
             "timeout_sec": self.timeout_sec,
             "memory": self.memory,
             "workdir": self.workdir,
-            "ventipus_home": self.ventipus_home,
+            "cawdex_home": self.cawdex_home,
             "extra_args": self.extra_args,
             "extra_env": self.extra_env,
         }
 
 
-class VentipusAgentInstance(AgentInstance):
+class CawdexAgentInstance(AgentInstance):
     """Per-session Exgentic runtime that asks Cawdex for the next action."""
 
     def __init__(
@@ -109,7 +109,7 @@ class VentipusAgentInstance(AgentInstance):
         timeout_sec: int = 1800,
         memory: bool = False,
         workdir: str | None = None,
-        ventipus_home: str | None = None,
+        cawdex_home: str | None = None,
         extra_args: list[str] | None = None,
         extra_env: dict[str, str] | None = None,
     ) -> None:
@@ -127,7 +127,7 @@ class VentipusAgentInstance(AgentInstance):
         self.timeout_sec = timeout_sec
         self.memory = memory
         self.workdir = workdir
-        self.ventipus_home = ventipus_home
+        self.cawdex_home = cawdex_home
         self.extra_args = list(extra_args or [])
         self.extra_env = dict(extra_env or {})
         self._step = 0
@@ -143,10 +143,10 @@ class VentipusAgentInstance(AgentInstance):
 
         self._step += 1
         prompt = self._build_prompt()
-        run = self._run_ventipus(prompt)
+        run = self._run_cawdex(prompt)
         self._history.append(
             {
-                "role": "ventipus",
+                "role": "cawdex",
                 "returncode": run["returncode"],
                 "stdout": truncate(run["stdout"], limit=16000),
                 "stderr": truncate(run["stderr"], limit=8000),
@@ -222,8 +222,8 @@ class VentipusAgentInstance(AgentInstance):
             lines.extend(["", "## Folded session state", json_dumps(fold_exgentic_history(self._history, profile=profile), limit=24000)])
         return "\n".join(lines)
 
-    def _run_ventipus(self, prompt: str) -> dict[str, Any]:
-        step_dir = self.paths.agent_dir / "ventipus" / f"step-{self._step:03d}"
+    def _run_cawdex(self, prompt: str) -> dict[str, Any]:
+        step_dir = self.paths.agent_dir / "cawdex" / f"step-{self._step:03d}"
         trace_dir = step_dir / "trace"
         step_dir.mkdir(parents=True, exist_ok=True)
         trace_dir.mkdir(parents=True, exist_ok=True)
@@ -243,13 +243,13 @@ class VentipusAgentInstance(AgentInstance):
 
         env = os.environ.copy()
         env.update({str(key): str(value) for key, value in self.extra_env.items()})
-        env.setdefault("VENTIPUS_ENV_CONFIG", "1")
-        env.setdefault("VENTIPUS_THEME", "minimal")
-        env.setdefault("VENTIPUS_SHOW_THINKING", "0")
-        env.setdefault("VENTIPUS_BASH_TIMEOUT_MS", "300000")
-        env["VENTIPUS_MEMORY"] = "1" if self.memory else "0"
-        if self.ventipus_home:
-            env["VENTIPUS_HOME"] = self.ventipus_home
+        env.setdefault("CAWDEX_ENV_CONFIG", "1")
+        env.setdefault("CAWDEX_THEME", "minimal")
+        env.setdefault("CAWDEX_SHOW_THINKING", "0")
+        env.setdefault("CAWDEX_BASH_TIMEOUT_MS", "300000")
+        env["CAWDEX_MEMORY"] = "1" if self.memory else "0"
+        if self.cawdex_home:
+            env["CAWDEX_HOME"] = self.cawdex_home
 
         cwd = self._resolve_workdir()
         try:
@@ -267,11 +267,11 @@ class VentipusAgentInstance(AgentInstance):
             returncode = completed.returncode
         except subprocess.TimeoutExpired as exc:
             stdout = redact(exc.stdout)
-            stderr = redact(exc.stderr) + f"\nventipus timed out after {self.timeout_sec}s"
+            stderr = redact(exc.stderr) + f"\ncawdex timed out after {self.timeout_sec}s"
             returncode = 124
         except Exception as exc:
             stdout = ""
-            stderr = f"ventipus launch failed: {redact(exc)}"
+            stderr = f"cawdex launch failed: {redact(exc)}"
             returncode = 127
 
         (step_dir / "argv.json").write_text(
@@ -586,11 +586,11 @@ def _single_action_to_data(action: Action) -> Any:
         return {"id": safe_id(str(action)), "text": str(action)}
 
 
-class CawdexAgentInstance(VentipusAgentInstance):
+class CawdexAgentInstance(CawdexAgentInstance):
     """Preferred Exgentic runtime class name for Cawdex."""
 
 
-class CawdexAgent(VentipusAgent):
+class CawdexAgent(CawdexAgent):
     """Preferred Exgentic host class name for Cawdex."""
 
     display_name: ClassVar[str] = "Cawdex"

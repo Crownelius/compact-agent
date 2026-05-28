@@ -9,7 +9,7 @@ import pkg from '../package.json' with { type: 'json' };
 const tempDirs: string[] = [];
 
 function tempHome(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'ventipus-doctor-'));
+  const dir = mkdtempSync(join(tmpdir(), 'cawdex-doctor-'));
   tempDirs.push(dir);
   return dir;
 }
@@ -25,10 +25,10 @@ describe('doctor readiness checks', () => {
       includeRegistry: false,
       env: {
         ...process.env,
-        VENTIPUS_HOME: tempHome(),
-        VENTIPUS_PROVIDER: 'openrouter',
-        VENTIPUS_MODEL: 'openrouter/free',
-        VENTIPUS_API_KEY: secret,
+        CAWDEX_HOME: tempHome(),
+        CAWDEX_PROVIDER: 'openrouter',
+        CAWDEX_MODEL: 'openrouter/free',
+        CAWDEX_API_KEY: secret,
         GITHUB_TOKEN: secret,
         HF_TOKEN: secret,
         KAGGLE_USERNAME: 'tester',
@@ -54,10 +54,10 @@ describe('doctor readiness checks', () => {
       includeRegistry: false,
       env: {
         ...process.env,
-        VENTIPUS_HOME: tempHome(),
-        VENTIPUS_PROVIDER: 'openrouter',
-        VENTIPUS_MODEL: 'openrouter/free',
-        VENTIPUS_API_KEY: 'test-token-value',
+        CAWDEX_HOME: tempHome(),
+        CAWDEX_PROVIDER: 'openrouter',
+        CAWDEX_MODEL: 'openrouter/free',
+        CAWDEX_API_KEY: 'test-token-value',
         GITHUB_TOKEN: '',
         GH_TOKEN: '',
         GITHUB_API_TOKEN: '',
@@ -80,15 +80,15 @@ describe('doctor readiness checks', () => {
   });
 
   it('prints JSON from the CLI wrapper before first-time setup', () => {
-    const out = execFileSync('node', ['bin/ventipus.js', '--doctor-json', '--doctor-no-registry'], {
+    const out = execFileSync('node', ['bin/cawdex.js', '--doctor-json', '--doctor-no-registry'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
       env: {
         ...process.env,
-        VENTIPUS_HOME: tempHome(),
-        VENTIPUS_PROVIDER: 'openrouter',
-        VENTIPUS_MODEL: 'openrouter/free',
-        VENTIPUS_API_KEY: 'test-token-value',
+        CAWDEX_HOME: tempHome(),
+        CAWDEX_PROVIDER: 'openrouter',
+        CAWDEX_MODEL: 'openrouter/free',
+        CAWDEX_API_KEY: 'test-token-value',
       },
     });
     const parsed = JSON.parse(out);

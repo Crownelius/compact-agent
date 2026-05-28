@@ -1,6 +1,6 @@
 /**
  * Session persistence — save, resume, list, delete conversations.
- * Stores sessions as JSON files in ~/.ventipus/sessions/
+ * Stores sessions as JSON files in ~/.cawdex/sessions/
  */
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,8 +9,8 @@ import type { Message } from './types.js';
 
 // Lazy — evaluated per call instead of cached at module load. The
 // cached form prevented tests + sandboxed runs from overriding the
-// state dir via VENTIPUS_HOME, because the first import froze
-// it at the user's real ~/.ventipus/sessions. getConfigDir()
+// state dir via CAWDEX_HOME, because the first import froze
+// it at the user's real ~/.cawdex/sessions. getConfigDir()
 // is itself cheap; recomputing per call has zero observable cost.
 function getSessionsDir(): string {
   return join(getConfigDir(), 'sessions');

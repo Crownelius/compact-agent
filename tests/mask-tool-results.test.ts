@@ -15,13 +15,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { maskOldToolResults } from '../src/query.js';
 import type { Message } from '../src/types.js';
 
-const ORIGINAL_WINDOW = process.env.VENTIPUS_MASK_WINDOW;
+const ORIGINAL_WINDOW = process.env.CAWDEX_MASK_WINDOW;
 
 afterEach(() => {
   if (ORIGINAL_WINDOW === undefined) {
-    delete process.env.VENTIPUS_MASK_WINDOW;
+    delete process.env.CAWDEX_MASK_WINDOW;
   } else {
-    process.env.VENTIPUS_MASK_WINDOW = ORIGINAL_WINDOW;
+    process.env.CAWDEX_MASK_WINDOW = ORIGINAL_WINDOW;
   }
 });
 
@@ -45,7 +45,7 @@ describe('maskOldToolResults', () => {
   });
 
   it('keeps only the last MASKING_WINDOW (=12) tool results when triggered', () => {
-    process.env.VENTIPUS_MASK_WINDOW = '12';
+    process.env.CAWDEX_MASK_WINDOW = '12';
     // Build 20 tool-result messages, each 5000 bytes → ~100K total
     const msgs: Message[] = [];
     for (let i = 0; i < 20; i++) msgs.push(toolMsg(`c${i}`, 5000));
@@ -110,8 +110,8 @@ describe('maskOldToolResults', () => {
     expect(msgs[0].content).toBe(originalFirstContent);
   });
 
-  it('respects VENTIPUS_MASK_WINDOW override', () => {
-    process.env.VENTIPUS_MASK_WINDOW = '3';
+  it('respects CAWDEX_MASK_WINDOW override', () => {
+    process.env.CAWDEX_MASK_WINDOW = '3';
     const msgs: Message[] = [];
     for (let i = 0; i < 10; i++) msgs.push(toolMsg(`c${i}`, 7000));
     const out = maskOldToolResults(msgs);
@@ -122,8 +122,8 @@ describe('maskOldToolResults', () => {
     expect(out[9].content).toBe(msgs[9].content);
   });
 
-  it('falls back gracefully on invalid VENTIPUS_MASK_WINDOW', () => {
-    process.env.VENTIPUS_MASK_WINDOW = 'not-a-number';
+  it('falls back gracefully on invalid CAWDEX_MASK_WINDOW', () => {
+    process.env.CAWDEX_MASK_WINDOW = 'not-a-number';
     const msgs: Message[] = [];
     for (let i = 0; i < 20; i++) msgs.push(toolMsg(`c${i}`, 5000));
     // Should NOT throw and should use the default window
@@ -131,7 +131,7 @@ describe('maskOldToolResults', () => {
   });
 
   it('handles edge case: fewer tool messages than the window', () => {
-    process.env.VENTIPUS_MASK_WINDOW = '12';
+    process.env.CAWDEX_MASK_WINDOW = '12';
     const msgs: Message[] = [];
     // 5 tool results, each 15K bytes → 75K total (triggers threshold)
     // but only 5 messages — fewer than window of 12 → nothing should be masked

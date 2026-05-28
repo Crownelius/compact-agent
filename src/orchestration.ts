@@ -4,7 +4,7 @@
  * Results are collected and merged back into the main conversation.
  */
 import chalk from 'chalk';
-import type { Message, VentipusConfig } from './types.js';
+import type { Message, CawdexConfig } from './types.js';
 import { streamChat } from './api.js';
 import { ALL_TOOLS } from './tools/index.js';
 
@@ -43,7 +43,7 @@ function createSubAgent(name: string, task: string, model: string): SubAgent {
  */
 async function runSubAgent(
   agent: SubAgent,
-  config: VentipusConfig,
+  config: CawdexConfig,
   contextMessages: Message[],
 ): Promise<void> {
   agent.status = 'running';
@@ -51,7 +51,7 @@ async function runSubAgent(
 
   console.log(chalk.cyan(`  [${agent.name}] Starting: ${agent.task.slice(0, 80)}...`));
 
-  const subConfig: VentipusConfig = { ...config, model: agent.model };
+  const subConfig: CawdexConfig = { ...config, model: agent.model };
   const messages: Message[] = [
     ...contextMessages.slice(-5), // last 5 messages for context
     { role: 'user', content: agent.task },
@@ -87,7 +87,7 @@ async function runSubAgent(
  */
 export async function runParallel(
   agents: SubAgent[],
-  config: VentipusConfig,
+  config: CawdexConfig,
   contextMessages: Message[],
 ): Promise<SubAgent[]> {
   console.log(chalk.cyan(`\n  Orchestrating ${agents.length} agents in parallel...\n`));
@@ -100,7 +100,7 @@ export async function runParallel(
  */
 export async function runSequential(
   agents: SubAgent[],
-  config: VentipusConfig,
+  config: CawdexConfig,
   contextMessages: Message[],
 ): Promise<SubAgent[]> {
   console.log(chalk.cyan(`\n  Orchestrating ${agents.length} agents sequentially...\n`));
@@ -122,7 +122,7 @@ export async function runSequential(
  */
 export async function runCascade(
   task: string,
-  config: VentipusConfig,
+  config: CawdexConfig,
   contextMessages: Message[],
   fastModel: string,
   powerModel: string,

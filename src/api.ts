@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { VentipusConfig, Message } from './types.js';
+import type { CawdexConfig, Message } from './types.js';
 import type { Tool } from './tools/types.js';
 import { withRetry } from './retry.js';
 import { setPool, pickKey, reportFailure, reportSuccess, poolSize } from './key-rotation.js';
@@ -14,7 +14,7 @@ let client: OpenAI | null = null;
 let lastConfigHash = '';
 let lastClientKey = '';   // which key the current client was built with
 
-function configHash(config: VentipusConfig): string {
+function configHash(config: CawdexConfig): string {
   // The client cache key depends on the CURRENT pool key, not the config
   // apiKey, so a rotation picks a fresh client without re-checking config.
   const poolKeys = (config.apiKeys || []).join(',');
@@ -28,7 +28,7 @@ function configHash(config: VentipusConfig): string {
  * Sync the rotation pool with the latest config. Called from getClient
  * on every request so /config or env-var changes flow through.
  */
-function syncPool(config: VentipusConfig): void {
+function syncPool(config: CawdexConfig): void {
   if (isOpenAICodexOAuth(config)) {
     setPool('', []);
     return;
@@ -36,7 +36,7 @@ function syncPool(config: VentipusConfig): void {
   setPool(config.apiKey, config.apiKeys || []);
 }
 
-export function getClient(config: VentipusConfig): OpenAI {
+export function getClient(config: CawdexConfig): OpenAI {
   syncPool(config);
   if (isOpenAICodexOAuth(config)) {
     const auth = resolveOpenAICodexAuth(config);
@@ -47,8 +47,8 @@ export function getClient(config: VentipusConfig): OpenAI {
     const hash = configHash(config);
     if (!client || hash !== lastConfigHash || activeKey !== lastClientKey) {
       const defaultHeaders: Record<string, string> = {
-        originator: 'ventipus',
-        version: 'ventipus',
+        originator: 'cawdex',
+        version: 'cawdex',
       };
       if (auth.accountId) defaultHeaders['ChatGPT-Account-ID'] = auth.accountId;
       client = new OpenAI({
@@ -92,7 +92,7 @@ export function getClient(config: VentipusConfig): OpenAI {
  * callers (streamChat) can attribute success/failure back to the
  * specific key for rotation health-tracking.
  */
-export function getClientWithKey(config: VentipusConfig): { client: OpenAI; activeKey: string } {
+export function getClientWithKey(config: CawdexConfig): { client: OpenAI; activeKey: string } {
   const c = getClient(config);
   return { client: c, activeKey: lastClientKey };
 }
@@ -177,7 +177,7 @@ export function messagesToResponsesInstructions(messages: Message[]): string {
 }
 
 export function buildCodexResponsesRequest(
-  config: VentipusConfig,
+  config: CawdexConfig,
   messages: Message[],
   tools: Tool[],
 ): Record<string, unknown> {
@@ -198,10 +198,10 @@ export function buildCodexResponsesRequest(
 }
 
 export function shouldRequestChatStreamUsage(
-  config: Pick<VentipusConfig, 'baseURL'>,
+  config: Pick<CawdexConfig, 'baseURL'>,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  const override = env.VENTIPUS_STREAM_USAGE;
+  const override = env.CAWDEX_STREAM_USAGE;
   if (override && /^(0|false|off|no)$/i.test(override)) return false;
   if (override && /^(1|true|on|yes)$/i.test(override)) return true;
 
@@ -225,7 +225,7 @@ type StreamChatEvent = {
 };
 
 export async function* streamChat(
-  config: VentipusConfig,
+  config: CawdexConfig,
   messages: Message[],
   tools: Tool[],
   signal?: AbortSignal,
@@ -346,7 +346,7 @@ export async function* streamChat(
 }
 
 async function* streamResponsesChat(
-  config: VentipusConfig,
+  config: CawdexConfig,
   messages: Message[],
   tools: Tool[],
   signal?: AbortSignal,

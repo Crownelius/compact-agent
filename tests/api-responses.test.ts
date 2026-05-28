@@ -108,11 +108,11 @@ describe('Chat Completions stream usage request', () => {
   it('supports explicit env override', () => {
     expect(shouldRequestChatStreamUsage(
       { baseURL: 'http://localhost:11434/v1' },
-      { VENTIPUS_STREAM_USAGE: '1' },
+      { CAWDEX_STREAM_USAGE: '1' },
     )).toBe(true);
     expect(shouldRequestChatStreamUsage(
       { baseURL: 'https://openrouter.ai/api/v1' },
-      { VENTIPUS_STREAM_USAGE: '0' },
+      { CAWDEX_STREAM_USAGE: '0' },
     )).toBe(false);
   });
 });

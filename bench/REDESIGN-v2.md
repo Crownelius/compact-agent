@@ -67,7 +67,7 @@ Source: Goose's `large_response_handler.rs` (80 lines).
 
 Every tool response > **threshold tokens** (start at 4K for Cawdex's budget) gets routed through a wrapper that:
 
-1. Writes the full response to `/tmp/ventipus-results/<call_id>.txt`
+1. Writes the full response to `/tmp/cawdex-results/<call_id>.txt`
 2. Replaces the in-context payload with: head 1.5K + tail 1.5K + `[middle elided — N more tokens at <path>; use head/tail/grep to read]`
 
 This runs **before** the message even hits message history — the model never sees the 200KB blob. If it later needs the middle, it can `bash` it.

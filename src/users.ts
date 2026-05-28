@@ -1,6 +1,6 @@
 /**
  * Users table — persistent user management.
- * Stores user data in ~/.ventipus/users.json
+ * Stores user data in ~/.cawdex/users.json
  *
  * Each user has a unique ID, display name, and metadata.
  * Users can be activated/deactivated, and the active user's context

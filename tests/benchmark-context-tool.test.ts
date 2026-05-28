@@ -9,18 +9,24 @@ import { addDrawer } from '../src/mempalace/index.js';
 const roots: string[] = [];
 
 function makeRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'ventipus-bench-'));
+  const root = mkdtempSync(join(tmpdir(), 'cawdex-bench-'));
   roots.push(root);
   return root;
 }
 
 afterEach(() => {
-  delete process.env.VENTIPUS_BENCHMARK_TRACE_DIR;
-  delete process.env.VENTIPUS_BENCHMARK_EXPERIENCE;
-  delete process.env.VENTIPUS_BENCHMARK_PROBE_NETWORK;
+  delete process.env.CAWDEX_BENCHMARK_TRACE_DIR;
+  delete process.env.CAWDEX_BENCHMARK_EXPERIENCE;
+  delete process.env.CAWDEX_BENCHMARK_PROBE_NETWORK;
   delete process.env.HF_HUB_OFFLINE;
   delete process.env.TRANSFORMERS_OFFLINE;
   delete process.env.PIP_NO_INDEX;
+  delete process.env.GITHUB_TOKEN;
+  delete process.env.GH_TOKEN;
+  delete process.env.GITHUB_API_TOKEN;
+  delete process.env.HF_TOKEN;
+  delete process.env.KAGGLE_API_TOKEN;
+  delete process.env.KAGGLE_TOKEN;
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -42,12 +48,12 @@ describe('benchmark_context tool', () => {
     mkdirSync(join(root, 'oracle'));
     mkdirSync(join(root, 'solution'));
     mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-26-prior');
     const failedPriorRunDir = join(traceDir, '2026-05-26-failed-prior');
     mkdirSync(priorRunDir, { recursive: true });
     mkdirSync(failedPriorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({
       scripts: {
         test: 'vitest run',
@@ -348,6 +354,12 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('benchmark_repo_catalog');
     expect(result.output).toContain('source repository digest');
     expect(result.output).toContain('github_repo_digest');
+    expect(result.output).toContain('Source Research Action Plan');
+    expect(result.output).toContain('call research_sources:');
+    expect(result.output).toContain('"github_kind":"all"');
+    expect(result.output).toContain('"kaggle_kind":"both"');
+    expect(result.output).toContain('call benchmark_repo_catalog:');
+    expect(result.output).toContain('source auth readiness:');
     expect(result.output).toContain('Terminal-Bench Source Catalog Hints');
     expect(result.output).toContain('catalog seed: no exact packaged repo match');
     expect(result.output).toContain('catalog gaps: use benchmark_repo_catalog');
@@ -399,17 +411,53 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('catalog match: OpenHands [official');
     expect(result.output).toContain('repos=OpenHands/openhands');
     expect(result.output).toContain('next=github_repo_digest repo=OpenHands/openhands');
+    expect(result.output).toContain('Source Research Action Plan');
+    expect(result.output).toContain('research query: "Terminal-Bench leaderboard source mining for OpenHands and SageAgent"');
+    expect(result.output).toContain('call research_sources: {"query":"Terminal-Bench leaderboard source mining for OpenHands and SageAgent"');
+    expect(result.output).toContain('call benchmark_repo_catalog: {"query":"Terminal-Bench leaderboard source mining for OpenHands and SageAgent","status":"all","limit":12}');
+    expect(result.output).toContain('call github_repo_digest: {"repo":"OpenHands/openhands","max_files":500,"max_text_files":6}');
     expect(result.output).toContain('catalog gap: SageAgent [unverified');
     expect(result.output).toContain('repos=(none verified)');
     expect(result.output).toContain('do not overclaim a public repo');
   });
 
+  it('emits a credential-safe exact source research action plan', async () => {
+    const root = makeRoot();
+    const githubToken = ['gh', 'plan', 'marker'].join('_');
+    const hfToken = ['hf', 'plan', 'marker'].join('_');
+    const kaggleToken = ['kg', 'plan', 'marker'].join('_');
+    process.env.GITHUB_TOKEN = githubToken;
+    process.env.HF_TOKEN = hfToken;
+    process.env.KAGGLE_API_TOKEN = kaggleToken;
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      'Improve agent leaderboard methodology using newest arXiv, GitHub, Hugging Face, and Kaggle evidence.',
+      '',
+    ].join('\n'));
+
+    const result = await BenchmarkContextTool.call({
+      path: root,
+      probe_network: false,
+      task: 'agent leaderboard methodology newest science',
+    }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('Source Research Action Plan');
+    expect(result.output).toContain('research query: "agent leaderboard methodology newest science"');
+    expect(result.output).toContain('source auth readiness: GitHub=found; Hugging Face=found; Kaggle=found; Kaggle competitions=enabled; missing=none');
+    expect(result.output).toContain('call research_sources: {"query":"agent leaderboard methodology newest science","source":"all","github_kind":"all","kind":"all","kaggle_kind":"both","recent_days":90,"limit":5,"format":"json"}');
+    expect(result.output).toContain('Run these read-only calls before relying on newest science');
+    expect(result.output).not.toContain(githubToken);
+    expect(result.output).not.toContain(hfToken);
+    expect(result.output).not.toContain(kaggleToken);
+  });
+
   it('routes prior source-mining catalog hits without repo digests to warnings', async () => {
     const root = makeRoot();
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-27-source-mining-missing-digest');
     mkdirSync(priorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'TASK.md'), [
       '# Task',
       'Improve Terminal-Bench leaderboard source mining for Codex CLI.',
@@ -501,10 +549,10 @@ describe('benchmark_context tool', () => {
   it('uses summary experience-card replay checkpoints when trace.jsonl is absent', async () => {
     const root = makeRoot();
     mkdirSync(join(root, 'src'));
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-27-card-prior');
     mkdirSync(priorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
     writeFileSync(join(root, 'TASK.md'), [
       '# Task',
@@ -750,10 +798,10 @@ describe('benchmark_context tool', () => {
   it('routes trajectory-cleanup risky prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     mkdirSync(join(root, 'src'), { recursive: true });
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-27-noisy-prior');
     mkdirSync(priorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
     writeFileSync(join(root, 'TASK.md'), '- Must show billing totals with two decimal places.\n');
     writeFileSync(join(root, 'src', 'app.ts'), 'export const total = 12.3;\n');
@@ -807,10 +855,10 @@ describe('benchmark_context tool', () => {
   it('routes missing root-cause prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     mkdirSync(join(root, 'src'), { recursive: true });
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-27-root-cause-prior');
     mkdirSync(priorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
     writeFileSync(join(root, 'TASK.md'), '- Must trim parser input.\n');
     writeFileSync(join(root, 'src', 'parser.ts'), 'export const parse = (input: string) => input;\n');
@@ -861,10 +909,10 @@ describe('benchmark_context tool', () => {
   it('routes missing targeted-fix prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     mkdirSync(join(root, 'src'), { recursive: true });
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-27-targeted-fix-prior');
     mkdirSync(priorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
     writeFileSync(join(root, 'TASK.md'), '- Must trim parser input.\n');
     writeFileSync(join(root, 'src', 'parser.ts'), 'export const parse = (input: string) => input;\n');
@@ -934,10 +982,10 @@ describe('benchmark_context tool', () => {
   it('routes undiagnosed failure-onset prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     mkdirSync(join(root, 'src'), { recursive: true });
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const priorRunDir = join(traceDir, '2026-05-27-failure-onset-prior');
     mkdirSync(priorRunDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
     writeFileSync(join(root, 'TASK.md'), '- Must trim parser input.\n');
     writeFileSync(join(root, 'src', 'parser.ts'), 'export const parse = (input: string) => input;\n');
@@ -1031,13 +1079,13 @@ describe('benchmark_context tool', () => {
 
   it('routes context-bloated prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const bloatedPriorDir = join(traceDir, '2026-05-27-bloated-context');
     const disciplinedPriorDir = join(traceDir, '2026-05-27-disciplined-context');
     mkdirSync(bloatedPriorDir, { recursive: true });
     mkdirSync(disciplinedPriorDir, { recursive: true });
     mkdirSync(join(root, 'src'), { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
     writeFileSync(join(root, 'TASK.md'), [
       '# Task',
@@ -1125,14 +1173,14 @@ describe('benchmark_context tool', () => {
 
   it('ranks complete Pi-Bench proactivity evidence ahead of generic prior runs', async () => {
     const root = makeRoot();
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const completePriorDir = join(traceDir, '2026-05-27-complete-pibench');
     const genericPriorDir = join(traceDir, '2026-05-27-generic-prior');
     const riskyPriorDir = join(traceDir, '2026-05-27-risky-pibench');
     mkdirSync(completePriorDir, { recursive: true });
     mkdirSync(genericPriorDir, { recursive: true });
     mkdirSync(riskyPriorDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
     writeFileSync(join(root, 'TASK.md'), [
       '# Task',
@@ -1246,14 +1294,14 @@ describe('benchmark_context tool', () => {
 
   it('routes rejected AHE change evaluations to prior-experience warnings', async () => {
     const root = makeRoot();
-    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const traceDir = join(root, '.cawdex', 'benchmark-runs');
     const rejectedPriorDir = join(traceDir, '2026-05-27-rejected-change-evaluation');
     const pendingPriorDir = join(traceDir, '2026-05-27-pending-change-evaluation');
     const confirmedPriorDir = join(traceDir, '2026-05-27-confirmed-change-evaluation');
     mkdirSync(rejectedPriorDir, { recursive: true });
     mkdirSync(pendingPriorDir, { recursive: true });
     mkdirSync(confirmedPriorDir, { recursive: true });
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceDir;
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
     writeFileSync(join(root, 'TASK.md'), [
       '# Task',
@@ -1403,7 +1451,7 @@ describe('benchmark_context tool', () => {
   });
 
   it('reports missing paths as errors', async () => {
-    const result = await BenchmarkContextTool.call({ path: join(tmpdir(), 'definitely-missing-ventipus') }, process.cwd());
+    const result = await BenchmarkContextTool.call({ path: join(tmpdir(), 'definitely-missing-cawdex') }, process.cwd());
     expect(result.isError).toBe(true);
     expect(result.output).toContain('path does not exist');
   });

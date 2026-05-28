@@ -16,10 +16,10 @@ function testConfig(memoryEnabled = true): any {
 
 beforeEach(() => {
   vi.resetModules();
-  tempHome = mkdtempSync(join(tmpdir(), 'ventipus-mempalace-home-'));
-  tempCwd = mkdtempSync(join(tmpdir(), 'ventipus-mempalace-cwd-'));
-  vi.stubEnv('VENTIPUS_HOME', tempHome);
-  vi.stubEnv('VENTIPUS_HOME', tempHome);
+  tempHome = mkdtempSync(join(tmpdir(), 'cawdex-mempalace-home-'));
+  tempCwd = mkdtempSync(join(tmpdir(), 'cawdex-mempalace-cwd-'));
+  vi.stubEnv('CAWDEX_HOME', tempHome);
+  vi.stubEnv('CAWDEX_HOME', tempHome);
 });
 
 afterEach(() => {
@@ -34,7 +34,7 @@ describe('MemPalace integration', () => {
     const mempalace = await import('../src/mempalace/index.js');
     mempalace.addDrawer({
       wing: 'code',
-      room: 'ventipus',
+      room: 'cawdex',
       content: 'OpenAI OAuth callback handling lives in src/openai-oauth.ts and login-flow coverage exercises it.',
       tags: ['oauth', 'login'],
       importance: 0.9,
@@ -75,7 +75,7 @@ describe('MemPalace integration', () => {
 
     expect(() => mempalace.addDrawer({
       wing: 'code',
-      room: 'ventipus',
+      room: 'cawdex',
       content: 'Invalid both scope should never be accepted.',
       scope: 'both' as any,
       cwd: tempCwd,
@@ -83,7 +83,7 @@ describe('MemPalace integration', () => {
 
     expect(() => mempalace.addDrawer({
       wing: 'code',
-      room: 'ventipus',
+      room: 'cawdex',
       content: 'Invalid typo scope should never be accepted.',
       scope: 'temporary' as any,
       cwd: tempCwd,
@@ -100,7 +100,7 @@ describe('MemPalace integration', () => {
 
     const projectDrawer = mempalace.addDrawer({
       wing: 'code',
-      room: 'ventipus',
+      room: 'cawdex',
       content: 'The command palette implementation lives in src/command-palette.ts.',
       tags: ['code'],
       scope: 'auto',
@@ -111,7 +111,7 @@ describe('MemPalace integration', () => {
     const { MemoryAddTool } = await import('../src/tools/memory.js');
     const result = await MemoryAddTool.call({
       wing: 'code',
-      room: 'ventipus',
+      room: 'cawdex',
       content: 'Tool calls must reject scope both too.',
       scope: 'both',
     }, tempCwd);

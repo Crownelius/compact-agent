@@ -1,6 +1,6 @@
 /**
  * Skills system — reusable prompt templates extracted from instincts or git history.
- * Data stored in ~/.ventipus/skills/
+ * Data stored in ~/.cawdex/skills/
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';

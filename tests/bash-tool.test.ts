@@ -10,19 +10,19 @@ import {
   truncateBashOutput,
 } from '../src/tools/bash.js';
 
-const ORIGINAL_MAX_CHARS = process.env.VENTIPUS_BASH_MAX_OUTPUT_CHARS;
-const ORIGINAL_MAX_LINES = process.env.VENTIPUS_BASH_MAX_OUTPUT_LINES;
+const ORIGINAL_MAX_CHARS = process.env.CAWDEX_BASH_MAX_OUTPUT_CHARS;
+const ORIGINAL_MAX_LINES = process.env.CAWDEX_BASH_MAX_OUTPUT_LINES;
 
 afterEach(() => {
   if (ORIGINAL_MAX_CHARS === undefined) {
-    delete process.env.VENTIPUS_BASH_MAX_OUTPUT_CHARS;
+    delete process.env.CAWDEX_BASH_MAX_OUTPUT_CHARS;
   } else {
-    process.env.VENTIPUS_BASH_MAX_OUTPUT_CHARS = ORIGINAL_MAX_CHARS;
+    process.env.CAWDEX_BASH_MAX_OUTPUT_CHARS = ORIGINAL_MAX_CHARS;
   }
   if (ORIGINAL_MAX_LINES === undefined) {
-    delete process.env.VENTIPUS_BASH_MAX_OUTPUT_LINES;
+    delete process.env.CAWDEX_BASH_MAX_OUTPUT_LINES;
   } else {
-    process.env.VENTIPUS_BASH_MAX_OUTPUT_LINES = ORIGINAL_MAX_LINES;
+    process.env.CAWDEX_BASH_MAX_OUTPUT_LINES = ORIGINAL_MAX_LINES;
   }
 });
 
@@ -73,9 +73,9 @@ describe('truncateBashOutput', () => {
 
 describe('BashTool output logs', () => {
   it('saves full output when foreground command output is truncated', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-bash-'));
-    process.env.VENTIPUS_BASH_MAX_OUTPUT_CHARS = '80';
-    process.env.VENTIPUS_BASH_MAX_OUTPUT_LINES = '100';
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-bash-'));
+    process.env.CAWDEX_BASH_MAX_OUTPUT_CHARS = '80';
+    process.env.CAWDEX_BASH_MAX_OUTPUT_LINES = '100';
     try {
       const result = await BashTool.call({
         command: 'node -e "process.stdout.write(\'HEAD\' + \'x\'.repeat(1000) + \'TAIL\')"',
@@ -96,7 +96,7 @@ describe('BashTool output logs', () => {
   });
 
   it('saves partial output and structured status when a foreground command times out', async () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-bash-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-bash-'));
     try {
       const result = await BashTool.call({
         command: 'node -e "process.stdout.write(\'started\'); setTimeout(() => {}, 200)"',
@@ -123,8 +123,8 @@ describe('resolveBashTimeoutMs', () => {
     expect(resolveBashTimeoutMs({}, {}).timeoutMs).toBe(DEFAULT_BASH_TIMEOUT_MS);
   });
 
-  it('uses VENTIPUS_BASH_TIMEOUT_MS as the default when set', () => {
-    expect(resolveBashTimeoutMs({}, { VENTIPUS_BASH_TIMEOUT_MS: '300000' }).timeoutMs).toBe(300_000);
+  it('uses CAWDEX_BASH_TIMEOUT_MS as the default when set', () => {
+    expect(resolveBashTimeoutMs({}, { CAWDEX_BASH_TIMEOUT_MS: '300000' }).timeoutMs).toBe(300_000);
   });
 
   it('prefers timeoutMs over the legacy timeout alias', () => {

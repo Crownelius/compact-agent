@@ -3,7 +3,7 @@
  * Keeps recent messages intact, summarizes older ones to free token space.
  */
 import chalk from 'chalk';
-import type { Message, VentipusConfig } from './types.js';
+import type { Message, CawdexConfig } from './types.js';
 import { streamChat } from './api.js';
 import { ALL_TOOLS } from './tools/index.js';
 import { getCachedOpenRouterModelContextLength, isOpenRouterFreeModelId } from './openrouter-models.js';
@@ -76,11 +76,11 @@ export function contextCapTokens(contextWindowTokens: number): number {
   return Math.floor(Math.max(contextWindowTokens - 40_000, contextWindowTokens * 0.8));
 }
 
-export function inferContextWindowTokens(config: Pick<VentipusConfig, 'model' | 'contextWindowTokens'>): number {
+export function inferContextWindowTokens(config: Pick<CawdexConfig, 'model' | 'contextWindowTokens'>): number {
   const explicit = Number(config.contextWindowTokens);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
 
-  const env = Number(process.env.VENTIPUS_CONTEXT_WINDOW_TOKENS || process.env.VENTIPUS_CONTEXT_WINDOW);
+  const env = Number(process.env.CAWDEX_CONTEXT_WINDOW_TOKENS || process.env.CAWDEX_CONTEXT_WINDOW);
   if (Number.isFinite(env) && env > 0) return env;
 
   const model = config.model.toLowerCase();
@@ -130,10 +130,10 @@ function envFlag(name: string): boolean | undefined {
 }
 
 export function compactionTriggerTokens(
-  config: Pick<VentipusConfig, 'model' | 'contextWindowTokens'>,
+  config: Pick<CawdexConfig, 'model' | 'contextWindowTokens'>,
   base: CompactionConfig = DEFAULT_COMPACTION,
 ): number {
-  const override = positiveIntegerEnv('VENTIPUS_COMPACTION_TRIGGER_TOKENS');
+  const override = positiveIntegerEnv('CAWDEX_COMPACTION_TRIGGER_TOKENS');
   if (override) return override;
 
   const contextWindow = inferContextWindowTokens(config);
@@ -146,7 +146,7 @@ export function compactionTriggerTokens(
 }
 
 export function buildCompactionConfig(
-  config: Pick<VentipusConfig, 'model' | 'contextWindowTokens'>,
+  config: Pick<CawdexConfig, 'model' | 'contextWindowTokens'>,
   base: CompactionConfig = DEFAULT_COMPACTION,
 ): CompactionConfig {
   return {
@@ -266,7 +266,7 @@ export function shouldCompact(messages: Message[], config: CompactionConfig): bo
 
 export function getCompactionStats(
   messages: Message[],
-  config: Pick<VentipusConfig, 'model' | 'contextWindowTokens'> = { model: '' },
+  config: Pick<CawdexConfig, 'model' | 'contextWindowTokens'> = { model: '' },
 ): {
   messageCount: number;
   estimatedTokens: number;
@@ -455,30 +455,30 @@ export function buildLocalCompactionSummary(oldMessages: Message[]): string {
 }
 
 function localCompactionFallbackEnabled(): boolean {
-  return process.env.VENTIPUS_LOCAL_COMPACTION_FALLBACK !== '0';
+  return process.env.CAWDEX_LOCAL_COMPACTION_FALLBACK !== '0';
 }
 
 function llmCompactionEnabled(): boolean {
-  const mode = envString('VENTIPUS_COMPACTION_MODE')?.toLowerCase();
+  const mode = envString('CAWDEX_COMPACTION_MODE')?.toLowerCase();
   if (mode === 'local' || mode === 'deterministic') return false;
-  return envFlag('VENTIPUS_LLM_COMPACTION') !== false;
+  return envFlag('CAWDEX_LLM_COMPACTION') !== false;
 }
 
-function shouldUseFallbackModelForCompaction(config: VentipusConfig): boolean {
+function shouldUseFallbackModelForCompaction(config: CawdexConfig): boolean {
   if (!config.fallbackModel || config.fallbackModel === config.model) return false;
-  const override = envFlag('VENTIPUS_COMPACTION_USE_FALLBACK');
+  const override = envFlag('CAWDEX_COMPACTION_USE_FALLBACK');
   if (override !== undefined) return override;
 
   const provider = `${config.provider} ${config.baseURL}`.toLowerCase();
   return provider.includes('openrouter');
 }
 
-export function buildCompactionSummaryConfig(config: VentipusConfig): VentipusConfig {
+export function buildCompactionSummaryConfig(config: CawdexConfig): CawdexConfig {
   const model =
-    envString('VENTIPUS_COMPACTION_MODEL') ||
+    envString('CAWDEX_COMPACTION_MODEL') ||
     (shouldUseFallbackModelForCompaction(config) ? config.fallbackModel : undefined) ||
     config.model;
-  const maxTokens = positiveIntegerEnv('VENTIPUS_COMPACTION_MAX_TOKENS')
+  const maxTokens = positiveIntegerEnv('CAWDEX_COMPACTION_MAX_TOKENS')
     ?? Math.min(config.maxTokens, DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS);
 
   return {
@@ -506,7 +506,7 @@ function finalizeCompaction(messages: Message[], partition: CompactionPartition,
  */
 export async function compactMessages(
   messages: Message[],
-  config: VentipusConfig,
+  config: CawdexConfig,
   compactionConfig: CompactionConfig = DEFAULT_COMPACTION,
 ): Promise<Message[]> {
   if (messages.length <= compactionConfig.keepRecentMessages) {

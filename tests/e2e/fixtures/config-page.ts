@@ -1,13 +1,13 @@
-import { VentipusCLI } from './cli.js';
+import { CawdexCLI } from './cli.js';
 
 /**
  * Config Page Object — encapsulates all configuration/login operations.
  * Maps to the setup wizard (/config command) and config file state.
  */
 export class ConfigPage {
-  private cli: VentipusCLI;
+  private cli: CawdexCLI;
 
-  constructor(cli: VentipusCLI) {
+  constructor(cli: CawdexCLI) {
     this.cli = cli;
   }
 

@@ -47,7 +47,7 @@ cawdex --doctor     # install/config readiness check
 cawdex              # launch the REPL
 ```
 
-The legacy `ventipus` command is still installed as an alias for existing workflows. To uninstall later: `npm uninstall -g cawdex`.
+The legacy `cawdex` command is still installed as an alias for existing workflows. To uninstall later: `npm uninstall -g cawdex`.
 
 ### Pre-publish alternative: install from GitHub
 
@@ -92,7 +92,7 @@ The first time you run `cawdex`, the setup wizard fires. It asks for:
    LM Studio, DeepSeek, or a custom OpenAI-compatible endpoint.
 2. **Base URL.** Pre-filled per provider. Only override if you're using a
    custom endpoint or a proxy.
-3. **API key.** Stored plaintext in `~/.ventipus/config.json` — keep that
+3. **API key.** Stored plaintext in `~/.cawdex/config.json` — keep that
    file private (it's only readable by you on POSIX).
 4. **Model.** Pre-filled with a sensible default; you can paste any model
    slug the provider supports. For OpenRouter free tier, try
@@ -101,7 +101,7 @@ The first time you run `cawdex`, the setup wizard fires. It asks for:
    non-destructive ops), or `yolo` (approve everything — fastest, riskiest).
    Default is `ask`. You can change later with `/perm <mode>`.
 
-Your config is saved to `~/.ventipus/config.json` and Cawdex drops
+Your config is saved to `~/.cawdex/config.json` and Cawdex drops
 into the REPL.
 
 To re-run the wizard later: type `/config` inside the REPL.
@@ -151,7 +151,7 @@ If `cawdex` isn't found after `npm link`, see [Troubleshooting](#troubleshooting
 Cawdex is local-first:
 
 ```
-~/.ventipus/
+~/.cawdex/
   config.json          API key, provider, model, permissions
   usage.json           token counts, cost estimates (local only)
   hooks.json           PreToolUse / PostToolUse hook config
@@ -181,7 +181,7 @@ ECC ready: 33 skills, 16 agents, 9 commands, 7 rule sets.
 ```
 
 That's the bundled [everything-claude-code][ecc] library being installed into
-`~/.ventipus/`. It adds:
+`~/.cawdex/`. It adds:
 
 - High-quality prompts for `/tdd`, `/review`, `/security-review`, `/plan`,
   `/refactor`, `/build-fix` (these use the ECC version automatically when ECC
@@ -193,7 +193,7 @@ That's the bundled [everything-claude-code][ecc] library being installed into
   suggest tmux for dev servers.
 
 Refresh anytime with `/ecc-install`. Disable a specific hook by editing
-`~/.ventipus/hooks.json`.
+`~/.cawdex/hooks.json`.
 
 ## Updating
 
@@ -215,11 +215,11 @@ npx tsc                # rebuild
 ```bash
 npm uninstall -g cawdex           # if installed via npm install -g
 npm unlink -g cawdex              # if installed via `npm link` from a source clone
-rm -rf ~/.ventipus                # local state (config, sessions, instincts, etc.)
+rm -rf ~/.cawdex                # local state (config, sessions, instincts, etc.)
 ```
 
-If you set up hooks or wrote skills, back up `~/.ventipus/skills/` and
-`~/.ventipus/hooks.json` first.
+If you set up hooks or wrote skills, back up `~/.cawdex/skills/` and
+`~/.cawdex/hooks.json` first.
 
 ## Troubleshooting
 

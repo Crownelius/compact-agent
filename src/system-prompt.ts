@@ -1,7 +1,7 @@
 import { readdirSync, existsSync } from 'node:fs';
 import { platform, release, homedir } from 'node:os';
 import { BRAND_LOCKUP } from './brand.js';
-import type { VentipusConfig } from './types.js';
+import type { CawdexConfig } from './types.js';
 import { getModePromptAddition, type Mode } from './modes.js';
 import { buildRulesPrompt } from './rules.js';
 import { getRelevantInstincts } from './learning.js';
@@ -32,7 +32,7 @@ function buildDesignHint(mode: Mode): string {
 }
 
 export function buildSystemPrompt(
-  config: VentipusConfig,
+  config: CawdexConfig,
   cwd: string,
   mode: Mode = 'dev',
   userQuery?: string,
@@ -42,7 +42,7 @@ export function buildSystemPrompt(
   // The bash tool picks cmd.exe on Windows by default (was a major source
   // of "$USERPROFILE is empty" bugs when we used bash). Keep this in sync
   // with src/tools/bash.ts:pickShell().
-  const shell = process.env.VENTIPUS_SHELL
+  const shell = process.env.CAWDEX_SHELL
     || (process.platform === 'win32' ? 'cmd.exe' : '/bin/bash');
 
   // Detect if cwd is a git repo
@@ -178,9 +178,9 @@ ${buildToolList()}
 ${config.memory?.enabled !== false ? `# Memory (MemPalace) — when to use the memory_* tools
 
 This agent has a persistent memory subsystem with two scopes:
-  - **global** memory at ~/.ventipus/memory/ — cross-project: user preferences,
+  - **global** memory at ~/.cawdex/memory/ — cross-project: user preferences,
     style choices, recurring patterns, identity
-  - **project** memory at <cwd>/.ventipus/memory/ — this-codebase-specific:
+  - **project** memory at <cwd>/.cawdex/memory/ — this-codebase-specific:
     landmarks ("auth lives in src/auth"), gotchas, decisions
 
 You have these memory tools available:

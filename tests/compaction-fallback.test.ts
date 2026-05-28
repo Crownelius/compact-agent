@@ -6,54 +6,54 @@ import {
   compactMessages,
   DEFAULT_COMPACTION,
 } from '../src/compaction.js';
-import type { VentipusConfig, Message } from '../src/types.js';
+import type { CawdexConfig, Message } from '../src/types.js';
 
 vi.mock('../src/api.js', () => ({
   streamChat: vi.fn(),
 }));
 
-const ORIGINAL_LOCAL_FALLBACK = process.env.VENTIPUS_LOCAL_COMPACTION_FALLBACK;
-const ORIGINAL_LLM_COMPACTION = process.env.VENTIPUS_LLM_COMPACTION;
-const ORIGINAL_COMPACTION_MODE = process.env.VENTIPUS_COMPACTION_MODE;
-const ORIGINAL_COMPACTION_MODEL = process.env.VENTIPUS_COMPACTION_MODEL;
-const ORIGINAL_COMPACTION_MAX_TOKENS = process.env.VENTIPUS_COMPACTION_MAX_TOKENS;
-const ORIGINAL_COMPACTION_USE_FALLBACK = process.env.VENTIPUS_COMPACTION_USE_FALLBACK;
+const ORIGINAL_LOCAL_FALLBACK = process.env.CAWDEX_LOCAL_COMPACTION_FALLBACK;
+const ORIGINAL_LLM_COMPACTION = process.env.CAWDEX_LLM_COMPACTION;
+const ORIGINAL_COMPACTION_MODE = process.env.CAWDEX_COMPACTION_MODE;
+const ORIGINAL_COMPACTION_MODEL = process.env.CAWDEX_COMPACTION_MODEL;
+const ORIGINAL_COMPACTION_MAX_TOKENS = process.env.CAWDEX_COMPACTION_MAX_TOKENS;
+const ORIGINAL_COMPACTION_USE_FALLBACK = process.env.CAWDEX_COMPACTION_USE_FALLBACK;
 
 afterEach(() => {
   vi.mocked(streamChat).mockReset();
   if (ORIGINAL_LOCAL_FALLBACK === undefined) {
-    delete process.env.VENTIPUS_LOCAL_COMPACTION_FALLBACK;
+    delete process.env.CAWDEX_LOCAL_COMPACTION_FALLBACK;
   } else {
-    process.env.VENTIPUS_LOCAL_COMPACTION_FALLBACK = ORIGINAL_LOCAL_FALLBACK;
+    process.env.CAWDEX_LOCAL_COMPACTION_FALLBACK = ORIGINAL_LOCAL_FALLBACK;
   }
   if (ORIGINAL_LLM_COMPACTION === undefined) {
-    delete process.env.VENTIPUS_LLM_COMPACTION;
+    delete process.env.CAWDEX_LLM_COMPACTION;
   } else {
-    process.env.VENTIPUS_LLM_COMPACTION = ORIGINAL_LLM_COMPACTION;
+    process.env.CAWDEX_LLM_COMPACTION = ORIGINAL_LLM_COMPACTION;
   }
   if (ORIGINAL_COMPACTION_MODE === undefined) {
-    delete process.env.VENTIPUS_COMPACTION_MODE;
+    delete process.env.CAWDEX_COMPACTION_MODE;
   } else {
-    process.env.VENTIPUS_COMPACTION_MODE = ORIGINAL_COMPACTION_MODE;
+    process.env.CAWDEX_COMPACTION_MODE = ORIGINAL_COMPACTION_MODE;
   }
   if (ORIGINAL_COMPACTION_MODEL === undefined) {
-    delete process.env.VENTIPUS_COMPACTION_MODEL;
+    delete process.env.CAWDEX_COMPACTION_MODEL;
   } else {
-    process.env.VENTIPUS_COMPACTION_MODEL = ORIGINAL_COMPACTION_MODEL;
+    process.env.CAWDEX_COMPACTION_MODEL = ORIGINAL_COMPACTION_MODEL;
   }
   if (ORIGINAL_COMPACTION_MAX_TOKENS === undefined) {
-    delete process.env.VENTIPUS_COMPACTION_MAX_TOKENS;
+    delete process.env.CAWDEX_COMPACTION_MAX_TOKENS;
   } else {
-    process.env.VENTIPUS_COMPACTION_MAX_TOKENS = ORIGINAL_COMPACTION_MAX_TOKENS;
+    process.env.CAWDEX_COMPACTION_MAX_TOKENS = ORIGINAL_COMPACTION_MAX_TOKENS;
   }
   if (ORIGINAL_COMPACTION_USE_FALLBACK === undefined) {
-    delete process.env.VENTIPUS_COMPACTION_USE_FALLBACK;
+    delete process.env.CAWDEX_COMPACTION_USE_FALLBACK;
   } else {
-    process.env.VENTIPUS_COMPACTION_USE_FALLBACK = ORIGINAL_COMPACTION_USE_FALLBACK;
+    process.env.CAWDEX_COMPACTION_USE_FALLBACK = ORIGINAL_COMPACTION_USE_FALLBACK;
   }
 });
 
-function config(): VentipusConfig {
+function config(): CawdexConfig {
   return {
     apiKey: 'test',
     baseURL: 'http://localhost:11434/v1',
@@ -113,8 +113,8 @@ describe('compactMessages fallback summary', () => {
   });
 
   it('lets explicit compaction model and token env override fallback routing', () => {
-    process.env.VENTIPUS_COMPACTION_MODEL = 'deepseek/deepseek-chat-v3.1:free';
-    process.env.VENTIPUS_COMPACTION_MAX_TOKENS = '1024';
+    process.env.CAWDEX_COMPACTION_MODEL = 'deepseek/deepseek-chat-v3.1:free';
+    process.env.CAWDEX_COMPACTION_MAX_TOKENS = '1024';
 
     const summaryConfig = buildCompactionSummaryConfig({
       ...config(),
@@ -130,7 +130,7 @@ describe('compactMessages fallback summary', () => {
   });
 
   it('can force deterministic local compaction without calling the model', async () => {
-    process.env.VENTIPUS_LLM_COMPACTION = '0';
+    process.env.CAWDEX_LLM_COMPACTION = '0';
 
     const compacted = await compactMessages(messages(), config(), {
       ...DEFAULT_COMPACTION,
@@ -143,7 +143,7 @@ describe('compactMessages fallback summary', () => {
   });
 
   it('passes the summary-specific config to model summarization', async () => {
-    process.env.VENTIPUS_COMPACTION_MODEL = 'openrouter/free';
+    process.env.CAWDEX_COMPACTION_MODEL = 'openrouter/free';
     vi.mocked(streamChat).mockImplementation(async function* () {
       yield { type: 'text', content: 'model summary' };
     });
@@ -181,7 +181,7 @@ describe('compactMessages fallback summary', () => {
   });
 
   it('can keep the original messages when local fallback is disabled', async () => {
-    process.env.VENTIPUS_LOCAL_COMPACTION_FALLBACK = '0';
+    process.env.CAWDEX_LOCAL_COMPACTION_FALLBACK = '0';
     vi.mocked(streamChat).mockImplementation(async function* () {
       throw new Error('rate limit');
     });

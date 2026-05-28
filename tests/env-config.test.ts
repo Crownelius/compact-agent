@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { applyRuntimeConfigOverrides, loadConfigFromEnv } from '../src/config.js';
-import type { VentipusConfig } from '../src/types.js';
+import type { CawdexConfig } from '../src/types.js';
 import { PROVIDERS } from '../src/types.js';
 
 const ENV_KEYS = [
@@ -26,32 +26,32 @@ const ENV_KEYS = [
   'CAWDEX_BASE_URL_OVERRIDE',
   'CAWDEX_API_KEY_OVERRIDE',
   'CAWDEX_API_KEY_ENV',
-  'VENTIPUS_PROVIDER',
-  'VENTIPUS_PROVIDER',
-  'VENTIPUS_API_KEY',
-  'VENTIPUS_API_KEY',
-  'VENTIPUS_BASE_URL',
-  'VENTIPUS_BASE_URL',
-  'VENTIPUS_MODEL',
-  'VENTIPUS_MODEL_OVERRIDE',
-  'VENTIPUS_MODEL',
-  'VENTIPUS_FALLBACK_MODEL',
-  'VENTIPUS_FALLBACK_MODEL_OVERRIDE',
-  'VENTIPUS_MAX_TOKENS',
-  'VENTIPUS_MAX_TOKENS_OVERRIDE',
-  'VENTIPUS_CONTEXT_WINDOW_TOKENS',
-  'VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE',
-  'VENTIPUS_MAX_TURNS',
-  'VENTIPUS_MAX_TURNS_OVERRIDE',
-  'VENTIPUS_TEMPERATURE',
-  'VENTIPUS_TEMPERATURE_OVERRIDE',
-  'VENTIPUS_PERMISSION',
-  'VENTIPUS_MEMORY',
-  'VENTIPUS_THEME',
-  'VENTIPUS_SHOW_THINKING',
-  'VENTIPUS_BASE_URL_OVERRIDE',
-  'VENTIPUS_API_KEY_OVERRIDE',
-  'VENTIPUS_API_KEY_ENV',
+  'CAWDEX_PROVIDER',
+  'CAWDEX_PROVIDER',
+  'CAWDEX_API_KEY',
+  'CAWDEX_API_KEY',
+  'CAWDEX_BASE_URL',
+  'CAWDEX_BASE_URL',
+  'CAWDEX_MODEL',
+  'CAWDEX_MODEL_OVERRIDE',
+  'CAWDEX_MODEL',
+  'CAWDEX_FALLBACK_MODEL',
+  'CAWDEX_FALLBACK_MODEL_OVERRIDE',
+  'CAWDEX_MAX_TOKENS',
+  'CAWDEX_MAX_TOKENS_OVERRIDE',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE',
+  'CAWDEX_MAX_TURNS',
+  'CAWDEX_MAX_TURNS_OVERRIDE',
+  'CAWDEX_TEMPERATURE',
+  'CAWDEX_TEMPERATURE_OVERRIDE',
+  'CAWDEX_PERMISSION',
+  'CAWDEX_MEMORY',
+  'CAWDEX_THEME',
+  'CAWDEX_SHOW_THINKING',
+  'CAWDEX_BASE_URL_OVERRIDE',
+  'CAWDEX_API_KEY_OVERRIDE',
+  'CAWDEX_API_KEY_ENV',
   'OPENROUTER_API_KEY',
   'OPENAI_API_KEY',
   'DEEPSEEK_API_KEY',
@@ -90,15 +90,15 @@ describe('environment config bootstrap', () => {
     });
   });
 
-  it('lets ventipus env override provider, model, and runtime knobs', () => {
+  it('lets cawdex env override provider, model, and runtime knobs', () => {
     clearEnv();
-    process.env.VENTIPUS_PROVIDER = 'deepseek';
-    process.env.VENTIPUS_API_KEY = 'sk-test-deepseek';
-    process.env.VENTIPUS_MODEL = 'deepseek-reasoner';
-    process.env.VENTIPUS_MAX_TURNS = '42';
-    process.env.VENTIPUS_PERMISSION = 'yolo';
-    process.env.VENTIPUS_MEMORY = '0';
-    process.env.VENTIPUS_SHOW_THINKING = '0';
+    process.env.CAWDEX_PROVIDER = 'deepseek';
+    process.env.CAWDEX_API_KEY = 'sk-test-deepseek';
+    process.env.CAWDEX_MODEL = 'deepseek-reasoner';
+    process.env.CAWDEX_MAX_TURNS = '42';
+    process.env.CAWDEX_PERMISSION = 'yolo';
+    process.env.CAWDEX_MEMORY = '0';
+    process.env.CAWDEX_SHOW_THINKING = '0';
 
     const cfg = loadConfigFromEnv();
     expect(cfg?.provider).toBe(PROVIDERS.deepseek.name);
@@ -132,8 +132,8 @@ describe('environment config bootstrap', () => {
 
   it('supports local custom OpenAI-compatible endpoints without an API key', () => {
     clearEnv();
-    process.env.VENTIPUS_BASE_URL = 'http://127.0.0.1:1234/v1';
-    process.env.VENTIPUS_MODEL = 'local-model';
+    process.env.CAWDEX_BASE_URL = 'http://127.0.0.1:1234/v1';
+    process.env.CAWDEX_MODEL = 'local-model';
     const cfg = loadConfigFromEnv();
     expect(cfg?.provider).toBe(PROVIDERS.custom.name);
     expect(cfg?.apiKey).toBe('');
@@ -143,7 +143,7 @@ describe('environment config bootstrap', () => {
 });
 
 describe('runtime config overrides', () => {
-  const baseConfig: VentipusConfig = {
+  const baseConfig: CawdexConfig = {
     apiKey: 'old-key',
     baseURL: 'https://old.example/v1',
     model: 'old-model',
@@ -155,11 +155,11 @@ describe('runtime config overrides', () => {
 
   it('applies non-mutating CLI/env overrides to an existing config', () => {
     clearEnv();
-    process.env.VENTIPUS_MODEL_OVERRIDE = 'new-model';
-    process.env.VENTIPUS_BASE_URL_OVERRIDE = 'https://new.example/v1';
-    process.env.VENTIPUS_MAX_TURNS_OVERRIDE = '12';
-    process.env.VENTIPUS_TEMPERATURE_OVERRIDE = '0.1';
-    process.env.VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE = '64000';
+    process.env.CAWDEX_MODEL_OVERRIDE = 'new-model';
+    process.env.CAWDEX_BASE_URL_OVERRIDE = 'https://new.example/v1';
+    process.env.CAWDEX_MAX_TURNS_OVERRIDE = '12';
+    process.env.CAWDEX_TEMPERATURE_OVERRIDE = '0.1';
+    process.env.CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE = '64000';
 
     const cfg = applyRuntimeConfigOverrides(baseConfig);
 
@@ -189,7 +189,7 @@ describe('runtime config overrides', () => {
   it('can source a per-run API key from a named environment variable', () => {
     clearEnv();
     process.env.KBENCH_TEST_KEY = 'sk-test-runtime';
-    process.env.VENTIPUS_API_KEY_ENV = 'KBENCH_TEST_KEY';
+    process.env.CAWDEX_API_KEY_ENV = 'KBENCH_TEST_KEY';
     const cfg = applyRuntimeConfigOverrides(baseConfig);
     expect(cfg.apiKey).toBe('sk-test-runtime');
     delete process.env.KBENCH_TEST_KEY;

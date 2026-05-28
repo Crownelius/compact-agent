@@ -91,7 +91,7 @@ def _safe_task_id(task_id: Any) -> str:
 
 
 def _include_oracle_fields() -> bool:
-    return os.environ.get("VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS", "").lower() in {"1", "true", "yes", "on"}
+    return os.environ.get("CAWDEX_HAL_INCLUDE_ORACLE_FIELDS", "").lower() in {"1", "true", "yes", "on"}
 
 
 def _safe_task_view(task: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
@@ -363,7 +363,7 @@ def _build_prompt(task_id: str, task: dict[str, Any]) -> str:
 
 
 def _base_command() -> list[str]:
-    command = os.environ.get("CAWDEX_HAL_COMMAND") or os.environ.get("VENTIPUS_HAL_COMMAND", "cawdex")
+    command = os.environ.get("CAWDEX_HAL_COMMAND") or os.environ.get("CAWDEX_HAL_COMMAND", "cawdex")
     parts = shlex.split(command, posix=os.name != "nt")
     return parts or ["cawdex"]
 
@@ -377,17 +377,17 @@ def _append_flag(args: list[str], flag: str, value: Any) -> None:
     args.extend([flag, text])
 
 
-def _run_ventipus(task_id: str, prompt: str, kwargs: dict[str, Any]) -> AgentRun:
-    trace_root = Path(os.environ.get("VENTIPUS_HAL_TRACE_DIR", ".ventipus/hal-trace"))
+def _run_cawdex(task_id: str, prompt: str, kwargs: dict[str, Any]) -> AgentRun:
+    trace_root = Path(os.environ.get("CAWDEX_HAL_TRACE_DIR", ".cawdex/hal-trace"))
     trace_dir = trace_root / _safe_task_id(task_id)
     trace_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    env.setdefault("VENTIPUS_ENV_CONFIG", "1")
-    env.setdefault("VENTIPUS_THEME", "minimal")
-    env.setdefault("VENTIPUS_SHOW_THINKING", "0")
-    env.setdefault("VENTIPUS_MEMORY", "0")
-    env.setdefault("VENTIPUS_BASH_TIMEOUT_MS", "300000")
+    env.setdefault("CAWDEX_ENV_CONFIG", "1")
+    env.setdefault("CAWDEX_THEME", "minimal")
+    env.setdefault("CAWDEX_SHOW_THINKING", "0")
+    env.setdefault("CAWDEX_MEMORY", "0")
+    env.setdefault("CAWDEX_BASH_TIMEOUT_MS", "300000")
 
     args = _base_command()
     args.extend([
@@ -405,7 +405,7 @@ def _run_ventipus(task_id: str, prompt: str, kwargs: dict[str, Any]) -> AgentRun
     _append_flag(args, "--temperature", kwargs.get("temperature"))
     _append_flag(args, "--output-format", kwargs.get("output_format"))
 
-    timeout = int(os.environ.get("VENTIPUS_HAL_TIMEOUT_SEC", "1800"))
+    timeout = int(os.environ.get("CAWDEX_HAL_TIMEOUT_SEC", "1800"))
     try:
         completed = subprocess.run(
             args,
@@ -540,7 +540,7 @@ def run(input: dict[str, dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
             continue
 
         prompt = _build_prompt(str(task_id), task)
-        run_result = _run_ventipus(str(task_id), prompt, kwargs)
+        run_result = _run_cawdex(str(task_id), prompt, kwargs)
 
         if _is_patch_task(task):
             output[str(task_id)] = _collect_git_patch(run_result.trace_dir)

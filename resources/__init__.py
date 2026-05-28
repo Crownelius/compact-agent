@@ -1,1 +1,1 @@
-"""ventipus packaged runtime resources."""
+"""cawdex packaged runtime resources."""

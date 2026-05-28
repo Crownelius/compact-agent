@@ -2,9 +2,9 @@
 /**
  * Drive every LLM-dependent slash command against a real API.
  *
- * Uses an isolated VENTIPUS_HOME temp dir so the user's real config stays
+ * Uses an isolated CAWDEX_HOME temp dir so the user's real config stays
  * untouched. API key is read from OPENROUTER_API_KEY env var, or fall back
- * to the user's ~/.ventipus/config.json if they've restored it.
+ * to the user's ~/.cawdex/config.json if they've restored it.
  *
  * Each command:
  *   - Dispatches via handleSlashCommand to get the injectPrompt
@@ -31,7 +31,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 // ── Bootstrap: API key + temp config dir ────────────────────────────
 let apiKey = process.env.OPENROUTER_API_KEY || '';
-const realConfig = path.join(homedir(), '.ventipus', 'config.json');
+const realConfig = path.join(homedir(), '.cawdex', 'config.json');
 if (!apiKey && fs.existsSync(realConfig)) {
   try {
     const real = JSON.parse(fs.readFileSync(realConfig, 'utf-8'));
@@ -40,20 +40,20 @@ if (!apiKey && fs.existsSync(realConfig)) {
 }
 if (!apiKey) {
   console.error('No OpenRouter API key found.');
-  console.error('Set OPENROUTER_API_KEY env var, or restore ~/.ventipus/config.json by running `ventipus` and going through setup.');
+  console.error('Set OPENROUTER_API_KEY env var, or restore ~/.cawdex/config.json by running `cawdex` and going through setup.');
   process.exit(2);
 }
 
-const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ventipus-llm-drive-'));
-process.env.VENTIPUS_HOME = TMP_HOME;
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'cawdex-llm-drive-'));
+process.env.CAWDEX_HOME = TMP_HOME;
 process.on('exit', () => {
   try { fs.rmSync(TMP_HOME, { recursive: true, force: true }); } catch {}
 });
 
 // Write the test config — model + filter overridable via env so we can re-run
 // just the timeouts against a different model without editing source.
-const TEST_MODEL = process.env.VENTIPUS_TEST_MODEL || 'inclusionai/ring-2.6-1t:free';
-const TEST_FILTER = (process.env.VENTIPUS_TEST_FILTER || '')
+const TEST_MODEL = process.env.CAWDEX_TEST_MODEL || 'inclusionai/ring-2.6-1t:free';
+const TEST_FILTER = (process.env.CAWDEX_TEST_FILTER || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
 const TEST_CONFIG = {
@@ -159,7 +159,7 @@ const cwd = process.cwd();
 const rlStub = { question: async () => 'y', close: () => {} };
 
 // Use a model-suffixed log name when overriding, so we don't clobber prior runs.
-const LOG_SUFFIX = process.env.VENTIPUS_TEST_MODEL
+const LOG_SUFFIX = process.env.CAWDEX_TEST_MODEL
   ? '.' + TEST_MODEL.replace(/[^A-Za-z0-9]+/g, '-')
   : '';
 const LOG_FILE = path.join(__dirname, `llm-drive-all${LOG_SUFFIX}.log`);

@@ -57,7 +57,7 @@ describe('edit verification helpers', () => {
   });
 
   it('detects successful edit calls that leave file content unchanged', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-edit-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-edit-'));
     try {
       mkdirSync(join(cwd, 'src'));
       writeFileSync(join(cwd, 'src', 'a.ts'), 'export const x = 1;\n');
@@ -75,7 +75,7 @@ describe('edit verification helpers', () => {
   });
 
   it('detects repeated file states even when edit arguments drift', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-edit-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-edit-'));
     try {
       writeFileSync(join(cwd, 'a.ts'), 'export const x = 1;\n');
       const lastStates = new Map();
@@ -92,7 +92,7 @@ describe('edit verification helpers', () => {
   });
 
   it('does not warn when a successful edit changes file content', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-edit-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-edit-'));
     try {
       writeFileSync(join(cwd, 'a.ts'), 'before\n');
       const before = snapshotFileEditStates(cwd, ['a.ts']);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { VentipusCLI } from './fixtures/cli.js';
+import { CawdexCLI } from './fixtures/cli.js';
 import { ConfigPage } from './fixtures/config-page.js';
 import { LoginPage } from './fixtures/login-page.js';
 import {
@@ -38,12 +38,12 @@ import {
 // covered by tests/smoke-commands.test.ts (88 tests, in-process —
 // no child-process overhead, no prompt-string drift).
 describe.skip('Login Flow — Setup Wizard', () => {
-  let cli: VentipusCLI;
+  let cli: CawdexCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new VentipusCLI();
+    cli = new CawdexCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -372,7 +372,7 @@ describe.skip('Login Flow — Setup Wizard', () => {
       });
 
       // Wait for main prompt
-      await cli.waitForOutput(/ventipus|▶|session/i, { timeout: 5_000 });
+      await cli.waitForOutput(/cawdex|▶|session/i, { timeout: 5_000 });
 
       // Trigger reconfig
       await login.triggerReconfig();
@@ -562,12 +562,12 @@ describe.skip('Login Flow — Setup Wizard', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Config File Management', () => {
-  let cli: VentipusCLI;
+  let cli: CawdexCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new VentipusCLI();
+    cli = new CawdexCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
   });
@@ -645,12 +645,12 @@ describe.skip('Login Flow — Config File Management', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Permission Mode Management', () => {
-  let cli: VentipusCLI;
+  let cli: CawdexCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new VentipusCLI();
+    cli = new CawdexCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -659,7 +659,7 @@ describe.skip('Login Flow — Permission Mode Management', () => {
       model: 'test-model',
       permissionMode: 'ask',
     });
-    await cli.waitForOutput(/ventipus|▶|session/i, { timeout: 5_000 });
+    await cli.waitForOutput(/cawdex|▶|session/i, { timeout: 5_000 });
   });
 
   afterEach(() => {
@@ -718,12 +718,12 @@ describe.skip('Login Flow — Permission Mode Management', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Provider Info', () => {
-  let cli: VentipusCLI;
+  let cli: CawdexCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new VentipusCLI();
+    cli = new CawdexCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -774,12 +774,12 @@ describe.skip('Login Flow — Provider Info', () => {
 // ---------------------------------------------------------------------------
 
 describe.skip('Login Flow — Model Switching', () => {
-  let cli: VentipusCLI;
+  let cli: CawdexCLI;
   let config: ConfigPage;
   let login: LoginPage;
 
   beforeEach(async () => {
-    cli = new VentipusCLI();
+    cli = new CawdexCLI();
     config = new ConfigPage(cli);
     login = new LoginPage(cli);
     await cli.spawn();
@@ -788,7 +788,7 @@ describe.skip('Login Flow — Model Switching', () => {
       model: 'initial-model',
       permissionMode: 'ask',
     });
-    await cli.waitForOutput(/ventipus|▶|session/i, { timeout: 5_000 });
+    await cli.waitForOutput(/cawdex|▶|session/i, { timeout: 5_000 });
   });
 
   afterEach(() => {

@@ -24,7 +24,7 @@ The rest of the surface:
 - 130+ slash commands
 - Bundled skill library: 228 skills, 60 agents, 75 workflow commands, 19 language rule bundles (ECC v2.0)
 - Hermes mode — recalls prior sessions before answering, parallelizes independent subtasks, distills new skills from experience
-- Zero telemetry; state in `~/.ventipus/`; MIT, TypeScript, Node 18+
+- Zero telemetry; state in `~/.cawdex/`; MIT, TypeScript, Node 18+
 
 ```bash
 npm install -g cawdex

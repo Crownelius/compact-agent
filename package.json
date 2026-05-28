@@ -16,7 +16,6 @@
     "cli",
     "coding-assistant",
     "cawdex",
-    "ventipus",
     "claude",
     "openrouter",
     "openai",
@@ -41,8 +40,7 @@
     "knowledge-graph"
   ],
   "bin": {
-    "cawdex": "bin/cawdex.js",
-    "ventipus": "bin/ventipus.js"
+    "cawdex": "bin/cawdex.js"
   },
   "files": [
     "bin/",

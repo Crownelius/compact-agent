@@ -3,11 +3,11 @@
  *
  * Imports skills, agents, slash commands, rules, and hook behaviors from the
  * bundled `resources/ecc/` directory into Cawdex's runtime stores:
- *   ~/.ventipus/skills/        — JSON skills generated from SKILL.md
- *   ~/.ventipus/rules/         — language rule files
- *   ~/.ventipus/ecc-commands/  — markdown prompt templates for /ecc-<cmd>
- *   ~/.ventipus/ecc-agents/    — agent prompt templates
- *   ~/.ventipus/hooks.json     — augmented with ECC hook entries
+ *   ~/.cawdex/skills/        — JSON skills generated from SKILL.md
+ *   ~/.cawdex/rules/         — language rule files
+ *   ~/.cawdex/ecc-commands/  — markdown prompt templates for /ecc-<cmd>
+ *   ~/.cawdex/ecc-agents/    — agent prompt templates
+ *   ~/.cawdex/hooks.json     — augmented with ECC hook entries
  *
  * Each ECC skill becomes a Cawdex Skill (skills.ts schema) with id
  * `ecc-<slug>`, triggers derived from name + description keywords, and the
@@ -287,7 +287,7 @@ function importSkills(): { count: number; errors: string[] } {
  *   <name>.json  — { name, description, prompt, allowedTools, ... }
  *   <name>.md    — frontmatter (name, description, allowedTools) + body prompt
  *
- * We materialize each as a markdown file in ~/.ventipus/ecc-agents/<name>.md
+ * We materialize each as a markdown file in ~/.cawdex/ecc-agents/<name>.md
  * (canonical prompt for /ecc-agent <name>) and ALSO register a Cawdex Skill
  * with id `ecc-agent-<name>` so it surfaces in /skills and trigger search.
  */
@@ -383,7 +383,7 @@ function importAgents(): { count: number; errors: string[] } {
 /**
  * .claude/commands/<name>.md and .github/prompts/<name>.prompt.md are both
  * frontmatter+body prompt templates. We copy them verbatim into
- * ~/.ventipus/ecc-commands/ so /ecc-<name> can read them at runtime.
+ * ~/.cawdex/ecc-commands/ so /ecc-<name> can read them at runtime.
  */
 // Commands whose prompts are already loaded by built-in slash commands
 // (/tdd, /review, /security-review, /plan, /refactor, /build-fix all call
@@ -527,7 +527,7 @@ export function getEccCommandPrompt(name: string): string | null {
  * sections (security, testing, patterns, hooks plus a few new ones like
  * coding-style). We detect which layout is present and load accordingly.
  *
- * Both produce the same output: one `~/.ventipus/rules/<language>.md`
+ * Both produce the same output: one `~/.cawdex/rules/<language>.md`
  * file per language, with all sections concatenated. Existing user
  * content in those files is preserved by appending under a clearly-marked
  * ECC section.
@@ -690,7 +690,7 @@ function seedHooks(): number {
     // the agent investigate (read + grep) before proceeding. Upstream
     // reports a 2.25-point quality lift in A/B tests. Simplified port
     // of the 878-line ECC original — per-session-per-file state in
-    // ~/.ventipus/state/gateguard/<sessionId>.json. Subsequent edits
+    // ~/.cawdex/state/gateguard/<sessionId>.json. Subsequent edits
     // to the same file pass through normally.
     {
       event: 'PreToolUse',
@@ -730,7 +730,7 @@ function seedHooks(): number {
     // ── New in 1.17: format-typecheck-hint ───────────────
     // Session-end-ish reminder to run typecheck (tsc / mypy / go vet
     // / cargo check). Fires at most once per session per project,
-    // tracked at ~/.ventipus/state/quality-hint/<sessionId>.json.
+    // tracked at ~/.cawdex/state/quality-hint/<sessionId>.json.
     {
       event: 'PostToolUse',
       match: 'edit_file',

@@ -9,8 +9,8 @@ const __dirname = path.dirname(__filename);
 
 // Use a temp config dir so commands like /dry-run that call saveConfig() can't
 // clobber the user's real config. MUST be set BEFORE dist is imported.
-const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ventipus-smoke-'));
-process.env.VENTIPUS_HOME = TMP_HOME;
+const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'cawdex-smoke-'));
+process.env.CAWDEX_HOME = TMP_HOME;
 
 const dist = path.join(__dirname, '..', 'dist', 'index.js');
 if (!fs.existsSync(dist)) {

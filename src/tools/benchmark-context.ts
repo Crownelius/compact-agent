@@ -9,6 +9,7 @@ import { TERMINAL_BENCH_REPO_CATALOG, type BenchmarkRepoEntry } from '../benchma
 import { isMemoryEnabled, search as searchMemPalace } from '../mempalace/index.js';
 import type { SearchHit } from '../mempalace/types.js';
 import { resolveUserPath } from './path-utils.js';
+import { buildSourceAuthReadiness, type ResearchSource, type SourceAuthReadiness } from './research-sources.js';
 import type { Tool, ToolResult } from './types.js';
 
 const IGNORE_GLOBS = [
@@ -224,6 +225,15 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const harnessHints = summarizeBenchmarkHarnessHints(sortedFiles, verifierCommands);
     const methodHints = summarizeBenchmarkMethodHints(instructions, carefulFiles, verifierCommands, serviceHints, harnessHints, ciHints);
     const repoCatalogHints = summarizeBenchmarkRepoCatalogHints(root, instructions, instructionExcerpts, taskContractSignals, harnessHints, input);
+    const sourceResearchPlan = summarizeSourceResearchActionPlan(
+      root,
+      instructions,
+      instructionExcerpts,
+      taskContractSignals,
+      harnessHints,
+      repoCatalogHints,
+      input,
+    );
     const priorExperience = summarizePriorBenchmarkExperienceSummary(
       root,
       sortedFiles,
@@ -333,6 +343,14 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '## Benchmark Method Hints',
       formatList(methodHints, 30),
       '',
+      '## Source Research Action Plan',
+      sourceResearchPlan.length
+        ? formatList(sourceResearchPlan, 14)
+        : '(no targeted external source-research action plan triggered by current task text)',
+      sourceResearchPlan.length
+        ? 'Run these read-only calls before relying on newest science, public repo patterns, leaderboard mappings, or dataset/competition evidence. Refine the query if the structured digest is weak.'
+        : '',
+      '',
       '## Terminal-Bench Source Catalog Hints',
       repoCatalogHints.length
         ? formatList(repoCatalogHints, 10)
@@ -380,6 +398,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '12. If prior benchmark experience hints are present, reuse only the method-level lesson after confirming it applies to the current task; avoid any prior patterns listed as warnings.',
       '13. If a prior hint includes replay= checkpoints, replay only the relevant read/search/verifier steps as hypotheses; never copy an old patch or skip current-task validation.',
       '14. If MemPalace memories are present, verify each remembered fact against current files before relying on it.',
+      '15. If the Source Research Action Plan is populated, run its exact read-only calls before using external science, source-code, dataset, or leaderboard evidence.',
     ];
 
     return { output: lines.filter((line, i, arr) => line || arr[i - 1] !== '').join('\n'), isError: false };
@@ -471,6 +490,118 @@ function summarizeBenchmarkRepoCatalogHints(
   }
 
   return [];
+}
+
+function summarizeSourceResearchActionPlan(
+  root: string,
+  instructions: string[],
+  instructionExcerpts: string[],
+  taskContractSignals: string[],
+  harnessHints: string[],
+  repoCatalogHints: string[],
+  input: Record<string, unknown>,
+): string[] {
+  const focus = buildSourceResearchFocus(root, instructions, instructionExcerpts, taskContractSignals, harnessHints, input);
+  const sourceTriggered = hasSourceResearchActionTrigger(focus);
+  const catalogTriggered = hasBenchmarkSourceMiningTrigger(focus) || repoCatalogHints.length > 0;
+  if (!sourceTriggered && !catalogTriggered) return [];
+
+  const query = buildSourceResearchQuery(root, instructionExcerpts, taskContractSignals, input);
+  const targetedSources: ResearchSource[] = ['arxiv', 'github', 'huggingface', 'kaggle'];
+  const lines = [
+    `research query: ${JSON.stringify(query)}`,
+    formatSourceAuthReadinessLine(buildSourceAuthReadiness(targetedSources, 'both')),
+    `call research_sources: ${JSON.stringify({
+      query,
+      source: 'all',
+      github_kind: 'all',
+      kind: 'all',
+      kaggle_kind: 'both',
+      recent_days: 90,
+      limit: 5,
+      format: 'json',
+    })}`,
+    'after research_sources: inspect digest hit/error counts, source mix, top_urls, auth readiness, and recency before treating external evidence as complete.',
+  ];
+
+  if (catalogTriggered) {
+    lines.push(`call benchmark_repo_catalog: ${JSON.stringify({ query, status: 'all', limit: 12 })}`);
+    const digestRepos = extractRepoDigestSuggestions(repoCatalogHints);
+    if (digestRepos.length > 0) {
+      for (const repo of digestRepos.slice(0, 3)) {
+        lines.push(`call github_repo_digest: ${JSON.stringify({ repo, max_files: 500, max_text_files: 6 })}`);
+      }
+    } else {
+      lines.push('after benchmark_repo_catalog: call github_repo_digest on the most relevant positive owner/repo hit before porting source patterns.');
+    }
+    if (repoCatalogHints.some((hint) => /\bcatalog gap\b/i.test(hint))) {
+      lines.push('catalog gap guard: do not overclaim public source for unverified/no-public-source entries; use live search only as a targeted follow-up.');
+    }
+  } else {
+    lines.push('repo digest guard: if research_sources top_urls include relevant public GitHub repositories, call github_repo_digest on the strongest repo before using implementation patterns.');
+  }
+
+  return lines;
+}
+
+function buildSourceResearchFocus(
+  root: string,
+  instructions: string[],
+  instructionExcerpts: string[],
+  taskContractSignals: string[],
+  harnessHints: string[],
+  input: Record<string, unknown>,
+): string {
+  return [
+    stringInput(input.task),
+    stringInput(input.query),
+    basename(normalizePath(root)),
+    ...instructions,
+    ...instructionExcerpts,
+    ...taskContractSignals,
+    ...harnessHints,
+  ].filter(Boolean).join('\n');
+}
+
+function buildSourceResearchQuery(
+  root: string,
+  instructionExcerpts: string[],
+  taskContractSignals: string[],
+  input: Record<string, unknown>,
+): string {
+  const direct = stringInput(input.query) || stringInput(input.task);
+  const raw = direct || [...instructionExcerpts, ...taskContractSignals].slice(0, 6).join(' ') || basename(normalizePath(root));
+  const cleaned = raw
+    .replace(/\b[\w./\\-]+:\d+:\s*/g, ' ')
+    .replace(/[`*_#[\]{}()<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return truncateContractSignal(cleaned || 'coding agent benchmark methodology source research', 180);
+}
+
+function hasSourceResearchActionTrigger(text: string): boolean {
+  return /\b(?:agent[-\s]?improvement|benchmark(?:[-\s]?methodology)?|leaderboard|terminal[-\s]?bench|open[-\s]?agent|coding[-\s]?agent|harness|arxiv|paper|newest[-\s]?science|research_sources|hugging\s*face|kaggle|dataset|competition|model|source[-\s]?research)\b/i.test(text);
+}
+
+function formatSourceAuthReadinessLine(auth: SourceAuthReadiness): string {
+  const state = (value: boolean | null): string => value === true ? 'found' : value === false ? 'missing' : 'not-requested';
+  const competitionState = auth.kaggleCompetitionsRequested
+    ? auth.kaggleCompetitionsEnabled ? 'enabled' : 'skipped-until-kaggle-auth'
+    : 'not-requested';
+  const missing = auth.missingCredentialHints.length
+    ? auth.missingCredentialHints.join(' | ')
+    : 'none';
+  return `source auth readiness: GitHub=${state(auth.githubAuth)}; Hugging Face=${state(auth.huggingFaceAuth)}; Kaggle=${state(auth.kaggleAuth)}; Kaggle competitions=${competitionState}; missing=${missing}`;
+}
+
+function extractRepoDigestSuggestions(hints: string[]): string[] {
+  const repos: string[] = [];
+  for (const hint of hints) {
+    for (const match of hint.matchAll(/\bnext=github_repo_digest repo=([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/g)) {
+      if (!repos.includes(match[1])) repos.push(match[1]);
+    }
+  }
+  return repos;
 }
 
 function scoreBenchmarkRepoCatalogEntry(entry: BenchmarkRepoEntry, focus: string): number {
@@ -582,7 +713,7 @@ function summarizeBenchmarkMemoryHints(
   instructionExcerpts: string[],
   taskContractSignals: string[],
 ): BenchmarkMemoryHint[] {
-  if (/^(0|false|off|no)$/i.test(process.env.VENTIPUS_BENCHMARK_MEMORY || '')) return [];
+  if (/^(0|false|off|no)$/i.test(process.env.CAWDEX_BENCHMARK_MEMORY || '')) return [];
   if (!isMemoryEnabled()) return [];
 
   const queries = buildBenchmarkMemoryQueries(root, manifests, instructionExcerpts, taskContractSignals);
@@ -786,10 +917,10 @@ export function summarizePriorBenchmarkExperienceSummary(
   verifierCommands: string[],
   currentTaskContractSignals: string[] = [],
 ): BenchmarkExperienceSummary {
-  if (/^(0|false|off|no)$/i.test(process.env.VENTIPUS_BENCHMARK_EXPERIENCE || '')) {
+  if (/^(0|false|off|no)$/i.test(process.env.CAWDEX_BENCHMARK_EXPERIENCE || '')) {
     return { hints: [], warnings: [] };
   }
-  const baseDir = process.env.VENTIPUS_BENCHMARK_TRACE_DIR?.trim()
+  const baseDir = process.env.CAWDEX_BENCHMARK_TRACE_DIR?.trim()
     || join(getConfigDir(), 'benchmark-runs');
   if (!existsSync(baseDir)) return { hints: [], warnings: [] };
 
@@ -3123,7 +3254,7 @@ function summarizeNetworkProbe(input: Record<string, unknown>): string[] {
     lines.push(`network env indicators: ${networkEnvIndicators.join(', ')}`);
   }
   if (!shouldProbeNetwork(input)) {
-    lines.push('network probe: skipped (set probe_network:true or VENTIPUS_BENCHMARK_PROBE_NETWORK=1 to run short TCP probes).');
+    lines.push('network probe: skipped (set probe_network:true or CAWDEX_BENCHMARK_PROBE_NETWORK=1 to run short TCP probes).');
     return lines;
   }
 
@@ -3302,7 +3433,7 @@ function networkEnvironmentIndicators(env: NodeJS.ProcessEnv = process.env): str
 
 function shouldProbeNetwork(input: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): boolean {
   if (typeof input.probe_network === 'boolean') return input.probe_network;
-  const raw = env.VENTIPUS_BENCHMARK_PROBE_NETWORK;
+  const raw = env.CAWDEX_BENCHMARK_PROBE_NETWORK;
   if (raw && raw.trim()) return /^(1|true|yes|on)$/i.test(raw.trim());
   if (env.VITEST || env.NODE_ENV === 'test') return false;
   return true;

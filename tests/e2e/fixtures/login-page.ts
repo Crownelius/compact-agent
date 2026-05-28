@@ -1,4 +1,4 @@
-import { VentipusCLI } from './cli.js';
+import { CawdexCLI } from './cli.js';
 
 /**
  * Login Page Object — encapsulates the setup wizard / login flow.
@@ -8,9 +8,9 @@ import { VentipusCLI } from './cli.js';
  * This page object drives that flow programmatically via stdin/stdout.
  */
 export class LoginPage {
-  private cli: VentipusCLI;
+  private cli: CawdexCLI;
 
-  constructor(cli: VentipusCLI) {
+  constructor(cli: CawdexCLI) {
     this.cli = cli;
   }
 
@@ -216,7 +216,7 @@ export class LoginPage {
    * Check if the CLI has completed setup and is showing the main prompt.
    */
   async isShowingMainPrompt(): Promise<boolean> {
-    return /ventipus|▶|session/i.test(this.cli.stdout);
+    return /cawdex|▶|session/i.test(this.cli.stdout);
   }
 
   /**

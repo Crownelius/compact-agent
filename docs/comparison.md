@@ -42,7 +42,7 @@ Cawdex puts the entire agent surface behind one OpenAI-compatible transport. Swa
 | Voice + screen-reader | Whisper + ElevenLabs + screen-reader mode | no | no | no |
 | Persistent input box | yes (ANSI scroll-region) | no | no | no |
 | Telemetry | zero — only calls go to the chosen LLM provider | vendor telemetry | minimal | vendor telemetry |
-| State location | local `~/.ventipus/` | vendor cloud + local | local | vendor cloud |
+| State location | local `~/.cawdex/` | vendor cloud + local | local | vendor cloud |
 | License | MIT | no LICENSE file | Apache-2.0 | proprietary |
 | Stack | TypeScript, Node 18+ | proprietary | Python | proprietary |
 

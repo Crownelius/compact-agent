@@ -38,7 +38,7 @@ export function getGlobalStore(): JsonStore {
 
 /**
  * Is MemPalace enabled in the user's config? Read directly from
- * ~/.ventipus/config.json so this can be checked at module-load
+ * ~/.cawdex/config.json so this can be checked at module-load
  * time by src/tools/index.ts without creating an import cycle through
  * src/config.ts (which imports types.ts which we import here).
  *
@@ -53,8 +53,8 @@ export function getGlobalStore(): JsonStore {
 export function isMemoryEnabled(): boolean {
   try {
     const cfgDir =
-      process.env.VENTIPUS_HOME ||
-      join(homedir(), '.ventipus');
+      process.env.CAWDEX_HOME ||
+      join(homedir(), '.cawdex');
     const cfgPath = join(cfgDir, 'config.json');
     if (!existsSync(cfgPath)) return true;
     const raw = readFileSync(cfgPath, 'utf-8');

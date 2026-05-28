@@ -208,7 +208,7 @@ git commit -m "feat: add {{MODULE_NAME}} module"
 2. **Pull upstream** — If `resources/ecc/` needs updating, pull from upstream repo.
 3. **Reinstall** — Run `/ecc-install` to reimport all resources idempotently.
 4. **Verify** — Check each category: `/ecc-skills`, `/ecc-agents`, `/ecc-commands`.
-5. **Check hooks** — Verify hooks seeded in `~/.ventipus/hooks.json`.
+5. **Check hooks** — Verify hooks seeded in `~/.cawdex/hooks.json`.
 6. **Test a skill** — Trigger a known ECC skill by mentioning its topic.
 
 **Commands**:
@@ -235,7 +235,7 @@ git commit -m "feat: add {{MODULE_NAME}} module"
 **Trigger Patterns**: "change config", "update config", "set model", "change provider", "config"
 
 **Steps**:
-1. **Read current config** — `read_file` on `~/.ventipus/config.json` or use `/config`.
+1. **Read current config** — `read_file` on `~/.cawdex/config.json` or use `/config`.
 2. **Validate change** — Ensure the new value is valid (URL format, known provider, valid model).
 3. **Apply change** — Edit `config.json` or use Cawdex's `/model`, `/provider`, `/perm` commands.
 4. **Verify** — Reload config and confirm the change took effect.
@@ -243,7 +243,7 @@ git commit -m "feat: add {{MODULE_NAME}} module"
 
 **Commands**:
 ```bash
-cat ~/.ventipus/config.json
+cat ~/.cawdex/config.json
 # Edit via /model, /provider, /perm slash commands
 # Or edit config.json directly:
 # Change "model": "anthropic/claude-sonnet-4" → "model": "{{NEW_MODEL}}"
@@ -264,7 +264,7 @@ cat ~/.ventipus/config.json
 **Trigger Patterns**: "add hook", "remove hook", "hooks", "hook config"
 
 **Steps**:
-1. **List current hooks** — `list_hooks` or read `~/.ventipus/hooks.json`.
+1. **List current hooks** — `list_hooks` or read `~/.cawdex/hooks.json`.
 2. **Define new hook** — Specify event, match pattern, command, timeout, blocking.
 3. **Add hook** — Use `/hooks add` or edit hooks.json directly.
 4. **Test hook** — Trigger the matched event to verify the hook fires correctly.
@@ -272,7 +272,7 @@ cat ~/.ventipus/config.json
 
 **Commands**:
 ```bash
-cat ~/.ventipus/hooks.json
+cat ~/.cawdex/hooks.json
 # Add hook entry:
 # { "event": "PreToolUse", "match": "bash", "command": "node guard.js", "blocking": true }
 ```

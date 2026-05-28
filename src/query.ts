@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import * as readline from 'node:readline/promises';
-import type { Message, VentipusConfig } from './types.js';
+import type { Message, CawdexConfig } from './types.js';
 import type { Tool } from './tools/types.js';
 import { ALL_TOOLS, getToolByName } from './tools/index.js';
 import { resolveUserPath } from './tools/path-utils.js';
@@ -72,15 +72,15 @@ function envTimeoutMs(name: string, fallback: number): number {
 }
 
 export function resolveFirstTokenTimeoutMs(
-  config: Pick<VentipusConfig, 'model' | 'provider'>,
+  config: Pick<CawdexConfig, 'model' | 'provider'>,
 ): number {
   const flaky = isKnownFlakyOpenRouterModel(config);
   const fallback = flaky ? FLAKY_FIRST_TOKEN_TIMEOUT_MS : DEFAULT_FIRST_TOKEN_TIMEOUT_MS;
-  return envTimeoutMs('VENTIPUS_FIRST_TOKEN_TIMEOUT_MS', fallback);
+  return envTimeoutMs('CAWDEX_FIRST_TOKEN_TIMEOUT_MS', fallback);
 }
 
 export function isKnownFlakyOpenRouterModel(
-  config: Pick<VentipusConfig, 'model' | 'provider'>,
+  config: Pick<CawdexConfig, 'model' | 'provider'>,
 ): boolean {
   const model = String(config.model || '').toLowerCase();
   const provider = String(config.provider || '').toLowerCase();
@@ -89,7 +89,7 @@ export function isKnownFlakyOpenRouterModel(
 }
 
 function fallbackModelForTurn(
-  config: VentipusConfig,
+  config: CawdexConfig,
   usedFallbackModel: boolean,
 ): string | null {
   const fallback = config.fallbackModel;
@@ -98,10 +98,10 @@ function fallbackModelForTurn(
 }
 
 export function fallbackModelForKnownFlakyTurn(
-  config: VentipusConfig,
+  config: CawdexConfig,
   usedFallbackModel: boolean = false,
 ): string | null {
-  if (process.env.VENTIPUS_ALLOW_FLAKY_MODELS === '1') return null;
+  if (process.env.CAWDEX_ALLOW_FLAKY_MODELS === '1') return null;
   if (!isKnownFlakyOpenRouterModel(config)) return null;
   return fallbackModelForTurn(config, usedFallbackModel);
 }
@@ -117,8 +117,8 @@ export function isTurnCancelKeySequence(chunk: Buffer): boolean {
   );
 }
 
-function printInteractiveTurnAccepted(config: VentipusConfig): void {
-  if (process.env.VENTIPUS_NON_INTERACTIVE === '1') return;
+function printInteractiveTurnAccepted(config: CawdexConfig): void {
+  if (process.env.CAWDEX_NON_INTERACTIVE === '1') return;
   if (!process.stdout.isTTY) return;
   console.log(theme.dim(
     `  submitted to ${config.provider} · ${config.model}. Waiting for the first model event; Esc or F5 cancels.`,
@@ -158,7 +158,7 @@ export function countTailRepetitions(
 }
 
 export interface QueryContext {
-  config: VentipusConfig;
+  config: CawdexConfig;
   messages: Message[];
   cwd: string;
   rl: readline.Interface;
@@ -177,7 +177,7 @@ export interface QueryContext {
  * prompt so rl.question() can read Y/n input cleanly.
  *
  * Mechanism: detach every 'keypress' listener on stdin that isn't tagged
- * with __ventipusHotkey__ (the F-key listener from index.ts). That stops
+ * with __cawdexHotkey__ (the F-key listener from index.ts). That stops
  * readline from echoing typed chars or buffering them into its next-line
  * state, while keeping F1–F10 status hotkeys live.
  *
@@ -186,7 +186,7 @@ export interface QueryContext {
  *   resume()  — detach again to re-suppress
  *   restore() — final cleanup: re-attach, drop data listener, restore raw mode
  */
-type TaggedListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
+type TaggedListener = ((...args: unknown[]) => void) & { __cawdexHotkey__?: boolean };
 
 export interface InputGuard {
   pause(): void;
@@ -233,7 +233,7 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
   // attached unconditionally so status keys work during streaming and
   // tool execution alike.
   const allKeypressListeners = stdin.listeners('keypress').slice() as TaggedListener[];
-  const togglableListeners = allKeypressListeners.filter((l) => !l.__ventipusHotkey__);
+  const togglableListeners = allKeypressListeners.filter((l) => !l.__cawdexHotkey__);
 
   let detached = false;
 
@@ -414,13 +414,13 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
  *     Not persisted; it's purely a derived view.
  *   - Skipped on very short chains (< 3 messages) where there's
  *     nothing to recap.
- *   - Opt-out via VENTIPUS_STATE_BLOCK=0.
+ *   - Opt-out via CAWDEX_STATE_BLOCK=0.
  */
 const STATE_BLOCK_RECENT_ACTIONS = 8;
 const STATE_BLOCK_GOAL_MAX_CHARS = 400;
 
 export function buildStateBlock(messages: Message[]): string | null {
-  if (process.env.VENTIPUS_STATE_BLOCK === '0') return null;
+  if (process.env.CAWDEX_STATE_BLOCK === '0') return null;
   if (messages.length < 3) return null;
 
   // GOAL = the first user-role message. This is the original task
@@ -501,7 +501,7 @@ export function buildStateBlock(messages: Message[]): string | null {
  * Conservative for our model class — the paper's Qwen3-32B run
  * regressed -11.8% with overly aggressive masking, while Gemini-Flash
  * gained +8.5%. Deepseek-v4-flash is in that capability band, so we
- * pick a generous window. Override with VENTIPUS_MASK_WINDOW.
+ * pick a generous window. Override with CAWDEX_MASK_WINDOW.
  *
  * Threshold: we only bother masking when the total estimated payload
  * exceeds ~60K characters (rough proxy for ~15K tokens). Below that,
@@ -517,7 +517,7 @@ export function buildStateBlock(messages: Message[]): string | null {
  * planning policy before each turn.
  */
 export function buildGlobalPlanBlock(messages: Message[]): string | null {
-  if (process.env.VENTIPUS_GLOBAL_PLAN === '0') return null;
+  if (process.env.CAWDEX_GLOBAL_PLAN === '0') return null;
 
   const firstUser = messages.find((m) => m.role === 'user');
   if (!firstUser || typeof firstUser.content !== 'string') return null;
@@ -787,7 +787,7 @@ export function maskOldToolResults(messages: Message[]): Message[] {
 
   const window = Math.max(
     1,
-    parseInt(process.env.VENTIPUS_MASK_WINDOW ?? '', 10) || MASKING_WINDOW_DEFAULT,
+    parseInt(process.env.CAWDEX_MASK_WINDOW ?? '', 10) || MASKING_WINDOW_DEFAULT,
   );
 
   // Find indices of tool-result messages (newest first).
@@ -896,7 +896,7 @@ export function critiquePromptFor(stage: 'decompose' | 'critique' | 'refine'): s
 }
 
 export function minimumToolCallsBeforeDone(mode: Mode, env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE;
+  const raw = env.CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE;
   if (raw && raw.trim()) {
     const parsed = Number(raw);
     if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
@@ -1174,7 +1174,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     console.log(theme.warning(
       `  ${sym.warn} ${failedModel} is a known-stuck OpenRouter preview model; switching this turn to ${immediateFallback}.`,
     ));
-    console.log(theme.dim('    Override only if you really want it: VENTIPUS_ALLOW_FLAKY_MODELS=1'));
+    console.log(theme.dim('    Override only if you really want it: CAWDEX_ALLOW_FLAKY_MODELS=1'));
   }
 
   printInteractiveTurnAccepted(ctx.config);
@@ -1274,8 +1274,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   type CritiqueStage = 'decompose' | 'critique' | 'refine';
   const CRITIQUE_STAGES: CritiqueStage[] = ['decompose', 'critique', 'refine'];
   let critiqueStageIdx = 0;
-  const selfCritiqueEnabled = process.env.VENTIPUS_NON_INTERACTIVE === '1'
-    && process.env.VENTIPUS_SELF_CRITIQUE !== '0';
+  const selfCritiqueEnabled = process.env.CAWDEX_NON_INTERACTIVE === '1'
+    && process.env.CAWDEX_SELF_CRITIQUE !== '0';
 
   // Input suppression spans the entire chain: model streaming AND tool
   // execution. executeToolCalls calls inputGuard.pause()/resume() around
@@ -1714,7 +1714,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         // interrupt, which made cancellation feel like accidental send.
         const steerText = inputGuard.drainQueuedInput();
         if (steerText.trim()) {
-          (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = steerText;
+          (globalThis as { __cawdexQueuedInput?: string }).__cawdexQueuedInput = steerText;
         }
         // End the chain and let the outer REPL render the next prompt.
         break;
@@ -1819,7 +1819,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     if (!toolCalls || toolCalls.length === 0) {
       const hasRemainingTurnBudget = turns < maxTurns;
       const needsEditVerification =
-        process.env.VENTIPUS_VERIFY_AFTER_EDIT !== '0'
+        process.env.CAWDEX_VERIFY_AFTER_EDIT !== '0'
         && selfCritiqueEnabled
         && hasRemainingTurnBudget
         && chainStats.editCountSinceVerification > 0
@@ -1942,7 +1942,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   const stoppedWithPendingModelWork = latestRole === 'user' || latestRole === 'tool';
   if (Number.isFinite(maxTurns) && turns >= maxTurns && stoppedWithPendingModelWork) {
     console.log(theme.warning(`\n  ${sym.warn} reached configured max turns limit (${maxTurns})`));
-    console.log(theme.dim(`     remove the cap by deleting maxTurns from ~/.ventipus/config.json`));
+    console.log(theme.dim(`     remove the cap by deleting maxTurns from ~/.cawdex/config.json`));
   }
 
   // Chain-elapsed summary. One line per response chain (user msg → assistant
@@ -2019,7 +2019,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // draft spacing, not treated as a hidden submit.
     const queued = inputGuard.drainQueuedInput();
     if (queued.trim()) {
-      (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = queued;
+      (globalThis as { __cawdexQueuedInput?: string }).__cawdexQueuedInput = queued;
     }
     inputGuard.restore();
     // Clear the per-turn abort controller pointer so a stale handle
@@ -2144,7 +2144,7 @@ async function executeToolCalls(
       evidence: string,
       input?: Record<string, unknown>,
     ): void => {
-      if (!chainStats || !(ctx.mode === 'benchmark' || process.env.VENTIPUS_BENCHMARK_TRACE === '1')) return;
+      if (!chainStats || !(ctx.mode === 'benchmark' || process.env.CAWDEX_BENCHMARK_TRACE === '1')) return;
       chainStats.benchmarkTraceEvents.push(makeBenchmarkInvalidToolActionEvent({
         seq: chainStats.benchmarkTraceEvents.length + 1,
         tool: toolName,
@@ -2496,7 +2496,7 @@ async function executeToolCalls(
       await printToolResult(!result.isError, elapsed, result.output);
     }
 
-    if (chainStats && (ctx.mode === 'benchmark' || process.env.VENTIPUS_BENCHMARK_TRACE === '1')) {
+    if (chainStats && (ctx.mode === 'benchmark' || process.env.CAWDEX_BENCHMARK_TRACE === '1')) {
       chainStats.benchmarkTraceEvents.push(makeBenchmarkTraceEvent({
         seq: chainStats.benchmarkTraceEvents.length + 1,
         tool: toolName,

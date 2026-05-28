@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import chalk from 'chalk';
 import type {
-  VentipusConfig, VoiceConfig, VoiceSttConfig, VoiceTtsConfig, VoiceAccessibilityConfig,
+  CawdexConfig, VoiceConfig, VoiceSttConfig, VoiceTtsConfig, VoiceAccessibilityConfig,
 } from './types.js';
 import { isFfmpegAvailable, playAudioBuffer, recordAudio, audioCue, probeMic, micProbeMessage } from './audio.js';
 
@@ -29,15 +29,15 @@ export const DEFAULT_USER_VOICE      = 'AZnzlk1XvdvUeBnXmlld'; // Domi
 // Voice config can be sparse — most users won't set it at all. These helpers
 // resolve undefined → sensible default, and surface "voice usable?" checks
 // so call sites stay clean.
-export function getVoiceConfig(config: VentipusConfig): VoiceConfig {
+export function getVoiceConfig(config: CawdexConfig): VoiceConfig {
   return config.voice || {};
 }
 
-export function isVoiceEnabled(config: VentipusConfig): boolean {
+export function isVoiceEnabled(config: CawdexConfig): boolean {
   return Boolean(config.voice?.enabled);
 }
 
-export function getSttKey(config: VentipusConfig): string {
+export function getSttKey(config: CawdexConfig): string {
   // Whisper STT — falls back to the main OpenAI-compatible key. Most users
   // configure OpenRouter as their main provider, in which case Whisper isn't
   // reachable through OpenRouter's free tier; they'll want a separate OpenAI
@@ -45,12 +45,12 @@ export function getSttKey(config: VentipusConfig): string {
   return config.voice?.stt?.apiKey || config.apiKey || '';
 }
 
-export function getTtsKey(config: VentipusConfig): string {
+export function getTtsKey(config: CawdexConfig): string {
   // ElevenLabs key — no fallback; this is a separate provider.
   return config.voice?.tts?.apiKey || '';
 }
 
-export function getSttConfig(config: VentipusConfig): Required<Omit<VoiceSttConfig, 'apiKey'>> & { apiKey: string } {
+export function getSttConfig(config: CawdexConfig): Required<Omit<VoiceSttConfig, 'apiKey'>> & { apiKey: string } {
   const stt = config.voice?.stt || {};
   return {
     apiKey: getSttKey(config),
@@ -61,7 +61,7 @@ export function getSttConfig(config: VentipusConfig): Required<Omit<VoiceSttConf
   };
 }
 
-export function getTtsConfig(config: VentipusConfig): Required<Omit<VoiceTtsConfig, 'apiKey'>> & { apiKey: string } {
+export function getTtsConfig(config: CawdexConfig): Required<Omit<VoiceTtsConfig, 'apiKey'>> & { apiKey: string } {
   const tts = config.voice?.tts || {};
   return {
     apiKey: getTtsKey(config),
@@ -77,7 +77,7 @@ export function getTtsConfig(config: VentipusConfig): Required<Omit<VoiceTtsConf
   };
 }
 
-export function getAccessibilityConfig(config: VentipusConfig): Required<VoiceAccessibilityConfig> {
+export function getAccessibilityConfig(config: CawdexConfig): Required<VoiceAccessibilityConfig> {
   const a = config.voice?.accessibility || {};
   return {
     screenReader: Boolean(a.screenReader),
@@ -180,7 +180,7 @@ export interface TtsRequestOptions {
 
 export async function synthesizeSpeech(
   text: string,
-  cfg: VentipusConfig,
+  cfg: CawdexConfig,
   opts: TtsRequestOptions,
 ): Promise<Buffer | null> {
   const tts = getTtsConfig(cfg);
@@ -239,7 +239,7 @@ export async function synthesizeSpeech(
  */
 export async function speak(
   text: string,
-  cfg: VentipusConfig,
+  cfg: CawdexConfig,
   opts: TtsRequestOptions & { signal?: AbortSignal },
 ): Promise<boolean> {
   const suppressUntil = (globalThis as { __voiceSuppressUntilMs?: number }).__voiceSuppressUntilMs ?? 0;
@@ -256,7 +256,7 @@ export async function speak(
  */
 export async function speakAssistantResponse(
   text: string,
-  cfg: VentipusConfig,
+  cfg: CawdexConfig,
   signal?: AbortSignal,
 ): Promise<number> {
   const tts = getTtsConfig(cfg);
@@ -284,7 +284,7 @@ export async function speakAssistantResponse(
  */
 export async function speakUserEcho(
   text: string,
-  cfg: VentipusConfig,
+  cfg: CawdexConfig,
   signal?: AbortSignal,
 ): Promise<boolean> {
   const tts = getTtsConfig(cfg);
@@ -300,7 +300,7 @@ export async function speakUserEcho(
  */
 export async function transcribeAudio(
   audio: Buffer,
-  cfg: VentipusConfig,
+  cfg: CawdexConfig,
   format: 'wav' | 'mp3' | 'webm' = 'wav',
 ): Promise<string | null> {
   const stt = getSttConfig(cfg);
@@ -351,7 +351,7 @@ export async function transcribeAudio(
  * slash command), `dictateOnce(maxSeconds)` is the easy entry point.
  */
 export async function dictateOnce(
-  cfg: VentipusConfig,
+  cfg: CawdexConfig,
   maxSeconds = 30,
 ): Promise<string | null> {
   const a = getAccessibilityConfig(cfg);
@@ -398,7 +398,7 @@ export async function dictateOnce(
 /**
  * Pretty-print voice config status for /voice (no args).
  */
-export function printVoiceStatus(cfg: VentipusConfig): void {
+export function printVoiceStatus(cfg: CawdexConfig): void {
   const v = getVoiceConfig(cfg);
   const stt = getSttConfig(cfg);
   const tts = getTtsConfig(cfg);

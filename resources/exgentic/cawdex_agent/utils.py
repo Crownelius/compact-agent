@@ -1,4 +1,4 @@
-"""Stdlib helpers for the ventipus Exgentic adapter."""
+"""Stdlib helpers for the cawdex Exgentic adapter."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ STOPWORDS = {
 
 @dataclass(frozen=True)
 class ActionPayload:
-    """Machine-readable action selected by ventipus."""
+    """Machine-readable action selected by cawdex."""
 
     name: str
     arguments: dict[str, Any]
@@ -133,8 +133,8 @@ def fold_exgentic_history(
                 name = action.get("name") or "unknown"
                 action_counts[name] = action_counts.get(name, 0) + 1
             actions.append({"turn": idx, "actions": compact_actions})
-        elif role == "ventipus":
-            diagnostic = _compact_ventipus_diagnostic(item, item_limit=item_limit)
+        elif role == "cawdex":
+            diagnostic = _compact_cawdex_diagnostic(item, item_limit=item_limit)
             if diagnostic is not None:
                 diagnostics.append({"turn": idx, **diagnostic})
         elif role == "action_repair":
@@ -149,7 +149,7 @@ def fold_exgentic_history(
     latest_observation = observations[-1] if observations else None
     latest_action = actions[-1] if actions else None
     return {
-        "format": "ventipus-exgentic-folded-history-v1",
+        "format": "cawdex-exgentic-folded-history-v1",
         "profile": profile,
         "turns_seen": len(history or []),
         "latest_observation": latest_observation,
@@ -403,7 +403,7 @@ def shortlist_exgentic_actions(
     ]
 
     return {
-        "format": "ventipus-exgentic-action-shortlist-v1",
+        "format": "cawdex-exgentic-action-shortlist-v1",
         "profile": profile,
         "action_count": len(docs),
         "shortlist_limit": safe_limit,
@@ -440,7 +440,7 @@ def _compact_selected_actions(value: Any, *, item_limit: int) -> list[dict[str, 
     return compact
 
 
-def _compact_ventipus_diagnostic(item: dict[str, Any], *, item_limit: int) -> dict[str, Any] | None:
+def _compact_cawdex_diagnostic(item: dict[str, Any], *, item_limit: int) -> dict[str, Any] | None:
     returncode = item.get("returncode")
     stderr = str(item.get("stderr") or "")
     stdout = str(item.get("stdout") or "")
@@ -708,9 +708,9 @@ def _observation_fingerprint(value: Any) -> str:
 
 def _has_recent_action_error(history: list[dict[str, Any]]) -> bool:
     for item in reversed((history or [])[-4:]):
-        if not isinstance(item, dict) or item.get("role") != "ventipus":
+        if not isinstance(item, dict) or item.get("role") != "cawdex":
             continue
-        diagnostic = _compact_ventipus_diagnostic(item, item_limit=600)
+        diagnostic = _compact_cawdex_diagnostic(item, item_limit=600)
         if diagnostic is not None:
             return True
     return False
@@ -982,7 +982,7 @@ def _shortlist_item(
 
 
 def extract_action_payload(text: str) -> ActionPayload | None:
-    """Return the last valid action payload from ventipus output.
+    """Return the last valid action payload from cawdex output.
 
     Supported shapes:
       {"name": "finish", "arguments": {"answer": "..."}}
@@ -1005,7 +1005,7 @@ def _json_candidates(text: str) -> list[Any]:
         if value is not None:
             candidates.append(value)
 
-    marker_re = re.compile(r"ventipus-exgentic action JSON\s*:\s*(\{.*?\})\s*$", re.IGNORECASE | re.DOTALL)
+    marker_re = re.compile(r"cawdex-exgentic action JSON\s*:\s*(\{.*?\})\s*$", re.IGNORECASE | re.DOTALL)
     marker = marker_re.search(text or "")
     if marker:
         value = _parse_json(marker.group(1))

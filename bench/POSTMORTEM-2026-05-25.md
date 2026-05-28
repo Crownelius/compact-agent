@@ -2,7 +2,7 @@
 
 **Run**: `runs/2026-05-25__07-54-25/`
 **Model**: `deepseek/deepseek-v4-flash` via OpenRouter
-**Agent**: `ventipus@1.33.7` with `--perm yolo`
+**Agent**: `cawdex@1.33.7` with `--perm yolo`
 **Score**: **37/86 = 43.02% accuracy**
 **Wall time**: ~6h with 3-way concurrency, 25-min per-task budget
 
@@ -10,7 +10,7 @@
 
 ### 1. ❗ Bash 5-minute timeout (3 trials, ~$1 wasted, potential +1-3 passes)
 
-**Root cause**: ventipus's `bash` tool has a hard-coded 300s timeout. ML model loads, conda installs, pytest runs, and emulator boots routinely exceed this. The model can't ask for more time, so it kills the command, sees `✗ 300.0s`, assumes failure, and **retries the same command** — burning another 5 min for the same result.
+**Root cause**: cawdex's `bash` tool has a hard-coded 300s timeout. ML model loads, conda installs, pytest runs, and emulator boots routinely exceed this. The model can't ask for more time, so it kills the command, sees `✗ 300.0s`, assumes failure, and **retries the same command** — burning another 5 min for the same result.
 
 | Task | Hits | Outcome | What the agent was running |
 |------|------|---------|----------------------------|
@@ -18,7 +18,7 @@
 | `pytorch-model-cli` | 2× | TEST_TIMEOUT | Training a small CNN |
 | `qemu-startup` | 1× | PASS (lucky) | `apt install qemu-system` |
 
-**Fix in ventipus** — concrete proposal:
+**Fix in cawdex** — concrete proposal:
 
 ```typescript
 // src/tools/bash.ts: accept an optional timeoutMs param up to 30 min
@@ -35,7 +35,7 @@
 
 ### 2. ❗ Context bloat — auto-compaction is too lazy (6 trials, ~$2 wasted, +2-4 passes)
 
-**Root cause**: ventipus only auto-compacts the conversation when context gets dangerously full. But on long agentic loops, the tool-output history balloons — by the time compaction kicks in, the agent has already wasted 10+ turns reading stale 30K-token tool outputs into context.
+**Root cause**: cawdex only auto-compacts the conversation when context gets dangerously full. But on long agentic loops, the tool-output history balloons — by the time compaction kicks in, the agent has already wasted 10+ turns reading stale 30K-token tool outputs into context.
 
 | Task | Peak Input | Outcome |
 |------|-----------|---------|
@@ -46,7 +46,7 @@
 | `sanitize-git-repo.hard` | 120K | FAIL |
 | `sanitize-git-repo` | 112K | FAIL |
 
-**Fix in ventipus**:
+**Fix in cawdex**:
 
 1. **Aggressively summarize tool outputs > 5K tokens** — keep first/last 1K + a sketch
 2. **Lower the auto-compact threshold** — currently somewhere ~80% of model max; drop to 50%
@@ -60,13 +60,13 @@ The pdp11 case is the smoking gun: at 375K tokens the model literally forgot it 
 
 **Root cause**: `broken-networking` is a task that intentionally breaks the container's network. Our adapter's install script (`apt-get install nodejs` + `npm i -g cawdex`) needs the internet. Result: install fails silently, agent never starts, both panes are completely empty, harness throws `parse_error`.
 
-**Fix in `bench/ventipus_agent_adapter.py`**:
+**Fix in `bench/cawdex_agent_adapter.py`**:
 
-Pre-bundle ventipus into a base image (or pin a tarball) and copy from there instead of pulling from npm in-container. ~30 min of work. Niche but bulletproof.
+Pre-bundle cawdex into a base image (or pin a tarball) and copy from there instead of pulling from npm in-container. ~30 min of work. Niche but bulletproof.
 
 ### 4. 🧠 Task comprehension failures (~10 trials, model issue)
 
-The agent reads the task and confidently does the wrong thing. Not a ventipus bug — a model capability ceiling.
+The agent reads the task and confidently does the wrong thing. Not a cawdex bug — a model capability ceiling.
 
 | Task | What went wrong |
 |------|-----------------|
@@ -81,7 +81,7 @@ The agent reads the task and confidently does the wrong thing. Not a ventipus bu
 | `extract-moves-from-video` | Failed to set up ffmpeg pipeline |
 | `solana-data` | Wrong RPC query |
 
-**Fix**: not ventipus. Use a stronger model — `anthropic/claude-sonnet-4` or `openai/o1-mini` for the next baseline run. Expected lift: 10-15 percentage points.
+**Fix**: not cawdex. Use a stronger model — `anthropic/claude-sonnet-4` or `openai/o1-mini` for the next baseline run. Expected lift: 10-15 percentage points.
 
 ### 5. ⏱️ Test infrastructure timeouts (8 trials, t-bench issue)
 
@@ -107,11 +107,11 @@ Affected: `chess-best-move`, `count-dataset-tokens`, `crack-7z-hash.hard`, `cron
 | **P0** | Aggressive tool-output truncation when >5K tokens | 1 hr | +2-4 passes |
 | **P1** | Loop detector: detect identical *file writes* (not just prompt fingerprints) | 30 min | +1 pass |
 | **P1** | Lower auto-compact threshold to 50% of context | 15 min | +1-2 passes |
-| **P2** | Pre-bundle ventipus install (handle broken-networking) | 30 min | +1 pass |
+| **P2** | Pre-bundle cawdex install (handle broken-networking) | 30 min | +1 pass |
 | **P2** | Rescue test_timeouts with `--global-test-timeout-sec 300` | next-run flag | +0-2 passes |
 | **N/A** | Run with stronger model (claude-sonnet-4) | next-run config | **+10-15 passes** |
 
-**Realistic next run**: P0 fixes + claude-sonnet-4 → projected **~52-58% accuracy** (puts ventipus at parity with the published Claude Code baseline).
+**Realistic next run**: P0 fixes + claude-sonnet-4 → projected **~52-58% accuracy** (puts cawdex at parity with the published Claude Code baseline).
 
 ## Cost
 

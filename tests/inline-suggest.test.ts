@@ -114,8 +114,10 @@ describe('inline command selector helpers', () => {
     const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf-8');
 
     expect(source).toContain('setReadlineBuffer(rl, result.command)');
-    expect(source).toContain('__ventipusSlashAccepted');
-    expect(source).toContain('__ventipusSlashPrefillInput');
+    expect(source).toContain('__cawdexSlashAccepted');
+    expect(source).toContain('__cawdexSlashPending');
+    expect(source).toContain('__cawdexSlashPrefillInput');
+    expect(source).toContain('await g.__cawdexSlashPending.promise');
     expect(source).toContain("stdout.write('\\r\\x1b[2K' + prefix + result.command)");
     expect(source).not.toContain("rl.emit('line', result.command)");
   });

@@ -4,7 +4,7 @@ Adapter that plugs Cawdex into the [Terminal-Bench](https://www.tbench.ai/)
 harness for end-to-end benchmarking.
 
 **Status**: ✅ verified passing on `hello-world` (100% accuracy, 2m43s
-agent time, 0 failures) as of 2026-05-25 with the legacy ventipus 1.33.7 +
+agent time, 0 failures) as of 2026-05-25 with the legacy cawdex 1.33.7 +
 terminal-bench 0.2.18 on Windows 11 + Docker Desktop. The full v0.1.1
 dataset (~80 tasks) is runnable; the bigger task batches need a few
 hours of wall clock.
@@ -80,7 +80,7 @@ Bench Core task layout.
 ```bash
 tb run \
     --dataset-path tb-repo/tasks \
-    --agent-import-path ventipus_agent_adapter:VentipusAgent \
+    --agent-import-path cawdex_agent_adapter:CawdexAgent \
     --task-id hello-world \
     --global-agent-timeout-sec 1200
 ```
@@ -98,7 +98,7 @@ for hard tasks.
 ```bash
 tb run \
     --dataset-path tb-repo/tasks \
-    --agent-import-path ventipus_agent_adapter:VentipusAgent \
+    --agent-import-path cawdex_agent_adapter:CawdexAgent \
     --global-agent-timeout-sec 1800
 ```
 
@@ -144,7 +144,7 @@ git clone --depth 1 https://github.com/laude-institute/terminal-bench tb-repo
 # ...same checkout commands...
 export OPENROUTER_API_KEY=sk-or-v1-...
 export OPENAI_API_KEY="$OPENROUTER_API_KEY"
-tb run --dataset-path tb-repo/tasks --agent-import-path ventipus_agent_adapter:VentipusAgent --task-id hello-world
+tb run --dataset-path tb-repo/tasks --agent-import-path cawdex_agent_adapter:CawdexAgent --task-id hello-world
 ```
 
 This pulls the `hello-world` task, builds its Docker container,
@@ -155,7 +155,7 @@ against the task. Logs land under `runs/<timestamp>/`.
 
 ```bash
 uv run tb run \
-    --agent-import-path ventipus_agent_adapter:VentipusAgent \
+    --agent-import-path cawdex_agent_adapter:CawdexAgent \
     --dataset-name terminal-bench-core --dataset-version 2.0
 ```
 
@@ -169,18 +169,18 @@ Default is `openrouter/owl-alpha` (free + fast). For a quality run:
 
 ```bash
 uv run tb run \
-    --agent-import-path ventipus_agent_adapter:VentipusAgent \
+    --agent-import-path cawdex_agent_adapter:CawdexAgent \
     --agent-kwargs-json '{"model": "deepseek/deepseek-v4-flash"}' \
     --dataset-name terminal-bench-core --dataset-version 2.0
 ```
 
 ## How it works
 
-The adapter (`ventipus_agent_adapter.py`, legacy filename) is a Python module that:
+The adapter (`cawdex_agent_adapter.py`, legacy filename) is a Python module that:
 
 1. **Installs** — writes a shell script the harness copies into each
    task container. The script installs Node 20 and `npm i -g cawdex`
-   at a pinned version, then seeds a minimal `~/.ventipus/config.json`
+   at a pinned version, then seeds a minimal `~/.cawdex/config.json`
    so the setup wizard doesn't block on stdin.
 2. **Runs** — the harness execs `cawdex --non-interactive --perm yolo`
    with the task description piped via heredoc on stdin. Cawdex
@@ -204,7 +204,7 @@ Cawdex ships these CLI flags for harness drivers:
 
 When `--prompt-file` is set, Cawdex:
 
-1. Refuses to start if `~/.ventipus/config.json` is missing
+1. Refuses to start if `~/.cawdex/config.json` is missing
    (a wizard would block forever in a piped/headless environment).
 2. Skips the banner and the keypress hotkey listener.
 3. Pushes the prompt text as one user message.

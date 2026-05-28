@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigDir } from './config.js';
 import { scanCommand, scanContent } from './security.js';
-import type { VentipusConfig, Message } from './types.js';
+import type { CawdexConfig, Message } from './types.js';
 
 export interface BenchmarkTraceEvent {
   seq: number;
@@ -308,8 +308,8 @@ export interface BenchmarkExperienceEditPrediction {
 
 export interface BenchmarkChangeEvaluation {
   version: 1;
-  format: 'ventipus-change-evaluation-v1';
-  source: 'ventipus benchmark trace';
+  format: 'cawdex-change-evaluation-v1';
+  source: 'cawdex benchmark trace';
   createdAt: string;
   status: 'no_edits' | 'missing_predictions' | 'missing_regression_forecasts' | 'pending_verification' | 'contradicted' | 'regression_risk' | 'confirmed';
   accepted: boolean | null;
@@ -415,7 +415,7 @@ export interface BenchmarkExperienceRunEfficiency {
 
 export interface BenchmarkAgentContextCompilation {
   version: 1;
-  format: 'ventipus-agent-context-compilation-v1';
+  format: 'cawdex-agent-context-compilation-v1';
   task: string;
   context: string;
   answer: string;
@@ -451,8 +451,8 @@ export interface BenchmarkTraceArtifact {
 
 export interface BenchmarkSubmissionBundleManifest {
   version: 1;
-  format: 'ventipus-submission-bundle-manifest-v1';
-  source: 'ventipus benchmark trace';
+  format: 'cawdex-submission-bundle-manifest-v1';
+  source: 'cawdex benchmark trace';
   createdAt: string;
   submissionReady: boolean;
   reason: string;
@@ -534,7 +534,7 @@ export interface BenchmarkUsageSummary {
 
 export interface OpenAgentLeaderboardDraft {
   version: 1;
-  source: 'ventipus benchmark trace';
+  source: 'cawdex benchmark trace';
   submissionReady: boolean;
   reason: string;
   agent: string;
@@ -1207,7 +1207,7 @@ export interface BenchmarkTraceWriteInput {
   sessionId: string;
   mode: string;
   cwd: string;
-  config: VentipusConfig;
+  config: CawdexConfig;
   startedAtMs: number;
   endedAtMs?: number;
   messages: Message[];
@@ -1468,7 +1468,7 @@ function buildBenchmarkAgentContextCompilation(input: {
 
   return {
     version: 1,
-    format: 'ventipus-agent-context-compilation-v1',
+    format: 'cawdex-agent-context-compilation-v1',
     task: truncate(redactTraceText(task || 'not recorded'), 2_000),
     context,
     answer,
@@ -1911,8 +1911,8 @@ export function buildBenchmarkChangeEvaluation(input: {
 
   return {
     version: 1,
-    format: 'ventipus-change-evaluation-v1',
-    source: 'ventipus benchmark trace',
+    format: 'cawdex-change-evaluation-v1',
+    source: 'cawdex benchmark trace',
     createdAt: input.createdAt ?? new Date().toISOString(),
     status,
     accepted: acceptedForChangeEvaluationStatus(status),
@@ -2340,10 +2340,10 @@ export function buildOpenAgentLeaderboardDraft(
 
   return {
     version: 1,
-    source: 'ventipus benchmark trace',
+    source: 'cawdex benchmark trace',
     submissionReady: false,
     reason: 'Cawdex trace draft lacks official benchmark_score, successful_sessions, and benchmark-owned session_results. Run an official harness such as Exgentic, HAL, Terminal-Bench, or KBench before submitting or claiming leaderboard performance.',
-    agent: 'ventipus_agent',
+    agent: 'cawdex_agent',
     agent_name: 'Cawdex',
     benchmark,
     benchmark_name: formatBenchmarkName(benchmark),
@@ -2396,8 +2396,8 @@ function emptyBenchmarkSubmissionBundleManifest(
   const benchmark = extractBenchmarkSlug(input.messages);
   return {
     version: 1,
-    format: 'ventipus-submission-bundle-manifest-v1',
-    source: 'ventipus benchmark trace',
+    format: 'cawdex-submission-bundle-manifest-v1',
+    source: 'cawdex benchmark trace',
     createdAt: new Date(endedAtMs).toISOString(),
     submissionReady: false,
     reason: 'Benchmark trace has not been written yet; official harness score and session evidence are still required.',
@@ -2473,8 +2473,8 @@ function buildBenchmarkSubmissionBundleManifest(
 
   return {
     version: 1,
-    format: 'ventipus-submission-bundle-manifest-v1',
-    source: 'ventipus benchmark trace',
+    format: 'cawdex-submission-bundle-manifest-v1',
+    source: 'cawdex benchmark trace',
     createdAt: summary.endedAt,
     submissionReady,
     reason: submissionReady
@@ -2597,7 +2597,7 @@ function extractBenchmarkSlug(messages: Message[]): string {
   if (/\bgsm8k\b/i.test(text)) return 'gsm8k';
   if (/\bhotpotqa\b/i.test(text)) return 'hotpotqa';
   if (/\bbrowsecomp/i.test(text)) return 'browsecompplus';
-  return 'ventipus_agent_benchmark';
+  return 'cawdex_agent_benchmark';
 }
 
 function normalizeBenchmarkSlug(value: string): string {
@@ -2623,7 +2623,7 @@ function normalizeBenchmarkSlug(value: string): string {
   if (cleaned === 'webdev' || cleaned === 'webdevbench' || cleaned === 'swewebdev' || cleaned === 'swewebdevbench' || cleaned === 'vibecoding') return 'swewebdevbench';
   if (cleaned === 'taubench' || cleaned === 'taubench2' || cleaned === 'tau' || cleaned === 'tau2' || cleaned.startsWith('tau2') || cleaned.startsWith('taubench')) return 'tau2';
   if (cleaned === 'browsecomp' || cleaned === 'browsecompplus' || cleaned === 'deepresearch' || cleaned === 'webresearch') return 'browsecompplus';
-  return cleaned || 'ventipus_agent_benchmark';
+  return cleaned || 'cawdex_agent_benchmark';
 }
 
 function formatBenchmarkName(slug: string): string {
@@ -2631,7 +2631,7 @@ function formatBenchmarkName(slug: string): string {
     appworld: 'AppWorld',
     bfcl: 'Berkeley Function Calling Leaderboard',
     browsecompplus: 'BrowseComp+',
-    ventipus_agent_benchmark: 'Cawdex Benchmark',
+    cawdex_agent_benchmark: 'Cawdex Benchmark',
     gsm8k: 'GSM8K',
     hotpotqa: 'HotpotQA',
     arcagi3: 'ARC-AGI-3',
@@ -6407,7 +6407,7 @@ function classifyBenchmarkHarnessComponent(target: string): { component: Benchma
     return { component: 'tool_implementation', reason: 'path is a tool implementation component' };
   }
   if (/resources\/(?:terminal_bench|kbench|hal|exgentic|open_agent_leaderboard)\//i.test(normalized)
-    || /(^|\/)ventipus_agent(\/|\.py$)/i.test(normalized)
+    || /(^|\/)cawdex_agent(\/|\.py$)/i.test(normalized)
     || /(^|\/)(?:adapter|adapters|runner)\.(?:mjs|js|ts|py)$/i.test(normalized)) {
     return { component: 'adapter', reason: 'path belongs to a packaged benchmark adapter or agent card' };
   }
@@ -8862,7 +8862,7 @@ function detectBenchmarkResultFileEditRisk(target: string): string | null {
   const normalized = normalizeTracePath(target);
   if (!normalized || isCommonNonSourceReference(normalized)) return null;
   const base = normalized.split('/').at(-1) ?? normalized;
-  const underResultDir = /(^|\/)(?:\.ventipus|results?|scores?|leaderboard|submissions?)(\/|$)/.test(normalized);
+  const underResultDir = /(^|\/)(?:\.cawdex|results?|scores?|leaderboard|submissions?)(\/|$)/.test(normalized);
   const resultFile = /^(?:result|results|score|scores|leaderboard|submission|completed|completion|success|status)(?:[._-].*)?\.(?:json|txt|csv|tsv|md|ya?ml)$/i.test(base);
   if (underResultDir && resultFile) {
     return 'edit target resembles a benchmark result, score, submission, or completion marker artifact';
@@ -9358,10 +9358,10 @@ export function buildBenchmarkCompletionReminder(
 }
 
 export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkTraceWriteResult | null {
-  if (input.mode !== 'benchmark' && process.env.VENTIPUS_BENCHMARK_TRACE !== '1') return null;
+  if (input.mode !== 'benchmark' && process.env.CAWDEX_BENCHMARK_TRACE !== '1') return null;
 
   const summary = buildBenchmarkTraceSummary(input);
-  const baseDir = process.env.VENTIPUS_BENCHMARK_TRACE_DIR?.trim()
+  const baseDir = process.env.CAWDEX_BENCHMARK_TRACE_DIR?.trim()
     || join(getConfigDir(), 'benchmark-runs');
   const stamp = summary.startedAt.replace(/[:.]/g, '-');
   const safeSession = input.sessionId.replace(/[^A-Za-z0-9_.-]/g, '-').slice(0, 40) || 'session';
@@ -9406,7 +9406,7 @@ export function writeBenchmarkTrace(input: BenchmarkTraceWriteInput): BenchmarkT
     kind: 'open-agent-leaderboard-draft',
     path: leaderboardDraftPath,
     contentType: 'application/json',
-    description: 'Draft Open Agent Leaderboard-style row from ventipus trace metadata; not an official benchmark result.',
+    description: 'Draft Open Agent Leaderboard-style row from cawdex trace metadata; not an official benchmark result.',
     sizeBytes: Buffer.byteLength(leaderboardDraftText),
     sha256: sha256Hex(leaderboardDraftText),
   });

@@ -13,8 +13,8 @@ export const DEFAULT_BASH_MAX_OUTPUT_LINES = 400;
 
 export function truncateBashOutput(
   raw: string,
-  maxChars = envNumber('VENTIPUS_BASH_MAX_OUTPUT_CHARS', DEFAULT_BASH_MAX_OUTPUT_CHARS),
-  maxLines = envNumber('VENTIPUS_BASH_MAX_OUTPUT_LINES', DEFAULT_BASH_MAX_OUTPUT_LINES),
+  maxChars = envNumber('CAWDEX_BASH_MAX_OUTPUT_CHARS', DEFAULT_BASH_MAX_OUTPUT_CHARS),
+  maxLines = envNumber('CAWDEX_BASH_MAX_OUTPUT_LINES', DEFAULT_BASH_MAX_OUTPUT_LINES),
 ): { output: string; truncated: boolean; omittedChars: number; omittedLines: number } {
   if (!raw) {
     return { output: '(no output)', truncated: false, omittedChars: 0, omittedLines: 0 };
@@ -68,7 +68,7 @@ export function resolveBashTimeoutMs(
   input: Record<string, unknown>,
   env: NodeJS.ProcessEnv = process.env,
 ): { timeoutMs: number; requestedMs?: number; capped: boolean } {
-  const fallback = envNumber('VENTIPUS_BASH_TIMEOUT_MS', DEFAULT_BASH_TIMEOUT_MS, env);
+  const fallback = envNumber('CAWDEX_BASH_TIMEOUT_MS', DEFAULT_BASH_TIMEOUT_MS, env);
   const requestedSec = inputNumber(input.timeoutSec);
   const requested = inputNumber(input.timeoutMs)
     ?? (requestedSec === null ? null : requestedSec * 1000)
@@ -100,11 +100,11 @@ function isTimeoutError(error: unknown): boolean {
  * On non-Windows platforms we keep /bin/bash since that's what shell
  * conventions assume there.
  *
- * Override either platform's choice with the VENTIPUS_SHELL env
- * variable (e.g. VENTIPUS_SHELL=pwsh, VENTIPUS_SHELL=/bin/zsh).
+ * Override either platform's choice with the CAWDEX_SHELL env
+ * variable (e.g. CAWDEX_SHELL=pwsh, CAWDEX_SHELL=/bin/zsh).
  */
 function pickShell(): string {
-  const override = process.env.VENTIPUS_SHELL;
+  const override = process.env.CAWDEX_SHELL;
   if (override && override.trim()) return override.trim();
   return process.platform === 'win32' ? 'cmd.exe' : '/bin/bash';
 }
@@ -171,7 +171,7 @@ export const BashTool: Tool = {
   description:
     `Execute a shell command and return stdout/stderr. ` +
     `Active shell on this machine: ${shellLabel()} ` +
-    `(override via VENTIPUS_SHELL). ` +
+    `(override via CAWDEX_SHELL). ` +
     `Use for: running builds/tests, git commands, package installs, ` +
     `process management, system inspection. ` +
     `Use timeoutMs for long builds/tests/installs (max ${MAX_BASH_TIMEOUT_MS}ms). ` +

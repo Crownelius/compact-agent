@@ -646,7 +646,7 @@ const profile = profileForBenchmark(benchmark);
 const prompt = `/benchmark ${profile} ${instruction}`;
 const workdir = config.workDir || env.workdir || env.repoPath || taskEnv.workdir || taskEnv.repoPath || process.cwd();
 const artifactRoot = config.storeDir
-  || process.env.VENTIPUS_KBENCH_ARTIFACT_DIR
+  || process.env.CAWDEX_KBENCH_ARTIFACT_DIR
   || (() => {
     const dir = join(tmpdir(), `cawdex-kbench-${process.pid}-${Date.now()}`);
     mkdirSync(dir, { recursive: true });
@@ -661,7 +661,7 @@ const traceDir = join(artifactRoot, 'cawdex-trace');
 mkdirSync(dirname(stdoutPath), { recursive: true });
 writeFileSync(instructionPath, redact(instruction), 'utf8');
 
-const commandParts = splitCommand(process.env.CAWDEX_KBENCH_COMMAND || process.env.VENTIPUS_KBENCH_COMMAND || 'cawdex');
+const commandParts = splitCommand(process.env.CAWDEX_KBENCH_COMMAND || process.env.CAWDEX_KBENCH_COMMAND || 'cawdex');
 if (!commandParts.length) {
   fail('invalid_adapter', 'CAWDEX_KBENCH_COMMAND resolved to an empty command.');
   process.exit(0);
@@ -671,7 +671,7 @@ const [command, ...prefixArgs] = commandParts;
 const args = [
   ...prefixArgs,
   '--prompt', prompt,
-  '--perm', process.env.VENTIPUS_KBENCH_PERMISSION || 'yolo',
+  '--perm', process.env.CAWDEX_KBENCH_PERMISSION || 'yolo',
   '--output-format', 'text',
   '--benchmark-trace-dir', traceDir,
 ];
@@ -679,15 +679,15 @@ if (config.modelName) args.push('--model', String(config.modelName));
 if (config.temperature !== undefined) args.push('--temperature', String(config.temperature));
 if (config.baseUrl) args.push('--base-url', String(config.baseUrl));
 if (config.apiKeyEnv) args.push('--api-key-env', String(config.apiKeyEnv));
-if (process.env.VENTIPUS_KBENCH_EXTRA_ARGS) {
-  args.push(...splitCommand(process.env.VENTIPUS_KBENCH_EXTRA_ARGS));
+if (process.env.CAWDEX_KBENCH_EXTRA_ARGS) {
+  args.push(...splitCommand(process.env.CAWDEX_KBENCH_EXTRA_ARGS));
 }
 
 const childEnv = {
   ...process.env,
-  VENTIPUS_BENCHMARK_TRACE: '1',
-  VENTIPUS_BENCHMARK_TRACE_DIR: traceDir,
-  VENTIPUS_BASH_TIMEOUT_MS: process.env.VENTIPUS_BASH_TIMEOUT_MS || '300000',
+  CAWDEX_BENCHMARK_TRACE: '1',
+  CAWDEX_BENCHMARK_TRACE_DIR: traceDir,
+  CAWDEX_BASH_TIMEOUT_MS: process.env.CAWDEX_BASH_TIMEOUT_MS || '300000',
 };
 for (const [key, value] of Object.entries(env.envVars || {})) {
   if (typeof value === 'string') childEnv[key] = value;

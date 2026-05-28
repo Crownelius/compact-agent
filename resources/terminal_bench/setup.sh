@@ -8,8 +8,8 @@ if command -v cawdex >/dev/null 2>&1; then
   cawdex --print-terminal-bench-adapter >/dev/null
   exit 0
 fi
-if command -v ventipus >/dev/null 2>&1; then
-  ventipus --print-terminal-bench-adapter >/dev/null
+if command -v cawdex >/dev/null 2>&1; then
+  cawdex --print-terminal-bench-adapter >/dev/null
   exit 0
 fi
 
@@ -40,7 +40,7 @@ install_from_bundle_root() {
   fi
   entry="$root/bin/cawdex.js"
   if [ ! -f "$entry" ]; then
-    entry="$root/bin/ventipus.js"
+    entry="$root/bin/cawdex.js"
   fi
   if [ ! -f "$entry" ]; then
     return 1
@@ -52,11 +52,11 @@ install_from_bundle_root() {
 exec node "$entry" "\$@"
 EOF
     chmod +x /usr/local/bin/cawdex
-    cat > /usr/local/bin/ventipus <<EOF
+    cat > /usr/local/bin/cawdex <<EOF
 #!/bin/sh
 exec cawdex "\$@"
 EOF
-    chmod +x /usr/local/bin/ventipus
+    chmod +x /usr/local/bin/cawdex
     return 0
   fi
   if command -v npm >/dev/null 2>&1 && [ -f "$root/package.json" ]; then
@@ -77,7 +77,7 @@ install_from_tarball() {
 
 try_offline_install() {
   if command -v node >/dev/null 2>&1; then
-    if install_from_bundle_root "${VENTIPUS_BUNDLE_ROOT:-}"; then
+    if install_from_bundle_root "${CAWDEX_BUNDLE_ROOT:-}"; then
       return 0
     fi
     if install_from_bundle_root "$PACKAGE_ROOT"; then
@@ -87,16 +87,16 @@ try_offline_install() {
 
   ensure_node_npm
 
-  if install_from_tarball "${VENTIPUS_BUNDLE_TARBALL:-}"; then
+  if install_from_tarball "${CAWDEX_BUNDLE_TARBALL:-}"; then
     return 0
   fi
-  if install_from_bundle_root "${VENTIPUS_BUNDLE_ROOT:-}"; then
+  if install_from_bundle_root "${CAWDEX_BUNDLE_ROOT:-}"; then
     return 0
   fi
   if install_from_bundle_root "$PACKAGE_ROOT"; then
     return 0
   fi
-  for candidate in "$SCRIPT_DIR"/cawdex*.tgz "$PACKAGE_ROOT"/cawdex*.tgz "$SCRIPT_DIR"/ventipus*.tgz "$PACKAGE_ROOT"/ventipus*.tgz; do
+  for candidate in "$SCRIPT_DIR"/cawdex*.tgz "$PACKAGE_ROOT"/cawdex*.tgz "$SCRIPT_DIR"/cawdex*.tgz "$PACKAGE_ROOT"/cawdex*.tgz; do
     if install_from_tarball "$candidate"; then
       return 0
     fi
@@ -116,6 +116,6 @@ fi
 
 ensure_node_npm
 
-npm install -g "${VENTIPUS_INSTALL_SPEC:-cawdex@latest}" --no-audit --no-fund
+npm install -g "${CAWDEX_INSTALL_SPEC:-cawdex@latest}" --no-audit --no-fund
 
 cawdex --print-terminal-bench-adapter >/dev/null

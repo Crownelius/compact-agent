@@ -143,18 +143,18 @@ describe('countTailRepetitions', () => {
 });
 
 describe('resolveFirstTokenTimeoutMs', () => {
-  const original = process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS;
+  const original = process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
 
   afterEach(() => {
     if (original === undefined) {
-      delete process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS;
+      delete process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
     } else {
-      process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS = original;
+      process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = original;
     }
   });
 
   it('uses a shorter watchdog for known flaky OpenRouter models', () => {
-    delete process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS;
+    delete process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
 
     expect(resolveFirstTokenTimeoutMs({
       provider: 'OpenRouter (Any Model)',
@@ -163,13 +163,13 @@ describe('resolveFirstTokenTimeoutMs', () => {
   });
 
   it('keeps a more patient default for ordinary models and allows env override', () => {
-    delete process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS;
+    delete process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
     expect(resolveFirstTokenTimeoutMs({
       provider: 'OpenRouter (Any Model)',
       model: 'openrouter/free',
     })).toBe(60_000);
 
-    process.env.VENTIPUS_FIRST_TOKEN_TIMEOUT_MS = '1234';
+    process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = '1234';
     expect(resolveFirstTokenTimeoutMs({
       provider: 'OpenRouter (Any Model)',
       model: 'openrouter/owl-alpha',
@@ -178,13 +178,13 @@ describe('resolveFirstTokenTimeoutMs', () => {
 });
 
 describe('known flaky model preflight', () => {
-  const originalAllowFlaky = process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+  const originalAllowFlaky = process.env.CAWDEX_ALLOW_FLAKY_MODELS;
 
   afterEach(() => {
     if (originalAllowFlaky === undefined) {
-      delete process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+      delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
     } else {
-      process.env.VENTIPUS_ALLOW_FLAKY_MODELS = originalAllowFlaky;
+      process.env.CAWDEX_ALLOW_FLAKY_MODELS = originalAllowFlaky;
     }
   });
 
@@ -215,10 +215,10 @@ describe('known flaky model preflight', () => {
       temperature: 0.3,
     };
 
-    delete process.env.VENTIPUS_ALLOW_FLAKY_MODELS;
+    delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
     expect(fallbackModelForKnownFlakyTurn(cfg)).toBe('openrouter/free');
 
-    process.env.VENTIPUS_ALLOW_FLAKY_MODELS = '1';
+    process.env.CAWDEX_ALLOW_FLAKY_MODELS = '1';
     expect(fallbackModelForKnownFlakyTurn(cfg)).toBeNull();
   });
 });

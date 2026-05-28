@@ -148,7 +148,7 @@ describe('research_sources tool', () => {
     expect(_internal.resolveHuggingFaceToken({ HUGGING_FACE_HUB_TOKEN: 'hf_hub' } as NodeJS.ProcessEnv)).toBe('hf_hub');
     expect(_internal.resolveHuggingFaceToken({ HUGGINGFACE_API_KEY: 'hf_api' } as NodeJS.ProcessEnv)).toBe('hf_api');
 
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-hf-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-hf-'));
     try {
       const tokenPath = join(dir, 'token');
       writeFileSync(tokenPath, 'hf_file\n');
@@ -175,7 +175,7 @@ describe('research_sources tool', () => {
     expect(basic).not.toContain('alice');
     expect(basic).not.toContain('secret');
 
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-kaggle-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-kaggle-'));
     try {
       writeFileSync(join(dir, 'access_token'), 'kg_file\n');
       expect(_internal.resolveKaggleApiToken({ KAGGLE_CONFIG_DIR: dir } as NodeJS.ProcessEnv)).toBe('kg_file');
@@ -540,7 +540,7 @@ describe('research_sources tool', () => {
 
   it('keeps unauthenticated Kaggle default searches on datasets only', async () => {
     const urls: string[] = [];
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-kaggle-empty-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-kaggle-empty-'));
     vi.stubEnv('KAGGLE_CONFIG_DIR', dir);
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       urls.push(url);
@@ -676,7 +676,7 @@ describe('research_sources tool', () => {
   });
 
   it('records missing source credentials as readiness metadata without leaking values', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-source-auth-empty-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-source-auth-empty-'));
     try {
       vi.stubEnv('GITHUB_TOKEN', '');
       vi.stubEnv('GH_TOKEN', '');

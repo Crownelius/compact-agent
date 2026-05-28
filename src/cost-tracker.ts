@@ -1,6 +1,6 @@
 /**
  * Cost/token tracker — tracks usage per session and cumulative.
- * Stores data in ~/.ventipus/usage.json
+ * Stores data in ~/.cawdex/usage.json
  * Supports budget limits and alerts.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';

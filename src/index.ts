@@ -40,7 +40,7 @@ import {
   formatSourceCommandUsage,
   parseSourceCommandArgs,
 } from './source-command.js';
-import type { VentipusConfig, Message } from './types.js';
+import type { CawdexConfig, Message } from './types.js';
 import { PROVIDERS } from './types.js';
 // New systems
 import { createSession, autoSave, listSessions, loadSession, deleteSession, saveSession, generateSessionId, resolveSessionRef, type Session } from './sessions.js';
@@ -146,7 +146,7 @@ import {
 import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage, type RecordController } from './audio.js';
 import { applyScreenReader, summarize } from './accessibility.js';
 import { COMMAND_CATALOG, completeSlashCommandNames } from './command-palette.js';
-import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand } from './inline-suggest.js';
+import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand, type InlineSuggestResult } from './inline-suggest.js';
 import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 
 /**
@@ -171,7 +171,7 @@ function openRouterContextHintForModel(model: string, catalogModel?: Pick<OpenRo
 }
 
 function applyModelSelection(
-  config: VentipusConfig,
+  config: CawdexConfig,
   model: string,
   catalogModel?: Pick<OpenRouterModel, 'contextLength'> | null,
 ): void {
@@ -187,7 +187,7 @@ function applyModelSelection(
 }
 
 // ── Setup Wizard ──────────────────────────────────────────
-async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfig): Promise<VentipusConfig> {
+async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig): Promise<CawdexConfig> {
   console.log(chalk.bold.cyan(`\n  ${BRAND_NAME} — First-time Setup\n`));
   const providerKeys = Object.keys(PROVIDERS);
   const normalizeProvider = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -218,7 +218,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
   }
 
   let apiKey = '';
-  let openaiAuth: VentipusConfig['openaiAuth'];
+  let openaiAuth: CawdexConfig['openaiAuth'];
   if (provider.requiresKey) {
     apiKey = await rl.question(chalk.yellow(`  API Key for ${provider.name}: `));
   }
@@ -228,7 +228,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
       useCodexAuthFile: true,
       chatgptBaseURL: CHATGPT_CODEX_BASE_URL,
     };
-    const status = getOpenAICodexAuthStatus({ openaiAuth } as VentipusConfig);
+    const status = getOpenAICodexAuthStatus({ openaiAuth } as CawdexConfig);
     console.log('');
     if (status.available) {
       console.log(chalk.green(`  Codex OAuth: found ${status.source === 'env' ? 'environment token' : status.authPath}`));
@@ -254,12 +254,12 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
     console.log('');
     console.log(chalk.yellow(`  ⚠  "${model}" is an experimental / free model that's been reported to return`));
     console.log(chalk.yellow(`     empty or "ERROR" responses, or no first stream event.`));
-    if (process.env.VENTIPUS_ALLOW_FLAKY_MODELS === '1') {
-      console.log(chalk.dim('     Keeping it because VENTIPUS_ALLOW_FLAKY_MODELS=1 is set.'));
+    if (process.env.CAWDEX_ALLOW_FLAKY_MODELS === '1') {
+      console.log(chalk.dim('     Keeping it because CAWDEX_ALLOW_FLAKY_MODELS=1 is set.'));
     } else {
       const safer = providerKey === 'openrouter' ? PROVIDERS.openrouter.defaultModel : provider.defaultModel;
       console.log(chalk.dim(`     Using safer default instead: ${safer}`));
-      console.log(chalk.dim('     Override only for debugging: VENTIPUS_ALLOW_FLAKY_MODELS=1 cawdex'));
+      console.log(chalk.dim('     Override only for debugging: CAWDEX_ALLOW_FLAKY_MODELS=1 cawdex'));
       model = safer;
     }
     console.log('');
@@ -296,7 +296,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
   // user can make an informed choice — most users want this on.
   console.log(chalk.white('\n  MemPalace persistent memory'));
   console.log(chalk.dim('  Lets the agent remember your preferences, codebase landmarks, and lessons across sessions.'));
-  console.log(chalk.dim('  Two stores: global (~/.ventipus/memory) for cross-project facts, project (.ventipus/memory'));
+  console.log(chalk.dim('  Two stores: global (~/.cawdex/memory) for cross-project facts, project (.cawdex/memory'));
   console.log(chalk.dim('  in each repo) for codebase-specific knowledge. Searchable via /memory or by the agent itself.'));
   console.log(chalk.dim('  Zero external dependencies; storage is local JSON files. Can be toggled anytime via /memory disable.'));
   const memoryDefaultIndex = currentConfig?.memory?.enabled === false ? 1 : 0;
@@ -318,7 +318,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
     },
   });
 
-  const config: VentipusConfig = {
+  const config: CawdexConfig = {
     apiKey,
     baseURL,
     model,
@@ -425,7 +425,7 @@ function printResumedHistory(messages: Message[], sessionName: string): void {
       // Render tool_calls that came with this assistant message as
       // compact one-liners — full args + outputs would balloon the
       // replay. The full data is on disk in the session JSON if the
-      // user needs to inspect it (`cat ~/.ventipus/sessions/<id>.json`).
+      // user needs to inspect it (`cat ~/.cawdex/sessions/<id>.json`).
       if (m.tool_calls && m.tool_calls.length > 0) {
         for (const tc of m.tool_calls) {
           const args = (tc.function.arguments || '').slice(0, 80);
@@ -545,7 +545,12 @@ interface ConfigChoice<T> {
   value: T;
 }
 
-type TaggedKeypressListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
+type TaggedKeypressListener = ((...args: unknown[]) => void) & { __cawdexHotkey__?: boolean };
+
+interface SlashPickerState {
+  promise: Promise<InlineSuggestResult>;
+  startedAtMs: number;
+}
 
 async function selectConfigChoice<T>(
   rl: readline.Interface,
@@ -577,7 +582,7 @@ async function selectConfigChoice<T>(
     let renderedRows = 0;
     const wasRaw = stdin.isRaw;
     const keypressListeners = stdin.listeners('keypress').slice() as TaggedKeypressListener[];
-    const detached = keypressListeners.filter((listener) => !listener.__ventipusHotkey__);
+    const detached = keypressListeners.filter((listener) => !listener.__cawdexHotkey__);
 
     function clearRendered(): void {
       for (let i = 0; i < renderedRows; i++) {
@@ -716,7 +721,7 @@ function parseSlashCommand(input: string): { cmd: string; args: string } {
 //   { handled: false, injectPrompt } — LLM-driven, prompt ready to send
 export function handleSlashCommand(
   input: string,
-  config: VentipusConfig,
+  config: CawdexConfig,
   messages: Message[],
   session: Session,
   mode: { current: Mode },
@@ -928,12 +933,12 @@ export function handleSlashCommand(
       // before the clear. The main REPL loop replaces `messages` via
       // `newMessages`; we just nuke the side-channel globals.
       const g = globalThis as {
-        __ventipusQueuedInput?: string;
+        __cawdexQueuedInput?: string;
         __voiceLastFullResponse?: string | null;
         __voiceLastChunk?: string | null;
         __lastToolCall?: unknown;
       };
-      g.__ventipusQueuedInput = '';
+      g.__cawdexQueuedInput = '';
       g.__voiceLastFullResponse = null;
       g.__voiceLastChunk = null;
       g.__lastToolCall = null;
@@ -1060,7 +1065,7 @@ export function handleSlashCommand(
         (process.platform === 'win32' ? 'notepad' : 'nano');
       let result: string;
       try {
-        const tmpPath = pathJoin(tmpdir(), `ventipus-prompt-${Date.now()}.md`);
+        const tmpPath = pathJoin(tmpdir(), `cawdex-prompt-${Date.now()}.md`);
         // Seed with current input buffer if any, plus a help comment.
         const seed =
           (args.trim() ? args : '') +
@@ -1090,7 +1095,7 @@ export function handleSlashCommand(
 
     // ── Debug — toggle instrumentation + tail event log ──
     // Surface for the NDJSON debug stream written to
-    // ~/.ventipus/debug/<sessionId>.jsonl. Used by reviewers
+    // ~/.cawdex/debug/<sessionId>.jsonl. Used by reviewers
     // driving the agent + by users diagnosing their own issues.
     //
     //   /debug              show current level + log path + event count
@@ -1653,7 +1658,7 @@ export function handleSlashCommand(
 
     case '/perm':
       if (args && ['ask', 'auto', 'yolo'].includes(args)) {
-        config.permissionMode = args as VentipusConfig['permissionMode'];
+        config.permissionMode = args as CawdexConfig['permissionMode'];
         saveConfig(config);
         console.log(chalk.green(`  Permissions: ${config.permissionMode}`));
       } else {
@@ -1757,7 +1762,7 @@ export function handleSlashCommand(
     case '/hooks': {
       const hooks = listHooks();
       if (hooks.length === 0) {
-        console.log(chalk.dim('  No hooks configured. Edit ~/.ventipus/hooks.json'));
+        console.log(chalk.dim('  No hooks configured. Edit ~/.cawdex/hooks.json'));
       } else {
         console.log(chalk.cyan(`\n  Hooks (${hooks.length}):`));
         hooks.forEach((h, i) => {
@@ -2015,7 +2020,7 @@ export function handleSlashCommand(
         }
         if (items.length > 20) console.log(chalk.dim(`    … and ${items.length - 20} more`));
       }
-      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.ventipus/skills/.\n'));
+      console.log(chalk.dim('\n  Act on findings with /prune (instincts) or by editing ~/.cawdex/skills/.\n'));
       return { handled: true };
     }
 
@@ -2758,7 +2763,7 @@ export function handleSlashCommand(
         console.log(chalk.dim('  Saved anyway. If Stitch calls fail with auth errors, double-check what you pasted.'));
       }
       saveStitchConfig(key);
-      console.log(chalk.green(`  Stitch API key saved to ~/.ventipus/stitch.json`));
+      console.log(chalk.green(`  Stitch API key saved to ~/.cawdex/stitch.json`));
       // The stitch tool is only added to ALL_TOOLS at module-load
       // time (when src/tools/index.ts is first imported). Mid-session
       // configuration won't make it appear until the user restarts.
@@ -2891,7 +2896,7 @@ export function handleSlashCommand(
     }
 
     // ── Reset hooks (clear stale entries from old installs) ──
-    // Wipes ~/.ventipus/hooks.json, clears the in-memory quarantine, and
+    // Wipes ~/.cawdex/hooks.json, clears the in-memory quarantine, and
     // re-seeds the ECC default hooks against this install's bin path. Use
     // this when stale dev-machine paths from a prior install are crashing
     // every tool call.
@@ -3200,7 +3205,7 @@ export type NonInteractivePromptResolution =
 
 export function resolveNonInteractivePrompt(
   promptText: string,
-  config: VentipusConfig,
+  config: CawdexConfig,
   messages: Message[],
   session: Session,
   mode: { current: Mode },
@@ -3243,10 +3248,10 @@ export function resolveNonInteractivePrompt(
 }
 
 async function main(): Promise<void> {
-  if (process.env.VENTIPUS_DOCTOR === '1') {
+  if (process.env.CAWDEX_DOCTOR === '1') {
     const report = runDoctorCli({
-      json: process.env.VENTIPUS_DOCTOR_JSON === '1',
-      includeRegistry: process.env.VENTIPUS_DOCTOR_REGISTRY !== '0',
+      json: process.env.CAWDEX_DOCTOR_JSON === '1',
+      includeRegistry: process.env.CAWDEX_DOCTOR_REGISTRY !== '0',
     });
     process.exit(report.hasFailures ? 1 : 0);
     return;
@@ -3270,12 +3275,12 @@ async function main(): Promise<void> {
     completer: (line: string): [string[], string] => completeSlashCommandNames(line, slashCommandNames),
   });
 
-  if (process.env.VENTIPUS_OPENAI_OAUTH_SMOKE === '1') {
+  if (process.env.CAWDEX_OPENAI_OAUTH_SMOKE === '1') {
     const envConfig = loadConfigFromEnv();
     const baseConfig = envConfig ?? loadConfig();
     const config = applyRuntimeConfigOverrides(baseConfig);
     const result = await runOpenAICodexSmokeTest(config, {
-      model: process.env.VENTIPUS_MODEL_OVERRIDE || process.env.VENTIPUS_MODEL,
+      model: process.env.CAWDEX_MODEL_OVERRIDE || process.env.CAWDEX_MODEL,
     });
     console.log(formatOpenAICodexSmokeResult(result));
     try { rl.close(); } catch { /* noop */ }
@@ -3285,7 +3290,7 @@ async function main(): Promise<void> {
 
   // Initialize subsystems
   initHooksDir();
-  const nonInteractive = process.env.VENTIPUS_NON_INTERACTIVE === '1';
+  const nonInteractive = process.env.CAWDEX_NON_INTERACTIVE === '1';
 
   // First-run ECC install — silent if already installed, silent if resources missing.
   // Also re-installs when the saved state's version is older than the bundle's
@@ -3322,26 +3327,26 @@ async function main(): Promise<void> {
 
   // Load or create config.
   //
-  // Non-interactive mode (VENTIPUS_NON_INTERACTIVE=1) cannot run
+  // Non-interactive mode (CAWDEX_NON_INTERACTIVE=1) cannot run
   // the setup wizard because it would block on stdin in a piped/headless
   // environment. Prefer an env-built runtime config when present; otherwise
   // require an existing config file and fail with a clear message.
   const envConfig = nonInteractive ? loadConfigFromEnv() : null;
-  let config: VentipusConfig;
+  let config: CawdexConfig;
   if (!configExists()) {
     if (nonInteractive && envConfig) {
       config = envConfig;
     } else if (nonInteractive) {
       process.stderr.write(
-        '[cawdex] non-interactive mode requires a pre-existing config at ~/.ventipus/config.json.\n' +
-        'Run `cawdex` once interactively, write the config manually, OR provide env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.\n'
+        '[cawdex] non-interactive mode requires a pre-existing config at ~/.cawdex/config.json.\n' +
+        'Run `cawdex` once interactively, write the config manually, OR provide env config such as OPENROUTER_API_KEY and CAWDEX_MODEL.\n'
       );
       process.exit(2);
       return;
     } else {
       config = await setupWizard(rl);
     }
-  } else if (nonInteractive && process.env.VENTIPUS_ENV_CONFIG === '1' && envConfig) {
+  } else if (nonInteractive && process.env.CAWDEX_ENV_CONFIG === '1' && envConfig) {
     config = envConfig;
   } else {
     config = loadConfig();
@@ -3352,7 +3357,7 @@ async function main(): Promise<void> {
   // Per-invocation permission override (--perm flag). Doesn't touch
   // saved config — purely a runtime knob so harness runs can force
   // yolo without mutating the user's interactive permission setting.
-  const permOverride = process.env.VENTIPUS_PERM_OVERRIDE;
+  const permOverride = process.env.CAWDEX_PERM_OVERRIDE;
   if (permOverride === 'ask' || permOverride === 'auto' || permOverride === 'yolo') {
     config.permissionMode = permOverride;
   }
@@ -3379,16 +3384,16 @@ async function main(): Promise<void> {
   // setting. In-place ANSI repaints (used by tool/thinking spinners and
   // collapse/settle transitions) generate a flood of new content events
   // for screen readers, so they're force-off in that mode. Sighted
-  // users get them by default; the VENTIPUS_ANIMATIONS=0 env var still
+  // users get them by default; the CAWDEX_ANIMATIONS=0 env var still
   // overrides for users who specifically don't want the motion.
   // Saved configs can contain OpenRouter preview models that are known
   // to hang before the first token. Do not let the CLI boot into that
   // broken state by default; keep an env escape hatch for deliberate
   // provider debugging.
-  const runtimeModelOverride = !!process.env.VENTIPUS_MODEL_OVERRIDE || !!process.env.VENTIPUS_MODEL;
+  const runtimeModelOverride = !!process.env.CAWDEX_MODEL_OVERRIDE || !!process.env.CAWDEX_MODEL;
   const knownFlakyFallback = fallbackModelForKnownFlakyTurn(config)
     || (
-      process.env.VENTIPUS_ALLOW_FLAKY_MODELS !== '1'
+      process.env.CAWDEX_ALLOW_FLAKY_MODELS !== '1'
       && isKnownFlakyOpenRouterModel(config)
       && /openrouter/i.test(config.provider)
         ? PROVIDERS.openrouter.defaultModel
@@ -3402,11 +3407,11 @@ async function main(): Promise<void> {
     if (!nonInteractive && !runtimeModelOverride) {
       saveConfig(config);
       console.log(theme.warning(`  ⚠  Saved model "${previousModel}" is known to stall; switched config to ${knownFlakyFallback}.`));
-      console.log(theme.dim('     Use VENTIPUS_ALLOW_FLAKY_MODELS=1 only if you are deliberately testing that model.'));
+      console.log(theme.dim('     Use CAWDEX_ALLOW_FLAKY_MODELS=1 only if you are deliberately testing that model.'));
       console.log('');
     } else if (!nonInteractive) {
       console.log(theme.warning(`  ⚠  Requested model "${previousModel}" is known to stall; using ${knownFlakyFallback} for this session.`));
-      console.log(theme.dim('     Use VENTIPUS_ALLOW_FLAKY_MODELS=1 to force the requested model.'));
+      console.log(theme.dim('     Use CAWDEX_ALLOW_FLAKY_MODELS=1 to force the requested model.'));
       console.log('');
     }
   }
@@ -3414,7 +3419,7 @@ async function main(): Promise<void> {
   {
     const { setAnimationConfig } = await import('./animations.js');
     setAnimationConfig({
-      enabled: process.env.VENTIPUS_ANIMATIONS !== '0',
+      enabled: process.env.CAWDEX_ANIMATIONS !== '0',
       screenReader: config.voice?.accessibility?.screenReader === true,
     });
   }
@@ -3425,9 +3430,9 @@ async function main(): Promise<void> {
 
   // ── Debug instrumentation ─────────────────────────────────
   // Initialize early so subsequent emit() calls land in the right file.
-  // Reads $VENTIPUS_DEBUG which bin/ventipus.js may have set from
+  // Reads $CAWDEX_DEBUG which bin/cawdex.js may have set from
   // the --debug CLI flag. Level 'off' is a no-op; non-off opens an
-  // NDJSON log at ~/.ventipus/debug/<sessionId>.jsonl.
+  // NDJSON log at ~/.cawdex/debug/<sessionId>.jsonl.
   initDebug(session.id);
   dbgEmit('info', 'session.start', {
     cwd: process.cwd(),
@@ -3721,7 +3726,7 @@ async function main(): Promise<void> {
         // hotkey: one keystroke flips the safety dial through the
         // full ask → auto → yolo cycle. Replaces /perm <mode> typing.
         if (name === 'tab') {
-          const order: VentipusConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
+          const order: CawdexConfig['permissionMode'][] = ['ask', 'auto', 'yolo'];
           const cur = config.permissionMode;
           const next = order[(order.indexOf(cur) + 1) % order.length];
           config.permissionMode = next;
@@ -3731,8 +3736,8 @@ async function main(): Promise<void> {
         }
         // ── Shift+F1: queued input ─────────────────────────
         if (name === 'f1') {
-          const g = globalThis as { __ventipusQueuedInput?: string };
-          const q = (g.__ventipusQueuedInput || '').trim();
+          const g = globalThis as { __cawdexQueuedInput?: string };
+          const q = (g.__cawdexQueuedInput || '').trim();
           announce('Shift+F1', q
             ? `Queued during last chain: ${q.slice(0, 200)}`
             : 'Nothing queued.');
@@ -3880,13 +3885,19 @@ async function main(): Promise<void> {
         try {
           setReadlineBuffer(rl, '');
         } catch { /* noop */ }
-        void (async () => {
+        const slashPickerState = globalThis as {
+          __cawdexSlashAccepted?: InlineSuggestAcceptedCommand;
+          __cawdexSlashPending?: SlashPickerState;
+        };
+        let pickerPromise!: Promise<InlineSuggestResult>;
+        pickerPromise = (async (): Promise<InlineSuggestResult> => {
+          let result: InlineSuggestResult = { accepted: false, filter: initialFilter };
           try {
             const gp = globalThis as {
-              __ventipusPromptStyled?: string;
-              __ventipusPromptVisLen?: number;
+              __cawdexPromptStyled?: string;
+              __cawdexPromptVisLen?: number;
             };
-            const result = await inlineSuggest(
+            result = await inlineSuggest(
               rl,
               COMMAND_CATALOG.map((c) => ({
                 command: c.command,
@@ -3895,29 +3906,39 @@ async function main(): Promise<void> {
               })),
               initialFilter,
               {
-                promptPrefix: gp.__ventipusPromptStyled,
-                promptVisibleLen: gp.__ventipusPromptVisLen,
+                promptPrefix: gp.__cawdexPromptStyled,
+                promptVisibleLen: gp.__cawdexPromptVisLen,
               },
             );
             if (result.accepted && result.command) {
               try {
-                (globalThis as { __ventipusSlashAccepted?: InlineSuggestAcceptedCommand })
-                  .__ventipusSlashAccepted = { command: result.command, acceptedAtMs: Date.now() };
+                (globalThis as { __cawdexSlashAccepted?: InlineSuggestAcceptedCommand })
+                  .__cawdexSlashAccepted = { command: result.command, acceptedAtMs: Date.now() };
                 setReadlineBuffer(rl, result.command);
-                const prefix = gp.__ventipusPromptStyled ?? theme.prompt(`${sym.prompt} `);
+                const prefix = gp.__cawdexPromptStyled ?? theme.prompt(`${sym.prompt} `);
                 stdout.write('\r\x1b[2K' + prefix + result.command);
               } catch { /* noop */ }
             } else {
               try {
                 setReadlineBuffer(rl, result.filter);
-                const prefix = gp.__ventipusPromptStyled ?? theme.prompt(`${sym.prompt} `);
+                const prefix = gp.__cawdexPromptStyled ?? theme.prompt(`${sym.prompt} `);
                 stdout.write('\r\x1b[2K' + prefix + result.filter);
               } catch { /* noop */ }
             }
+            return result;
           } finally {
             pickerActive = false;
+            const g = globalThis as { __cawdexSlashPending?: SlashPickerState };
+            if (g.__cawdexSlashPending?.promise === pickerPromise) {
+              g.__cawdexSlashPending = undefined;
+            }
           }
         })();
+        slashPickerState.__cawdexSlashPending = {
+          promise: pickerPromise,
+          startedAtMs: Date.now(),
+        };
+        void pickerPromise;
         return;
       }
 
@@ -3954,7 +3975,7 @@ async function main(): Promise<void> {
           lastEscapeMs = 0;
           // Enqueue the slash command as queued input. The REPL loop
           // picks it up + dispatches /back on the next iteration.
-          (globalThis as { __ventipusQueuedInput?: string }).__ventipusQueuedInput = '/back\n';
+          (globalThis as { __cawdexQueuedInput?: string }).__cawdexQueuedInput = '/back\n';
           announce('Esc-Esc', 'Rewinding to previous user turn.');
           // Resolve the pending rl.question() so the main loop
           // actually moves on. Previously this used stdin.write('\n')
@@ -4202,7 +4223,7 @@ async function main(): Promise<void> {
     };
     // Tag so suppressInputDuringStream() can identify and preserve this
     // specific listener while detaching readline's own keypress handler.
-    (hotkeyListener as unknown as { __ventipusHotkey__: boolean }).__ventipusHotkey__ = true;
+    (hotkeyListener as unknown as { __cawdexHotkey__: boolean }).__cawdexHotkey__ = true;
     stdin.on('keypress', hotkeyListener);
   } catch {
     // No keypress support — accessibility users can still use /dictate.
@@ -4232,16 +4253,16 @@ async function main(): Promise<void> {
   // ── Non-interactive single-chain mode ─────────────────
   //
   // Triggered by `--prompt <text>` / `--prompt-file <path>` (parsed in
-  // bin/ventipus.js and stashed on VENTIPUS_PROMPT). We push the
+  // bin/cawdex.js and stashed on CAWDEX_PROMPT). We push the
   // prompt as one user message, run a single runQuery to completion,
   // and exit. No REPL, no banner, no hotkey listener, no live queue.
   //
   // This is the entrypoint that lets external harnesses (Terminal-Bench,
-  // CI scripts, etc.) drive ventipus with a single task and read
+  // CI scripts, etc.) drive cawdex with a single task and read
   // its output cleanly. Stdin is left untouched — readline never
   // attaches — so piped stdin won't confuse anything.
-  if (process.env.VENTIPUS_NON_INTERACTIVE === '1') {
-    const promptText = process.env.VENTIPUS_PROMPT;
+  if (process.env.CAWDEX_NON_INTERACTIVE === '1') {
+    const promptText = process.env.CAWDEX_PROMPT;
     if (!promptText || !promptText.trim()) {
       process.stderr.write('[cawdex] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
       process.exit(2);
@@ -4369,10 +4390,10 @@ async function main(): Promise<void> {
       // styled string (to write with color) and the visible-char
       // length (to position the cursor at end-of-filter).
       const promptStyled = sessionTag + modeTag + theme.prompt(promptGlyph);
-      (globalThis as { __ventipusPromptStyled?: string; __ventipusPromptVisLen?: number })
-        .__ventipusPromptStyled = promptStyled;
-      (globalThis as { __ventipusPromptStyled?: string; __ventipusPromptVisLen?: number })
-        .__ventipusPromptVisLen = ansiVisibleLen(promptStyled);
+      (globalThis as { __cawdexPromptStyled?: string; __cawdexPromptVisLen?: number })
+        .__cawdexPromptStyled = promptStyled;
+      (globalThis as { __cawdexPromptStyled?: string; __cawdexPromptVisLen?: number })
+        .__cawdexPromptVisLen = ansiVisibleLen(promptStyled);
 
       // Type-ahead input. If the user typed during the previous chain's
       // streaming/tool execution, restore it into the next prompt as a
@@ -4380,14 +4401,15 @@ async function main(): Promise<void> {
       // This keeps the REPL editable: the user can continue typing,
       // backspace, or press Enter once the model is done.
       const g = globalThis as {
-        __ventipusQueuedInput?: string;
-        __ventipusSlashAccepted?: InlineSuggestAcceptedCommand;
-        __ventipusSlashPrefillInput?: string;
+        __cawdexQueuedInput?: string;
+        __cawdexSlashAccepted?: InlineSuggestAcceptedCommand;
+        __cawdexSlashPending?: SlashPickerState;
+        __cawdexSlashPrefillInput?: string;
       };
-      const queued = g.__ventipusQueuedInput || '';
-      const slashPrefill = g.__ventipusSlashPrefillInput || '';
-      g.__ventipusQueuedInput = undefined;
-      g.__ventipusSlashPrefillInput = undefined;
+      const queued = g.__cawdexQueuedInput || '';
+      const slashPrefill = g.__cawdexSlashPrefillInput || '';
+      g.__cawdexQueuedInput = undefined;
+      g.__cawdexSlashPrefillInput = undefined;
       const restoredDraft = normalizeTypeaheadDraftForPrompt(queued);
       const prefill = slashPrefill || restoredDraft;
       input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, prefill);
@@ -4397,17 +4419,33 @@ async function main(): Promise<void> {
 
     {
       const g = globalThis as {
-        __ventipusSlashAccepted?: InlineSuggestAcceptedCommand;
-        __ventipusSlashPrefillInput?: string;
+        __cawdexSlashAccepted?: InlineSuggestAcceptedCommand;
+        __cawdexSlashPending?: SlashPickerState;
+        __cawdexSlashPrefillInput?: string;
       };
-      const outcome = resolveInlineSuggestQuestionInput(input, g.__ventipusSlashAccepted);
+      const staleSelectorSubmit = input.trim() === '' || input.trim() === '/';
+      if (g.__cawdexSlashPending && staleSelectorSubmit) {
+        try {
+          const result = await g.__cawdexSlashPending.promise;
+          if (result.accepted && result.command) {
+            g.__cawdexSlashPrefillInput = result.command;
+          } else if (result.filter) {
+            g.__cawdexSlashPrefillInput = result.filter;
+          }
+        } catch {
+          // Treat selector failure as a cancelled edit rather than dispatching "/".
+        }
+        g.__cawdexSlashAccepted = undefined;
+        continue;
+      }
+      const outcome = resolveInlineSuggestQuestionInput(input, g.__cawdexSlashAccepted);
       if (outcome.kind === 'prefill') {
-        g.__ventipusSlashAccepted = undefined;
-        g.__ventipusSlashPrefillInput = outcome.command;
+        g.__cawdexSlashAccepted = undefined;
+        g.__cawdexSlashPrefillInput = outcome.command;
         continue;
       }
       if (outcome.clearAccepted) {
-        g.__ventipusSlashAccepted = undefined;
+        g.__cawdexSlashAccepted = undefined;
       }
     }
 

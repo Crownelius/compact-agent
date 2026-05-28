@@ -14,11 +14,11 @@ Defaults:
 - TML-Bench/Kaggle-style tabular ML tasks are routed to the `tml-bench` benchmark profile, which extracts the data contract, avoids hidden-label leakage, trains an honest baseline, and validates the generated submission schema before completion.
 - Pi-Bench-style proactive personal assistant tasks are routed to the `pi-bench` benchmark profile, which builds a user/workspace/app context contract, tracks hidden-intent hypotheses, asks focused clarification only when needed, and verifies observable state after proactive actions.
 - USACO and other text-response tasks return the original task dict with a `response` field.
-- Oracle-like fields such as `patch`, `test_patch`, `solution`, `answer`, `gold`, `FAIL_TO_PASS`, and `PASS_TO_PASS` are omitted from the prompt unless `VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS=1` is set.
-- Traces and logs are written under `.ventipus/hal-trace/` unless `VENTIPUS_HAL_TRACE_DIR` is set.
+- Oracle-like fields such as `patch`, `test_patch`, `solution`, `answer`, `gold`, `FAIL_TO_PASS`, and `PASS_TO_PASS` are omitted from the prompt unless `CAWDEX_HAL_INCLUDE_ORACLE_FIELDS=1` is set.
+- Traces and logs are written under `.cawdex/hal-trace/` unless `CAWDEX_HAL_TRACE_DIR` is set.
 
 Useful overrides:
 
-- `CAWDEX_HAL_COMMAND` or `VENTIPUS_HAL_COMMAND`: command used to invoke Cawdex, default `cawdex`.
-- `VENTIPUS_HAL_TIMEOUT_SEC`: per-task timeout, default `1800`.
+- `CAWDEX_HAL_COMMAND` or `CAWDEX_HAL_COMMAND`: command used to invoke Cawdex, default `cawdex`.
+- `CAWDEX_HAL_TIMEOUT_SEC`: per-task timeout, default `1800`.
 - HAL `-A model_name=...`, `-A provider=...`, `-A max_turns=...`, and `-A output_format=...` are forwarded to Cawdex CLI flags when present.

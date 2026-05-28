@@ -47,9 +47,6 @@ export interface CawdexConfig {
   sandbox?: SandboxConfig; // OS-native sandbox wrap for bash tool (Seatbelt/bwrap)
 }
 
-/** @deprecated Use CawdexConfig. Kept for legacy plugin/test imports during the rebrand. */
-export type VentipusConfig = CawdexConfig;
-
 export interface OpenAIAuthConfig {
   type: 'api_key' | 'codex_oauth';
   /** CODEX_HOME override for reading Codex CLI auth; defaults to $CODEX_HOME or ~/.codex. */
@@ -72,8 +69,8 @@ export interface SandboxConfig {
 }
 
 // ── MemPalace memory config ──────────────────────────────
-// Lives at ~/.ventipus/memory/store.json (global) and
-// <cwd>/.ventipus/memory/store.json (project). When disabled, the
+// Lives at ~/.cawdex/memory/store.json (global) and
+// <cwd>/.cawdex/memory/store.json (project). When disabled, the
 // memory_* tools are NOT registered with the model (no wasted tokens)
 // and the system prompt's memory section is omitted.
 export interface MemoryConfig {

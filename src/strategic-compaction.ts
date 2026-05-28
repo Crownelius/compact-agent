@@ -1,7 +1,7 @@
 /**
  * Smart compaction suggestions — monitors conversation and suggests compaction at optimal points.
  */
-import type { VentipusConfig, Message } from './types.js';
+import type { CawdexConfig, Message } from './types.js';
 import { compactionTriggerTokens, estimateTokens } from './compaction.js';
 
 export interface CompactionSuggestion {
@@ -69,7 +69,7 @@ function detectModeSwitch(messages: Message[]): boolean {
 export function shouldSuggestCompaction(
   messages: Message[],
   lastCompactionAt: number,
-  config: Pick<VentipusConfig, 'model' | 'contextWindowTokens'> = { model: '' },
+  config: Pick<CawdexConfig, 'model' | 'contextWindowTokens'> = { model: '' },
 ): CompactionSuggestion | null {
   const tokens = estimateTokens(messages);
   const timeSinceLastCompaction = Date.now() - lastCompactionAt;

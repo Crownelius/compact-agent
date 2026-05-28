@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type { VentipusConfig } from './types.js';
+import type { CawdexConfig } from './types.js';
 
 export const CHATGPT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
 
@@ -44,11 +44,11 @@ interface CodexAuthFile {
   };
 }
 
-export function isOpenAICodexOAuth(config: VentipusConfig): boolean {
+export function isOpenAICodexOAuth(config: CawdexConfig): boolean {
   return config.openaiAuth?.type === 'codex_oauth';
 }
 
-export function resolveCodexHome(config?: Pick<VentipusConfig, 'openaiAuth'>): string {
+export function resolveCodexHome(config?: Pick<CawdexConfig, 'openaiAuth'>): string {
   return (
     config?.openaiAuth?.codexHome ||
     process.env.CODEX_HOME ||
@@ -56,11 +56,11 @@ export function resolveCodexHome(config?: Pick<VentipusConfig, 'openaiAuth'>): s
   );
 }
 
-export function getCodexAuthPath(config?: Pick<VentipusConfig, 'openaiAuth'>): string {
+export function getCodexAuthPath(config?: Pick<CawdexConfig, 'openaiAuth'>): string {
   return join(resolveCodexHome(config), 'auth.json');
 }
 
-export function getOpenAICodexBaseURL(config: VentipusConfig): string {
+export function getOpenAICodexBaseURL(config: CawdexConfig): string {
   return config.openaiAuth?.chatgptBaseURL || config.baseURL || CHATGPT_CODEX_BASE_URL;
 }
 
@@ -114,9 +114,9 @@ function isExpiredIso(iso: string | undefined): boolean {
   return !!iso && Date.parse(iso) <= Date.now();
 }
 
-function envAuth(config?: Pick<VentipusConfig, 'openaiAuth'>): OpenAICodexAuthSnapshot | null {
+function envAuth(config?: Pick<CawdexConfig, 'openaiAuth'>): OpenAICodexAuthSnapshot | null {
   const accessToken =
-    process.env.VENTIPUS_OPENAI_ACCESS_TOKEN ||
+    process.env.CAWDEX_OPENAI_ACCESS_TOKEN ||
     process.env.OPENAI_CODEX_ACCESS_TOKEN ||
     process.env.CODEX_OPENAI_ACCESS_TOKEN ||
     '';
@@ -125,7 +125,7 @@ function envAuth(config?: Pick<VentipusConfig, 'openaiAuth'>): OpenAICodexAuthSn
   return {
     accessToken,
     accountId:
-      process.env.VENTIPUS_OPENAI_ACCOUNT_ID ||
+      process.env.CAWDEX_OPENAI_ACCOUNT_ID ||
       process.env.OPENAI_CODEX_ACCOUNT_ID ||
       process.env.CODEX_OPENAI_ACCOUNT_ID ||
       undefined,
@@ -139,7 +139,7 @@ function parseCodexAuthFile(path: string): CodexAuthFile {
   return JSON.parse(readFileSync(path, 'utf8')) as CodexAuthFile;
 }
 
-export function resolveOpenAICodexAuth(config: VentipusConfig): OpenAICodexAuthSnapshot | null {
+export function resolveOpenAICodexAuth(config: CawdexConfig): OpenAICodexAuthSnapshot | null {
   const fromEnv = envAuth(config);
   if (fromEnv) return isExpiredIso(fromEnv.accessTokenExpiresAt) ? null : fromEnv;
 
@@ -164,7 +164,7 @@ export function resolveOpenAICodexAuth(config: VentipusConfig): OpenAICodexAuthS
   };
 }
 
-export function getOpenAICodexAuthStatus(config: VentipusConfig): OpenAICodexAuthStatus {
+export function getOpenAICodexAuthStatus(config: CawdexConfig): OpenAICodexAuthStatus {
   const codexHome = resolveCodexHome(config);
   const authPath = getCodexAuthPath(config);
   const fromEnv = envAuth(config);
@@ -238,7 +238,7 @@ export function getOpenAICodexAuthStatus(config: VentipusConfig): OpenAICodexAut
   }
 }
 
-export function openAICodexAuthInstructions(config: VentipusConfig): string {
+export function openAICodexAuthInstructions(config: CawdexConfig): string {
   const authPath = getCodexAuthPath(config);
   const status = getOpenAICodexAuthStatus(config);
   const reason = status.accessTokenExpired
@@ -251,7 +251,7 @@ export function openAICodexAuthInstructions(config: VentipusConfig): string {
   ].join(' ');
 }
 
-export function runCodexLogin(config: VentipusConfig): { ok: boolean; status: number | null; error?: string } {
+export function runCodexLogin(config: CawdexConfig): { ok: boolean; status: number | null; error?: string } {
   const result = spawnSync('codex', ['login'], {
     stdio: 'inherit',
     env: {

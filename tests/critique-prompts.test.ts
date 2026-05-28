@@ -27,13 +27,13 @@ import {
   minimumToolCallsBeforeDone,
 } from '../src/query.js';
 
-const ORIGINAL_MIN_TOOLS = process.env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE;
+const ORIGINAL_MIN_TOOLS = process.env.CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE;
 
 afterEach(() => {
   if (ORIGINAL_MIN_TOOLS === undefined) {
-    delete process.env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE;
+    delete process.env.CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE;
   } else {
-    process.env.VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE = ORIGINAL_MIN_TOOLS;
+    process.env.CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE = ORIGINAL_MIN_TOOLS;
   }
 });
 
@@ -178,10 +178,10 @@ describe('minimumToolCallsBeforeDone', () => {
 
   it('supports an explicit env override including zero', () => {
     expect(minimumToolCallsBeforeDone('benchmark', {
-      VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE: '0',
+      CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE: '0',
     } as NodeJS.ProcessEnv)).toBe(0);
     expect(minimumToolCallsBeforeDone('dev', {
-      VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE: '4',
+      CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE: '4',
     } as NodeJS.ProcessEnv)).toBe(4);
   });
 });

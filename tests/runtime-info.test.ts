@@ -7,7 +7,7 @@ import { buildRuntimeInfoBlock } from '../src/runtime-info.js';
 
 describe('buildRuntimeInfoBlock', () => {
   it('renders cwd, time, and non-git state', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-runtime-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-runtime-'));
     try {
       const block = buildRuntimeInfoBlock(cwd, new Date('2026-05-26T12:00:00.000Z'));
       expect(block).toContain('<runtime_info>');
@@ -20,7 +20,7 @@ describe('buildRuntimeInfoBlock', () => {
   });
 
   it('summarizes dirty git status when available', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-runtime-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-runtime-'));
     try {
       execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
       writeFileSync(join(cwd, 'a.txt'), 'hello\n');

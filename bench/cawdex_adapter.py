@@ -11,13 +11,13 @@ Implements the AbstractInstalledAgent interface so the harness can:
 Run a single task:
 
     uv run tb run \
-        --agent-import-path ventipus_agent_adapter:VentipusAgent \
+        --agent-import-path cawdex_agent_adapter:CawdexAgent \
         --task-id hello-world
 
 Run the full v2 dataset:
 
     uv run tb run \
-        --agent-import-path ventipus_agent_adapter:VentipusAgent \
+        --agent-import-path cawdex_agent_adapter:CawdexAgent \
         --dataset-name terminal-bench-core --dataset-version 2.0
 
 Requirements on the host:
@@ -60,8 +60,8 @@ from terminal_bench.agents.installed_agents.abstract_installed_agent import (
 # this reproducible.
 #
 # 1.35.58 is the Cawdex rebrand baseline with --prompt-file,
-# cawdex/ventipus bin aliases, and benchmark trace support.
-VENTIPUS_VERSION = "1.35.58"
+# cawdex/cawdex bin aliases, and benchmark trace support.
+CAWDEX_VERSION = "1.35.58"
 
 # Default model. owl-alpha is free on OpenRouter and tends to be fast
 # enough for benchmark turnaround. Swap to claude-sonnet-4 or
@@ -101,7 +101,7 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -dv -f2 | cut -d. -f1
 fi
 
 # Install Cawdex globally so it's on PATH.
-npm install -g cawdex@__VENTIPUS_VERSION__
+npm install -g cawdex@__CAWDEX_VERSION__
 
 # Seed Cawdex config so the setup wizard skips and the agent
 # launches straight into a working state. The wizard would block on
@@ -120,8 +120,8 @@ if [ -z "${OPENAI_API_KEY:-}" ]; then
   echo "cawdex install failed: OPENAI_API_KEY not in env" >&2
   exit 1
 fi
-mkdir -p "$HOME/.ventipus"
-cat > "$HOME/.ventipus/config.json" <<EOF
+mkdir -p "$HOME/.cawdex"
+cat > "$HOME/.cawdex/config.json" <<EOF
 {
   "provider": "OpenRouter (Any Model)",
   "baseURL": "https://openrouter.ai/api/v1",
@@ -152,14 +152,14 @@ fi
 """
 
 
-class VentipusAgent(AbstractInstalledAgent):
+class CawdexAgent(AbstractInstalledAgent):
     """Terminal-bench adapter for Cawdex."""
 
     @staticmethod
     def name() -> str:
         return "cawdex"
 
-    def __init__(self, model: str = DEFAULT_MODEL, version: str = VENTIPUS_VERSION, **kwargs):
+    def __init__(self, model: str = DEFAULT_MODEL, version: str = CAWDEX_VERSION, **kwargs):
         super().__init__(**kwargs)
         self._model = model
         self._version = version
@@ -175,10 +175,10 @@ class VentipusAgent(AbstractInstalledAgent):
         """
         if self._install_script_path is None:
             tmpdir = Path("/tmp" if os.name != "nt" else os.environ.get("TEMP", "."))
-            self._install_script_path = tmpdir / "ventipus_agent_install.sh"
+            self._install_script_path = tmpdir / "cawdex_agent_install.sh"
             content = (
                 INSTALL_SCRIPT
-                .replace("__VENTIPUS_VERSION__", self._version)
+                .replace("__CAWDEX_VERSION__", self._version)
                 .replace("__MODEL__", self._model)
             )
             # Force LF line endings — bash inside the Linux container
@@ -259,15 +259,15 @@ class VentipusAgent(AbstractInstalledAgent):
                 "in the host environment. Set it before invoking `tb run`."
             )
         env["OPENAI_API_KEY"] = key
-        # VENTIPUS_ANIMATIONS=0 disables in-place ANSI repaints so
+        # CAWDEX_ANIMATIONS=0 disables in-place ANSI repaints so
         # the harness's log capture stays readable (no spinner garbage).
-        env["VENTIPUS_ANIMATIONS"] = "0"
+        env["CAWDEX_ANIMATIONS"] = "0"
         return env
 
 
 if __name__ == "__main__":
     # Sanity check the install script renders cleanly when this file is
-    # run directly: `python ventipus_agent_adapter.py` prints the script
+    # run directly: `python cawdex_agent_adapter.py` prints the script
     # the harness will inject into containers.
-    agent = VentipusAgent()
+    agent = CawdexAgent()
     print(agent._install_agent_script_path.read_text())

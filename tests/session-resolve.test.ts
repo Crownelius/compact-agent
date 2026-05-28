@@ -13,19 +13,19 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// CRITICAL: VENTIPUS_HOME must be set BEFORE the import that
+// CRITICAL: CAWDEX_HOME must be set BEFORE the import that
 // computes SESSIONS_DIR at module-load time. Each test re-imports
 // to get a fresh module with the temp dir.
 let tmpHome: string;
 
 beforeEach(() => {
   tmpHome = mkdtempSync(join(tmpdir(), 'sess-resolve-test-'));
-  process.env.VENTIPUS_HOME = tmpHome;
+  process.env.CAWDEX_HOME = tmpHome;
   mkdirSync(join(tmpHome, 'sessions'), { recursive: true });
 });
 
 afterEach(() => {
-  delete process.env.VENTIPUS_HOME;
+  delete process.env.CAWDEX_HOME;
   try { rmSync(tmpHome, { recursive: true, force: true }); } catch { /* noop */ }
 });
 

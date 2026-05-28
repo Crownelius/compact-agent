@@ -1,12 +1,12 @@
 /**
  * Hook system â€” configurable pre/post tool execution hooks.
- * Hooks are scripts in ~/.ventipus/hooks/ that fire on events:
+ * Hooks are scripts in ~/.cawdex/hooks/ that fire on events:
  *   - PreToolUse:  before a tool runs (can block)
  *   - PostToolUse: after a tool runs (can log/alert)
  *   - SessionStart: when a session begins
  *   - SessionStop:  when a session ends
  *
- * Hook config in ~/.ventipus/hooks.json:
+ * Hook config in ~/.cawdex/hooks.json:
  * {
  *   "hooks": [
  *     { "event": "PreToolUse", "match": "bash", "command": "node guard.js" },
@@ -48,7 +48,7 @@ export interface HookContext {
   cwd: string;
   /**
    * Current permission mode at the time the hook fires. Passed to the
-   * hook script as $VENTIPUS_PERMISSION_MODE
+   * hook script as $CAWDEX_PERMISSION_MODE
    * so checks like GateGuard can no-op in 'yolo' (where the user has
    * explicitly opted in to "approve everything" and pedantic gates
    * contradict that contract).
@@ -80,7 +80,7 @@ export function initHooksDir(): void {
         {
           event: 'PostToolUse',
           match: '*',
-          command: 'echo "Tool $VENTIPUS_TOOL used"',
+          command: 'echo "Tool $CAWDEX_TOOL used"',
           blocking: false,
           enabled: false,
         },
@@ -103,7 +103,7 @@ function matchesTool(pattern: string, toolName: string): boolean {
 // (ENOENT, ETIMEDOUT, MODULE_NOT_FOUND, etc.) we add it to this set and
 // skip it for the rest of the session. Otherwise a single bad hook will
 // crash every tool call. Logged ONCE on first quarantine so the user
-// knows to clean up ~/.ventipus/hooks.json.
+// knows to clean up ~/.cawdex/hooks.json.
 const quarantinedHooks = new Set<string>();
 
 function hookSignature(h: HookDef): string {
@@ -152,13 +152,13 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
     const perm = ctx.permissionMode || '';
     const env = {
       ...process.env,
-      VENTIPUS_EVENT: ctx.event,
-      VENTIPUS_TOOL: ctx.toolName || '',
-      VENTIPUS_TOOL_INPUT: ctx.toolInput ? JSON.stringify(ctx.toolInput) : '',
-      VENTIPUS_TOOL_OUTPUT: ctx.toolOutput || '',
-      VENTIPUS_SESSION_ID: ctx.sessionId || '',
-      VENTIPUS_CWD: ctx.cwd,
-      VENTIPUS_PERMISSION_MODE: perm,
+      CAWDEX_EVENT: ctx.event,
+      CAWDEX_TOOL: ctx.toolName || '',
+      CAWDEX_TOOL_INPUT: ctx.toolInput ? JSON.stringify(ctx.toolInput) : '',
+      CAWDEX_TOOL_OUTPUT: ctx.toolOutput || '',
+      CAWDEX_SESSION_ID: ctx.sessionId || '',
+      CAWDEX_CWD: ctx.cwd,
+      CAWDEX_PERMISSION_MODE: perm,
     };
 
     const isBlocking = hook.blocking ?? (ctx.event === 'PreToolUse');

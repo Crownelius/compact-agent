@@ -1,7 +1,7 @@
 /**
  * Schema definitions for persistent data stores.
  *
- * Each store is a JSON file under ~/.ventipus/.
+ * Each store is a JSON file under ~/.cawdex/.
  * Schema versions are tracked to support future migrations.
  */
 

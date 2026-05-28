@@ -6,7 +6,7 @@ import { join, normalize } from 'node:path';
 import pkg from '../package.json' with { type: 'json' };
 
 describe('Exgentic adapter packaging', () => {
-  const adapterDir = join(process.cwd(), 'resources', 'exgentic', 'ventipus_agent');
+  const adapterDir = join(process.cwd(), 'resources', 'exgentic', 'cawdex_agent');
   const agentPath = join(adapterDir, 'agent.py');
   const utilsPath = join(adapterDir, 'utils.py');
   const setupPath = join(adapterDir, 'setup.sh');
@@ -19,13 +19,13 @@ describe('Exgentic adapter packaging', () => {
     expect(existsSync(requirementsPath)).toBe(true);
 
     const agent = readFileSync(agentPath, 'utf-8');
-    expect(agent).toContain('class CawdexAgent(VentipusAgent)');
-    expect(agent).toContain('class CawdexAgentInstance(VentipusAgentInstance)');
-    expect(agent).toContain('class VentipusAgent(Agent)');
-    expect(agent).toContain('class VentipusAgentInstance(AgentInstance)');
-    expect(agent).toContain('slug_name: ClassVar[str] = "ventipus_agent"');
+    expect(agent).toContain('class CawdexAgent(CawdexAgent)');
+    expect(agent).toContain('class CawdexAgentInstance(CawdexAgentInstance)');
+    expect(agent).toContain('class CawdexAgent(Agent)');
+    expect(agent).toContain('class CawdexAgentInstance(AgentInstance)');
+    expect(agent).toContain('slug_name: ClassVar[str] = "cawdex_agent"');
     expect(agent).toContain('def react(self, observation: Observation | None) -> Action | None');
-    expect(agent).toContain('VENTIPUS_EXGENTIC_COMMAND');
+    expect(agent).toContain('CAWDEX_EXGENTIC_COMMAND');
     expect(agent).toContain('--benchmark-trace-dir');
     expect(agent).toContain('summary.json');
     expect(agent).toContain('{"name":"<action name>","arguments":{}}');
@@ -58,7 +58,7 @@ describe('Exgentic adapter packaging', () => {
   });
 
   it('prints the packaged Exgentic agent directory from the CLI wrapper', () => {
-    const out = execFileSync('node', ['bin/ventipus.js', '--print-exgentic-agent'], {
+    const out = execFileSync('node', ['bin/cawdex.js', '--print-exgentic-agent'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
     }).trim();
@@ -66,14 +66,14 @@ describe('Exgentic adapter packaging', () => {
   });
 
   it('prints CLI help and version without entering first-time setup', () => {
-    const help = execFileSync('node', ['bin/ventipus.js', '--help'], {
+    const help = execFileSync('node', ['bin/cawdex.js', '--help'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
     });
     expect(help).toContain('Cawdex — terminal coding agents with a mind for the whole repo');
     expect(help).toContain('Usage:');
     expect(help).toContain('cawdex [options]');
-    expect(help).toContain('ventipus [options]');
+    expect(help).toContain('cawdex [options]');
     expect(help).toContain('--prompt <text>');
     expect(help).toContain('--doctor');
     expect(help).not.toContain('First-time Setup');
@@ -83,21 +83,20 @@ describe('Exgentic adapter packaging', () => {
       encoding: 'utf-8',
     });
     expect(cawdexHelp).toContain('cawdex [options]');
-    expect(cawdexHelp).toContain('Legacy alias:');
+    expect(cawdexHelp).not.toContain('Legacy alias:');
 
-    const version = execFileSync('node', ['bin/ventipus.js', '--version'], {
+    const version = execFileSync('node', ['bin/cawdex.js', '--version'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
     }).trim();
     expect(version).toBe(pkg.version);
     expect(pkg.bin).toMatchObject({
       cawdex: 'bin/cawdex.js',
-      ventipus: 'bin/ventipus.js',
     });
   });
 
   it('ships and prints an Open Agent Leaderboard agent card', () => {
-    const cardPath = join(process.cwd(), 'resources', 'open_agent_leaderboard', 'ventipus-agent-card.md');
+    const cardPath = join(process.cwd(), 'resources', 'open_agent_leaderboard', 'cawdex-agent-card.md');
     expect(existsSync(cardPath)).toBe(true);
     const card = readFileSync(cardPath, 'utf-8');
     expect(card).toContain('name: Cawdex');
@@ -107,7 +106,7 @@ describe('Exgentic adapter packaging', () => {
     expect(card).toContain('submissionReady:false');
     expect(card).toContain('cawdex --print-exgentic-agent');
 
-    const out = execFileSync('node', ['bin/ventipus.js', '--print-open-agent-card'], {
+    const out = execFileSync('node', ['bin/cawdex.js', '--print-open-agent-card'], {
       cwd: process.cwd(),
       encoding: 'utf-8',
     }).trim();
@@ -116,7 +115,7 @@ describe('Exgentic adapter packaging', () => {
 
   it('accepts common harness CLI flags before the Exgentic utility flag', () => {
     const out = execFileSync('node', [
-      'bin/ventipus.js',
+      'bin/cawdex.js',
       '--model',
       'openrouter/free',
       '--max-turns=3',
@@ -132,11 +131,11 @@ describe('Exgentic adapter packaging', () => {
     expect(normalize(out)).toBe(normalize(adapterDir));
   });
 
-  it('parses ventipus action JSON from stdout', () => {
+  it('parses cawdex action JSON from stdout', () => {
     const samples = [
       'notes\n{"name":"finish","arguments":{"answer":"42"}}',
       '```json\n{"action":"message","arguments":{"content":"done"}}\n```',
-      'ventipus-exgentic action JSON: {"action":{"name":"click","arguments":{"x":1}}}',
+      'cawdex-exgentic action JSON: {"action":{"name":"click","arguments":{"x":1}}}',
     ];
     const script = [
       `import json, sys`,
@@ -166,7 +165,7 @@ describe('Exgentic adapter packaging', () => {
     const history = [
       { role: 'observation', content: { user: 'Ava', order_id: 'ord-1', status: 'pending' } },
       {
-        role: 'ventipus',
+        role: 'cawdex',
         returncode: 0,
         stdout: 'large harmless model transcript '.repeat(100),
         stderr: '',
@@ -176,7 +175,7 @@ describe('Exgentic adapter packaging', () => {
         content: [{ name: 'lookup_order', arguments: { order_id: 'ord-1', verbose: true } }],
       },
       {
-        role: 'ventipus',
+        role: 'cawdex',
         returncode: 1,
         stdout: 'unknown action selected',
         stderr: 'schema mismatch for action',
@@ -207,7 +206,7 @@ describe('Exgentic adapter packaging', () => {
       },
     }).trim();
     const folded = JSON.parse(out);
-    expect(folded.format).toBe('ventipus-exgentic-folded-history-v1');
+    expect(folded.format).toBe('cawdex-exgentic-folded-history-v1');
     expect(folded.profile).toBe('tau2');
     expect(folded.latest_observation.summary).toContain('ord-1');
     expect(folded.latest_action.actions[0].name).toBe('lookup_order');
@@ -268,7 +267,7 @@ describe('Exgentic adapter packaging', () => {
       },
     }).trim();
     const parsed = JSON.parse(out);
-    expect(parsed.pending.format).toBe('ventipus-exgentic-action-shortlist-v1');
+    expect(parsed.pending.format).toBe('cawdex-exgentic-action-shortlist-v1');
     expect(parsed.pending.completion_ready).toBe(false);
     expect(parsed.pending.shortlisted_actions[0].name).toBe('lookup_order');
     expect(parsed.pending.shortlisted_actions[0].required_argument_keys).toEqual(['order_id']);
@@ -470,7 +469,7 @@ describe('Exgentic adapter packaging', () => {
   });
 
   it('compiles the Python adapter files without writing __pycache__ into resources', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ventipus-exgentic-pycompile-'));
+    const dir = mkdtempSync(join(tmpdir(), 'cawdex-exgentic-pycompile-'));
     try {
       const script = [
         'import py_compile',

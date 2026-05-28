@@ -1,4 +1,4 @@
-import type { VentipusConfig } from './types.js';
+import type { CawdexConfig } from './types.js';
 import { streamChat, resetClient } from './api.js';
 import {
   CHATGPT_CODEX_BASE_URL,
@@ -30,13 +30,13 @@ interface SmokeOptions {
   stream?: StreamChatFn;
 }
 
-function isCodexConfigured(config: VentipusConfig): boolean {
+function isCodexConfigured(config: CawdexConfig): boolean {
   return config.openaiAuth?.type === 'codex_oauth'
     || config.provider === PROVIDERS['openai-codex'].name
     || config.baseURL.includes('chatgpt.com/backend-api/codex');
 }
 
-function smokeConfig(config: VentipusConfig, modelOverride?: string): VentipusConfig {
+function smokeConfig(config: CawdexConfig, modelOverride?: string): CawdexConfig {
   const model = modelOverride
     || (isCodexConfigured(config) && config.model ? config.model : PROVIDERS['openai-codex'].defaultModel);
   return {
@@ -67,7 +67,7 @@ function publicAuthStatus(status: OpenAICodexAuthStatus): OpenAICodexSmokeResult
 }
 
 export async function runOpenAICodexSmokeTest(
-  config: VentipusConfig,
+  config: CawdexConfig,
   options: SmokeOptions = {},
 ): Promise<OpenAICodexSmokeResult> {
   const cfg = smokeConfig(config, options.model);

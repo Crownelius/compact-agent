@@ -3,7 +3,7 @@
  * Routes to cheaper models for simple tasks, expensive for complex ones.
  */
 import chalk from 'chalk';
-import type { VentipusConfig } from './types.js';
+import type { CawdexConfig } from './types.js';
 import { getModelCost } from './cost-tracker.js';
 
 export interface ModelOption {
@@ -102,7 +102,7 @@ function getProviderKey(displayName: string): string {
  * Suggest the best model for a given complexity and provider.
  */
 export function routeModel(
-  config: VentipusConfig,
+  config: CawdexConfig,
   complexity: TaskComplexity,
 ): { model: string; reason: string } {
   const provider = getProviderKey(config.provider);
@@ -132,7 +132,7 @@ export function routeModel(
   };
 }
 
-export function printModelOptions(config: VentipusConfig): void {
+export function printModelOptions(config: CawdexConfig): void {
   const provider = getProviderKey(config.provider);
   const tiers = MODEL_TIERS[provider] || [];
 
@@ -153,7 +153,7 @@ export function printModelOptions(config: VentipusConfig): void {
 /**
  * Switch to a model by name or tier.
  */
-export function switchModel(config: VentipusConfig, nameOrTier: string): string | null {
+export function switchModel(config: CawdexConfig, nameOrTier: string): string | null {
   const provider = getProviderKey(config.provider);
   const tiers = MODEL_TIERS[provider] || [];
 

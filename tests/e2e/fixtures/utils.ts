@@ -1,4 +1,4 @@
-import { VentipusCLI } from './cli.js';
+import { CawdexCLI } from './cli.js';
 import { ConfigPage } from './config-page.js';
 import { UsersPage } from './users-page.js';
 
@@ -6,11 +6,11 @@ import { UsersPage } from './users-page.js';
  * Shared test utilities for login flow E2E tests.
  */
 export async function createFreshCLI(options: { cwd?: string } = {}): Promise<{
-  cli: VentipusCLI;
+  cli: CawdexCLI;
   config: ConfigPage;
   users: UsersPage;
 }> {
-  const cli = new VentipusCLI({ cwd: options.cwd });
+  const cli = new CawdexCLI({ cwd: options.cwd });
   const config = new ConfigPage(cli);
   const users = new UsersPage(cli);
 

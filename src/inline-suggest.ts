@@ -145,7 +145,7 @@ export type InlineSuggestQuestionOutcome =
   | { kind: 'prefill'; command: string }
   | { kind: 'submit'; clearAccepted: boolean };
 
-type TaggedListener = ((...args: unknown[]) => void) & { __ventipusHotkey__?: boolean };
+type TaggedListener = ((...args: unknown[]) => void) & { __cawdexHotkey__?: boolean };
 type DataListener = (chunk: Buffer) => void;
 
 /** Strip ANSI SGR escape sequences for visible-width math. */
@@ -327,10 +327,10 @@ export async function inlineSuggest(
     for (const l of dataListeners) stdin.removeListener('data', l);
 
     // Detach readline's keypress listeners too. The hotkey listener
-    // (tagged __ventipusHotkey__) stays attached because it has its
+    // (tagged __cawdexHotkey__) stays attached because it has its
     // own bail for `pickerActive`; the others get pulled.
     const allKeypress = stdin.listeners('keypress').slice() as TaggedListener[];
-    const togglable = allKeypress.filter((l) => !l.__ventipusHotkey__);
+    const togglable = allKeypress.filter((l) => !l.__cawdexHotkey__);
     for (const l of togglable) stdin.removeListener('keypress', l);
 
     function visibleItems(): SuggestItem[] {

@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { archiveLargeToolOutput } from '../src/tool-output-archive.js';
 
-const ORIGINAL_TRIGGER = process.env.VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS;
+const ORIGINAL_TRIGGER = process.env.CAWDEX_TOOL_OUTPUT_ARCHIVE_CHARS;
 
 afterEach(() => {
   if (ORIGINAL_TRIGGER === undefined) {
-    delete process.env.VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS;
+    delete process.env.CAWDEX_TOOL_OUTPUT_ARCHIVE_CHARS;
   } else {
-    process.env.VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS = ORIGINAL_TRIGGER;
+    process.env.CAWDEX_TOOL_OUTPUT_ARCHIVE_CHARS = ORIGINAL_TRIGGER;
   }
 });
 
@@ -22,7 +22,7 @@ function extractSavedPath(output: string): string {
 
 describe('archiveLargeToolOutput', () => {
   it('leaves small outputs unchanged', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-tool-output-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-tool-output-'));
     try {
       const result = archiveLargeToolOutput(cwd, 'grep', 'small output');
       expect(result).toEqual({ output: 'small output', archived: false });
@@ -32,8 +32,8 @@ describe('archiveLargeToolOutput', () => {
   });
 
   it('saves large outputs and returns a compact log reference', () => {
-    const cwd = mkdtempSync(join(tmpdir(), 'ventipus-tool-output-'));
-    process.env.VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS = '80';
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-tool-output-'));
+    process.env.CAWDEX_TOOL_OUTPUT_ARCHIVE_CHARS = '80';
     try {
       const raw = `HEAD\n${'x'.repeat(500)}\nTAIL`;
       const result = archiveLargeToolOutput(cwd, 'grep', raw);

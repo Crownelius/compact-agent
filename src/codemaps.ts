@@ -335,7 +335,7 @@ function rankCodeMapFiles(map: CodeMap, query?: string): RankedFile[] {
   }
 
   const terms = queryTerms(query);
-  const entrypointRe = /(^|\/)(index|main|app|server|cli|ventipus)\.(tsx?|jsx?|py|go|rs|java)$/i;
+  const entrypointRe = /(^|\/)(index|main|app|server|cli|cawdex)\.(tsx?|jsx?|py|go|rs|java)$/i;
   return map.files.map((file) => {
     const inboundCount = inbound.get(file.path) ?? 0;
     let score = 1;
@@ -382,7 +382,7 @@ export function buildAutoRepoMapBlock(
   userQuery?: string,
   options: RepoMapOptions = {},
 ): string | null {
-  if (process.env.VENTIPUS_REPO_MAP === '0') return null;
+  if (process.env.CAWDEX_REPO_MAP === '0') return null;
   const minFiles = options.minFiles ?? 5;
   const maxFiles = options.maxFiles ?? 24;
   const maxChars = options.maxChars ?? 6_000;

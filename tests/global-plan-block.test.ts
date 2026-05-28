@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { buildGlobalPlanBlock } from '../src/query.js';
 import type { Message } from '../src/types.js';
 
-const ORIGINAL = process.env.VENTIPUS_GLOBAL_PLAN;
+const ORIGINAL = process.env.CAWDEX_GLOBAL_PLAN;
 
 afterEach(() => {
-  if (ORIGINAL === undefined) delete process.env.VENTIPUS_GLOBAL_PLAN;
-  else process.env.VENTIPUS_GLOBAL_PLAN = ORIGINAL;
+  if (ORIGINAL === undefined) delete process.env.CAWDEX_GLOBAL_PLAN;
+  else process.env.CAWDEX_GLOBAL_PLAN = ORIGINAL;
 });
 
 function assistantWithCalls(...calls: Array<[id: string, name: string, args: string]>): Message {
@@ -86,8 +86,8 @@ describe('buildGlobalPlanBlock', () => {
     expect(out).toContain('errors=1');
   });
 
-  it('respects VENTIPUS_GLOBAL_PLAN=0', () => {
-    process.env.VENTIPUS_GLOBAL_PLAN = '0';
+  it('respects CAWDEX_GLOBAL_PLAN=0', () => {
+    process.env.CAWDEX_GLOBAL_PLAN = '0';
     const out = buildGlobalPlanBlock([{
       role: 'user',
       content: 'Research and implement a benchmark-driven improvement for the agent architecture with verification.',

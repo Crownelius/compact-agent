@@ -47,17 +47,17 @@ import {
   redactTraceText,
   writeBenchmarkTrace,
 } from '../src/benchmark-trace.js';
-import type { VentipusConfig, Message } from '../src/types.js';
+import type { CawdexConfig, Message } from '../src/types.js';
 
 const dirs: string[] = [];
 
 function tmpRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'ventipus-trace-'));
+  const dir = mkdtempSync(join(tmpdir(), 'cawdex-trace-'));
   dirs.push(dir);
   return dir;
 }
 
-const config: VentipusConfig = {
+const config: CawdexConfig = {
   apiKey: 'sk-test-should-not-appear',
   baseURL: 'https://example.invalid/v1',
   model: 'test-model',
@@ -68,8 +68,8 @@ const config: VentipusConfig = {
 };
 
 afterEach(() => {
-  delete process.env.VENTIPUS_BENCHMARK_TRACE;
-  delete process.env.VENTIPUS_BENCHMARK_TRACE_DIR;
+  delete process.env.CAWDEX_BENCHMARK_TRACE;
+  delete process.env.CAWDEX_BENCHMARK_TRACE_DIR;
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -132,7 +132,7 @@ describe('benchmark trace artifacts', () => {
     });
     expect(summary.openAgentLeaderboardDraft).toMatchObject({
       submissionReady: false,
-      agent: 'ventipus_agent',
+      agent: 'cawdex_agent',
       agent_name: 'Cawdex',
       benchmark: 'swebench',
       benchmark_name: 'SWE-bench',
@@ -178,7 +178,7 @@ describe('benchmark trace artifacts', () => {
     });
     expect(summary.agentContextCompilation).toMatchObject({
       version: 1,
-      format: 'ventipus-agent-context-compilation-v1',
+      format: 'cawdex-agent-context-compilation-v1',
       task: '/benchmark swe-bench fix the app',
       metadata: {
         sessionId: 'session-1',
@@ -202,8 +202,8 @@ describe('benchmark trace artifacts', () => {
     expect(JSON.stringify(summary.agentContextCompilation)).not.toContain(config.apiKey);
     expect(summary.changeEvaluation).toMatchObject({
       version: 1,
-      format: 'ventipus-change-evaluation-v1',
-      source: 'ventipus benchmark trace',
+      format: 'cawdex-change-evaluation-v1',
+      source: 'cawdex benchmark trace',
       status: 'no_edits',
       accepted: null,
       editCount: 0,
@@ -528,7 +528,7 @@ describe('benchmark trace artifacts', () => {
       '+new',
       '*** Add File: workspace/middleware/publish_state.py',
       '+print("guard")',
-      '*** Update File: resources/terminal_bench/ventipus_agent.py',
+      '*** Update File: resources/terminal_bench/cawdex_agent.py',
       '@@',
       '-old',
       '+new',
@@ -573,7 +573,7 @@ describe('benchmark trace artifacts', () => {
       expect.objectContaining({ seq: 1, target: 'workspace/systemprompt.md', component: 'system_prompt' }),
       expect.objectContaining({ seq: 2, target: 'workspace/tool_descriptions/run_shell_command.tool.yaml', component: 'tool_description' }),
       expect.objectContaining({ seq: 2, target: 'workspace/middleware/publish_state.py', component: 'middleware' }),
-      expect.objectContaining({ seq: 2, target: 'resources/terminal_bench/ventipus_agent.py', component: 'adapter' }),
+      expect.objectContaining({ seq: 2, target: 'resources/terminal_bench/cawdex_agent.py', component: 'adapter' }),
       expect.objectContaining({ seq: 3, target: 'workspace/LongTermMEMORY.md', component: 'long_term_memory' }),
       expect.objectContaining({ seq: 4, target: 'src/app.ts', component: 'source_code' }),
     ]));
@@ -598,7 +598,7 @@ describe('benchmark trace artifacts', () => {
       classifiedEditCount: 6,
       unclassifiedEditCount: 0,
       components: expect.arrayContaining([
-        expect.objectContaining({ component: 'adapter', editCount: 1, targets: ['resources/terminal_bench/ventipus_agent.py'] }),
+        expect.objectContaining({ component: 'adapter', editCount: 1, targets: ['resources/terminal_bench/cawdex_agent.py'] }),
         expect.objectContaining({ component: 'long_term_memory', editCount: 1, targets: ['workspace/LongTermMEMORY.md'] }),
         expect.objectContaining({ component: 'middleware', editCount: 1, targets: ['workspace/middleware/publish_state.py'] }),
         expect.objectContaining({ component: 'source_code', editCount: 1, targets: ['src/app.ts'] }),
@@ -1636,7 +1636,7 @@ describe('benchmark trace artifacts', () => {
         output: [
           '(no output)',
           '[command timed out after 1000ms. Try a different strategy.]',
-          '[bash status: timedOut=true truncated=false omittedLines=0 omittedChars=0 fullLog=C:\\repo\\.ventipus\\bash-output\\timeout.log]',
+          '[bash status: timedOut=true truncated=false omittedLines=0 omittedChars=0 fullLog=C:\\repo\\.cawdex\\bash-output\\timeout.log]',
         ].join('\n'),
         isError: true,
         elapsedMs: 1000,
@@ -1684,7 +1684,7 @@ describe('benchmark trace artifacts', () => {
         truncated: false,
         omittedLines: 0,
         omittedChars: 0,
-        fullLog: 'C:\\repo\\.ventipus\\bash-output\\timeout.log',
+        fullLog: 'C:\\repo\\.cawdex\\bash-output\\timeout.log',
         conclusiveFailureEvidence: false,
         reason: 'verifier timed out without parsed failure evidence',
       },
@@ -1718,7 +1718,7 @@ describe('benchmark trace artifacts', () => {
         'AssertionError: expected true to be false',
         'Tests  1 failed | 9 passed (10)',
         '[command timed out after 1000ms. Try a different strategy.]',
-        '[bash status: timedOut=true truncated=false omittedLines=0 omittedChars=0 fullLog=C:\\repo\\.ventipus\\bash-output\\timeout-with-failure.log]',
+        '[bash status: timedOut=true truncated=false omittedLines=0 omittedChars=0 fullLog=C:\\repo\\.cawdex\\bash-output\\timeout-with-failure.log]',
       ].join('\n'),
       isError: true,
       elapsedMs: 1000,
@@ -7559,7 +7559,7 @@ describe('benchmark trace artifacts', () => {
 
   it('writes summary.json and trace.jsonl only for benchmark traces', () => {
     const dir = tmpRoot();
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = dir;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = dir;
     const event = makeBenchmarkTraceEvent({
       seq: 1,
       tool: 'bash',
@@ -7607,14 +7607,14 @@ describe('benchmark trace artifacts', () => {
     const compiledArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'agent-context-compilation');
     expect(compiledArtifact).toBeTruthy();
     const compiledText = readFileSync(compiledArtifact.path, 'utf-8');
-    expect(compiledText).toContain('"format":"ventipus-agent-context-compilation-v1"');
+    expect(compiledText).toContain('"format":"cawdex-agent-context-compilation-v1"');
     expect(compiledText).toContain('Latest verifier status: ok.');
     expect(compiledText).not.toContain(config.apiKey);
     const changeEvaluationArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'change-evaluation');
     expect(changeEvaluationArtifact).toBeTruthy();
     expect(changeEvaluationArtifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     const changeEvaluationText = readFileSync(changeEvaluationArtifact.path, 'utf-8');
-    expect(changeEvaluationText).toContain('"format": "ventipus-change-evaluation-v1"');
+    expect(changeEvaluationText).toContain('"format": "cawdex-change-evaluation-v1"');
     expect(changeEvaluationText).toContain('"status": "no_edits"');
     expect(changeEvaluationText).not.toContain(config.apiKey);
     const manifestArtifact = parsedSummary.artifacts.find((artifact: { kind: string }) => artifact.kind === 'submission-bundle-manifest');
@@ -7623,11 +7623,11 @@ describe('benchmark trace artifacts', () => {
     const manifest = JSON.parse(readFileSync(manifestArtifact.path, 'utf-8'));
     expect(manifest).toMatchObject({
       version: 1,
-      format: 'ventipus-submission-bundle-manifest-v1',
-      source: 'ventipus benchmark trace',
+      format: 'cawdex-submission-bundle-manifest-v1',
+      source: 'cawdex benchmark trace',
       submissionReady: false,
       officialResultRequired: true,
-      benchmark: 'ventipus_agent_benchmark',
+      benchmark: 'cawdex_agent_benchmark',
       benchmarkName: 'Cawdex Benchmark',
       missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
       verification: {
@@ -7653,7 +7653,7 @@ describe('benchmark trace artifacts', () => {
   it('writes redacted git patch artifacts for benchmark worktrees', () => {
     const root = tmpRoot();
     const traceRoot = tmpRoot();
-    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceRoot;
+    process.env.CAWDEX_BENCHMARK_TRACE_DIR = traceRoot;
     const filePath = join(root, 'fixture.txt');
 
     spawnSync('git', ['init'], { cwd: root, encoding: 'utf-8' });

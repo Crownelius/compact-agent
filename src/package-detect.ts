@@ -29,15 +29,15 @@ export interface BuildToolInfo {
 /**
  * Detects the package manager used in the project.
  * Priority order:
- * 1. VENTIPUS_PACKAGE_MANAGER env var
- * 2. .ventipus/package-manager.json in cwd (falls back to .ventipus if present)
+ * 1. CAWDEX_PACKAGE_MANAGER env var
+ * 2. .cawdex/package-manager.json in cwd (falls back to .cawdex if present)
  * 3. package.json packageManager field
  * 4. Lock file detection
  * 5. Fallback: which command check
  */
 export function detectPackageManager(cwd: string): PackageManagerInfo {
   // 1. Check environment variable
-  const envPm = process.env.VENTIPUS_PACKAGE_MANAGER;
+  const envPm = process.env.CAWDEX_PACKAGE_MANAGER;
   if (envPm) {
     return getPackageManagerInfo(envPm);
   }

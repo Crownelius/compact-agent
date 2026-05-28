@@ -2,7 +2,7 @@
 
 Every command Cawdex exposes, organized by purpose. Three surfaces:
 
-1. **Shell command** — what you type at your OS terminal (`cawdex`; `ventipus` remains a legacy alias)
+1. **Shell command** — what you type at your OS terminal (`cawdex`; `cawdex` remains a legacy alias)
 2. **Slash commands** — what you type inside the REPL once it's running
 3. **Tools** — what the underlying LLM calls automatically; not invoked by you
 
@@ -12,7 +12,7 @@ If you're new, run `cawdex` then type `/walkthrough` for an agent-led tour.
 
 ## 1. Shell invocation
 
-After `npm install -g cawdex`, you have both the primary `cawdex` command and the legacy `ventipus` alias:
+After `npm install -g cawdex`, you have both the primary `cawdex` command and the legacy `cawdex` alias:
 
 ```bash
 cawdex
@@ -85,7 +85,7 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 
 ### 2.4 Sessions
 
-Sessions are JSON snapshots stored in `~/.ventipus/sessions/`.
+Sessions are JSON snapshots stored in `~/.cawdex/sessions/`.
 
 | Command | What it does |
 |---|---|
@@ -225,7 +225,7 @@ The learning system extracts patterns from your sessions and decays unused ones.
 | `/instinct-import <file>` | Import instincts from JSON. |
 | `/evolve` | Cluster high-confidence instincts into reusable skills. |
 | `/prune` | Delete instincts whose confidence has decayed below threshold. |
-| `/memory` | Show cross-session memory status (`~/.ventipus/memory/`). |
+| `/memory` | Show cross-session memory status (`~/.cawdex/memory/`). |
 
 ### 2.17 Detection
 
@@ -267,7 +267,7 @@ Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX desi
 | `/stitch` | Show config status (masked key, configured-at timestamp, server URL). |
 | `/stitch tools` | Live verification — calls `tools/list` against the server and renders the discovered tool catalog as a Markdown table. Confirms auth + endpoint reachability. |
 | `/stitch <query>` | Direct Stitch assistant (intent-routed: `enhance: <prompt>` improves a prompt; anything else hits the assistant). Less useful now that design mode does this automatically. |
-| `/stitch-config <api-key>` | Save your Stitch API key to `~/.ventipus/stitch.json`. |
+| `/stitch-config <api-key>` | Save your Stitch API key to `~/.cawdex/stitch.json`. |
 
 **Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
 
@@ -337,7 +337,7 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `grep` | Search file contents (ripgrep, falls back to grep). | Yes |
 | `glob` | Find files by glob pattern. | Yes |
 | `list_dir` | List directory entries (type, size, name). | Yes |
-| `benchmark_context` | Read-only benchmark preflight: cwd snapshot, manifests, project-native environment reconstruction setup commands, likely verifier commands, CI workflow run commands plus setup/env-key/service/container hints from GitHub Actions/GitLab/CircleCI/Azure/Jenkins configs, Terminal-Bench/TerminalWorld/Harbor harness artifacts, package scripts, task files, concise task-instruction excerpts with exact line references, task-contract signals from visible acceptance criteria/requirements/success criteria/no-edit clauses, runtime/toolchain hints, live toolchain probes for PATH/package-manager/interpreter/virtualenv mismatches, network/offline env indicators, optional short network reachability probes, service-persistence hints, method hints, packaged Terminal-Bench source-catalog matches/gaps, relevant MemPalace memories, relevant prior local benchmark trace summaries with compact `experienceCard` replay checkpoints, task-alignment/spec-compliance/reward-hack/proactivity risk signals, HarnessAudit-style harness-safety signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, change-evaluation status, and context-utilization precision/miss plus pre-edit context-bloat evidence from high-quality matching runs, prior low-quality/unsafe experience warnings, and read-with-care candidates such as TerminalWorld `solve.sh`; CI env values are not printed; benchmark traces also score run-level usage/cost/time, cost-efficiency risk when high usage lacks strong evidence, invalid tool-action count/percent/events for unknown tools, malformed JSON, schema failures, security/hook blocks, permission denial, and loop/streak aborts, task-instruction/task-contract checklist use, no-edit/no-op contract compliance, task-alignment risk for ignored constraints, distractor/decoy references, and off-task-looking edits, spec-compliance risk for visible-suite-only validation or hardcoded visible cases, reward-hack risk for verifier tampering, oracle/solution probes, result-file edits, shortcut completion markers, and bypass commands, HarnessAudit-style resource-access, information-transfer, destructive-operation, and oracle-access risk, Pi-Bench proactivity risk for missing context contract, hidden-intent hypothesis, clarification decision, privacy review, or observable completion evidence, test/harness/verifier edit risk, localization/failing-reproduction/validation quality, per-target edit localization and unlocalized edit-target events, weak change manifests for edits without falsifiable prediction/verifier follow-through, local context-utilization precision/risk signals, pre-edit context-bloat risk when broad local inspections are mostly unused by the eventual patch, large edit-surface scope checks, scratch/probe artifact checks, redundant read/search tool loops, redundant failing-verifier reruns, blind repair after failed verifier signals, failed-verifier source-file repair alignment, post-edit pass/fail/pass regression cycles, environment setup commands, dependency manifest/lockfile edit setup-validation signals, unresolved missing-dependency/toolchain/build-artifact verifier failures, skill-view fit/timing signals, latest post-edit verifier status, post-edit and final-state diff/status review, final-edit validation stability/lucky-pass risk, narrow-to-broad post-edit validation, CI-derived verifier command coverage, final-state validation after the last edit, failing reproduction before repair, parsed verifier pass/fail evidence and compact failure signatures across common JS, Python, Rust, Go, JVM, and .NET runners with verifier head/tail previews for noisy logs, final-answer verification-claim and incomplete/blocked completion evidence, incomplete/inconclusive timeout or truncation markers, source research coverage with parsed hit/error/recency evidence including Kaggle competition fallback, structured `research_sources` trace previews that preserve source headings, URLs, coverage notes, and tail endpoint/auth errors, structured process defects with a 0-100 process score, and leakage-risk artifacts. | Yes |
+| `benchmark_context` | Read-only benchmark preflight: cwd snapshot, manifests, project-native environment reconstruction setup commands, likely verifier commands, CI workflow run commands plus setup/env-key/service/container hints from GitHub Actions/GitLab/CircleCI/Azure/Jenkins configs, Terminal-Bench/TerminalWorld/Harbor harness artifacts, package scripts, task files, concise task-instruction excerpts with exact line references, task-contract signals from visible acceptance criteria/requirements/success criteria/no-edit clauses, runtime/toolchain hints, live toolchain probes for PATH/package-manager/interpreter/virtualenv mismatches, network/offline env indicators, optional short network reachability probes, service-persistence hints, method hints, exact source-research action plans with redacted auth readiness for benchmark/leaderboard/agent-improvement tasks, packaged Terminal-Bench source-catalog matches/gaps, relevant MemPalace memories, relevant prior local benchmark trace summaries with compact `experienceCard` replay checkpoints, task-alignment/spec-compliance/reward-hack/proactivity risk signals, HarnessAudit-style harness-safety signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, change-evaluation status, and context-utilization precision/miss plus pre-edit context-bloat evidence from high-quality matching runs, prior low-quality/unsafe experience warnings, and read-with-care candidates such as TerminalWorld `solve.sh`; CI env values are not printed; benchmark traces also score run-level usage/cost/time, cost-efficiency risk when high usage lacks strong evidence, invalid tool-action count/percent/events for unknown tools, malformed JSON, schema failures, security/hook blocks, permission denial, and loop/streak aborts, task-instruction/task-contract checklist use, no-edit/no-op contract compliance, task-alignment risk for ignored constraints, distractor/decoy references, and off-task-looking edits, spec-compliance risk for visible-suite-only validation or hardcoded visible cases, reward-hack risk for verifier tampering, oracle/solution probes, result-file edits, shortcut completion markers, and bypass commands, HarnessAudit-style resource-access, information-transfer, destructive-operation, and oracle-access risk, Pi-Bench proactivity risk for missing context contract, hidden-intent hypothesis, clarification decision, privacy review, or observable completion evidence, test/harness/verifier edit risk, localization/failing-reproduction/validation quality, per-target edit localization and unlocalized edit-target events, weak change manifests for edits without falsifiable prediction/verifier follow-through, local context-utilization precision/risk signals, pre-edit context-bloat risk when broad local inspections are mostly unused by the eventual patch, large edit-surface scope checks, scratch/probe artifact checks, redundant read/search tool loops, redundant failing-verifier reruns, blind repair after failed verifier signals, failed-verifier source-file repair alignment, post-edit pass/fail/pass regression cycles, environment setup commands, dependency manifest/lockfile edit setup-validation signals, unresolved missing-dependency/toolchain/build-artifact verifier failures, skill-view fit/timing signals, latest post-edit verifier status, post-edit and final-state diff/status review, final-edit validation stability/lucky-pass risk, narrow-to-broad post-edit validation, CI-derived verifier command coverage, final-state validation after the last edit, failing reproduction before repair, parsed verifier pass/fail evidence and compact failure signatures across common JS, Python, Rust, Go, JVM, and .NET runners with verifier head/tail previews for noisy logs, final-answer verification-claim and incomplete/blocked completion evidence, incomplete/inconclusive timeout or truncation markers, source research coverage with parsed hit/error/recency evidence including Kaggle competition fallback, structured `research_sources` trace previews that preserve source headings, URLs, coverage notes, and tail endpoint/auth errors, structured process defects with a 0-100 process score, and leakage-risk artifacts. | Yes |
 | `harness_components` | AHE-style component observability: maps Cawdex prompts, tools, middleware, skills, sub-agents, MemPalace memory, providers/OAuth, benchmark adapters, CLI UX, and verification/release gates to current files, focused tests, docs, and short `Prediction:` edit contracts without printing credentials or memory contents; supports `format:"json"` for machine-readable reports. | Yes |
 | `todo_write` | Update the working todo list; reinjected before each turn and preserved across compaction. | No |
 | `research_sources` | Query arXiv, GitHub repositories/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions for source-grounded research; output includes coverage/auth/recency notes, a compact source digest, deterministic cross-source ordering for reproducible traces, applies `recent_days` to supported source date fields, caveats GitHub code freshness, reports Kaggle competition fallback, and supports `format:"json"` for machine-readable source packets. | Yes |
@@ -359,7 +359,7 @@ Benchmark trace summaries include `trajectory_triage=...`, `triage_informative`,
 
 Benchmark trace summaries include `targeted_fixes=...`, `missing_targeted_fixes`, and `targeted_fix_risk`. If a repair edit after failed-verifier evidence lacks a `Targeted fix:`, `Fix plan:`, or `Repair plan:` line, Cawdex emits a reproduction process defect and completion reminder so AHE-style manifests preserve the intended change before patching.
 
-Benchmark traces consume both Markdown and `cawdex-research-sources-v1` JSON output from `research_sources`, preserving coverage notes, hit/error counts, source labels, top URLs, Kaggle competition fallback, and recency evidence for trajectory scoring.
+Benchmark traces consume both Markdown and `cawdex-research-sources-v1` JSON output from `research_sources`, preserving coverage notes, hit/error counts, source labels, top URLs, auth readiness, Kaggle competition fallback, and recency evidence for trajectory scoring. `benchmark_context` emits a Source Research Action Plan for benchmark/leaderboard/agent-improvement work so the next exact `research_sources`, `benchmark_repo_catalog`, and `github_repo_digest` calls are visible before the agent spends search turns.
 
 Benchmark trace summaries also include `trajectory_cleanup_risk`, `trajectory_cleanup_events`, `trajectory_cleanup_noisy`, `trajectory_cleanup_duplicates`, and `experienceCard.trajectoryCleanup`. Base64/data-URI blobs, high-entropy encoded or minified output, repeated duplicate output, and excessive truncation are treated as cleanup debt; risky runs become execution-control warnings so AHE-style reuse does not replay noisy raw observations.
 
@@ -385,70 +385,70 @@ Any tool name you see in error output other than these (e.g. `web_search_exa`, `
 
 ## 4. Environment variables
 
-These affect the REPL's runtime behavior. Set in your shell before launching `cawdex` (`ventipus` remains a legacy alias).
+These affect the REPL's runtime behavior. Set in your shell before launching `cawdex` (`cawdex` remains a legacy alias).
 
-For env-built provider config, the new `CAWDEX_*` spellings are accepted alongside the legacy `VENTIPUS_*` names for provider, base URL, model, fallback model, token/turn/context limits, temperature, permission, memory, theme, thinking, and per-run overrides.
+For env-built provider config, the new `CAWDEX_*` spellings are accepted alongside the legacy `CAWDEX_*` names for provider, base URL, model, fallback model, token/turn/context limits, temperature, permission, memory, theme, thinking, and per-run overrides.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `CAWDEX_HOME` / `VENTIPUS_HOME` | `~/.ventipus` | Override config/state directory (useful for tests, sandboxes, and harnesses). `VENTIPUS_HOME` remains supported for existing installs. |
-| `VENTIPUS_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
-| `VENTIPUS_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
-| `VENTIPUS_ENV_CONFIG` | (unset) | In non-interactive mode, prefer provider settings from env even if `config.json` exists. |
-| `VENTIPUS_PROVIDER` | inferred | Provider key such as `openrouter`, `openai`, `deepseek`, `nvidia`, `google`, `glm`, `ollama`, `lmstudio`, `openai-codex`, or `custom`. |
-| `VENTIPUS_API_KEY` | provider-specific env | Generic API key override for env-built configs. |
-| `VENTIPUS_BASE_URL` | provider default | OpenAI-compatible endpoint for env-built configs. |
-| `VENTIPUS_MODEL` | provider default | Model name for env-built configs. |
-| `VENTIPUS_MODEL_OVERRIDE` | (unset) | Per-run model override applied after loading config; used by `--model`. |
-| `VENTIPUS_FALLBACK_MODEL` | provider default | Optional fallback model used by the API retry path. |
-| `VENTIPUS_FALLBACK_MODEL_OVERRIDE` | (unset) | Per-run fallback override used by `--fallback-model`. |
-| `VENTIPUS_MAX_TOKENS` | `8192` | Max output tokens for env-built configs. |
-| `VENTIPUS_MAX_TOKENS_OVERRIDE` | (unset) | Per-run max-token override used by `--max-tokens`. |
-| `VENTIPUS_CONTEXT_WINDOW_TOKENS` | provider/client default | Optional context budget cap. |
-| `VENTIPUS_CONTEXT_WINDOW_TOKENS_OVERRIDE` | (unset) | Per-run context-window override used by `--context-window-tokens`. |
-| `VENTIPUS_COMPACTION_TRIGGER_TOKENS` | `min(60000, 50% context)` | Override the automatic rolling-compaction trigger. |
-| `VENTIPUS_COMPACTION_MODEL` | OpenRouter fallback or main model | Model used for LLM conversation summaries; keep this cheap/free for long runs. |
-| `VENTIPUS_COMPACTION_MAX_TOKENS` | `2048` | Max output tokens for LLM compaction summaries. |
-| `VENTIPUS_COMPACTION_USE_FALLBACK` | auto for OpenRouter | Set `0` to prevent OpenRouter compaction from using `fallbackModel`; set `1` to force fallback use when available. |
-| `VENTIPUS_LLM_COMPACTION` | `1` | Set `0` to skip the summarizer model call and use deterministic local compaction. |
-| `VENTIPUS_COMPACTION_MODE` | `llm` | Set `local` for deterministic no-provider-call compaction. |
-| `VENTIPUS_LOCAL_COMPACTION_FALLBACK` | `1` | Set `0` to disable the deterministic fallback summary used when model summarization fails. |
-| `VENTIPUS_MAX_TURNS` | config default | Optional tool-loop turn cap. |
-| `VENTIPUS_MAX_TURNS_OVERRIDE` | (unset) | Per-run tool-loop cap override used by `--max-turns`. |
-| `VENTIPUS_TEMPERATURE` | `0.3` | Sampling temperature for env-built configs. |
-| `VENTIPUS_TEMPERATURE_OVERRIDE` | (unset) | Per-run temperature override used by `--temperature`. |
-| `VENTIPUS_PERMISSION` | `ask` | Startup permission mode for env-built configs: `ask`, `auto`, or `yolo`. |
-| `VENTIPUS_MEMORY` | `1` | Set `0`/`false`/`off` to disable MemPalace for headless runs. |
-| `VENTIPUS_SHOW_THINKING` | `1` | Set `0`/`false`/`off` to suppress streamed thinking display. |
-| `VENTIPUS_THEME` | config default | Startup display theme: `full`, `compact`, or `minimal`. |
-| `VENTIPUS_BASH_TIMEOUT_MS` | `120000` | Default `bash` tool timeout. Harness adapters default this to `300000`; individual tool calls can pass `timeoutMs` or `timeoutSec` up to 30 minutes. Timed-out or truncated foreground output is saved under `.ventipus/bash-output/`. |
-| `VENTIPUS_TOOL_OUTPUT_ARCHIVE_CHARS` | `5000` | Archive large non-bash tool outputs under `.ventipus/tool-output/` before adding them to model history. |
-| `VENTIPUS_BENCHMARK_PROBE_NETWORK` | `1` outside tests | Set `0` to skip `benchmark_context` TCP reachability probes for package/model hosts, or `1` to force them. Tool calls can override with `probe_network`. |
-| `VENTIPUS_REPO_MAP` | `1` | Set `0` to disable automatic bounded repo-map context injection for larger codebases. |
-| `VENTIPUS_STREAM_USAGE` | auto | Force streamed token-usage accounting on/off (`1` or `0`). Auto enables it for known cloud OpenAI-compatible endpoints and skips local endpoints. |
-| `VENTIPUS_ALLOW_FLAKY_MODELS` | `0` | Set `1` to disable startup/pre-turn fallback protection for known-stuck OpenRouter preview models such as `openrouter/owl-alpha`. |
-| `VENTIPUS_BENCHMARK_TRACE` | (unset) | Set `1` to write redacted benchmark-style trace artifacts even outside benchmark mode. |
-| `VENTIPUS_BENCHMARK_TRACE_DIR` | `~/.ventipus/benchmark-runs` | Directory for benchmark `summary.json`, `trace.jsonl`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, `change-evaluation.json`, `submission-bundle-manifest.json`, and git `worktree.patch` / `git-status.txt` artifacts. `summary.json` includes a compact `experienceCard` for future replay/context reuse with bounded task-contract signals, Pi-Bench proactivity ledger evidence, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, root-cause hypothesis state, failure-onset diagnosis state, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence, candidate-file dossier status, and run-efficiency action/usage/cost/time evidence used for prior-run relevance ranking; `agent-context-compiled.jsonl` stores a redacted ACC-style task/context/answer record for retrieval, replay, or training-data curation; `change-evaluation.json` stores AHE-style edit prediction verdicts, unpredicted edits, and pass/fail/pass regression-cycle evidence; `submission-bundle-manifest.json` indexes artifact paths and SHA-256 hashes while marking missing official score/session fields before leaderboard claims; patch output includes unstaged, staged, and untracked file diffs where git can render them. |
-| `VENTIPUS_BENCHMARK_EXPERIENCE` | `1` | Set `0` to disable prior local benchmark trace summaries in `benchmark_context`. Current task files and verifier output always override prior experience; similar failed/unsafe prior runs are shown as warnings to avoid copying. |
-| `VENTIPUS_BENCHMARK_MEMORY` | `1` | Set `0` to disable relevant MemPalace memories in `benchmark_context`. Remembered facts are always framed as hypotheses and must be verified against current task files and verifier output. |
-| `VENTIPUS_MIN_TOOL_CALLS_BEFORE_DONE` | `2` in benchmark, `1` otherwise | Non-interactive empty-engagement guard; set `0` to allow immediate no-tool final answers. |
-| `VENTIPUS_API_KEY_ENV` | (unset) | Name of an env var whose value should be used as the per-run API key; used by `--api-key-env`. |
-| `VENTIPUS_INSTALL_SPEC` | `cawdex@latest` | Terminal-Bench adapter npm install spec; pin to a version, tag, or tarball for reproducibility. If `cawdex` or legacy `ventipus` is already on `PATH`, setup skips network install. |
-| `VENTIPUS_BUNDLE_ROOT` | (unset) | Terminal-Bench offline install source: unpacked Cawdex tree with `bin/`, `dist/`, and preferably `node_modules/`. |
-| `VENTIPUS_BUNDLE_TARBALL` | (unset) | Terminal-Bench offline/local install source: path to a Cawdex `.tgz` checked before the npm registry. |
+| `CAWDEX_HOME` / `CAWDEX_HOME` | `~/.cawdex` | Override config/state directory (useful for tests, sandboxes, and harnesses). `CAWDEX_HOME` remains supported for existing installs. |
+| `CAWDEX_HOOK_PROFILE` | `standard` | Hook profile: `minimal`, `standard`, `strict`. See `/hook-profile`. |
+| `CAWDEX_GATEWAY` | (unset) | Hint URL for the LLM gateway, when bundled with the open-antigravity wrapper. |
+| `CAWDEX_ENV_CONFIG` | (unset) | In non-interactive mode, prefer provider settings from env even if `config.json` exists. |
+| `CAWDEX_PROVIDER` | inferred | Provider key such as `openrouter`, `openai`, `deepseek`, `nvidia`, `google`, `glm`, `ollama`, `lmstudio`, `openai-codex`, or `custom`. |
+| `CAWDEX_API_KEY` | provider-specific env | Generic API key override for env-built configs. |
+| `CAWDEX_BASE_URL` | provider default | OpenAI-compatible endpoint for env-built configs. |
+| `CAWDEX_MODEL` | provider default | Model name for env-built configs. |
+| `CAWDEX_MODEL_OVERRIDE` | (unset) | Per-run model override applied after loading config; used by `--model`. |
+| `CAWDEX_FALLBACK_MODEL` | provider default | Optional fallback model used by the API retry path. |
+| `CAWDEX_FALLBACK_MODEL_OVERRIDE` | (unset) | Per-run fallback override used by `--fallback-model`. |
+| `CAWDEX_MAX_TOKENS` | `8192` | Max output tokens for env-built configs. |
+| `CAWDEX_MAX_TOKENS_OVERRIDE` | (unset) | Per-run max-token override used by `--max-tokens`. |
+| `CAWDEX_CONTEXT_WINDOW_TOKENS` | provider/client default | Optional context budget cap. |
+| `CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE` | (unset) | Per-run context-window override used by `--context-window-tokens`. |
+| `CAWDEX_COMPACTION_TRIGGER_TOKENS` | `min(60000, 50% context)` | Override the automatic rolling-compaction trigger. |
+| `CAWDEX_COMPACTION_MODEL` | OpenRouter fallback or main model | Model used for LLM conversation summaries; keep this cheap/free for long runs. |
+| `CAWDEX_COMPACTION_MAX_TOKENS` | `2048` | Max output tokens for LLM compaction summaries. |
+| `CAWDEX_COMPACTION_USE_FALLBACK` | auto for OpenRouter | Set `0` to prevent OpenRouter compaction from using `fallbackModel`; set `1` to force fallback use when available. |
+| `CAWDEX_LLM_COMPACTION` | `1` | Set `0` to skip the summarizer model call and use deterministic local compaction. |
+| `CAWDEX_COMPACTION_MODE` | `llm` | Set `local` for deterministic no-provider-call compaction. |
+| `CAWDEX_LOCAL_COMPACTION_FALLBACK` | `1` | Set `0` to disable the deterministic fallback summary used when model summarization fails. |
+| `CAWDEX_MAX_TURNS` | config default | Optional tool-loop turn cap. |
+| `CAWDEX_MAX_TURNS_OVERRIDE` | (unset) | Per-run tool-loop cap override used by `--max-turns`. |
+| `CAWDEX_TEMPERATURE` | `0.3` | Sampling temperature for env-built configs. |
+| `CAWDEX_TEMPERATURE_OVERRIDE` | (unset) | Per-run temperature override used by `--temperature`. |
+| `CAWDEX_PERMISSION` | `ask` | Startup permission mode for env-built configs: `ask`, `auto`, or `yolo`. |
+| `CAWDEX_MEMORY` | `1` | Set `0`/`false`/`off` to disable MemPalace for headless runs. |
+| `CAWDEX_SHOW_THINKING` | `1` | Set `0`/`false`/`off` to suppress streamed thinking display. |
+| `CAWDEX_THEME` | config default | Startup display theme: `full`, `compact`, or `minimal`. |
+| `CAWDEX_BASH_TIMEOUT_MS` | `120000` | Default `bash` tool timeout. Harness adapters default this to `300000`; individual tool calls can pass `timeoutMs` or `timeoutSec` up to 30 minutes. Timed-out or truncated foreground output is saved under `.cawdex/bash-output/`. |
+| `CAWDEX_TOOL_OUTPUT_ARCHIVE_CHARS` | `5000` | Archive large non-bash tool outputs under `.cawdex/tool-output/` before adding them to model history. |
+| `CAWDEX_BENCHMARK_PROBE_NETWORK` | `1` outside tests | Set `0` to skip `benchmark_context` TCP reachability probes for package/model hosts, or `1` to force them. Tool calls can override with `probe_network`. |
+| `CAWDEX_REPO_MAP` | `1` | Set `0` to disable automatic bounded repo-map context injection for larger codebases. |
+| `CAWDEX_STREAM_USAGE` | auto | Force streamed token-usage accounting on/off (`1` or `0`). Auto enables it for known cloud OpenAI-compatible endpoints and skips local endpoints. |
+| `CAWDEX_ALLOW_FLAKY_MODELS` | `0` | Set `1` to disable startup/pre-turn fallback protection for known-stuck OpenRouter preview models such as `openrouter/owl-alpha`. |
+| `CAWDEX_BENCHMARK_TRACE` | (unset) | Set `1` to write redacted benchmark-style trace artifacts even outside benchmark mode. |
+| `CAWDEX_BENCHMARK_TRACE_DIR` | `~/.cawdex/benchmark-runs` | Directory for benchmark `summary.json`, `trace.jsonl`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, `change-evaluation.json`, `submission-bundle-manifest.json`, and git `worktree.patch` / `git-status.txt` artifacts. `summary.json` includes a compact `experienceCard` for future replay/context reuse with bounded task-contract signals, Pi-Bench proactivity ledger evidence, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, root-cause hypothesis state, failure-onset diagnosis state, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence, candidate-file dossier status, and run-efficiency action/usage/cost/time evidence used for prior-run relevance ranking; `agent-context-compiled.jsonl` stores a redacted ACC-style task/context/answer record for retrieval, replay, or training-data curation; `change-evaluation.json` stores AHE-style edit prediction verdicts, unpredicted edits, and pass/fail/pass regression-cycle evidence; `submission-bundle-manifest.json` indexes artifact paths and SHA-256 hashes while marking missing official score/session fields before leaderboard claims; patch output includes unstaged, staged, and untracked file diffs where git can render them. |
+| `CAWDEX_BENCHMARK_EXPERIENCE` | `1` | Set `0` to disable prior local benchmark trace summaries in `benchmark_context`. Current task files and verifier output always override prior experience; similar failed/unsafe prior runs are shown as warnings to avoid copying. |
+| `CAWDEX_BENCHMARK_MEMORY` | `1` | Set `0` to disable relevant MemPalace memories in `benchmark_context`. Remembered facts are always framed as hypotheses and must be verified against current task files and verifier output. |
+| `CAWDEX_MIN_TOOL_CALLS_BEFORE_DONE` | `2` in benchmark, `1` otherwise | Non-interactive empty-engagement guard; set `0` to allow immediate no-tool final answers. |
+| `CAWDEX_API_KEY_ENV` | (unset) | Name of an env var whose value should be used as the per-run API key; used by `--api-key-env`. |
+| `CAWDEX_INSTALL_SPEC` | `cawdex@latest` | Terminal-Bench adapter npm install spec; pin to a version, tag, or tarball for reproducibility. If `cawdex` or legacy `cawdex` is already on `PATH`, setup skips network install. |
+| `CAWDEX_BUNDLE_ROOT` | (unset) | Terminal-Bench offline install source: unpacked Cawdex tree with `bin/`, `dist/`, and preferably `node_modules/`. |
+| `CAWDEX_BUNDLE_TARBALL` | (unset) | Terminal-Bench offline/local install source: path to a Cawdex `.tgz` checked before the npm registry. |
 | `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `NVIDIA_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GLM_API_KEY`, `ZHIPUAI_API_KEY` | (unset) | Provider-specific key env vars used by env-built configs. |
 | `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_API_TOKEN` | unauthenticated public API | Optional GitHub auth for `research_sources` repo/issue/pull/code search and `github_repo_digest`; improves rate limits and private/internal access where the token is allowed. |
 | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HUGGINGFACE_TOKEN`, `HUGGINGFACE_API_KEY`, `HF_API_KEY` | token file fallback | Optional Hugging Face auth for `research_sources` papers/models/datasets; also checks `HF_TOKEN_PATH`, `HF_HOME/token`, and the default Hugging Face token cache. |
 | `KAGGLE_API_TOKEN`, `KAGGLE_TOKEN` | token file fallback | Optional Kaggle bearer auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/access_token`. |
 | `KAGGLE_USERNAME` + `KAGGLE_KEY` | `kaggle.json` fallback | Optional legacy Kaggle auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/kaggle.json` or `~/.kaggle/kaggle.json`. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Local Ollama endpoint for env-built configs. |
-| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.ventipus/stitch.json`. |
+| `STITCH_API_KEY` | (unset) | Stitch API key. Overrides `~/.cawdex/stitch.json`. |
 
 AHE change evaluation expects each non-trivial benchmark edit to carry both `Prediction:` and `At-risk regression:` manifest lines. Failed-verifier repair edits should also carry a `Root cause:`, `Diagnosis:`, or failure-tied `Hypothesis:` line plus a `Targeted fix:` or `Fix plan:` line before patching. Repeated verifier loops and regression cycles should be treated as failure-onset diagnosis work before another patch. Missing regression forecasts, root-cause hypotheses, failure-onset diagnoses, and targeted-fix manifests are reported in trace summaries, `change-evaluation.json` or `experienceCard.*` as applicable, process defects, and completion reminders.
 
 Component observability classifies benchmark edit targets as system prompts, tool descriptions, tool implementations, middleware, skills, sub-agents, memory, adapters, tests/verifiers, dependency files, documentation, or product source code. The live trajectory block and `experienceCard.componentObservability` expose the counts so AHE-style regression attribution can point at the changed surface.
 
-OpenRouter free-tier context is intentionally conservative for compatibility. `openrouter/free` plans around a 128k window because the router can select different available free models; manually typed unknown `:free` model IDs plan around 32k unless `VENTIPUS_CONTEXT_WINDOW_TOKENS` is set. The interactive OpenRouter `/model` picker reads the live catalog and saves the selected exact model's context hint when available.
+OpenRouter free-tier context is intentionally conservative for compatibility. `openrouter/free` plans around a 128k window because the router can select different available free models; manually typed unknown `:free` model IDs plan around 32k unless `CAWDEX_CONTEXT_WINDOW_TOKENS` is set. The interactive OpenRouter `/model` picker reads the live catalog and saves the selected exact model's context hint when available.
 
 `--prompt` and `--prompt-file` imply non-interactive mode. If the prompt begins with a slash command such as `/benchmark terminal-bench ...`, Cawdex dispatches that command first and sends the expanded prompt to the model.
 
@@ -461,30 +461,30 @@ Adapter path helpers:
 - `cawdex --print-hal-agent` prints the packaged HAL custom-agent directory.
 - `cawdex --print-exgentic-agent` prints the packaged Exgentic/Open Agent Leaderboard custom-agent directory.
 - `cawdex --print-open-agent-card` prints the packaged Open Agent Leaderboard-style Cawdex agent card markdown.
-- Benchmark adapters export redacted artifacts: Terminal-Bench writes `.ventipus/benchmark-summary.json`, `.ventipus/benchmark-trace.jsonl`, `.ventipus/agent-context-compiled.jsonl`, `.ventipus/change-evaluation.json`, `.ventipus/submission-bundle-manifest.json`, `.ventipus/benchmark.patch`, and `.ventipus/git-status.txt` when available; KBench returns redacted `instruction`, `stdout`, `stderr`, `patch`, and `git-status` artifact refs. Patch output includes unstaged, staged, and untracked file diffs where git can render them. KBench also exposes compact native trace data, including usage/cost telemetry, Open Agent Leaderboard draft rows marked `submissionReady:false` until an official harness score exists, the AHE-style change evaluation, the submission bundle manifest with artifact hashes and missing official fields, final-answer verification-claim and incomplete/blocked completion evidence, `experienceCard` replay/context/task-alignment/spec-compliance/reward-hack/proactivity/environment-reconstruction/dependency-upgrade/root-cause-hypothesis/failure-onset/decision-observability/validation-reliability/context-utilization/candidate-dossier summaries, the compiled task/context/answer record, cost-efficiency risk, invalid tool-action telemetry, task-contract checklist completion/no-edit/test-edit, task-alignment risk signals, spec-compliance risk signals, reward-hack risk signals, Pi-Bench proactivity ledger signals, incomplete/inconclusive verifier, environment setup/reconstruction, dependency manifest/lockfile setup-validation, weak change-manifest signals, per-target edit-localization, local context-utilization precision/risk, root-cause hypothesis risk, failure-onset diagnosis risk, targeted-fix manifest risk, candidate-file dossier risk, large edit-surface, scratch/probe artifact, redundant tool-call, redundant failing-verifier rerun, blind-repair, failed-verifier source-file repair alignment, long-horizon/WebDevBench/SWE-Cycle canary/lifecycle and validation signals, post-edit regression-cycle signals, latest post-edit verifier, post-edit and final-state diff-review, final-edit validation stability/lucky-pass signals, broad-validation signals, and CI-derived validation signals, under `benchmarkResult.traceSummary` when `summary.json` is available; `benchmarkResult.usage` aliases the compact usage block and `benchmarkResult.experienceCard` aliases the compact prior-experience block.
+- Benchmark adapters export redacted artifacts: Terminal-Bench writes `.cawdex/benchmark-summary.json`, `.cawdex/benchmark-trace.jsonl`, `.cawdex/agent-context-compiled.jsonl`, `.cawdex/change-evaluation.json`, `.cawdex/submission-bundle-manifest.json`, `.cawdex/benchmark.patch`, and `.cawdex/git-status.txt` when available; KBench returns redacted `instruction`, `stdout`, `stderr`, `patch`, and `git-status` artifact refs. Patch output includes unstaged, staged, and untracked file diffs where git can render them. KBench also exposes compact native trace data, including usage/cost telemetry, Open Agent Leaderboard draft rows marked `submissionReady:false` until an official harness score exists, the AHE-style change evaluation, the submission bundle manifest with artifact hashes and missing official fields, final-answer verification-claim and incomplete/blocked completion evidence, `experienceCard` replay/context/task-alignment/spec-compliance/reward-hack/proactivity/environment-reconstruction/dependency-upgrade/root-cause-hypothesis/failure-onset/decision-observability/validation-reliability/context-utilization/candidate-dossier summaries, the compiled task/context/answer record, cost-efficiency risk, invalid tool-action telemetry, task-contract checklist completion/no-edit/test-edit, task-alignment risk signals, spec-compliance risk signals, reward-hack risk signals, Pi-Bench proactivity ledger signals, incomplete/inconclusive verifier, environment setup/reconstruction, dependency manifest/lockfile setup-validation, weak change-manifest signals, per-target edit-localization, local context-utilization precision/risk, root-cause hypothesis risk, failure-onset diagnosis risk, targeted-fix manifest risk, candidate-file dossier risk, large edit-surface, scratch/probe artifact, redundant tool-call, redundant failing-verifier rerun, blind-repair, failed-verifier source-file repair alignment, long-horizon/WebDevBench/SWE-Cycle canary/lifecycle and validation signals, post-edit regression-cycle signals, latest post-edit verifier, post-edit and final-state diff-review, final-edit validation stability/lucky-pass signals, broad-validation signals, and CI-derived validation signals, under `benchmarkResult.traceSummary` when `summary.json` is available; `benchmarkResult.usage` aliases the compact usage block and `benchmarkResult.experienceCard` aliases the compact prior-experience block.
   `benchmarkResult.experienceCard` also includes `runEfficiency` when available, so harnesses can score tool/action count, token/cost, invalid-action rate, successful verifier count, process score, and cost-efficiency risk directly.
   HAL returns SWE-bench-style patch strings, ScienceAgentBench-style trajectory strings, AppWorld `Completed` markers, and USACO/general task dictionaries with `response` fields. Exgentic returns benchmark-native `ActionType` instances selected from Cawdex's final action JSON, auto-routes AppWorld/BrowseComp+/tau2/SWE-Cycle/SWE-CI/SWE-PRBench/TML-Bench/Pi-Bench-style tasks into specialized `/benchmark` profiles, builds a recommended action shortlist with required argument keys and redacted exact current-state hints before the full schema list, repairs near-miss action names/argument keys and fills omitted required schema fields from exact observation/context keys before `ActionType` dispatch, falls back to a viable non-finish shortlisted action when action JSON is missing or malformed and completion is not ready, folds prior observations/actions into a compact task ledger before each step, and stores prompt/stdout/stderr/trace artifacts under the Exgentic session agent directory.
 
 HAL-specific adapter env:
 
-- `CAWDEX_HAL_COMMAND` or `VENTIPUS_HAL_COMMAND` overrides the command used by the HAL adapter; default `cawdex`.
-- `VENTIPUS_HAL_TRACE_DIR` controls HAL adapter logs/traces; default `.ventipus/hal-trace`.
-- `VENTIPUS_HAL_TIMEOUT_SEC` controls the per-task adapter timeout; default `1800`.
-- `VENTIPUS_HAL_INCLUDE_ORACLE_FIELDS=1` disables the default oracle-field filter for harnesses that intentionally expose those fields.
+- `CAWDEX_HAL_COMMAND` or `CAWDEX_HAL_COMMAND` overrides the command used by the HAL adapter; default `cawdex`.
+- `CAWDEX_HAL_TRACE_DIR` controls HAL adapter logs/traces; default `.cawdex/hal-trace`.
+- `CAWDEX_HAL_TIMEOUT_SEC` controls the per-task adapter timeout; default `1800`.
+- `CAWDEX_HAL_INCLUDE_ORACLE_FIELDS=1` disables the default oracle-field filter for harnesses that intentionally expose those fields.
 
 Exgentic-specific adapter env:
 
-- `CAWDEX_EXGENTIC_COMMAND` or `VENTIPUS_EXGENTIC_COMMAND` overrides the command used by the Exgentic adapter; default `cawdex`.
-- `VENTIPUS_INSTALL_SPEC` controls Exgentic `setup.sh`; default `cawdex@latest`.
+- `CAWDEX_EXGENTIC_COMMAND` or `CAWDEX_EXGENTIC_COMMAND` overrides the command used by the Exgentic adapter; default `cawdex`.
+- `CAWDEX_INSTALL_SPEC` controls Exgentic `setup.sh`; default `cawdex@latest`.
 
 ---
 
 ## 5. Files & state
 
-Cawdex is local-first. Everything currently lives in `~/.ventipus/` (or `$CAWDEX_HOME` / `$VENTIPUS_HOME` if set) for compatibility:
+Cawdex is local-first. Everything currently lives in `~/.cawdex/` (or `$CAWDEX_HOME` / `$CAWDEX_HOME` if set) for compatibility:
 
 ```
-~/.ventipus/
+~/.cawdex/
   config.json          # provider, model, key, theme, perms
   usage.json           # token counts, cost estimates (LOCAL ONLY)
   hooks.json           # hook definitions
@@ -501,13 +501,13 @@ Cawdex is local-first. Everything currently lives in `~/.ventipus/` (or `$CAWDEX
   ecc-agents/          # bundled agent prompts
 ```
 
-**To wipe all state:** `rm -rf ~/.ventipus`.
+**To wipe all state:** `rm -rf ~/.cawdex`.
 
 ---
 
 ## 6. Hooks
 
-Default ECC-bundled hooks (configured in `~/.ventipus/hooks.json`):
+Default ECC-bundled hooks (configured in `~/.cawdex/hooks.json`):
 
 | Event | Match | What fires |
 |---|---|---|
@@ -515,9 +515,9 @@ Default ECC-bundled hooks (configured in `~/.ventipus/hooks.json`):
 | PreToolUse | `read_file` | Warn when reading `.env` / `.key` / `.pem` / credential paths. |
 | PostToolUse | `edit_file` / `write_file` | Warn when an edit leaves `console.*` statements in `.ts`/`.js`. |
 
-Disable individual hooks by editing the `enabled` field in `~/.ventipus/hooks.json`, or set `VENTIPUS_HOOK_PROFILE=minimal` to silence all but the most critical.
+Disable individual hooks by editing the `enabled` field in `~/.cawdex/hooks.json`, or set `CAWDEX_HOOK_PROFILE=minimal` to silence all but the most critical.
 
-Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool name glob), `command` (shell), and optional `blocking`/`timeout`. The hook receives `VENTIPUS_TOOL`, `VENTIPUS_TOOL_INPUT`, `VENTIPUS_CWD` in its env.
+Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool name glob), `command` (shell), and optional `blocking`/`timeout`. The hook receives `CAWDEX_TOOL`, `CAWDEX_TOOL_INPUT`, `CAWDEX_CWD` in its env.
 
 ---
 
