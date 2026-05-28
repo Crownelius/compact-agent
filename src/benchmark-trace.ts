@@ -3409,8 +3409,16 @@ export function buildBenchmarkTrajectoryQuality(
   if (sourceResearchUsed && !sourceResearchCoverage.completeTargetedCoverage) {
     warnings.push('source research was partial; targeted benchmark research should cover arXiv, GitHub github_kind:"all", Hugging Face kind:"all", and Kaggle kaggle_kind:"both" when external research is relevant.');
   }
-  if (sourceResearchUsed && sourceResearchCoverage.completeTargetedCoverage && !sourceResearchCoverage.freshTargetedCoverage) {
+  if (sourceResearchUsed && sourceResearchCoverage.completeTargetedCoverage && sourceResearchCoverage.recentDays.length === 0) {
     warnings.push('targeted source research omitted recent_days; newest-science and leaderboard work should bound arXiv, GitHub, and Hugging Face recency before relying on external evidence.');
+  }
+  if (sourceResearchUsed &&
+    sourceResearchCoverage.completeTargetedCoverage &&
+    sourceResearchCoverage.recentDays.length > 0 &&
+    sourceResearchCoverage.sourceHitCount > 0 &&
+    sourceResearchHasFreshnessAccounting(sourceResearchCoverage) &&
+    sourceResearchCoverage.freshHitCount === 0) {
+    warnings.push(`targeted source research requested recent_days but produced no dated fresh hits (${formatSourceCoverage(sourceResearchCoverage)}). Inspect stale or undated source evidence before relying on newest-science claims.`);
   }
   if (sourceResearchUsed && sourceResearchCoverage.sourceHitCount === 0) {
     warnings.push('source research produced no parsed source hits; broaden the query or verify endpoint/auth failures before relying on it.');
@@ -4545,13 +4553,28 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       formatSourceCoverage(input.sourceResearchCoverage),
     );
   }
-  if (input.sourceResearchUsed && input.sourceResearchCoverage.completeTargetedCoverage && !input.sourceResearchCoverage.freshTargetedCoverage) {
+  if (input.sourceResearchUsed && input.sourceResearchCoverage.completeTargetedCoverage && input.sourceResearchCoverage.recentDays.length === 0) {
     add(
       'source_research_missing_recency',
       'source_research',
       'medium',
       null,
       'Targeted source research did not include a recency window for newest-science evidence.',
+      formatSourceCoverage(input.sourceResearchCoverage),
+    );
+  }
+  if (input.sourceResearchUsed &&
+    input.sourceResearchCoverage.completeTargetedCoverage &&
+    input.sourceResearchCoverage.recentDays.length > 0 &&
+    input.sourceResearchCoverage.sourceHitCount > 0 &&
+    sourceResearchHasFreshnessAccounting(input.sourceResearchCoverage) &&
+    input.sourceResearchCoverage.freshHitCount === 0) {
+    add(
+      'source_research_no_fresh_hits',
+      'source_research',
+      'medium',
+      null,
+      'Targeted source research requested a recency window but produced no dated fresh hits.',
       formatSourceCoverage(input.sourceResearchCoverage),
     );
   }
@@ -5210,9 +5233,34 @@ export function buildSourceResearchCoverage(events: BenchmarkTraceEvent[]): Sour
     coverage.huggingFaceKinds.includes('all') &&
     coverage.kaggleKinds.includes('both') &&
     !coverage.kaggleCompetitionsSkipped;
-  coverage.freshTargetedCoverage = coverage.completeTargetedCoverage && coverage.recentDays.length > 0;
+  coverage.freshTargetedCoverage =
+    coverage.completeTargetedCoverage &&
+    coverage.recentDays.length > 0 &&
+    sourceResearchHasFreshEvidence(coverage);
 
   return coverage;
+}
+
+function sourceResearchFreshnessAccountingCount(coverage: SourceResearchCoverage): number {
+  return coverage.datedHitCount +
+    coverage.freshHitCount +
+    coverage.staleHitCount +
+    coverage.unknownDateHitCount;
+}
+
+function sourceResearchHasFreshnessAccounting(coverage: SourceResearchCoverage): boolean {
+  return sourceResearchFreshnessAccountingCount(coverage) > 0;
+}
+
+function sourceResearchHasFreshEvidence(coverage: SourceResearchCoverage): boolean {
+  if (coverage.sourceHitCount <= 0) return false;
+  if (!sourceResearchHasFreshnessAccounting(coverage)) {
+    // Older traces predate per-hit date accounting. Preserve compatibility:
+    // a recency-bounded targeted query remains "fresh" unless newer evidence
+    // explicitly proves every hit is stale or undated.
+    return true;
+  }
+  return coverage.freshHitCount > 0;
 }
 
 export function buildBenchmarkSourceMiningCoverage(events: BenchmarkTraceEvent[]): BenchmarkSourceMiningCoverage {
@@ -9392,6 +9440,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('multiple full skill prompts')
     || warning.includes('source research was partial')
     || warning.includes('targeted source research omitted recent_days')
+    || warning.includes('targeted source research requested recent_days but produced no dated fresh hits')
     || warning.includes('source research produced no parsed source hits')
     || warning.includes('source research reported')
     || warning.includes('Kaggle competition research')

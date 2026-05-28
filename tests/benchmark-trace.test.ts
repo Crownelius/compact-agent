@@ -6425,6 +6425,98 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkCompletionReminder(events)).toContain('source research ran with missing optional source credentials');
   });
 
+  it('does not treat recency-bounded source research as fresh when all dated hits are stale or unknown', () => {
+    const packet = {
+      version: 1,
+      format: 'cawdex-research-sources-v1',
+      source: 'research_sources',
+      query: 'new coding agent leaderboard methods',
+      requested: {
+        source: 'all',
+        githubKind: 'all',
+        huggingFaceKind: 'all',
+        kaggleKind: 'both',
+        limit: 2,
+        recentDays: 90,
+      },
+      coverageNotes: [
+        'Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
+        'Recency filter requested: recent_days=90.',
+      ],
+      auth: {
+        arxivPublic: true,
+        githubAuth: true,
+        githubUnauthenticatedRateLimit: false,
+        huggingFaceAuth: true,
+        kaggleAuth: true,
+        kaggleCompetitionsRequested: true,
+        kaggleCompetitionsEnabled: true,
+        missingCredentialHints: [],
+      },
+      digest: {
+        hitCount: 2,
+        errorCount: 0,
+        sources: {
+          arXiv: 1,
+          GitHub: 1,
+        },
+        topUrls: [
+          'https://arxiv.org/abs/2401.00001',
+          'https://github.com/example/old-agent',
+        ],
+        recencyWindowDays: 90,
+        datedHitCount: 1,
+        freshHitCount: 0,
+        staleHitCount: 1,
+        unknownDateHitCount: 1,
+        oldestDate: '2024-01-01',
+        newestDate: '2024-01-01',
+      },
+      hits: [
+        {
+          source: 'arXiv',
+          title: 'Older Agent Method',
+          url: 'https://arxiv.org/abs/2401.00001',
+          date: '2024-01-01',
+        },
+        {
+          source: 'GitHub',
+          title: 'example/old-agent',
+          url: 'https://github.com/example/old-agent',
+        },
+      ],
+      errors: [],
+    };
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'research_sources',
+        input: {
+          query: 'new coding agent leaderboard methods',
+          format: 'json',
+        },
+        output: JSON.stringify(packet, null, 2),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.completeTargetedCoverage).toBe(true);
+    expect(coverage.recentDays).toEqual([90]);
+    expect(coverage.sourceHitCount).toBe(2);
+    expect(coverage.datedHitCount).toBe(1);
+    expect(coverage.freshHitCount).toBe(0);
+    expect(coverage.staleHitCount).toBe(1);
+    expect(coverage.unknownDateHitCount).toBe(1);
+    expect(coverage.freshTargetedCoverage).toBe(false);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.processDefects.map((d) => d.code)).toContain('source_research_no_fresh_hits');
+    expect(quality.warnings.join('\n')).toContain('targeted source research requested recent_days but produced no dated fresh hits');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('targeted source research requested recent_days but produced no dated fresh hits');
+  });
+
   it('warns when complete targeted source research omits a recency window', () => {
     const events = [
       makeBenchmarkTraceEvent({
@@ -6596,7 +6688,7 @@ describe('benchmark trace artifacts', () => {
 
     const coverage = buildSourceResearchCoverage(events);
     expect(coverage.completeTargetedCoverage).toBe(true);
-    expect(coverage.freshTargetedCoverage).toBe(true);
+    expect(coverage.freshTargetedCoverage).toBe(false);
     expect(coverage.sourceHitCount).toBe(0);
     expect(coverage.sourceErrorCount).toBe(2);
 
