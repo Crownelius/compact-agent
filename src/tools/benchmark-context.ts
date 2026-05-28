@@ -132,6 +132,12 @@ interface PriorFailureOnsetSummary {
   scoreBonus: number;
 }
 
+interface PriorTrajectoryTriageSummary {
+  text: string | null;
+  harmReasons: string[];
+  scoreBonus: number;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -692,6 +698,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorContext = summarizePriorContextUtilization(summary, quality);
     const priorRootCause = summarizePriorRootCauseHypothesis(summary, quality);
     const priorFailureOnset = summarizePriorFailureOnset(summary, quality);
+    const priorTrajectoryTriage = summarizePriorTrajectoryTriage(summary, quality);
     const priorCleanup = summarizePriorTrajectoryCleanup(summary, quality);
     const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
     const priorSourceResearch = summarizePriorSourceResearchCoverage(summary, quality);
@@ -719,7 +726,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       successfulVerificationCount,
       defectCodes,
       finalAnswerEvidence,
-    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons, priorRootCause.harmReasons, priorFailureOnset.harmReasons, priorCleanup.harmReasons);
+    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons, priorRootCause.harmReasons, priorFailureOnset.harmReasons, priorTrajectoryTriage.harmReasons, priorCleanup.harmReasons);
 
     const changed = changedFiles.slice(0, 5).join(', ') || 'none recorded';
     const verifiers = verificationCommands.slice(0, 3).join(' | ') || 'none recorded';
@@ -753,6 +760,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorContext.text,
         priorRootCause.text,
         priorFailureOnset.text,
+        priorTrajectoryTriage.text,
         priorCleanup.text,
         priorSourceResearch,
         priorProactivity.text,
@@ -769,6 +777,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     score += priorContext.scoreBonus;
     score += priorRootCause.scoreBonus;
     score += priorFailureOnset.scoreBonus;
+    score += priorTrajectoryTriage.scoreBonus;
     score += priorCleanup.scoreBonus;
     if (currentPiBenchLike && priorProactivity.complete) score += 20;
     if (currentPiBenchLike && priorProactivity.risk) score -= 12;
@@ -792,6 +801,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorContext.text,
       priorRootCause.text,
       priorFailureOnset.text,
+      priorTrajectoryTriage.text,
       priorCleanup.text,
       priorSourceResearch,
       priorProactivity.text,
@@ -1478,6 +1488,92 @@ function summarizePriorFailureOnset(
     regressionCycleCount == null ? null : `regressions:${regressionCycleCount}`,
     recommendedAction ? `action:${recommendedAction}` : null,
     evidence.length ? `evidence:${evidence.join(' | ')}` : null,
+  ].filter(Boolean).join(',');
+
+  return {
+    text,
+    harmReasons: harmReasons.slice(0, 3),
+    scoreBonus,
+  };
+}
+
+function summarizePriorTrajectoryTriage(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): PriorTrajectoryTriageSummary {
+  const card = objectRecord(summary.experienceCard);
+  const cardTriage = objectRecord(card.trajectoryTriage);
+  const qualityTriage = objectRecord(quality.trajectoryTriage);
+  const informative = firstBooleanOrNull(cardTriage.informative, qualityTriage.informative);
+  const score = finiteNumber(cardTriage.score) ?? finiteNumber(qualityTriage.score);
+  const signalCount = finiteNumber(cardTriage.signalCount) ?? finiteNumber(qualityTriage.signalCount);
+  const cardCategories = objectRecord(cardTriage.categories);
+  const qualityCategories = objectRecord(qualityTriage.categories);
+  const interactionCount = finiteNumber(cardCategories.interaction) ?? finiteNumber(qualityCategories.interaction);
+  const executionCount = finiteNumber(cardCategories.execution) ?? finiteNumber(qualityCategories.execution);
+  const environmentCount = finiteNumber(cardCategories.environment) ?? finiteNumber(qualityCategories.environment);
+  const summaryText = firstString(cardTriage.summary, qualityTriage.summary);
+  const rawSignals = Array.isArray(cardTriage.signals)
+    ? cardTriage.signals
+    : (Array.isArray(qualityTriage.signals) ? qualityTriage.signals : []);
+
+  if (
+    informative === undefined
+    && score == null
+    && signalCount == null
+    && rawSignals.length === 0
+    && !summaryText
+  ) {
+    return { text: null, harmReasons: [], scoreBonus: 0 };
+  }
+
+  const signals = rawSignals
+    .slice(0, 4)
+    .flatMap((raw) => {
+      const signal = objectRecord(raw);
+      const category = typeof signal.category === 'string' ? signal.category.trim() : '';
+      const kind = typeof signal.kind === 'string' ? signal.kind.trim() : '';
+      const severity = typeof signal.severity === 'string' ? signal.severity.trim() : '';
+      const seq = finiteNumber(signal.seq);
+      const evidence = typeof signal.evidence === 'string' ? signal.evidence.trim() : '';
+      const parts = [
+        category && kind ? `${category}/${kind}` : category || kind || null,
+        severity || null,
+        seq == null ? null : `#${seq}`,
+        evidence || null,
+      ].filter(Boolean).join(' ');
+      return parts ? [parts] : [];
+    })
+    .map((signal) => truncateContractSignal(redactTraceText(signal), 170));
+
+  const riskySignals = rawSignals
+    .map(objectRecord)
+    .filter((signal) => {
+      const kind = typeof signal.kind === 'string' ? signal.kind : '';
+      const severity = typeof signal.severity === 'string' ? signal.severity : '';
+      return kind !== 'satisfaction'
+        && severity !== 'info'
+        && (kind === 'misalignment' || kind === 'failure' || kind === 'loop' || kind === 'exhaustion');
+    });
+  const riskKinds = uniqueExperienceStrings(riskySignals
+    .map((signal) => typeof signal.kind === 'string' ? signal.kind : '')
+    .filter(Boolean))
+    .slice(0, 4);
+
+  const harmReasons: string[] = [];
+  if (riskKinds.length > 0 && (score ?? 0) >= 12) {
+    harmReasons.push(`trajectory_triage=${riskKinds.join('+')}`);
+  }
+
+  const hasSatisfaction = rawSignals.some((raw) => objectRecord(raw).kind === 'satisfaction');
+  const scoreBonus = informative === true && hasSatisfaction && riskySignals.length === 0 ? 1 : 0;
+  const text = [
+    `triage=score:${score ?? 0}`,
+    `informative:${String(informative ?? false)}`,
+    `signals:${signalCount ?? rawSignals.length}`,
+    `categories:${interactionCount ?? 0}/${executionCount ?? 0}/${environmentCount ?? 0}`,
+    summaryText ? `summary:${truncateContractSignal(redactTraceText(summaryText), 120)}` : null,
+    signals.length ? `examples:${signals.join(' | ')}` : null,
   ].filter(Boolean).join(',');
 
   return {

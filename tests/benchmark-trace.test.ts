@@ -1839,6 +1839,17 @@ describe('benchmark trace artifacts', () => {
     expect(quality.stableValidationAfterLastEdit).toBe(true);
     expect(quality.processScore).toBe(100);
     expect(quality.processDefects).toEqual([]);
+    expect(quality.trajectoryTriage).toMatchObject({
+      informative: true,
+      score: 2,
+      signalCount: 1,
+      categories: { interaction: 1, execution: 0, environment: 0 },
+    });
+    expect(quality.trajectoryTriage.signals[0]).toMatchObject({
+      category: 'interaction',
+      kind: 'satisfaction',
+      severity: 'info',
+    });
     expect(quality.taskContractSignalCount).toBe(0);
     expect(quality.taskContractChecklistAfterContext).toBeNull();
     expect(quality.noEditContractDetected).toBe(false);
@@ -1872,6 +1883,7 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('final_diff_review_after_edit=yes');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('redundant_calls=0');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('regression_cycles=0');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Trajectory triage: trajectory_triage=2, triage_informative=yes, triage_signals=1');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Process score: 100/100, defects=0');
   });
 
@@ -2931,8 +2943,11 @@ describe('benchmark trace artifacts', () => {
       repeatedVerifierCount: 2,
     });
     expect(quality.processDefects.map((defect) => defect.code)).toContain('undiagnosed_failure_onset_loop');
+    expect(quality.trajectoryTriage.informative).toBe(true);
+    expect(quality.trajectoryTriage.signals.map((signal) => signal.kind)).toContain('loop');
     expect(quality.warnings.join('\n')).toContain('failure-onset diagnosis risk');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('failure_onset=yes failure_onset_risk=yes failure_onset_category=repair_loop');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('triage_informative=yes');
   });
 
   it('flags blind repair edits after post-edit failed verifiers without inspection', () => {

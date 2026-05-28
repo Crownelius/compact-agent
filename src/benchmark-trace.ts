@@ -63,6 +63,7 @@ export interface BenchmarkExperienceCard {
   candidateDossier: BenchmarkExperienceCandidateDossier;
   rootCauseHypothesis: BenchmarkExperienceRootCauseHypothesis;
   failureOnset: BenchmarkFailureOnsetDiagnosis;
+  trajectoryTriage: BenchmarkTrajectoryTriage;
   trajectoryCleanup: BenchmarkExperienceTrajectoryCleanup;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
@@ -256,6 +257,39 @@ export interface BenchmarkFailureOnsetDiagnosis {
   regressionCycleCount: number;
   evidence: string[];
   recommendedAction: BenchmarkFailureOnsetRecommendedAction;
+}
+
+export type BenchmarkTrajectoryTriageCategory =
+  | 'interaction'
+  | 'execution'
+  | 'environment';
+
+export type BenchmarkTrajectoryTriageKind =
+  | 'misalignment'
+  | 'stagnation'
+  | 'disengagement'
+  | 'satisfaction'
+  | 'failure'
+  | 'loop'
+  | 'exhaustion';
+
+export type BenchmarkTrajectoryTriageSeverity = 'info' | BenchmarkProcessDefectSeverity;
+
+export interface BenchmarkTrajectoryTriageSignal {
+  category: BenchmarkTrajectoryTriageCategory;
+  kind: BenchmarkTrajectoryTriageKind;
+  severity: BenchmarkTrajectoryTriageSeverity;
+  seq: number | null;
+  evidence: string;
+}
+
+export interface BenchmarkTrajectoryTriage {
+  informative: boolean;
+  score: number;
+  signalCount: number;
+  categories: Record<BenchmarkTrajectoryTriageCategory, number>;
+  signals: BenchmarkTrajectoryTriageSignal[];
+  summary: string;
 }
 
 export interface BenchmarkExperienceEditPrediction {
@@ -785,6 +819,7 @@ export interface BenchmarkTrajectoryQuality {
   rootCauseHypothesisSignalCount: number;
   rootCauseHypothesisSignals: BenchmarkRootCauseHypothesisSignal[];
   failureOnset: BenchmarkFailureOnsetDiagnosis;
+  trajectoryTriage: BenchmarkTrajectoryTriage;
   trajectoryCleanupRisk: boolean;
   trajectoryCleanupEventCount: number;
   trajectoryCleanupNoisyOutputCount: number;
@@ -1475,6 +1510,7 @@ export function buildBenchmarkExperienceCard(input: {
     candidateDossier: buildBenchmarkExperienceCandidateDossier(input.trajectoryQuality),
     rootCauseHypothesis: buildBenchmarkExperienceRootCauseHypothesis(input.trajectoryQuality),
     failureOnset: buildBenchmarkExperienceFailureOnset(input.trajectoryQuality),
+    trajectoryTriage: buildBenchmarkExperienceTrajectoryTriage(input.trajectoryQuality),
     trajectoryCleanup: buildBenchmarkExperienceTrajectoryCleanup(input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
@@ -1662,6 +1698,12 @@ function buildBenchmarkExperienceFailureOnset(
   quality: BenchmarkTrajectoryQuality,
 ): BenchmarkFailureOnsetDiagnosis {
   return sanitizeBenchmarkFailureOnsetDiagnosis(quality.failureOnset);
+}
+
+function buildBenchmarkExperienceTrajectoryTriage(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkTrajectoryTriage {
+  return sanitizeBenchmarkTrajectoryTriage(quality.trajectoryTriage);
 }
 
 function buildBenchmarkExperienceTrajectoryCleanup(
@@ -3703,6 +3745,50 @@ export function buildBenchmarkTrajectoryQuality(
     slowToolEvents: timeEfficiency.slowToolEvents,
     timeEfficiencyRisk: timeEfficiency.risk,
   });
+  const processScore = scoreBenchmarkProcess(processDefects);
+  const trajectoryTriage = buildBenchmarkTrajectoryTriage({
+    processDefects,
+    processScore,
+    successfulVerificationCount,
+    failedVerificationCount,
+    incompleteVerifierEvents,
+    inconclusiveVerifierEvents,
+    environmentSetupFailureEvents,
+    unresolvedEnvironmentSetupFailureEvents,
+    dependencyManifestEditEvents,
+    dependencySetupAfterManifestEdit,
+    passingDependencyValidationAfterManifestEdit,
+    invalidToolActionEvents,
+    taskAlignmentSignals,
+    specComplianceSignals,
+    rewardHackSignals,
+    harnessSafety,
+    proactivitySignals,
+    contextUtilizationRisk: contextUtilization.risk,
+    contextUtilizationMissEvents: contextUtilization.missEvents,
+    contextBloatRisk: contextBloat.risk,
+    contextBloatEvents: contextBloat.bloatEvents,
+    candidateDossierRisk: candidateDossier.risk,
+    candidateDossierSignals: candidateDossier.signals,
+    rootCauseHypothesisRisk: rootCauseHypothesis.risk,
+    rootCauseHypothesisSignals: rootCauseHypothesis.signals,
+    failureOnset,
+    trajectoryCleanupRisk,
+    trajectoryCleanupEvents,
+    evidenceGroundingEvents,
+    redundantToolCallEvents,
+    redundantVerifierEvents,
+    blindRepairEvents,
+    failureUnalignedRepairEvents: failureRepairAlignment.unalignedEvents,
+    postEditRegressionCycleEvents,
+    postSuccessMutationEvents,
+    costEfficiencyRisk,
+    timeEfficiencyRisk: timeEfficiency.risk,
+    slowToolEvents: timeEfficiency.slowToolEvents,
+    finalEditPassingVerificationCount,
+    stableValidationAfterLastEdit,
+    lastPostEditVerificationSeq,
+  });
 
   return {
     version: 1,
@@ -3823,6 +3909,7 @@ export function buildBenchmarkTrajectoryQuality(
     rootCauseHypothesisSignalCount: rootCauseHypothesis.signals.length,
     rootCauseHypothesisSignals: rootCauseHypothesis.signals,
     failureOnset,
+    trajectoryTriage,
     trajectoryCleanupRisk,
     trajectoryCleanupEventCount: trajectoryCleanupEvents.length,
     trajectoryCleanupNoisyOutputCount,
@@ -3898,7 +3985,7 @@ export function buildBenchmarkTrajectoryQuality(
     passingValidationAfterLastEdit,
     broadValidationAfterLastEdit,
     passingBroadValidationAfterLastEdit,
-    processScore: scoreBenchmarkProcess(processDefects),
+    processScore,
     processDefects,
     warnings,
   };
@@ -3919,6 +4006,7 @@ export function buildBenchmarkTrajectorySystemBlock(
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
     `Proactivity ledger: detected=${yn(quality.proactivityDetected)}, context=${quality.proactivityContextContract.coverageCount}/6, hidden_intent=${yn(quality.proactivityHiddenIntentEvidence)}, clarification=${yn(quality.proactivityClarificationEvidence)}, privacy=${yn(quality.proactivityPrivacyEvidence)}, completion=${yn(quality.proactivityCompletionEvidence)}, actions=${quality.proactivityActionCount}.`,
+    `Trajectory triage: trajectory_triage=${quality.trajectoryTriage.score}, triage_informative=${yn(quality.trajectoryTriage.informative)}, triage_signals=${quality.trajectoryTriage.signalCount}, categories=interaction:${quality.trajectoryTriage.categories.interaction}/execution:${quality.trajectoryTriage.categories.execution}/environment:${quality.trajectoryTriage.categories.environment}, summary=${quality.trajectoryTriage.summary}.`,
     `Process score: ${quality.processScore}/100, defects=${quality.processDefects.length}${quality.processDefects.length ? ` (${quality.processDefects.slice(0, 4).map((defect) => `${defect.severity}:${defect.code}`).join(', ')})` : ''}.`,
     `Method checks: localize_before_edit=${tri(quality.localizationBeforeFirstEdit)}, reproduce_before_edit=${tri(quality.reproductionBeforeFirstEdit)}, failing_reproduce_before_edit=${tri(quality.failingReproductionBeforeFirstEdit)}, validate_after_edit=${tri(quality.validationAfterFirstEdit)}, passing_validate_after_edit=${tri(quality.passingValidationAfterFirstEdit)}, latest_post_edit_verifier=${statusLabel(quality.lastPostEditVerificationStatus)}, final_validate_after_edit=${tri(quality.passingValidationAfterLastEdit)}, stable_final_validate=${tri(quality.stableValidationAfterLastEdit)}, broad_validate_after_edit=${tri(quality.passingBroadValidationAfterFirstEdit)}, final_broad_validate_after_edit=${tri(quality.passingBroadValidationAfterLastEdit)}, ci_validate_after_edit=${tri(quality.passingCiValidationAfterFirstEdit)}, final_ci_validate_after_edit=${tri(quality.passingCiValidationAfterLastEdit)}, diff_review_after_edit=${tri(quality.postEditDiffReview)}, final_diff_review_after_edit=${tri(quality.diffReviewAfterLastEdit)}.`,
   ];
@@ -6580,6 +6668,407 @@ function sanitizeBenchmarkFailureOnsetDiagnosis(
       .slice(0, 8),
     recommendedAction: diagnosis.recommendedAction ?? 'none',
   };
+}
+
+function emptyBenchmarkTrajectoryTriage(): BenchmarkTrajectoryTriage {
+  return {
+    informative: false,
+    score: 0,
+    signalCount: 0,
+    categories: {
+      interaction: 0,
+      execution: 0,
+      environment: 0,
+    },
+    signals: [],
+    summary: 'no triage signals',
+  };
+}
+
+function sanitizeBenchmarkTrajectoryTriage(
+  triage: BenchmarkTrajectoryTriage | null | undefined,
+): BenchmarkTrajectoryTriage {
+  if (!triage) return emptyBenchmarkTrajectoryTriage();
+  const signals = Array.isArray(triage.signals)
+    ? triage.signals
+      .map((signal) => ({
+        category: signal.category,
+        kind: signal.kind,
+        severity: signal.severity,
+        seq: signal.seq ?? null,
+        evidence: truncate(redactTraceText(signal.evidence || ''), 240),
+      }))
+      .filter((signal) =>
+        (signal.category === 'interaction' || signal.category === 'execution' || signal.category === 'environment')
+        && (
+          signal.kind === 'misalignment'
+          || signal.kind === 'stagnation'
+          || signal.kind === 'disengagement'
+          || signal.kind === 'satisfaction'
+          || signal.kind === 'failure'
+          || signal.kind === 'loop'
+          || signal.kind === 'exhaustion'
+        )
+        && (
+          signal.severity === 'info'
+          || signal.severity === 'low'
+          || signal.severity === 'medium'
+          || signal.severity === 'high'
+          || signal.severity === 'critical'
+        )
+        && signal.evidence.length > 0)
+      .slice(0, 12)
+    : [];
+  const categories = {
+    interaction: signals.filter((signal) => signal.category === 'interaction').length,
+    execution: signals.filter((signal) => signal.category === 'execution').length,
+    environment: signals.filter((signal) => signal.category === 'environment').length,
+  };
+  const score = Math.max(0, Math.min(100, Number.isFinite(triage.score) ? Math.round(triage.score) : scoreBenchmarkTrajectoryTriage(signals)));
+  const summary = typeof triage.summary === 'string' && triage.summary.trim()
+    ? truncate(redactTraceText(triage.summary.trim()), 240)
+    : summarizeBenchmarkTrajectoryTriageSignals(signals);
+  return {
+    informative: Boolean(triage.informative) || signals.length > 0,
+    score,
+    signalCount: signals.length,
+    categories,
+    signals,
+    summary,
+  };
+}
+
+interface BenchmarkTrajectoryTriageInput {
+  processDefects: BenchmarkProcessDefect[];
+  processScore: number;
+  successfulVerificationCount: number;
+  failedVerificationCount: number;
+  incompleteVerifierEvents: BenchmarkVerifierIncompleteRun[];
+  inconclusiveVerifierEvents: BenchmarkVerifierIncompleteRun[];
+  environmentSetupFailureEvents: BenchmarkEnvironmentSetupFailureEvent[];
+  unresolvedEnvironmentSetupFailureEvents: BenchmarkEnvironmentSetupFailureEvent[];
+  dependencyManifestEditEvents: BenchmarkDependencyEditEvent[];
+  dependencySetupAfterManifestEdit: boolean | null;
+  passingDependencyValidationAfterManifestEdit: boolean | null;
+  invalidToolActionEvents: BenchmarkInvalidToolActionEvent[];
+  taskAlignmentSignals: BenchmarkTaskAlignmentSignal[];
+  specComplianceSignals: BenchmarkSpecComplianceSignal[];
+  rewardHackSignals: BenchmarkRewardHackSignal[];
+  harnessSafety: BenchmarkHarnessSafetyAudit;
+  proactivitySignals: BenchmarkProactivitySignal[];
+  contextUtilizationRisk: boolean;
+  contextUtilizationMissEvents: BenchmarkContextUtilizationEvent[];
+  contextBloatRisk: boolean;
+  contextBloatEvents: BenchmarkContextBloatEvent[];
+  candidateDossierRisk: boolean;
+  candidateDossierSignals: BenchmarkCandidateDossierSignal[];
+  rootCauseHypothesisRisk: boolean;
+  rootCauseHypothesisSignals: BenchmarkRootCauseHypothesisSignal[];
+  failureOnset: BenchmarkFailureOnsetDiagnosis;
+  trajectoryCleanupRisk: boolean;
+  trajectoryCleanupEvents: BenchmarkTrajectoryCleanupEvent[];
+  evidenceGroundingEvents: BenchmarkEvidenceGroundingEvent[];
+  redundantToolCallEvents: BenchmarkRedundantToolCallEvent[];
+  redundantVerifierEvents: BenchmarkRedundantVerifierEvent[];
+  blindRepairEvents: BenchmarkBlindRepairEvent[];
+  failureUnalignedRepairEvents: BenchmarkFailureUnalignedRepairEvent[];
+  postEditRegressionCycleEvents: BenchmarkPostEditRegressionCycleEvent[];
+  postSuccessMutationEvents: BenchmarkPostSuccessMutationEvent[];
+  costEfficiencyRisk: boolean;
+  timeEfficiencyRisk: boolean;
+  slowToolEvents: BenchmarkSlowToolEvent[];
+  finalEditPassingVerificationCount: number;
+  stableValidationAfterLastEdit: boolean | null;
+  lastPostEditVerificationSeq: number | null;
+}
+
+function buildBenchmarkTrajectoryTriage(input: BenchmarkTrajectoryTriageInput): BenchmarkTrajectoryTriage {
+  const signals: BenchmarkTrajectoryTriageSignal[] = [];
+  const add = (
+    category: BenchmarkTrajectoryTriageCategory,
+    kind: BenchmarkTrajectoryTriageKind,
+    severity: BenchmarkTrajectoryTriageSeverity,
+    seq: number | null,
+    evidence: string,
+  ): void => {
+    const clean = truncate(redactTraceText(evidence.replace(/\s+/g, ' ').trim()), 240);
+    if (!clean) return;
+    signals.push({ category, kind, severity, seq, evidence: clean });
+  };
+
+  const defectSeverity = (codes: string[]): BenchmarkProcessDefectSeverity | null =>
+    highestBenchmarkProcessDefectSeverity(input.processDefects.filter((defect) => codes.includes(defect.code)));
+  const defectSeq = (codes: string[]): number | null =>
+    input.processDefects.find((defect) => codes.includes(defect.code))?.seq ?? null;
+  const defectEvidence = (codes: string[]): string =>
+    input.processDefects
+      .filter((defect) => codes.includes(defect.code))
+      .slice(0, 4)
+      .map((defect) => `${defect.severity}:${defect.code}`)
+      .join('|');
+
+  if (
+    input.taskAlignmentSignals.length > 0
+    || input.specComplianceSignals.length > 0
+    || input.rewardHackSignals.length > 0
+    || input.harnessSafety.risk
+    || input.proactivitySignals.length > 0
+  ) {
+    const severity = input.rewardHackSignals.length > 0 || input.harnessSafety.risk
+      ? 'critical'
+      : input.specComplianceSignals.length > 0 || input.taskAlignmentSignals.length > 0
+        ? 'high'
+        : 'medium';
+    const firstSeq = input.rewardHackSignals[0]?.seq
+      ?? input.harnessSafety.signals[0]?.seq
+      ?? input.specComplianceSignals[0]?.seq
+      ?? input.taskAlignmentSignals[0]?.seq
+      ?? input.proactivitySignals[0]?.seq
+      ?? null;
+    add(
+      'interaction',
+      'misalignment',
+      severity,
+      firstSeq,
+      [
+        `task_alignment=${input.taskAlignmentSignals.length}`,
+        `spec_compliance=${input.specComplianceSignals.length}`,
+        `reward_hack=${input.rewardHackSignals.length}`,
+        `harness_safety=${input.harnessSafety.signalCount}`,
+        `proactivity=${input.proactivitySignals.length}`,
+      ].join(', '),
+    );
+  }
+
+  if (
+    input.contextUtilizationRisk
+    || input.contextBloatRisk
+    || input.candidateDossierRisk
+    || input.rootCauseHypothesisRisk
+    || input.trajectoryCleanupRisk
+    || input.evidenceGroundingEvents.length > 0
+  ) {
+    const severity = input.rootCauseHypothesisRisk || input.evidenceGroundingEvents.length >= 2
+      ? 'medium'
+      : 'low';
+    const firstSeq = input.rootCauseHypothesisSignals[0]?.seq
+      ?? input.candidateDossierSignals[0]?.seq
+      ?? input.evidenceGroundingEvents[0]?.seq
+      ?? input.contextBloatEvents[0]?.seq
+      ?? input.contextUtilizationMissEvents[0]?.seq
+      ?? input.trajectoryCleanupEvents[0]?.seq
+      ?? null;
+    add(
+      'interaction',
+      'stagnation',
+      severity,
+      firstSeq,
+      [
+        `context_risk=${yn(input.contextUtilizationRisk)}`,
+        `pre_edit_bloat=${yn(input.contextBloatRisk)}`,
+        `candidate_dossier_risk=${yn(input.candidateDossierRisk)}`,
+        `root_cause_risk=${yn(input.rootCauseHypothesisRisk)}`,
+        `cleanup_risk=${yn(input.trajectoryCleanupRisk)}`,
+        `evidence_grounding=${input.evidenceGroundingEvents.length}`,
+      ].join(', '),
+    );
+  }
+
+  const disengagementCodes = [
+    'missing_benchmark_context',
+    'missing_task_contract_checklist',
+    'incomplete_task_contract_checklist',
+    'edit_despite_no_edit_contract',
+    'large_edit_surface_without_contract',
+  ];
+  const disengagementSeverity = defectSeverity(disengagementCodes);
+  if (disengagementSeverity) {
+    add(
+      'interaction',
+      'disengagement',
+      disengagementSeverity,
+      defectSeq(disengagementCodes),
+      defectEvidence(disengagementCodes),
+    );
+  }
+
+  const failureCodes = [
+    'edit_before_reproduction',
+    'no_failing_reproduction',
+    'missing_post_edit_validation',
+    'no_passing_post_edit_validation',
+    'missing_final_post_edit_validation',
+    'no_passing_final_post_edit_validation',
+    'latest_post_edit_verifier_failed',
+    'inconclusive_verifier_failure',
+    'no_passing_broad_post_edit_validation',
+    'no_passing_ci_post_edit_validation',
+    'no_passing_final_ci_post_edit_validation',
+    'single_pass_post_edit_validation',
+  ];
+  const failureSeverity = defectSeverity(failureCodes)
+    ?? (input.failureOnset.risk ? 'medium' : null)
+    ?? (input.failedVerificationCount > 0 && input.successfulVerificationCount === 0 ? 'high' : null);
+  if (failureSeverity) {
+    add(
+      'execution',
+      'failure',
+      failureSeverity,
+      defectSeq(failureCodes) ?? input.failureOnset.failedVerificationSeq ?? input.incompleteVerifierEvents[0]?.seq ?? null,
+      [
+        defectEvidence(failureCodes),
+        `failed=${input.failedVerificationCount}`,
+        `ok=${input.successfulVerificationCount}`,
+        `incomplete=${input.incompleteVerifierEvents.length}`,
+        `inconclusive=${input.inconclusiveVerifierEvents.length}`,
+        `failure_onset=${input.failureOnset.category}`,
+      ].filter(Boolean).join(', '),
+    );
+  }
+
+  const loopCodes = [
+    'redundant_tool_calls',
+    'redundant_verifier_reruns',
+    'blind_repair_after_failed_verifier',
+    'failure_unaligned_repair',
+    'post_edit_regression_cycle',
+    'post_success_mutation_without_revalidation',
+    'weak_change_manifest',
+    'missing_targeted_fix_manifest',
+    'missing_regression_forecast',
+    'undiagnosed_failure_onset_loop',
+  ];
+  const loopSeverity = defectSeverity(loopCodes)
+    ?? (input.failureOnset.risk && input.failureOnset.downstreamRepairCount > 0 ? 'low' : null);
+  if (loopSeverity) {
+    add(
+      'execution',
+      'loop',
+      loopSeverity,
+      defectSeq(loopCodes)
+        ?? input.blindRepairEvents[0]?.editSeq
+        ?? input.failureUnalignedRepairEvents[0]?.editSeq
+        ?? input.redundantVerifierEvents[0]?.seq
+        ?? input.redundantToolCallEvents[0]?.seq
+        ?? input.postEditRegressionCycleEvents[0]?.failingSeq
+        ?? input.postSuccessMutationEvents[0]?.seq
+        ?? input.failureOnset.suspectedOnsetSeq
+        ?? null,
+      [
+        defectEvidence(loopCodes),
+        `redundant_calls=${input.redundantToolCallEvents.length}`,
+        `redundant_verifiers=${input.redundantVerifierEvents.length}`,
+        `blind_repairs=${input.blindRepairEvents.length}`,
+        `unaligned_repairs=${input.failureUnalignedRepairEvents.length}`,
+        `regression_cycles=${input.postEditRegressionCycleEvents.length}`,
+        `post_success_mutations=${input.postSuccessMutationEvents.length}`,
+      ].filter(Boolean).join(', '),
+    );
+  }
+
+  const exhaustionCodes = [
+    'invalid_tool_actions',
+    'repeated_tool_errors',
+    'costly_under_evidenced_trajectory',
+    'slow_under_evidenced_trajectory',
+    'unresolved_environment_setup_failure',
+    'dependency_manifest_without_setup',
+    'dependency_manifest_unvalidated',
+    'scratch_artifact_left_in_patch',
+  ];
+  const exhaustionSeverity = defectSeverity(exhaustionCodes)
+    ?? (input.costEfficiencyRisk || input.timeEfficiencyRisk || input.invalidToolActionEvents.length > 0 ? 'medium' : null)
+    ?? (input.unresolvedEnvironmentSetupFailureEvents.length > 0 ? 'medium' : null);
+  if (exhaustionSeverity) {
+    add(
+      'environment',
+      'exhaustion',
+      exhaustionSeverity,
+      defectSeq(exhaustionCodes)
+        ?? input.invalidToolActionEvents[0]?.seq
+        ?? input.slowToolEvents[0]?.seq
+        ?? input.unresolvedEnvironmentSetupFailureEvents[0]?.seq
+        ?? input.environmentSetupFailureEvents[0]?.seq
+        ?? input.dependencyManifestEditEvents[0]?.seq
+        ?? null,
+      [
+        defectEvidence(exhaustionCodes),
+        `invalid_actions=${input.invalidToolActionEvents.length}`,
+        `cost_risk=${yn(input.costEfficiencyRisk)}`,
+        `time_risk=${yn(input.timeEfficiencyRisk)}`,
+        `setup_failures=${input.environmentSetupFailureEvents.length}`,
+        `unresolved_env=${input.unresolvedEnvironmentSetupFailureEvents.length}`,
+        `dependency_manifests=${input.dependencyManifestEditEvents.length}`,
+        `dependency_setup=${input.dependencySetupAfterManifestEdit == null ? 'n/a' : yn(input.dependencySetupAfterManifestEdit)}`,
+        `dependency_validation_ok=${input.passingDependencyValidationAfterManifestEdit == null ? 'n/a' : yn(input.passingDependencyValidationAfterManifestEdit)}`,
+      ].filter(Boolean).join(', '),
+    );
+  }
+
+  if (
+    input.processDefects.length === 0
+    && input.successfulVerificationCount > 0
+    && (input.stableValidationAfterLastEdit === true || input.finalEditPassingVerificationCount > 0)
+  ) {
+    add(
+      'interaction',
+      'satisfaction',
+      'info',
+      input.lastPostEditVerificationSeq,
+      `clean_process_score=${input.processScore}, ok=${input.successfulVerificationCount}, stable_final=${tri(input.stableValidationAfterLastEdit)}`,
+    );
+  }
+
+  const score = scoreBenchmarkTrajectoryTriage(signals);
+  return sanitizeBenchmarkTrajectoryTriage({
+    informative: signals.length > 0,
+    score,
+    signalCount: signals.length,
+    categories: {
+      interaction: signals.filter((signal) => signal.category === 'interaction').length,
+      execution: signals.filter((signal) => signal.category === 'execution').length,
+      environment: signals.filter((signal) => signal.category === 'environment').length,
+    },
+    signals,
+    summary: summarizeBenchmarkTrajectoryTriageSignals(signals),
+  });
+}
+
+function highestBenchmarkProcessDefectSeverity(defects: BenchmarkProcessDefect[]): BenchmarkProcessDefectSeverity | null {
+  let highest: BenchmarkProcessDefectSeverity | null = null;
+  for (const defect of defects) {
+    if (highest == null || benchmarkSeverityRank(defect.severity) > benchmarkSeverityRank(highest)) {
+      highest = defect.severity;
+    }
+  }
+  return highest;
+}
+
+function benchmarkSeverityRank(severity: BenchmarkTrajectoryTriageSeverity): number {
+  if (severity === 'critical') return 5;
+  if (severity === 'high') return 4;
+  if (severity === 'medium') return 3;
+  if (severity === 'low') return 1;
+  return 0;
+}
+
+function scoreBenchmarkTrajectoryTriage(signals: BenchmarkTrajectoryTriageSignal[]): number {
+  const score = signals.reduce((sum, signal) => {
+    if (signal.severity === 'critical') return sum + 20;
+    if (signal.severity === 'high') return sum + 12;
+    if (signal.severity === 'medium') return sum + 8;
+    if (signal.severity === 'low') return sum + 4;
+    return sum + 2;
+  }, 0);
+  return Math.min(100, score);
+}
+
+function summarizeBenchmarkTrajectoryTriageSignals(signals: BenchmarkTrajectoryTriageSignal[]): string {
+  if (signals.length === 0) return 'no triage signals';
+  return signals
+    .slice(0, 5)
+    .map((signal) => `${signal.category}/${signal.kind}:${signal.severity}`)
+    .join(', ');
 }
 
 export function buildBenchmarkFailureOnsetDiagnosis(

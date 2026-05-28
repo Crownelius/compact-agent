@@ -847,6 +847,20 @@ describe('benchmark_context tool', () => {
           evidence: ['failed_verifier=#3 command=npm test -- parser status=error', 'failure_files=src/parser.ts'],
           recommendedAction: 'avoid_redundant_rerun',
         },
+        trajectoryTriage: {
+          informative: true,
+          score: 12,
+          signalCount: 1,
+          categories: { interaction: 0, execution: 1, environment: 0 },
+          signals: [{
+            category: 'execution',
+            kind: 'loop',
+            severity: 'high',
+            seq: 3,
+            evidence: 'redundant_verifiers=2',
+          }],
+          summary: 'execution/loop:high',
+        },
       },
       experienceCard: {
         failureOnset: {
@@ -864,6 +878,20 @@ describe('benchmark_context tool', () => {
           evidence: ['failed_verifier=#3 command=npm test -- parser status=error', 'failure_files=src/parser.ts'],
           recommendedAction: 'avoid_redundant_rerun',
         },
+        trajectoryTriage: {
+          informative: true,
+          score: 12,
+          signalCount: 1,
+          categories: { interaction: 0, execution: 1, environment: 0 },
+          signals: [{
+            category: 'execution',
+            kind: 'loop',
+            severity: 'high',
+            seq: 3,
+            evidence: 'redundant_verifiers=2',
+          }],
+          summary: 'execution/loop:high',
+        },
       },
     }, null, 2));
 
@@ -873,6 +901,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('avoid prior run: 2026-05-27T09:55:00.000Z');
     expect(result.output).toContain('reason=defects=undiagnosed_failure_onset_loop|failure_onset=repair_loop:avoid_redundant_rerun');
     expect(result.output).toContain('failure_onset=detected:true,category:repair_loop,risk:true,diagnosed:false,failed:#3,onset:#3,repairs:1');
+    expect(result.output).toContain('triage=score:12,informative:true,signals:1,categories:0/1/0');
     expect(result.output).toContain('evidence:failed_verifier=#3 command=npm test -- parser status=error');
   }, 15_000);
 
