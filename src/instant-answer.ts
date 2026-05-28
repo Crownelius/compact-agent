@@ -11,6 +11,19 @@ function parseNumber(raw: string): number | null {
 export function maybeInstantAnswer(input: string): string | null {
   const text = input.trim().replace(/\s+/g, ' ');
   if (!text) return null;
+  const normalized = text.toLowerCase().replace(/[.!?]+$/g, '');
+
+  if (/^(?:hi|hello|hey|yo|hiya|howdy)(?: there)?$/.test(normalized)) {
+    return 'Hi. What would you like Cawdex to work on?';
+  }
+
+  if (/^(?:thanks|thank you|thx|ty|appreciate it)$/.test(normalized)) {
+    return "You're welcome.";
+  }
+
+  if (/^(?:who are you|what are you|what is cawdex|what's cawdex)$/.test(normalized)) {
+    return 'I am Cawdex: terminal coding agents with a mind for the whole repo.';
+  }
 
   const sqrt = text.match(/^(?:(?:what(?:'s| is)?|calculate|compute)\s+)?(?:the\s+)?(?:square\s+root|sqrt)\s+(?:of\s+)?(-?\d+(?:,\d{3})*(?:\.\d+)?)\??$/i);
   if (sqrt) {
