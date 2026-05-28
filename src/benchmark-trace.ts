@@ -956,6 +956,16 @@ export interface SourceResearchCoverage {
   completeTargetedCoverage: boolean;
 }
 
+interface ResearchSourcesJsonPacket {
+  format?: unknown;
+  query?: unknown;
+  requested?: unknown;
+  coverageNotes?: unknown;
+  digest?: unknown;
+  hits?: unknown;
+  errors?: unknown;
+}
+
 export interface BenchmarkLeakageRiskEvent {
   seq: number;
   tool: string;
@@ -5076,16 +5086,23 @@ export function buildSourceResearchCoverage(events: BenchmarkTraceEvent[]): Sour
     if (event.tool !== 'research_sources') continue;
     coverage.callCount++;
     const input = parseEventInputPreview(event.inputPreview);
-    const source = String(input.source ?? 'all').toLowerCase();
-    const githubKind = String(input.github_kind ?? 'repositories').toLowerCase();
-    const hfKind = String(input.kind ?? 'all').toLowerCase();
-    const kaggleKind = String(input.kaggle_kind ?? 'both').toLowerCase();
-    const recentDays = Number(input.recent_days);
+    const packet = parseResearchSourcesJsonPacket(event.outputPreview);
+    const requested = objectFromUnknown(packet?.requested);
+    const previewRequest = parseResearchSourcesPreviewRequest(event.outputPreview);
+    const source = String(requested?.source ?? previewRequest.source ?? input.source ?? 'all').toLowerCase();
+    const githubKind = String(requested?.githubKind ?? previewRequest.github_kind ?? input.github_kind ?? 'repositories').toLowerCase();
+    const hfKind = String(requested?.huggingFaceKind ?? previewRequest.kind ?? input.kind ?? 'all').toLowerCase();
+    const kaggleKind = String(requested?.kaggleKind ?? previewRequest.kaggle_kind ?? input.kaggle_kind ?? 'both').toLowerCase();
+    const recentDays = Number(requested?.recentDays ?? previewRequest.recent_days ?? input.recent_days);
     if (Number.isFinite(recentDays) && recentDays > 0) {
       pushUniqueNumber(coverage.recentDays, Math.floor(recentDays));
     }
-    collectSourceCoverageNotes(coverage, event.outputPreview);
-    collectSourceResearchEvidence(coverage, event.outputPreview);
+    if (packet) {
+      collectSourceResearchJsonEvidence(coverage, packet);
+    } else {
+      collectSourceCoverageNotes(coverage, event.outputPreview);
+      collectSourceResearchEvidence(coverage, event.outputPreview);
+    }
 
     if (source === 'all' || source === 'arxiv') coverage.arxiv = true;
     if (source === 'all' || source === 'github') {
@@ -8813,6 +8830,75 @@ function collectSourceCoverageNotes(coverage: SourceResearchCoverage, output: st
   }
 }
 
+function parseResearchSourcesPreviewRequest(output: string): Record<string, string> {
+  const match = output.match(/^\s*-\s+request:\s+(.+)$/im);
+  if (!match) return {};
+  const request: Record<string, string> = {};
+  for (const pair of match[1].matchAll(/\b(source|github_kind|kind|kaggle_kind|recent_days)=([^\s,]+)/g)) {
+    request[pair[1]] = pair[2];
+  }
+  return request;
+}
+
+function collectSourceResearchJsonEvidence(coverage: SourceResearchCoverage, packet: ResearchSourcesJsonPacket): void {
+  const requested = objectFromUnknown(packet.requested);
+  const recentDays = Number(requested?.recentDays);
+  if (Number.isFinite(recentDays) && recentDays > 0) {
+    pushUniqueNumber(coverage.recentDays, Math.floor(recentDays));
+    pushUnique(coverage.coverageNotes, `recent_days=${Math.floor(recentDays)}`);
+  }
+
+  const notes = stringArrayFromUnknown(packet.coverageNotes);
+  for (const note of notes) {
+    applySourceCoverageNote(coverage, note);
+  }
+
+  const digest = objectFromUnknown(packet.digest);
+  const digestHitCount = numberFromUnknown(digest?.hitCount);
+  const digestErrorCount = numberFromUnknown(digest?.errorCount);
+  if (digestHitCount != null) coverage.sourceHitCount += digestHitCount;
+  if (digestErrorCount != null) coverage.sourceErrorCount += digestErrorCount;
+
+  const digestSources = objectFromUnknown(digest?.sources);
+  if (digestSources) {
+    for (const source of Object.keys(digestSources)) {
+      pushUnique(coverage.resultSources, normalizeResearchSourceLabel(source));
+    }
+  }
+  for (const url of stringArrayFromUnknown(digest?.topUrls)) {
+    if (coverage.topUrls.length < 12) pushUnique(coverage.topUrls, url.replace(/[),.;]+$/, ''));
+  }
+
+  const hits = arrayFromUnknown(packet.hits);
+  if (digestHitCount == null) coverage.sourceHitCount += hits.length;
+  for (const hit of hits) {
+    const record = objectFromUnknown(hit);
+    const source = typeof record?.source === 'string' ? record.source : '';
+    const url = typeof record?.url === 'string' ? record.url : '';
+    if (source) pushUnique(coverage.resultSources, normalizeResearchSourceLabel(source));
+    if (url && coverage.topUrls.length < 12) pushUnique(coverage.topUrls, url.replace(/[),.;]+$/, ''));
+  }
+
+  if (digestErrorCount == null) coverage.sourceErrorCount += stringArrayFromUnknown(packet.errors).length;
+}
+
+function applySourceCoverageNote(coverage: SourceResearchCoverage, note: string): void {
+  const normalized = note.replace(/\s+/g, ' ').trim();
+  if (!normalized) return;
+  if (/Kaggle unauthenticated fallback: competitions skipped|kaggle competitions skipped/i.test(normalized)) {
+    coverage.kaggleCompetitionsSkipped = true;
+    pushUnique(coverage.coverageNotes, 'kaggle competitions skipped');
+  }
+  if (/Targeted benchmark coverage requested:/i.test(normalized)) {
+    pushUnique(coverage.coverageNotes, 'targeted benchmark coverage requested');
+  }
+  const recency = normalized.match(/(?:Recency filter requested:\s*)?recent_days=(\d+)/i);
+  if (recency) {
+    pushUniqueNumber(coverage.recentDays, Number(recency[1]));
+    pushUnique(coverage.coverageNotes, `recent_days=${recency[1]}`);
+  }
+}
+
 function collectSourceResearchEvidence(coverage: SourceResearchCoverage, output: string): void {
   let inSourceErrors = false;
   for (const rawLine of output.split(/\r?\n/)) {
@@ -9505,6 +9591,42 @@ function parseEventInputPreview(inputPreview: string): Record<string, unknown> {
   }
 }
 
+function parseResearchSourcesJsonPacket(text: string): ResearchSourcesJsonPacket | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    const record = objectFromUnknown(parsed);
+    if (!record || record.format !== 'cawdex-research-sources-v1' || record.source !== 'research_sources') {
+      return null;
+    }
+    return record as ResearchSourcesJsonPacket;
+  } catch {
+    return null;
+  }
+}
+
+function objectFromUnknown(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function arrayFromUnknown(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringArrayFromUnknown(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function numberFromUnknown(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function pushUnique(target: string[], value: string): void {
   const clean = value.trim().toLowerCase();
   if (clean && !target.includes(clean)) target.push(clean);
@@ -10105,9 +10227,61 @@ function traceOutputPreview(text: string, tool: string, verification: boolean): 
 }
 
 function traceResearchSourcesOutputPreview(text: string): string {
+  const packet = parseResearchSourcesJsonPacket(text);
+  if (packet) {
+    return truncateHeadTail(formatResearchSourcesJsonPreviewLines(packet).join('\n'), 5000);
+  }
   const lines = extractResearchSourcesPreviewLines(text);
   if (lines.length === 0) return truncateHeadTail(text, 5000);
   return truncateHeadTail(lines.join('\n'), 5000);
+}
+
+function formatResearchSourcesJsonPreviewLines(packet: ResearchSourcesJsonPacket): string[] {
+  const query = typeof packet.query === 'string' && packet.query.trim()
+    ? packet.query.trim()
+    : 'source research';
+  const lines: string[] = [`Research source results for "${query}"`];
+  const requested = objectFromUnknown(packet.requested);
+  const notes = stringArrayFromUnknown(packet.coverageNotes);
+  if (notes.length > 0) {
+    lines.push('', '## Coverage notes');
+    for (const note of notes) lines.push(`- ${note}`);
+  }
+
+  const digest = objectFromUnknown(packet.digest);
+  const sources = objectFromUnknown(digest?.sources);
+  const sourceSummary = sources && Object.keys(sources).length > 0
+    ? Object.entries(sources).map(([source, count]) => `${source}=${count}`).join(' | ')
+    : 'none';
+  const topUrls = stringArrayFromUnknown(digest?.topUrls);
+  lines.push(
+    '',
+    '## Source digest',
+    `- request: source=${String(requested?.source ?? 'all')} github_kind=${String(requested?.githubKind ?? 'repositories')} kind=${String(requested?.huggingFaceKind ?? 'all')} kaggle_kind=${String(requested?.kaggleKind ?? 'both')} recent_days=${String(requested?.recentDays ?? 'none')}`,
+    `- hits: ${numberFromUnknown(digest?.hitCount) ?? 0}`,
+    `- errors: ${numberFromUnknown(digest?.errorCount) ?? stringArrayFromUnknown(packet.errors).length}`,
+    `- sources: ${sourceSummary}`,
+    `- top_urls: ${topUrls.length ? topUrls.join(' | ') : 'none'}`,
+  );
+
+  for (const hit of arrayFromUnknown(packet.hits)) {
+    const record = objectFromUnknown(hit);
+    if (!record) continue;
+    const source = typeof record.source === 'string' ? record.source.trim() : '';
+    const title = typeof record.title === 'string' ? record.title.trim() : '';
+    const url = typeof record.url === 'string' ? record.url.trim() : '';
+    if (!source || !title) continue;
+    lines.push('', `## ${source}: ${title}`);
+    if (url) lines.push(url);
+  }
+
+  const errors = stringArrayFromUnknown(packet.errors);
+  if (errors.length > 0) {
+    lines.push('', '## Source errors');
+    for (const error of errors) lines.push(`- ${error}`);
+  }
+
+  return lines;
 }
 
 function extractResearchSourcesPreviewLines(text: string): string[] {

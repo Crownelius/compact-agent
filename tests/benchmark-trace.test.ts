@@ -6081,6 +6081,104 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('result_sources:arxiv|github|hf_paper|kaggle_competition');
   });
 
+  it('records complete targeted source research coverage from structured JSON packets', () => {
+    const packet = {
+      version: 1,
+      format: 'cawdex-research-sources-v1',
+      source: 'research_sources',
+      query: 'coding agent benchmark repair trajectory',
+      requested: {
+        source: 'all',
+        githubKind: 'all',
+        huggingFaceKind: 'all',
+        kaggleKind: 'both',
+        limit: 1,
+        recentDays: 90,
+      },
+      coverageNotes: [
+        'arXiv papers requested.',
+        'GitHub all requested.',
+        'Hugging Face all requested.',
+        'Kaggle both requested; competitions enabled by auth.',
+        'Recency filter requested: recent_days=90.',
+        'Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
+      ],
+      digest: {
+        hitCount: 4,
+        errorCount: 0,
+        sources: {
+          arXiv: 1,
+          GitHub: 1,
+          'HF paper': 1,
+          'Kaggle competition': 1,
+        },
+        topUrls: [
+          'https://arxiv.org/abs/2604.25850',
+          'https://github.com/example/agent',
+        ],
+      },
+      redaction: {
+        secretsIncluded: false,
+        credentialHeadersIncluded: false,
+      },
+      hits: [
+        {
+          source: 'arXiv',
+          title: 'Agentic Harness Engineering',
+          url: 'https://arxiv.org/abs/2604.25850',
+        },
+        {
+          source: 'GitHub',
+          title: 'example/agent',
+          url: 'https://github.com/example/agent',
+        },
+        {
+          source: 'HF paper',
+          title: 'Effective Harness Engineering',
+          url: 'https://huggingface.co/papers/2605.15221',
+        },
+        {
+          source: 'Kaggle competition',
+          title: 'Coding Agent Leaderboard',
+          url: 'https://www.kaggle.com/competitions/coding-agent-leaderboard',
+        },
+      ],
+      errors: [],
+    };
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent benchmark repair trajectory',
+          format: 'json',
+        },
+        output: JSON.stringify(packet, null, 2),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    expect(events[0].outputPreview).toContain('## Source digest');
+    expect(events[0].outputPreview).toContain('## arXiv: Agentic Harness Engineering');
+    expect(events[0].outputPreview).not.toContain('"format": "cawdex-research-sources-v1"');
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.callCount).toBe(1);
+    expect(coverage.githubKinds).toEqual(['all']);
+    expect(coverage.huggingFaceKinds).toEqual(['all']);
+    expect(coverage.kaggleKinds).toEqual(['both']);
+    expect(coverage.sourceHitCount).toBe(4);
+    expect(coverage.sourceErrorCount).toBe(0);
+    expect(coverage.resultSources).toEqual(['arxiv', 'github', 'hf_paper', 'kaggle_competition']);
+    expect(coverage.topUrls).toContain('https://arxiv.org/abs/2604.25850');
+    expect(coverage.recentDays).toEqual([90]);
+    expect(coverage.completeTargetedCoverage).toBe(true);
+    expect(coverage.freshTargetedCoverage).toBe(true);
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('targeted:yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('result_sources:arxiv|github|hf_paper|kaggle_competition');
+  });
+
   it('warns when complete targeted source research omits a recency window', () => {
     const events = [
       makeBenchmarkTraceEvent({
