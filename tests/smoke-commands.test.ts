@@ -240,6 +240,20 @@ describe('Smoke Tests — handleSlashCommand', () => {
       log.mockRestore();
     }
   });
+
+  it('suggests close matches for unknown slash commands', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const res = handleSlashCommand('/memry', config, messages, session, mode);
+      expect((res as { handled: boolean }).handled).toBe(true);
+      const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).toContain('Unknown command');
+      expect(output).toContain('/memory');
+      expect(output).toContain('/help /memory');
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 describe('Non-interactive slash dispatch', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { COMMAND_CATALOG, completeSlashCommandNames } from '../src/command-palette.js';
+import { COMMAND_CATALOG, allSlashCommandNames, completeSlashCommandNames } from '../src/command-palette.js';
 import {
   buildInlineSuggestDropdownEraseSequence,
   buildInlineSuggestEraseSequence,
@@ -22,6 +22,7 @@ describe('inline command selector helpers', () => {
   it('matches commands, categories, and descriptions while typing', () => {
     const items: SuggestItem[] = COMMAND_CATALOG.map((c) => ({
       command: c.command,
+      aliases: c.aliases,
       hint: c.category,
       description: c.description,
     }));
@@ -30,6 +31,7 @@ describe('inline command selector helpers', () => {
       expect.arrayContaining(['/palette', '/palettes']),
     );
     expect(filterSuggestItems(items, '/git').some((i) => i.hint === 'Git')).toBe(true);
+    expect(filterSuggestItems(items, '/tb').map((i) => i.command)).toContain('/benchmark-repos');
   });
 
   it('keeps the selected row visible when scrolling beyond the first page', () => {
@@ -96,6 +98,11 @@ describe('inline command selector helpers', () => {
     expect(completeSlashCommandNames('/h', commands)).toEqual([[], '/h']);
     expect(completeSlashCommandNames('/hi', commands)).toEqual([['/history'], '/hi']);
     expect(completeSlashCommandNames('hello', commands)).toEqual([[], 'hello']);
+  });
+
+  it('lets unique aliases complete without listing the full catalog', () => {
+    expect(completeSlashCommandNames('/tb', allSlashCommandNames())).toEqual([['/tb-repos'], '/tb']);
+    expect(completeSlashCommandNames('/stitch-st', allSlashCommandNames())).toEqual([['/stitch-status'], '/stitch-st']);
   });
 
   it('resolves Enter to the highlighted command instead of the bare slash', () => {

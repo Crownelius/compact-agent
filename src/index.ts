@@ -145,7 +145,7 @@ import {
 } from './voice.js';
 import { isFfmpegAvailable, audioCue, startRecording, probeMic, micProbeMessage, type RecordController } from './audio.js';
 import { applyScreenReader, summarize } from './accessibility.js';
-import { COMMAND_CATALOG, completeSlashCommandNames, resolveCommandEntry, suggestCommandEntries } from './command-palette.js';
+import { COMMAND_CATALOG, allSlashCommandNames, completeSlashCommandNames, resolveCommandEntry, suggestCommandEntries } from './command-palette.js';
 import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand, type InlineSuggestResult } from './inline-suggest.js';
 import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 
@@ -214,6 +214,21 @@ function printCommandHelp(query: string): void {
   }
   console.log(d('  Summary:  ') + entry.description);
   console.log(d('\n  Tip: type / to search commands, then Enter to place the selected command in the prompt.\n'));
+}
+
+function printUnknownSlashCommand(cmd: string): void {
+  const suggestions = suggestCommandEntries(cmd, 5);
+  const d = theme.dim;
+  const c = theme.command;
+
+  console.log(d(`  Unknown command: ${cmd}.`));
+  if (suggestions.length === 0) {
+    console.log(d('  Type /help for the full command reference or / to search commands.'));
+    return;
+  }
+
+  console.log(d('  Did you mean: ') + suggestions.map((entry) => c(entry.command)).join(d(', ')));
+  console.log(d('  Try: ') + c(`/help ${suggestions[0].command}`) + d(' for exact usage.'));
 }
 
 async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig): Promise<CawdexConfig> {
@@ -3220,7 +3235,7 @@ export function handleSlashCommand(
         console.log(chalk.dim(`    "add typescript coding rules to this project"`));
         return { handled: true };
       }
-      console.log(chalk.dim(`  Unknown command: ${cmd}. Type /help`));
+      printUnknownSlashCommand(cmd);
       return { handled: true };
     }
   }
@@ -3301,7 +3316,7 @@ async function main(): Promise<void> {
   // two coexist because pressing '/' fires the selector at an empty
   // buffer, and pressing Tab while a slash prefix is present reopens
   // that selector with the typed filter preserved.
-  const slashCommandNames = COMMAND_CATALOG.map((c) => c.command);
+  const slashCommandNames = allSlashCommandNames();
   const rl = readline.createInterface({
     input: stdin,
     output: stdout,
@@ -3934,6 +3949,7 @@ async function main(): Promise<void> {
               rl,
               COMMAND_CATALOG.map((c) => ({
                 command: c.command,
+                aliases: c.aliases,
                 hint: c.category,
                 description: c.description,
               })),

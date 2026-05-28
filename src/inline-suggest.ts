@@ -105,6 +105,8 @@ export function buildInlineSuggestDropdownEraseSequence(dropdownRows: number): s
 export interface SuggestItem {
   /** The slash command, e.g. "/help". */
   command: string;
+  /** Alternate slash command names that dispatch to the same handler. */
+  aliases?: string[];
   /** Short syntax/category label, e.g. "Git" or "Model". */
   hint?: string;
   /** One-line description shown in the second column. */
@@ -161,9 +163,10 @@ export function filterSuggestItems(items: SuggestItem[], filter: string): Sugges
   if (!f) return items.slice();
   return items.filter((it) => {
     const cmdMatch = it.command.toLowerCase().includes(f);
+    const aliasMatch = (it.aliases ?? []).some((alias) => alias.toLowerCase().includes(f));
     const hintMatch = !hasArgs && (it.hint ?? '').toLowerCase().includes(f);
     const descMatch = !hasArgs && it.description.toLowerCase().includes(f);
-    return cmdMatch || hintMatch || descMatch;
+    return cmdMatch || aliasMatch || hintMatch || descMatch;
   });
 }
 
@@ -394,7 +397,8 @@ export async function inlineSuggest(
           const cmdPad = ' '.repeat(Math.max(0, cmdCol - cmdText.length));
           const cmd = colorCommand(cmdText, filter) + cmdPad;
 
-          const desc = clipText(it.description, descMax);
+          const aliasText = it.aliases?.length ? ` aliases: ${it.aliases.join(', ')}` : '';
+          const desc = clipText(`${it.description}${aliasText}`, descMax);
           const indicator = isSel ? theme.selection(' > ') : theme.syntaxPunctuation('   ');
           const hint = it.hint
             ? theme.syntaxOption(clipText(`[${it.hint}]`, Math.max(8, hintCol)).padEnd(hintCol, ' '))

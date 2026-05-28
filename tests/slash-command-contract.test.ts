@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { COMMAND_CATALOG, resolveCommandEntry, suggestCommandEntries } from '../src/command-palette.js';
+import { COMMAND_CATALOG, allSlashCommandNames, resolveCommandEntry, suggestCommandEntries } from '../src/command-palette.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -99,8 +99,18 @@ describe('slash command contract', () => {
     });
   });
 
+  it('includes aliases in completion names without duplicating entries', () => {
+    const names = allSlashCommandNames();
+
+    expect(names).toContain('/benchmark');
+    expect(names).toContain('/bench');
+    expect(names).toContain('/tb-repos');
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it('suggests nearby command entries for partial or unknown help queries', () => {
     expect(suggestCommandEntries('/bench').map((entry) => entry.command)).toContain('/benchmark');
+    expect(suggestCommandEntries('/tb').map((entry) => entry.command)).toContain('/benchmark-repos');
     expect(suggestCommandEntries('memory').map((entry) => entry.command)).toContain('/memory');
   });
 });

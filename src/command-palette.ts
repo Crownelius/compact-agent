@@ -229,9 +229,15 @@ export function suggestCommandEntries(value: string, limit = 6): CommandEntry[] 
     .map((item) => item.entry);
 }
 
+export function allSlashCommandNames(): string[] {
+  return Array.from(new Set(
+    COMMAND_CATALOG.flatMap((entry) => [entry.command, ...(entry.aliases ?? [])]),
+  )).sort();
+}
+
 export function completeSlashCommandNames(
   line: string,
-  commands: string[] = COMMAND_CATALOG.map((c) => c.command),
+  commands: string[] = allSlashCommandNames(),
 ): [string[], string] {
   if (!line.startsWith('/')) return [[], line];
 
