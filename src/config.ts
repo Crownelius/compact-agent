@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { PROVIDERS, type VentipusConfig } from './types.js';
 
-// Ventipus keeps config, sessions, skills, memory, and benchmark artifacts
+// Cawdex keeps config, sessions, skills, memory, and benchmark artifacts
 // under ~/.ventipus by default. VENTIPUS_HOME can point tests, sandboxes, or
 // harnesses at an isolated state directory.
 export const CONFIG_DIR_NAME = '.ventipus';

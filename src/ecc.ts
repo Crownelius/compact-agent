@@ -2,14 +2,14 @@
  * ECC (everything-claude-code) integration.
  *
  * Imports skills, agents, slash commands, rules, and hook behaviors from the
- * bundled `resources/ecc/` directory into Ventipus's runtime stores:
+ * bundled `resources/ecc/` directory into Cawdex's runtime stores:
  *   ~/.ventipus/skills/        — JSON skills generated from SKILL.md
  *   ~/.ventipus/rules/         — language rule files
  *   ~/.ventipus/ecc-commands/  — markdown prompt templates for /ecc-<cmd>
  *   ~/.ventipus/ecc-agents/    — agent prompt templates
  *   ~/.ventipus/hooks.json     — augmented with ECC hook entries
  *
- * Each ECC skill becomes a Ventipus Skill (skills.ts schema) with id
+ * Each ECC skill becomes a Cawdex Skill (skills.ts schema) with id
  * `ecc-<slug>`, triggers derived from name + description keywords, and the
  * SKILL.md body as the prompt template.
  *
@@ -288,7 +288,7 @@ function importSkills(): { count: number; errors: string[] } {
  *   <name>.md    — frontmatter (name, description, allowedTools) + body prompt
  *
  * We materialize each as a markdown file in ~/.ventipus/ecc-agents/<name>.md
- * (canonical prompt for /ecc-agent <name>) and ALSO register a Ventipus Skill
+ * (canonical prompt for /ecc-agent <name>) and ALSO register a Cawdex Skill
  * with id `ecc-agent-<name>` so it surfaces in /skills and trigger search.
  */
 function importAgents(): { count: number; errors: string[] } {
@@ -603,11 +603,11 @@ function importRules(): { count: number; errors: string[] } {
 
 // ── Hook seeding ────────────────────────────────────────
 /**
- * Seeds Ventipus's hooks.json with ECC-compatible default hooks.
+ * Seeds Cawdex's hooks.json with ECC-compatible default hooks.
  *
  * The cursor hook scripts have a dense in-repo dependency tree (scripts/lib/,
  * scripts/hooks/) and require their original directory layout — we don't try
- * to run them from Ventipus. Instead we install native equivalents for the
+ * to run them from Cawdex. Instead we install native equivalents for the
  * highest-value ECC hook behaviors: block-no-verify, secret-in-prompt detection,
  * console.log warnings post-edit, dev-server tmux reminder.
  *

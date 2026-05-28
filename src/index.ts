@@ -123,7 +123,7 @@ import { buildPM2Prompt, isPM2Available, listPM2Services } from './pm2-manager.j
 import {
   installEcc, getEccCommandPrompt, loadEccState, eccResourcesAvailable, reseedEccHooks, BUNDLE_VERSION as ECC_BUNDLE_VERSION, listEccCommands,
 } from './ecc.js';
-// Walkthrough — agent-led tour of Ventipus (/walkthrough, /tour, /guide)
+// Walkthrough — agent-led tour of Cawdex (/walkthrough, /tour, /guide)
 import { buildWalkthroughPrompt } from './walkthrough.js';
 // Stitch (Google's AI UI/UX design tool) — /stitch, /stitch-config, /stitch-tools
 import { buildStitchPrompt, buildStitchToolsPrompt, saveStitchConfig, printStitchStatus, stitchConfigured } from './stitch.js';
@@ -187,7 +187,7 @@ function applyModelSelection(
 
 // ── Setup Wizard ──────────────────────────────────────────
 async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfig): Promise<VentipusConfig> {
-  console.log(chalk.bold.cyan('\n  Ventipus — First-time Setup\n'));
+  console.log(chalk.bold.cyan('\n  Cawdex — First-time Setup\n'));
   const providerKeys = Object.keys(PROVIDERS);
   const normalizeProvider = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
   const currentProviderKey = normalizeProvider(currentConfig?.provider ?? '');
@@ -234,7 +234,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
       if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
     } else {
       console.log(chalk.yellow('  Codex OAuth token not found yet.'));
-      console.log(chalk.dim('  After setup, run /openai-login or run "codex login". Ventipus will read ~/.codex/auth.json.'));
+      console.log(chalk.dim('  After setup, run /openai-login or run "codex login". Cawdex will read ~/.codex/auth.json.'));
     }
   }
 
@@ -258,7 +258,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
     } else {
       const safer = providerKey === 'openrouter' ? PROVIDERS.openrouter.defaultModel : provider.defaultModel;
       console.log(chalk.dim(`     Using safer default instead: ${safer}`));
-      console.log(chalk.dim('     Override only for debugging: VENTIPUS_ALLOW_FLAKY_MODELS=1 ventipus'));
+      console.log(chalk.dim('     Override only for debugging: VENTIPUS_ALLOW_FLAKY_MODELS=1 cawdex'));
       model = safer;
     }
     console.log('');
@@ -749,7 +749,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/history') + d('          — message count & token estimate'));
       console.log(d('  ') + c('/export [fmt]') + d('     — export conversation (md/json/txt)'));
       console.log(d('  ') + c('/exit') + d('             — quit (alias: /quit)'));
-      console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of ventipus (aliases: /tour, /guide)'));
+      console.log(d('  ') + c('/walkthrough') + d('      — agent-led tour of Cawdex (aliases: /tour, /guide)'));
       console.log(d('  ') + c('!<cmd>') + d('            — run shell command directly'));
       console.log(h('\n  ── Productivity hotkeys ──'));
       console.log(d('  ') + c('Shift+Tab') + d('         — cycle permission modes (ask → auto → yolo)'));
@@ -1306,7 +1306,7 @@ export function handleSlashCommand(
       }
       const status = getOpenAICodexAuthStatus(config);
       if (status.available) {
-        console.log(chalk.green('  OpenAI Codex OAuth is configured for Ventipus.'));
+        console.log(chalk.green('  OpenAI Codex OAuth is configured for Cawdex.'));
         if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
       } else {
         console.log(chalk.yellow('  Login command finished, but no OAuth token was found.'));
@@ -2030,7 +2030,7 @@ export function handleSlashCommand(
       const skill = listSkills().find((s) => s.name.toLowerCase() === targetName);
       if (!skill) {
         console.log(chalk.yellow(`  The "${agentSlug}" agent isn't in your bundle.`));
-        console.log(chalk.dim(`  Run /reset-hooks (forces ECC re-import) or upgrade ventipus.`));
+        console.log(chalk.dim(`  Run /reset-hooks (forces ECC re-import) or upgrade Cawdex.`));
         return { handled: true };
       }
       // Prefix with the agent prompt, then the user's task. The agent
@@ -2750,7 +2750,7 @@ export function handleSlashCommand(
       console.log('');
       console.log(chalk.yellow.bold('  ⚠  RESTART REQUIRED'));
       console.log(chalk.yellow('     The `stitch` tool is registered only at REPL launch. Type /exit'));
-      console.log(chalk.yellow('     and re-run ventipus to make it available to the agent.'));
+      console.log(chalk.yellow('     and re-run cawdex to make it available to the agent.'));
       console.log(chalk.dim('     Until then, /design and Stitch-related requests will see the model'));
       console.log(chalk.dim('     fall back to hand-coded HTML/CSS instead of using Stitch.'));
       return { handled: true };
@@ -3311,8 +3311,8 @@ async function main(): Promise<void> {
       config = envConfig;
     } else if (nonInteractive) {
       process.stderr.write(
-        '[ventipus] non-interactive mode requires a pre-existing config at ~/.ventipus/config.json.\n' +
-        'Run `ventipus` once interactively, write the config manually, OR provide env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.\n'
+        '[cawdex] non-interactive mode requires a pre-existing config at ~/.ventipus/config.json.\n' +
+        'Run `cawdex` once interactively, write the config manually, OR provide env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.\n'
       );
       process.exit(2);
       return;
@@ -3452,7 +3452,7 @@ async function main(): Promise<void> {
     );
   } else {
     // Minimal mode: just a one-liner
-    console.log(theme.brandBold('Ventipus') + theme.dim(' — terminal AI coding CLI'));
+    console.log(theme.brandBold('Cawdex') + theme.dim(' — terminal coding agents with a mind for the whole repo'));
     console.log('');
   }
 
@@ -4221,12 +4221,12 @@ async function main(): Promise<void> {
   if (process.env.VENTIPUS_NON_INTERACTIVE === '1') {
     const promptText = process.env.VENTIPUS_PROMPT;
     if (!promptText || !promptText.trim()) {
-      process.stderr.write('[ventipus] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
+      process.stderr.write('[cawdex] non-interactive mode requires --prompt <text> or --prompt-file <path>.\n');
       process.exit(2);
     }
     const resolvedPrompt = resolveNonInteractivePrompt(promptText, config, messages, session, mode);
     if (resolvedPrompt.kind === 'error') {
-      process.stderr.write(`[ventipus] ${resolvedPrompt.message}\n`);
+      process.stderr.write(`[cawdex] ${resolvedPrompt.message}\n`);
       process.exit(2);
     }
     if (resolvedPrompt.kind === 'sources') {
@@ -4315,7 +4315,7 @@ async function main(): Promise<void> {
       process.exit(0);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[ventipus] chain failed: ${msg}\n`);
+      process.stderr.write(`[cawdex] chain failed: ${msg}\n`);
       try { rl.close(); } catch { /* noop */ }
       process.exit(1);
     }
@@ -4469,7 +4469,7 @@ async function main(): Promise<void> {
             value: m.id,
           }));
           const selected = await pick(items, {
-            title: `ventipus · OpenRouter models  (current: ${config.model})`,
+            title: `Cawdex · OpenRouter models  (current: ${config.model})`,
             footer: 'type to filter · ↑↓ to navigate · Enter to pick · Esc to cancel · free models float to the top',
           });
           if (selected) {

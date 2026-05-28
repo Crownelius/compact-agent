@@ -144,7 +144,7 @@ function writeForegroundLog(opts: {
   writeFileSync(
     logPath,
     [
-      '[ventipus bash output]',
+      '[cawdex bash output]',
       `cwd: ${opts.cwd}`,
       `shell: ${opts.shell}`,
       `command: ${opts.command}`,
@@ -246,9 +246,9 @@ export const BashTool: Tool = {
         const logPath = backgroundLogPath(cwd);
         appendFileSync(
           logPath,
-          `[ventipus] cwd: ${cwd}\n` +
-          `[ventipus] command: ${rawCommand}\n` +
-          `[ventipus] started: ${new Date().toISOString()}\n\n`,
+          `[cawdex] cwd: ${cwd}\n` +
+          `[cawdex] command: ${rawCommand}\n` +
+          `[cawdex] started: ${new Date().toISOString()}\n\n`,
           'utf-8',
         );
         const fd = openSync(logPath, 'a');

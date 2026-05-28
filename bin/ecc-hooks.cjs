@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * ECC-native hook dispatcher for Ventipus.
+ * ECC-native hook dispatcher for Cawdex.
  *
- * Reads Ventipus's hook env vars (VENTIPUS_EVENT, VENTIPUS_TOOL,
+ * Reads Cawdex's hook env vars (VENTIPUS_EVENT, VENTIPUS_TOOL,
  * VENTIPUS_TOOL_INPUT, VENTIPUS_TOOL_OUTPUT) and runs a single named check.
  *
  * Exit codes:

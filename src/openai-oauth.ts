@@ -247,7 +247,7 @@ export function openAICodexAuthInstructions(config: VentipusConfig): string {
   return [
     reason,
     `Run /openai-login or run "codex login" so Codex writes ${authPath}.`,
-    'Ventipus reads the token at request time and does not store OAuth tokens in its own config.',
+    'Cawdex reads the token at request time and does not store OAuth tokens in its own config.',
   ].join(' ');
 }
 

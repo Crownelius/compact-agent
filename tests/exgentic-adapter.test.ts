@@ -69,6 +69,7 @@ describe('Exgentic adapter packaging', () => {
       encoding: 'utf-8',
     });
     expect(help).toContain('Usage:');
+    expect(help).toContain('cawdex [options]');
     expect(help).toContain('ventipus [options]');
     expect(help).toContain('--prompt <text>');
     expect(help).toContain('--doctor');
@@ -79,18 +80,22 @@ describe('Exgentic adapter packaging', () => {
       encoding: 'utf-8',
     }).trim();
     expect(version).toBe(pkg.version);
+    expect(pkg.bin).toMatchObject({
+      cawdex: 'bin/ventipus.js',
+      ventipus: 'bin/ventipus.js',
+    });
   });
 
   it('ships and prints an Open Agent Leaderboard agent card', () => {
     const cardPath = join(process.cwd(), 'resources', 'open_agent_leaderboard', 'ventipus-agent-card.md');
     expect(existsSync(cardPath)).toBe(true);
     const card = readFileSync(cardPath, 'utf-8');
-    expect(card).toContain('name: Ventipus');
+    expect(card).toContain('name: Cawdex');
     expect(card).toContain('## Architecture');
     expect(card).toContain('## Memory');
     expect(card).toContain('## Evaluation Results');
     expect(card).toContain('submissionReady:false');
-    expect(card).toContain('ventipus --print-exgentic-agent');
+    expect(card).toContain('cawdex --print-exgentic-agent');
 
     const out = execFileSync('node', ['bin/ventipus.js', '--print-open-agent-card'], {
       cwd: process.cwd(),

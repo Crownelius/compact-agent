@@ -37,6 +37,7 @@ describe('doctor readiness checks', () => {
 
     const text = `${JSON.stringify(report)}\n${formatDoctorReport(report)}`;
     expect(report.version).toBe(pkg.version);
+    expect(text).toContain('Cawdex Doctor');
     expect(report.checks.some((check) => check.id === 'benchmark_adapters' && check.status === 'pass')).toBe(true);
     expect(report.checks.some((check) => check.id === 'openrouter_free_tier' && check.status === 'pass')).toBe(true);
     expect(text).not.toContain(secret);

@@ -22,7 +22,7 @@ export const WebFetchTool: Tool = {
     try {
       const url = input.url as string;
       const resp = await fetch(url, {
-        headers: { 'User-Agent': 'ventipus/1.x (+https://github.com/Crownelius/ventipus)' },
+        headers: { 'User-Agent': 'cawdex/1.x (+https://github.com/Crownelius/ventipus)' },
         signal: AbortSignal.timeout(30_000),
       });
 

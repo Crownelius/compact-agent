@@ -84,7 +84,7 @@ export async function fetchOpenRouterModels(): Promise<OpenRouterModel[]> {
       // request. If the network is slow the user can use /model <id>
       // directly.
       signal: AbortSignal.timeout(8000),
-      headers: { 'User-Agent': 'ventipus/1.x' },
+      headers: { 'User-Agent': 'cawdex/1.x' },
     });
     if (!resp.ok) return [];
     const json = await resp.json() as { data?: RawModel[] };

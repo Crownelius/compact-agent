@@ -2,9 +2,9 @@
 // In-process best-effort: override process.emitWarning to drop DEP0040.
 // Catches the warning when it's emitted late (after this runs), but does NOT
 // catch warnings fired during Node's ESM bootstrap (before any user code).
-// For a fully clean stderr, invoke ventipus via:
+// For a fully clean stderr, invoke Cawdex via:
 //   node --no-deprecation bin/ventipus.js
-//   NODE_OPTIONS=--no-deprecation ventipus
+//   NODE_OPTIONS=--no-deprecation cawdex
 (() => {
   const orig = process.emitWarning;
   process.emitWarning = function patched(warning, ...rest) {
@@ -52,7 +52,7 @@
       if (VALID.has(lvl)) {
         process.env.VENTIPUS_DEBUG = lvl === 'on' ? 'info' : lvl;
       } else {
-        process.stderr.write(`[ventipus] unknown --debug level "${lvl}"; defaulting to 'info'.\n`);
+        process.stderr.write(`[cawdex] unknown --debug level "${lvl}"; defaulting to 'info'.\n`);
         process.env.VENTIPUS_DEBUG = 'info';
       }
       argv.splice(i, 1);
@@ -93,13 +93,17 @@ const __require = createRequire(import.meta.url);
 
 function printCliHelp() {
   const pkg = __require('../package.json');
-  process.stdout.write(`Ventipus ${pkg.version}
+  process.stdout.write(`Cawdex ${pkg.version}
+terminal coding agents with a mind for the whole repo
 
 Usage:
+  cawdex [options]
+  cawdex doctor [--json] [--no-registry]
+  cawdex --prompt "fix the failing test" [options]
+  cawdex --prompt-file task.txt [options]
+
+Legacy alias:
   ventipus [options]
-  ventipus doctor [--json] [--no-registry]
-  ventipus --prompt "fix the failing test" [options]
-  ventipus --prompt-file task.txt [options]
 
 Options:
   -h, --help                         Show this help and exit.
@@ -184,7 +188,7 @@ function readFlagValue(argv, index, flag) {
   }
   const next = argv[index + 1];
   if (typeof next !== 'string' || next.startsWith('--')) {
-    process.stderr.write(`[ventipus] ${flag} requires an argument.\n`);
+    process.stderr.write(`[cawdex] ${flag} requires an argument.\n`);
     process.exit(2);
   }
   return { value: next, removeCount: 2 };
@@ -198,7 +202,7 @@ function readFlagValue(argv, index, flag) {
     if (a === '--prompt') {
       const next = argv[i + 1];
       if (typeof next !== 'string') {
-        process.stderr.write('[ventipus] --prompt requires an argument.\n');
+        process.stderr.write('[cawdex] --prompt requires an argument.\n');
         process.exit(2);
       }
       process.env.VENTIPUS_PROMPT = next;
@@ -217,13 +221,13 @@ function readFlagValue(argv, index, flag) {
     if (a === '--prompt-file') {
       const next = argv[i + 1];
       if (typeof next !== 'string') {
-        process.stderr.write('[ventipus] --prompt-file requires a path.\n');
+        process.stderr.write('[cawdex] --prompt-file requires a path.\n');
         process.exit(2);
       }
       try {
         process.env.VENTIPUS_PROMPT = fs.readFileSync(next, 'utf8');
       } catch (err) {
-        process.stderr.write(`[ventipus] could not read --prompt-file: ${err && err.message ? err.message : err}\n`);
+        process.stderr.write(`[cawdex] could not read --prompt-file: ${err && err.message ? err.message : err}\n`);
         process.exit(2);
       }
       process.env.VENTIPUS_NON_INTERACTIVE = '1';
@@ -257,7 +261,7 @@ function readFlagValue(argv, index, flag) {
         i--;
         continue;
       }
-      process.stderr.write('[ventipus] --perm requires ask|auto|yolo.\n');
+      process.stderr.write('[cawdex] --perm requires ask|auto|yolo.\n');
       process.exit(2);
     }
     if (a === '--model' || (a && a.startsWith('--model='))) {

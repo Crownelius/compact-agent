@@ -173,7 +173,7 @@ export function messagesToResponsesInstructions(messages: Message[]): string {
     .filter((m) => m.role === 'system' && m.content?.trim())
     .map((m) => m.content!.trim())
     .join('\n\n');
-  return instructions || 'You are Ventipus, a concise terminal coding assistant.';
+  return instructions || 'You are Cawdex, terminal coding agents with a mind for the whole repo.';
 }
 
 export function buildCodexResponsesRequest(

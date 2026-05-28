@@ -158,7 +158,7 @@ export function buildSystemPrompt(
   // User context
   const userAddition = buildUserContext();
 
-  return `You are ventipus, a terminal AI coding assistant running in the user's shell.
+  return `You are Cawdex, terminal coding agents with a mind for the whole repo, running in the user's shell.
 You help with software engineering tasks: writing code, fixing bugs, refactoring, explaining code, running commands, and more.
 
 # Environment

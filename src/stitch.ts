@@ -1,7 +1,7 @@
 /**
  * Stitch integration — Google's AI UI/UX design + code generation tool.
  *
- * Ports gemini-cli-extensions/stitch into ventipus. Two surfaces:
+ * Ports gemini-cli-extensions/stitch into Cawdex. Two surfaces:
  *
  *   1. A `stitch` tool (src/tools/stitch.ts) that the LLM can call to hit
  *      the Stitch MCP server at stitch.googleapis.com/mcp via JSON-RPC.
@@ -199,7 +199,7 @@ export function buildStitchPrompt(query: string): string {
   const safeQuery = query.replace(/`/g, '\\`');
   return `# Stitch Intelligent Interface
 
-You are the Stitch interface inside Ventipus. Stitch is Google's AI
+You are the Stitch interface inside Cawdex. Stitch is Google's AI
 UI/UX design and code generation tool (https://stitch.withgoogle.com/).
 Connect via the \`stitch\` tool, which wraps the Stitch MCP server at
 https://stitch.googleapis.com/mcp.

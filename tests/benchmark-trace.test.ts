@@ -132,7 +132,7 @@ describe('benchmark trace artifacts', () => {
     expect(summary.openAgentLeaderboardDraft).toMatchObject({
       submissionReady: false,
       agent: 'ventipus_agent',
-      agent_name: 'Ventipus',
+      agent_name: 'Cawdex',
       benchmark: 'swebench',
       benchmark_name: 'SWE-bench',
       model: 'test-model',
@@ -7304,7 +7304,7 @@ describe('benchmark trace artifacts', () => {
       submissionReady: false,
       officialResultRequired: true,
       benchmark: 'ventipus_agent_benchmark',
-      benchmarkName: 'Ventipus Benchmark',
+      benchmarkName: 'Cawdex Benchmark',
       missingOfficialFields: ['benchmark_score', 'successful_sessions', 'session_results'],
       verification: {
         count: 1,

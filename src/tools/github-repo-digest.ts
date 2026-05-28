@@ -55,7 +55,7 @@ type HarnessSurfaceId =
   | 'providers_models'
   | 'docs';
 
-const USER_AGENT = 'ventipus/1.x (+https://github.com/Crownelius/ventipus)';
+const USER_AGENT = 'cawdex/1.x (+https://github.com/Crownelius/ventipus)';
 const GITHUB_API = 'https://api.github.com';
 
 const MANIFEST_NAMES = new Set([

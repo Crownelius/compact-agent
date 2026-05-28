@@ -1,5 +1,5 @@
 /**
- * TUI theme — Ventipus terminal styling.
+ * TUI theme — Cawdex terminal styling.
  *
  * Inspired by Gemini CLI and Claude Code design patterns:
  *   - Semantic color tokens (not raw hex everywhere)
@@ -190,7 +190,7 @@ export function isPaletteId(s: string): s is PaletteId { return resolvePaletteId
 
 // ── Symbols (matching Gemini/Claude patterns) ───────────
 export const sym = {
-  mark:      '◈',           // Ventipus brand mark
+  mark:      '◈',           // Cawdex brand mark
   prompt:    '❯',           // User input prompt
   assistant: '✦',           // Assistant message prefix
   success:   '✓',           // Tool success
@@ -328,8 +328,8 @@ export function setPalette(id: string): boolean {
 // Layout (per the user-supplied mock):
 //
 //   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀         ← heavy top bar
-//   ◈  V E N T I P U S                              ← brand line
-//        Multimodel terminal AI workbench           ← tagline
+//   ◈  C A W D E X                                  ← brand line
+//        terminal coding agents with a mind for the whole repo
 //                                                   ← blank
 //     ────────────────────────────────────────      ← thin divider
 //     Provider  X  │  Model  Y                      ← provider/model row
@@ -397,8 +397,8 @@ export function printBanner(
 
   console.log('');
   console.log(leftPad + brand(heavyBar));
-  console.log(leftPad + b(center(`${sym.mark}   V E N T I P U S   ${sym.mark}`, BAR_WIDTH)));
-  console.log(leftPad + d(center('Multimodel terminal AI workbench', BAR_WIDTH)));
+  console.log(leftPad + b(center(`${sym.mark}   C A W D E X   ${sym.mark}`, BAR_WIDTH)));
+  console.log(leftPad + d(center('terminal coding agents with a mind for the whole repo', BAR_WIDTH)));
   console.log(row(d(divider)));
   console.log(row(s(providerCell) + d(' │ ') + w(modelCell)));
   console.log(row(s(modeCell) + d(' │ ') + w(permCell)));

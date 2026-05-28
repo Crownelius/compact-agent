@@ -590,9 +590,9 @@ describe.skip('Login Flow — Config File Management', () => {
 
       await cli.spawn();
       // With a valid config, should go straight to main prompt (no wizard).
-      // The banner prints "Ventipus" — wait for it with a longer timeout
+      // The banner prints the product brand; wait with a longer timeout
       // because ECC install may run on first real-config launch.
-      await cli.waitForOutput(/Ventipus|▶|session|ECC/i, { timeout: 30_000 });
+      await cli.waitForOutput(/Cawdex|Ventipus|▶|session|ECC/i, { timeout: 30_000 });
       expect(await login.isShowingWizard()).toBe(false);
     });
 

@@ -41,7 +41,7 @@ export function archiveLargeToolOutput(
   writeFileSync(
     logPath,
     [
-      '[ventipus tool output]',
+      '[cawdex tool output]',
       `tool: ${toolName}`,
       `cwd: ${cwd}`,
       `chars: ${text.length}`,

@@ -19,7 +19,7 @@
  *
  * Toggling:
  *
- *   - CLI flag:     ventipus --debug [level]
+ *   - CLI flag:     cawdex --debug [level]
  *   - Env var:      VENTIPUS_DEBUG=trace
  *   - Slash cmd:    /debug on [level]   /debug off   /debug tail [n]
  *

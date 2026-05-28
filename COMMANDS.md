@@ -1,27 +1,27 @@
-# Ventipus — Command Reference
+# Cawdex — Command Reference
 
-Every command Ventipus exposes, organized by purpose. Two surfaces:
+Every command Cawdex exposes, organized by purpose. Three surfaces:
 
-1. **Shell command** — what you type at your OS terminal (`ventipus`)
+1. **Shell command** — what you type at your OS terminal (`cawdex`; `ventipus` remains a legacy alias)
 2. **Slash commands** — what you type inside the REPL once it's running
 3. **Tools** — what the underlying LLM calls automatically; not invoked by you
 
-If you're new, run `ventipus` then type `/walkthrough` for an agent-led tour.
+If you're new, run `cawdex` then type `/walkthrough` for an agent-led tour.
 
 ---
 
 ## 1. Shell invocation
 
-After `npm install -g ventipus`, you have one binary:
+After `npm install -g ventipus`, you have both the new `cawdex` command and the legacy `ventipus` alias:
 
 ```bash
-ventipus
-ventipus --doctor
-ventipus doctor --json --no-registry
-ventipus --openai-oauth-smoke
+cawdex
+cawdex --doctor
+cawdex doctor --json --no-registry
+cawdex --openai-oauth-smoke
 ```
 
-`ventipus` launches the REPL. `ventipus --doctor` runs install/config/benchmark readiness checks and exits before setup; `--doctor-json` or `doctor --json` prints machine-readable output, and `--doctor-no-registry` or `--no-registry` skips the npm registry lookup. `ventipus --openai-oauth-smoke` verifies Codex OAuth auth, request creation, and streaming without printing tokens.
+`cawdex` launches the REPL. `cawdex --doctor` runs install/config/benchmark readiness checks and exits before setup; `--doctor-json` or `doctor --json` prints machine-readable output, and `--doctor-no-registry` or `--no-registry` skips the npm registry lookup. `cawdex --openai-oauth-smoke` verifies Codex OAuth auth, request creation, and streaming without printing tokens.
 
 First run also fires the setup wizard (provider, API key, model, permission mode). See [INSTALL.md](INSTALL.md) for setup details.
 
@@ -33,7 +33,7 @@ Everything in this section is typed inside the REPL after `❯ `.
 
 At an empty prompt, `/` opens the inline command selector. It stays below the prompt, keeps the widget under roughly half the terminal height, lets you type to narrow, scroll with arrows/PageUp/PageDown, jump with Home/End, and press Enter to fill the prompt with the highlighted command so you can edit it or press Enter again to run it. If a slash prefix is already typed, Tab reopens the same bounded selector with that filter instead of printing the full command list. It only erases its own prompt/dropdown rows instead of clearing the rest of the terminal.
 
-During model/tool work, typing is captured in a fixed bottom type-ahead line and restored into the next editable prompt. If an OpenRouter preview/free model accepts a request but sends no stream event, Ventipus cancels after a first-token watchdog and retries once with `/fallback` (default `openrouter/free` for OpenRouter), so the prompt returns instead of appearing frozen.
+During model/tool work, typing is captured in a fixed bottom type-ahead line and restored into the next editable prompt. If an OpenRouter preview/free model accepts a request but sends no stream event, Cawdex cancels after a first-token watchdog and retries once with `/fallback` (default `openrouter/free` for OpenRouter), so the prompt returns instead of appearing frozen.
 
 ### 2.1 General & session control
 
@@ -256,7 +256,7 @@ A tiny stateful demo command useful for testing/learning:
 
 ### 2.20 Stitch (Google AI UI/UX design)
 
-Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX design + code generation tool. Ports the [gemini-cli-extensions/stitch](https://github.com/gemini-cli-extensions/stitch) extension to Ventipus.
+Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX design + code generation tool. Ports the [gemini-cli-extensions/stitch](https://github.com/gemini-cli-extensions/stitch) extension to Cawdex.
 
 | Command | What it does |
 |---|---|
@@ -271,7 +271,7 @@ Integrates with [Stitch](https://stitch.withgoogle.com/), Google's AI UI/UX desi
 
 **Get an API key:** <https://stitch.withgoogle.com/> → profile icon → **Stitch Settings** → **API Keys** → **Create Key**.
 
-**Or via env var (no file written):** `$env:STITCH_API_KEY = "..."` (PowerShell) / `export STITCH_API_KEY="..."` (POSIX) before launching `ventipus`.
+**Or via env var (no file written):** `$env:STITCH_API_KEY = "..."` (PowerShell) / `export STITCH_API_KEY="..."` (POSIX) before launching `cawdex`.
 
 Once configured, the `stitch` tool appears in `/tools` and the agent can call it directly. Common invocations:
 
@@ -338,7 +338,7 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 | `glob` | Find files by glob pattern. | Yes |
 | `list_dir` | List directory entries (type, size, name). | Yes |
 | `benchmark_context` | Read-only benchmark preflight: cwd snapshot, manifests, project-native environment reconstruction setup commands, likely verifier commands, CI workflow run commands plus setup/env-key/service/container hints from GitHub Actions/GitLab/CircleCI/Azure/Jenkins configs, Terminal-Bench/TerminalWorld/Harbor harness artifacts, package scripts, task files, concise task-instruction excerpts with exact line references, task-contract signals from visible acceptance criteria/requirements/success criteria/no-edit clauses, runtime/toolchain hints, live toolchain probes for PATH/package-manager/interpreter/virtualenv mismatches, network/offline env indicators, optional short network reachability probes, service-persistence hints, method hints, relevant MemPalace memories, relevant prior local benchmark trace summaries with compact `experienceCard` replay checkpoints, task-alignment/spec-compliance/reward-hack/proactivity risk signals, HarnessAudit-style harness-safety signals, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, decision-observability edit predictions, validation-reliability evidence, change-evaluation status, and context-utilization precision/miss plus pre-edit context-bloat evidence from high-quality matching runs, prior low-quality/unsafe experience warnings, and read-with-care candidates such as TerminalWorld `solve.sh`; CI env values are not printed; benchmark traces also score run-level usage/cost/time, cost-efficiency risk when high usage lacks strong evidence, invalid tool-action count/percent/events for unknown tools, malformed JSON, schema failures, security/hook blocks, permission denial, and loop/streak aborts, task-instruction/task-contract checklist use, no-edit/no-op contract compliance, task-alignment risk for ignored constraints, distractor/decoy references, and off-task-looking edits, spec-compliance risk for visible-suite-only validation or hardcoded visible cases, reward-hack risk for verifier tampering, oracle/solution probes, result-file edits, shortcut completion markers, and bypass commands, HarnessAudit-style resource-access, information-transfer, destructive-operation, and oracle-access risk, Pi-Bench proactivity risk for missing context contract, hidden-intent hypothesis, clarification decision, privacy review, or observable completion evidence, test/harness/verifier edit risk, localization/failing-reproduction/validation quality, per-target edit localization and unlocalized edit-target events, weak change manifests for edits without falsifiable prediction/verifier follow-through, local context-utilization precision/risk signals, pre-edit context-bloat risk when broad local inspections are mostly unused by the eventual patch, large edit-surface scope checks, scratch/probe artifact checks, redundant read/search tool loops, redundant failing-verifier reruns, blind repair after failed verifier signals, failed-verifier source-file repair alignment, post-edit pass/fail/pass regression cycles, environment setup commands, dependency manifest/lockfile edit setup-validation signals, unresolved missing-dependency/toolchain/build-artifact verifier failures, skill-view fit/timing signals, latest post-edit verifier status, post-edit and final-state diff/status review, final-edit validation stability/lucky-pass risk, narrow-to-broad post-edit validation, CI-derived verifier command coverage, final-state validation after the last edit, failing reproduction before repair, parsed verifier pass/fail evidence and compact failure signatures across common JS, Python, Rust, Go, JVM, and .NET runners with verifier head/tail previews for noisy logs, final-answer verification-claim and incomplete/blocked completion evidence, incomplete/inconclusive timeout or truncation markers, source research coverage with parsed hit/error/recency evidence including Kaggle competition fallback, structured `research_sources` trace previews that preserve source headings, URLs, coverage notes, and tail endpoint/auth errors, structured process defects with a 0-100 process score, and leakage-risk artifacts. | Yes |
-| `harness_components` | AHE-style component observability: maps Ventipus prompts, tools, middleware, skills, sub-agents, MemPalace memory, providers/OAuth, benchmark adapters, CLI UX, and verification/release gates to current files, focused tests, docs, and short `Prediction:` edit contracts without printing credentials or memory contents. | Yes |
+| `harness_components` | AHE-style component observability: maps Cawdex prompts, tools, middleware, skills, sub-agents, MemPalace memory, providers/OAuth, benchmark adapters, CLI UX, and verification/release gates to current files, focused tests, docs, and short `Prediction:` edit contracts without printing credentials or memory contents. | Yes |
 | `todo_write` | Update the working todo list; reinjected before each turn and preserved across compaction. | No |
 | `research_sources` | Query arXiv, GitHub repositories/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions for source-grounded research; output includes coverage/auth/recency notes, a compact source digest, deterministic cross-source ordering for reproducible traces, applies `recent_days` to supported source date fields, caveats GitHub code freshness, and reports Kaggle competition fallback. | Yes |
 | `benchmark_repo_catalog` | Offline Terminal-Bench 2.0 public repository seed catalog for source mining; returns verified direct mappings plus related/partial mappings and reminds the agent to verify with `github_repo_digest` before porting patterns. | Yes |
@@ -349,15 +349,15 @@ These are called automatically by the agent during tool-use cycles. Listed for r
 
 Prior benchmark hints emitted by `benchmark_context` include compact `efficiency=...` signals when available: tool calls, tool elapsed time, slow tool calls, usage calls, tokens, cost, invalid-action rate, successful verifier count, process score, process-defect count, warnings, cost-efficiency risk, and time-efficiency risk. They also include `source_research=...` signals when prior runs captured source coverage: source kinds, hit/error counts, recency/freshness, targeted-coverage status, Kaggle fallback status, top URLs, and bounded coverage notes. ContextBench-style prior reuse prefers runs whose inspected context was used by the eventual patch and whose broad pre-edit inspection was compressed into a candidate-file dossier, while low-utilization, missing-dossier, or pre-edit context-bloat runs become warnings. AHE-style prior reuse also ranks `root_cause=...`, `failure_onset=...`, `targeted_fixes=...`, and `triage=...` discipline, while missing diagnoses, undiagnosed failure-onset repair loops, missing fix plans, and informative failure/loop/exhaustion triage patterns become warnings. Pi-Bench-like tasks also rank prior `proactivity=...` ledgers, preferring complete context/hidden-intent/clarification/privacy/completion evidence and routing proactivity-ledger defects to warnings.
 
-Benchmark trace summaries include `candidate_dossier=...` and `experienceCard.candidateDossier`. If broad read/search/list localization crosses the candidate threshold without a recorded candidate-file dossier before the first patch, Ventipus emits a localization process defect and completion reminder instead of letting recall-heavy browsing roll straight into edits.
+Benchmark trace summaries include `candidate_dossier=...` and `experienceCard.candidateDossier`. If broad read/search/list localization crosses the candidate threshold without a recorded candidate-file dossier before the first patch, Cawdex emits a localization process defect and completion reminder instead of letting recall-heavy browsing roll straight into edits.
 
-Benchmark trace summaries include `root_cause=...`, `root_cause_risk`, `root_cause_signals`, and `experienceCard.rootCauseHypothesis`. If a conclusive failed verifier is followed by a repair edit without an assistant `Root cause:`, `Diagnosis:`, or failure-tied `Hypothesis:` record, Ventipus emits a reproduction process defect and completion reminder so AHE-style traces preserve why the patch was chosen.
+Benchmark trace summaries include `root_cause=...`, `root_cause_risk`, `root_cause_signals`, and `experienceCard.rootCauseHypothesis`. If a conclusive failed verifier is followed by a repair edit without an assistant `Root cause:`, `Diagnosis:`, or failure-tied `Hypothesis:` record, Cawdex emits a reproduction process defect and completion reminder so AHE-style traces preserve why the patch was chosen.
 
 Benchmark trace summaries include `failure_onset=...`, `failure_onset_risk`, `failure_onset_category`, `failure_onset_repairs`, and `experienceCard.failureOnset`. Repeated failing-verifier reruns, blind/unaligned repairs, and post-edit regression cycles are tied back to the first bad verifier/edit boundary so AgentRx/CodeTracer-style diagnosis can happen before another patch. Undiagnosed repair loops become prior-experience warnings.
 
 Benchmark trace summaries include `trajectory_triage=...`, `triage_informative`, `triage_signals`, category counts, and `experienceCard.trajectoryTriage`. The no-model-call taxonomy groups interaction misalignment/stagnation/disengagement/satisfaction, execution failure/loop, and environment exhaustion so Signals-style informative traces can be sampled, reused, or avoided without asking a judge model.
 
-Benchmark trace summaries include `targeted_fixes=...`, `missing_targeted_fixes`, and `targeted_fix_risk`. If a repair edit after failed-verifier evidence lacks a `Targeted fix:`, `Fix plan:`, or `Repair plan:` line, Ventipus emits a reproduction process defect and completion reminder so AHE-style manifests preserve the intended change before patching.
+Benchmark trace summaries include `targeted_fixes=...`, `missing_targeted_fixes`, and `targeted_fix_risk`. If a repair edit after failed-verifier evidence lacks a `Targeted fix:`, `Fix plan:`, or `Repair plan:` line, Cawdex emits a reproduction process defect and completion reminder so AHE-style manifests preserve the intended change before patching.
 
 Benchmark trace summaries also include `trajectory_cleanup_risk`, `trajectory_cleanup_events`, `trajectory_cleanup_noisy`, `trajectory_cleanup_duplicates`, and `experienceCard.trajectoryCleanup`. Base64/data-URI blobs, high-entropy encoded or minified output, repeated duplicate output, and excessive truncation are treated as cleanup debt; risky runs become execution-control warnings so AHE-style reuse does not replay noisy raw observations.
 
@@ -383,7 +383,7 @@ Any tool name you see in error output other than these (e.g. `web_search_exa`, `
 
 ## 4. Environment variables
 
-These affect the REPL's runtime behavior. Set in your shell before launching `ventipus`.
+These affect the REPL's runtime behavior. Set in your shell before launching `cawdex` (`ventipus` remains a legacy alias).
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -445,20 +445,20 @@ Component observability classifies benchmark edit targets as system prompts, too
 
 OpenRouter free-tier context is intentionally conservative for compatibility. `openrouter/free` plans around a 128k window because the router can select different available free models; manually typed unknown `:free` model IDs plan around 32k unless `VENTIPUS_CONTEXT_WINDOW_TOKENS` is set. The interactive OpenRouter `/model` picker reads the live catalog and saves the selected exact model's context hint when available.
 
-`--prompt` and `--prompt-file` imply non-interactive mode. If the prompt begins with a slash command such as `/benchmark terminal-bench ...`, ventipus dispatches that command first and sends the expanded prompt to the model.
+`--prompt` and `--prompt-file` imply non-interactive mode. If the prompt begins with a slash command such as `/benchmark terminal-bench ...`, Cawdex dispatches that command first and sends the expanded prompt to the model.
 
 Benchmark-friendly per-run CLI flags: `--model`, `--fallback-model`, `--provider`, `--base-url`, `--api-key`, `--api-key-env`, `--max-turns`, `--max-tokens`, `--context-window-tokens`, `--temperature`, `--output-format`, and `--benchmark-trace-dir`. They do not modify `config.json`. Use `--openai-oauth-smoke` to test Codex OAuth auth, request shape, and stream parsing.
 
 Adapter path helpers:
 
-- `ventipus --print-terminal-bench-adapter` prints the packaged Terminal-Bench Python adapter path.
-- `ventipus --print-kbench-adapter` prints the packaged KBench custom-adapter directory.
-- `ventipus --print-hal-agent` prints the packaged HAL custom-agent directory.
-- `ventipus --print-exgentic-agent` prints the packaged Exgentic/Open Agent Leaderboard custom-agent directory.
-- `ventipus --print-open-agent-card` prints the packaged Open Agent Leaderboard-style Ventipus agent card markdown.
+- `cawdex --print-terminal-bench-adapter` prints the packaged Terminal-Bench Python adapter path.
+- `cawdex --print-kbench-adapter` prints the packaged KBench custom-adapter directory.
+- `cawdex --print-hal-agent` prints the packaged HAL custom-agent directory.
+- `cawdex --print-exgentic-agent` prints the packaged Exgentic/Open Agent Leaderboard custom-agent directory.
+- `cawdex --print-open-agent-card` prints the packaged Open Agent Leaderboard-style Cawdex agent card markdown.
 - Benchmark adapters export redacted artifacts: Terminal-Bench writes `.ventipus/benchmark-summary.json`, `.ventipus/benchmark-trace.jsonl`, `.ventipus/agent-context-compiled.jsonl`, `.ventipus/change-evaluation.json`, `.ventipus/submission-bundle-manifest.json`, `.ventipus/benchmark.patch`, and `.ventipus/git-status.txt` when available; KBench returns redacted `instruction`, `stdout`, `stderr`, `patch`, and `git-status` artifact refs. Patch output includes unstaged, staged, and untracked file diffs where git can render them. KBench also exposes compact native trace data, including usage/cost telemetry, Open Agent Leaderboard draft rows marked `submissionReady:false` until an official harness score exists, the AHE-style change evaluation, the submission bundle manifest with artifact hashes and missing official fields, final-answer verification-claim and incomplete/blocked completion evidence, `experienceCard` replay/context/task-alignment/spec-compliance/reward-hack/proactivity/environment-reconstruction/dependency-upgrade/root-cause-hypothesis/failure-onset/decision-observability/validation-reliability/context-utilization/candidate-dossier summaries, the compiled task/context/answer record, cost-efficiency risk, invalid tool-action telemetry, task-contract checklist completion/no-edit/test-edit, task-alignment risk signals, spec-compliance risk signals, reward-hack risk signals, Pi-Bench proactivity ledger signals, incomplete/inconclusive verifier, environment setup/reconstruction, dependency manifest/lockfile setup-validation, weak change-manifest signals, per-target edit-localization, local context-utilization precision/risk, root-cause hypothesis risk, failure-onset diagnosis risk, targeted-fix manifest risk, candidate-file dossier risk, large edit-surface, scratch/probe artifact, redundant tool-call, redundant failing-verifier rerun, blind-repair, failed-verifier source-file repair alignment, long-horizon/WebDevBench/SWE-Cycle canary/lifecycle and validation signals, post-edit regression-cycle signals, latest post-edit verifier, post-edit and final-state diff-review, final-edit validation stability/lucky-pass signals, broad-validation signals, and CI-derived validation signals, under `benchmarkResult.traceSummary` when `summary.json` is available; `benchmarkResult.usage` aliases the compact usage block and `benchmarkResult.experienceCard` aliases the compact prior-experience block.
   `benchmarkResult.experienceCard` also includes `runEfficiency` when available, so harnesses can score tool/action count, token/cost, invalid-action rate, successful verifier count, process score, and cost-efficiency risk directly.
-  HAL returns SWE-bench-style patch strings, ScienceAgentBench-style trajectory strings, AppWorld `Completed` markers, and USACO/general task dictionaries with `response` fields. Exgentic returns benchmark-native `ActionType` instances selected from ventipus's final action JSON, auto-routes AppWorld/BrowseComp+/tau2/SWE-Cycle/SWE-CI/SWE-PRBench/TML-Bench/Pi-Bench-style tasks into specialized `/benchmark` profiles, builds a recommended action shortlist with required argument keys and redacted exact current-state hints before the full schema list, repairs near-miss action names/argument keys and fills omitted required schema fields from exact observation/context keys before `ActionType` dispatch, falls back to a viable non-finish shortlisted action when action JSON is missing or malformed and completion is not ready, folds prior observations/actions into a compact task ledger before each step, and stores prompt/stdout/stderr/trace artifacts under the Exgentic session agent directory.
+  HAL returns SWE-bench-style patch strings, ScienceAgentBench-style trajectory strings, AppWorld `Completed` markers, and USACO/general task dictionaries with `response` fields. Exgentic returns benchmark-native `ActionType` instances selected from Cawdex's final action JSON, auto-routes AppWorld/BrowseComp+/tau2/SWE-Cycle/SWE-CI/SWE-PRBench/TML-Bench/Pi-Bench-style tasks into specialized `/benchmark` profiles, builds a recommended action shortlist with required argument keys and redacted exact current-state hints before the full schema list, repairs near-miss action names/argument keys and fills omitted required schema fields from exact observation/context keys before `ActionType` dispatch, falls back to a viable non-finish shortlisted action when action JSON is missing or malformed and completion is not ready, folds prior observations/actions into a compact task ledger before each step, and stores prompt/stdout/stderr/trace artifacts under the Exgentic session agent directory.
 
 HAL-specific adapter env:
 
@@ -476,7 +476,7 @@ Exgentic-specific adapter env:
 
 ## 5. Files & state
 
-Ventipus is local-first. Everything lives in `~/.ventipus/` (or `$VENTIPUS_HOME` if set):
+Cawdex is local-first. Everything currently lives in `~/.ventipus/` (or `$VENTIPUS_HOME` if set) for compatibility:
 
 ```
 ~/.ventipus/

@@ -246,7 +246,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     label: 'Node runtime',
     status: versionAtLeast(process.versions.node, 18, 0, 0) ? 'pass' : 'fail',
     detail: `Node ${process.version}`,
-    hint: 'Ventipus requires Node >=18.0.0.',
+    hint: 'Cawdex requires Node >=18.0.0.',
   });
 
   const packageFiles = [
@@ -262,7 +262,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     detail: missingPackageFiles.length === 0
       ? 'package.json, bin/ventipus.js, and dist/index.js are present.'
       : `Missing ${missingPackageFiles.length} required package file(s).`,
-    hint: missingPackageFiles.length > 0 ? `Run npm run build or reinstall ventipus. Missing: ${missingPackageFiles.map((p) => p.replace(packageRoot, '.')).join(', ')}` : undefined,
+    hint: missingPackageFiles.length > 0 ? `Run npm run build or reinstall Cawdex. Missing: ${missingPackageFiles.map((p) => p.replace(packageRoot, '.')).join(', ')}` : undefined,
   });
 
   const npm = commandResult('npm', ['--version'], { timeoutMs: 5000, cwd, env });
@@ -271,7 +271,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     label: 'npm',
     status: npm.ok ? 'pass' : 'fail',
     detail: npm.ok ? `npm ${firstLine(npm.stdout)}` : `npm unavailable${npm.error ? ': ' + npm.error : ''}`,
-    hint: npm.ok ? undefined : 'Install Node/npm or repair PATH before installing ventipus globally.',
+    hint: npm.ok ? undefined : 'Install Node/npm or repair PATH before installing Cawdex globally.',
   });
 
   if (includeRegistry) {
@@ -299,7 +299,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
       label: 'npm registry',
       status,
       detail,
-      hint: status === 'pass' ? undefined : 'Run npm install -g ventipus@latest after registry metadata catches up.',
+      hint: status === 'pass' ? undefined : 'Run npm install -g ventipus@latest after registry metadata catches up; this package now installs the cawdex command alias.',
     });
   } else {
     add(checks, {
@@ -311,12 +311,15 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
   }
 
   const lookupCommand = process.platform === 'win32' ? 'where.exe' : 'which';
-  const lookup = commandResult(lookupCommand, ['ventipus'], { timeoutMs: 5000, cwd, env });
+  const cawdexLookup = commandResult(lookupCommand, ['cawdex'], { timeoutMs: 5000, cwd, env });
+  const ventipusLookup = commandResult(lookupCommand, ['ventipus'], { timeoutMs: 5000, cwd, env });
+  const lookup = cawdexLookup.ok ? cawdexLookup : ventipusLookup;
+  const lookupName = cawdexLookup.ok ? 'cawdex' : 'ventipus';
   add(checks, {
     id: 'global_binary',
     label: 'Global binary',
     status: lookup.ok ? 'pass' : 'warn',
-    detail: lookup.ok ? `ventipus resolves on PATH (${firstLine(lookup.stdout)}).` : 'ventipus is not currently found on PATH.',
+    detail: lookup.ok ? `${lookupName} resolves on PATH (${firstLine(lookup.stdout)}).` : 'cawdex/ventipus is not currently found on PATH.',
     hint: lookup.ok ? undefined : 'If this is a dev checkout, node bin/ventipus.js still works. For global use, run npm install -g ventipus@latest and reopen the shell.',
   });
 
@@ -337,7 +340,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     detail: config.exists
       ? config.parseOk ? `Readable config at ${config.path}.` : `Config exists but is not valid JSON at ${config.path}.`
       : `No config file at ${config.path}.`,
-    hint: config.exists ? undefined : 'Run ventipus once interactively, or use env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.',
+    hint: config.exists ? undefined : 'Run cawdex once interactively, or use env config such as OPENROUTER_API_KEY and VENTIPUS_MODEL.',
   });
 
   const provider = providerPreset(config.config.provider, config.config.baseURL);
@@ -366,7 +369,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     detail: compact.includes('openrouter')
       ? openrouterFree ? 'Configured for OpenRouter free-tier routing.' : `OpenRouter model ${openrouterModel || '(missing)'} may require credits.`
       : 'Current provider is not OpenRouter.',
-    hint: compact.includes('openrouter') && !openrouterFree ? 'Run /openrouter-free or ventipus --model openrouter/free for free-tier-only accounts.' : undefined,
+    hint: compact.includes('openrouter') && !openrouterFree ? 'Run /openrouter-free or cawdex --model openrouter/free for free-tier-only accounts.' : undefined,
   });
 
   const hf = hasHuggingFaceAuth(env);
@@ -385,7 +388,7 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     label: 'MemPalace',
     status: mempalace.ok ? 'pass' : 'warn',
     detail: mempalace.ok ? `mempalace CLI available (${firstLine(mempalace.stdout) || 'version command ok'}).` : 'mempalace CLI is not available on PATH.',
-    hint: mempalace.ok ? undefined : 'Memory slash commands can still use Ventipus local memory, but cross-agent MemPalace recall needs the CLI/service installed.',
+    hint: mempalace.ok ? undefined : 'Memory slash commands can still use Cawdex local memory, but cross-agent MemPalace recall needs the CLI/service installed.',
   });
 
   const missingAdapters = benchmarkAdapterPaths().filter((entry) => !fileExists(entry.path));
@@ -431,7 +434,7 @@ function statusLabel(status: DoctorStatus): string {
 
 export function formatDoctorReport(report: DoctorReport): string {
   const lines: string[] = [];
-  lines.push(chalk.cyan(`Ventipus Doctor ${report.version}`));
+  lines.push(chalk.cyan(`Cawdex Doctor ${report.version}`));
   lines.push(chalk.dim(`Generated: ${report.generatedAt}`));
   lines.push(chalk.dim(`Platform: ${report.platform}; Node: ${report.nodeVersion}`));
   lines.push('');
