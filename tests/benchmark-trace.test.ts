@@ -13,6 +13,7 @@ import {
   buildBenchmarkEnvironmentSetupEvents,
   buildBenchmarkEnvironmentSetupFailureEvents,
   buildBenchmarkEvidenceGroundingEvents,
+  buildBenchmarkFailureOnsetDiagnosis,
   buildBenchmarkFailureUnalignedRepairEvents,
   buildBenchmarkHarnessSafetyAudit,
   buildBenchmarkIncompleteVerifierEvents,
@@ -288,6 +289,15 @@ describe('benchmark trace artifacts', () => {
     expect(summary.trajectoryQuality.rootCauseHypothesisRisk).toBe(false);
     expect(summary.trajectoryQuality.rootCauseHypothesisSignalCount).toBe(0);
     expect(summary.trajectoryQuality.rootCauseHypothesisSignals).toEqual([]);
+    expect(summary.trajectoryQuality.failureOnset).toMatchObject({
+      detected: false,
+      risk: false,
+      category: 'none',
+      failedVerificationSeq: null,
+      suspectedOnsetSeq: null,
+      downstreamRepairCount: 0,
+      recommendedAction: 'none',
+    });
     expect(summary.trajectoryQuality.trajectoryCleanupRisk).toBe(false);
     expect(summary.trajectoryQuality.trajectoryCleanupEventCount).toBe(0);
     expect(summary.trajectoryQuality.trajectoryCleanupNoisyOutputCount).toBe(0);
@@ -369,6 +379,13 @@ describe('benchmark trace artifacts', () => {
         risk: false,
         signalCount: 0,
         signals: [],
+      },
+      failureOnset: {
+        detected: false,
+        risk: false,
+        category: 'none',
+        evidence: [],
+        recommendedAction: 'none',
       },
       trajectoryCleanup: {
         risk: false,
@@ -2821,6 +2838,101 @@ describe('benchmark trace artifacts', () => {
     expect(quality.warnings.join('\n')).toContain('redundant verifier reruns repeated the same failing command');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('redundant_verifiers=2');
     expect(buildBenchmarkCompletionReminder(events)).toContain('repeating identical failing verifier commands');
+  });
+
+  it('localizes failure onset when repeated verifier loops precede repair', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: { path: '.' },
+        output: 'Task contract: fix parser trim behavior. Likely verifier: npm test -- parser',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'read_file',
+        input: { file_path: 'src/parser.ts' },
+        output: 'export const parse = (input: string) => input;',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'src/parser.ts:1 AssertionError: expected " x " to equal "x"\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 4,
+        tool: 'bash',
+        input: { command: 'npm   test   -- parser' },
+        output: 'src/parser.ts:1 AssertionError: expected " x " to equal "x"\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 5,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'src/parser.ts:1 AssertionError: expected " x " to equal "x"\nTests: 1 failed, 9 passed, 10 total',
+        isError: true,
+        elapsedMs: 10,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 6,
+        tool: 'read_file',
+        input: { file_path: 'src/parser.ts' },
+        output: 'export const parse = (input: string) => input;',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 7,
+        tool: 'edit_file',
+        input: { file_path: 'src/parser.ts', old_string: 'input;', new_string: 'input.trim();' },
+        output: 'edited',
+        isError: false,
+        elapsedMs: 2,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 8,
+        tool: 'bash',
+        input: { command: 'npm test -- parser' },
+        output: 'Tests: 10 passed, 10 total',
+        isError: false,
+        elapsedMs: 10,
+      }),
+    ];
+
+    const onset = buildBenchmarkFailureOnsetDiagnosis(events);
+    expect(onset).toMatchObject({
+      detected: true,
+      risk: true,
+      category: 'repair_loop',
+      failedVerificationSeq: 3,
+      suspectedOnsetSeq: 3,
+      downstreamRepairCount: 1,
+      repeatedVerifierCount: 2,
+      recommendedAction: 'avoid_redundant_rerun',
+    });
+    expect(onset.evidence.join('\n')).toContain('failed_verifier=#3');
+    expect(onset.evidence.join('\n')).toContain('failure_files=src/parser.ts');
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.failureOnset).toMatchObject({
+      detected: true,
+      risk: true,
+      category: 'repair_loop',
+      failedVerificationSeq: 3,
+      repeatedVerifierCount: 2,
+    });
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('undiagnosed_failure_onset_loop');
+    expect(quality.warnings.join('\n')).toContain('failure-onset diagnosis risk');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('failure_onset=yes failure_onset_risk=yes failure_onset_category=repair_loop');
   });
 
   it('flags blind repair edits after post-edit failed verifiers without inspection', () => {

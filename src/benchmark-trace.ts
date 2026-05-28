@@ -62,6 +62,7 @@ export interface BenchmarkExperienceCard {
   proactivity: BenchmarkExperienceProactivity;
   candidateDossier: BenchmarkExperienceCandidateDossier;
   rootCauseHypothesis: BenchmarkExperienceRootCauseHypothesis;
+  failureOnset: BenchmarkFailureOnsetDiagnosis;
   trajectoryCleanup: BenchmarkExperienceTrajectoryCleanup;
   environmentReconstruction: BenchmarkExperienceEnvironmentReconstruction;
   dependencyUpgrade: BenchmarkExperienceDependencyUpgrade;
@@ -220,6 +221,41 @@ export interface BenchmarkExperienceRootCauseHypothesis {
   risk: boolean;
   signalCount: number;
   signals: BenchmarkRootCauseHypothesisSignal[];
+}
+
+export type BenchmarkFailureOnsetCategory =
+  | 'none'
+  | 'pre_edit_reproduction'
+  | 'post_edit_regression'
+  | 'repair_loop'
+  | 'inconclusive_verifier'
+  | 'unknown_failure';
+
+export type BenchmarkFailureOnsetRecommendedAction =
+  | 'none'
+  | 'diagnose_before_patch'
+  | 'inspect_failure_files'
+  | 'avoid_redundant_rerun'
+  | 'stabilize_regression_cycle'
+  | 'refresh_state_then_repair';
+
+export interface BenchmarkFailureOnsetDiagnosis {
+  detected: boolean;
+  risk: boolean;
+  category: BenchmarkFailureOnsetCategory;
+  failedVerificationSeq: number | null;
+  suspectedOnsetSeq: number | null;
+  suspectedOnsetTool: string | null;
+  suspectedOnsetTarget: string | null;
+  command: string | null;
+  diagnosisRecorded: boolean;
+  downstreamRepairCount: number;
+  blindRepairCount: number;
+  unalignedRepairCount: number;
+  repeatedVerifierCount: number;
+  regressionCycleCount: number;
+  evidence: string[];
+  recommendedAction: BenchmarkFailureOnsetRecommendedAction;
 }
 
 export interface BenchmarkExperienceEditPrediction {
@@ -748,6 +784,7 @@ export interface BenchmarkTrajectoryQuality {
   rootCauseHypothesisRisk: boolean;
   rootCauseHypothesisSignalCount: number;
   rootCauseHypothesisSignals: BenchmarkRootCauseHypothesisSignal[];
+  failureOnset: BenchmarkFailureOnsetDiagnosis;
   trajectoryCleanupRisk: boolean;
   trajectoryCleanupEventCount: number;
   trajectoryCleanupNoisyOutputCount: number;
@@ -1437,6 +1474,7 @@ export function buildBenchmarkExperienceCard(input: {
     proactivity: buildBenchmarkExperienceProactivity(input.trajectoryQuality),
     candidateDossier: buildBenchmarkExperienceCandidateDossier(input.trajectoryQuality),
     rootCauseHypothesis: buildBenchmarkExperienceRootCauseHypothesis(input.trajectoryQuality),
+    failureOnset: buildBenchmarkExperienceFailureOnset(input.trajectoryQuality),
     trajectoryCleanup: buildBenchmarkExperienceTrajectoryCleanup(input.trajectoryQuality),
     environmentReconstruction: buildBenchmarkExperienceEnvironmentReconstruction(input.trajectoryQuality),
     dependencyUpgrade: buildBenchmarkExperienceDependencyUpgrade(input.trajectoryQuality),
@@ -1618,6 +1656,12 @@ function buildBenchmarkExperienceRootCauseHypothesis(
       }))
       .slice(0, 12),
   };
+}
+
+function buildBenchmarkExperienceFailureOnset(
+  quality: BenchmarkTrajectoryQuality,
+): BenchmarkFailureOnsetDiagnosis {
+  return sanitizeBenchmarkFailureOnsetDiagnosis(quality.failureOnset);
 }
 
 function buildBenchmarkExperienceTrajectoryCleanup(
@@ -2846,6 +2890,14 @@ export function buildBenchmarkTrajectoryQuality(
   const blindRepairEvents = buildBenchmarkBlindRepairEvents(events);
   const failureRepairAlignment = buildBenchmarkFailureRepairAlignment(events);
   const postEditRegressionCycleEvents = buildBenchmarkPostEditRegressionCycleEvents(events);
+  const failureOnset = buildBenchmarkFailureOnsetDiagnosis(events, {
+    rootCauseRecorded: rootCauseHypothesis.recorded,
+    rootCauseRisk: rootCauseHypothesis.risk,
+    blindRepairEvents,
+    failureUnalignedRepairEvents: failureRepairAlignment.unalignedEvents,
+    redundantVerifierEvents,
+    postEditRegressionCycleEvents,
+  });
   const postSuccessMutationEvents = buildBenchmarkPostSuccessMutationEvents(events);
   const decisionObservability = buildBenchmarkExperienceDecisionObservability(messages, events);
   const predictedEditSeqs = new Set(decisionObservability.editPredictions.map((prediction) => prediction.editSeq));
@@ -3355,6 +3407,10 @@ export function buildBenchmarkTrajectoryQuality(
       .join('; ');
     warnings.push(`root-cause hypothesis risk: a conclusive failed verifier preceded a repair edit without a recorded Root cause:/Diagnosis:/Hypothesis: line tied to failure evidence. State the likely source file/symbol/error before patching${examples ? `; ${examples}` : ''}.`);
   }
+  if (failureOnset.risk) {
+    const evidence = failureOnset.evidence.slice(0, 2).join('; ');
+    warnings.push(`failure-onset diagnosis risk: ${failureOnset.category} began at verifier #${failureOnset.failedVerificationSeq ?? '?'}${failureOnset.suspectedOnsetSeq != null ? ` after ${failureOnset.suspectedOnsetTool ?? 'event'}#${failureOnset.suspectedOnsetSeq}` : ''}. Diagnose the onset and downstream repair chain before another patch${evidence ? `; ${evidence}` : ''}.`);
+  }
   if (trajectoryCleanupRisk) {
     const examples = trajectoryCleanupEvents
       .slice(0, 3)
@@ -3557,6 +3613,7 @@ export function buildBenchmarkTrajectoryQuality(
     rootCauseHypothesisRisk: rootCauseHypothesis.risk,
     rootCauseHypothesisSignalCount: rootCauseHypothesis.signals.length,
     rootCauseHypothesisSignals: rootCauseHypothesis.signals,
+    failureOnset,
     trajectoryCleanupRisk,
     trajectoryCleanupEvents,
     trajectoryCleanupNoisyOutputCount,
@@ -3765,6 +3822,7 @@ export function buildBenchmarkTrajectoryQuality(
     rootCauseHypothesisRisk: rootCauseHypothesis.risk,
     rootCauseHypothesisSignalCount: rootCauseHypothesis.signals.length,
     rootCauseHypothesisSignals: rootCauseHypothesis.signals,
+    failureOnset,
     trajectoryCleanupRisk,
     trajectoryCleanupEventCount: trajectoryCleanupEvents.length,
     trajectoryCleanupNoisyOutputCount,
@@ -3856,7 +3914,7 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} targeted_fixes=${quality.targetedFixCount} missing_targeted_fixes=${quality.missingTargetedFixCount} targeted_fix_risk=${yn(quality.targetedFixManifestRisk)} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} root_cause=${yn(quality.rootCauseHypothesisRecorded)} root_cause_risk=${yn(quality.rootCauseHypothesisRisk)} root_cause_signals=${quality.rootCauseHypothesisSignalCount} trajectory_cleanup_risk=${yn(quality.trajectoryCleanupRisk)} trajectory_cleanup_events=${quality.trajectoryCleanupEventCount} trajectory_cleanup_noisy=${quality.trajectoryCleanupNoisyOutputCount} trajectory_cleanup_duplicates=${quality.trajectoryCleanupDuplicateOutputCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, failure_onset=${yn(quality.failureOnset.detected)} failure_onset_risk=${yn(quality.failureOnset.risk)} failure_onset_category=${quality.failureOnset.category} failure_onset_repairs=${quality.failureOnset.downstreamRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} targeted_fixes=${quality.targetedFixCount} missing_targeted_fixes=${quality.missingTargetedFixCount} targeted_fix_risk=${yn(quality.targetedFixManifestRisk)} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} root_cause=${yn(quality.rootCauseHypothesisRecorded)} root_cause_risk=${yn(quality.rootCauseHypothesisRisk)} root_cause_signals=${quality.rootCauseHypothesisSignalCount} trajectory_cleanup_risk=${yn(quality.trajectoryCleanupRisk)} trajectory_cleanup_events=${quality.trajectoryCleanupEventCount} trajectory_cleanup_noisy=${quality.trajectoryCleanupNoisyOutputCount} trajectory_cleanup_duplicates=${quality.trajectoryCleanupDuplicateOutputCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
@@ -4008,6 +4066,7 @@ interface BenchmarkProcessDefectInput {
   rootCauseHypothesisRisk: boolean;
   rootCauseHypothesisSignalCount: number;
   rootCauseHypothesisSignals: BenchmarkRootCauseHypothesisSignal[];
+  failureOnset: BenchmarkFailureOnsetDiagnosis;
   targetedFixCount: number;
   missingTargetedFixCount: number;
   targetedFixManifestRisk: boolean;
@@ -4543,6 +4602,27 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
           .map((signal) => `${signal.reason}:fail#${signal.failedVerificationSeq}->edit#${signal.editSeq}`)
           .join('; '),
       ].filter(Boolean).join(', '),
+    );
+  }
+  if (input.failureOnset.risk
+    && input.failureOnset.downstreamRepairCount >= 1
+    && input.failureOnset.repeatedVerifierCount >= 2
+    && !input.failureOnset.diagnosisRecorded) {
+    add(
+      'undiagnosed_failure_onset_loop',
+      'reproduction',
+      input.failureOnset.downstreamRepairCount >= 3 ? 'medium' : 'low',
+      input.failureOnset.suspectedOnsetSeq ?? input.failureOnset.failedVerificationSeq,
+      'A failed trajectory entered a repair loop without a recorded diagnosis of the failure onset.',
+      [
+        `category=${input.failureOnset.category}`,
+        `failed_verifier=${input.failureOnset.failedVerificationSeq ?? 'none'}`,
+        `suspected_onset=${input.failureOnset.suspectedOnsetSeq ?? 'none'}`,
+        `repairs=${input.failureOnset.downstreamRepairCount}`,
+        `blind=${input.failureOnset.blindRepairCount}`,
+        `unaligned=${input.failureOnset.unalignedRepairCount}`,
+        `repeated_verifiers=${input.failureOnset.repeatedVerifierCount}`,
+      ].join(' '),
     );
   }
   if (input.trajectoryCleanupRisk) {
@@ -6448,6 +6528,174 @@ function formatRootCauseHypothesisMissingEvidence(
     ? ` failure=${truncate(redactTraceText(failedVerifier.outputPreview.replace(/\s+/g, ' ').trim()), 160)}`
     : '';
   return `${verifier} was followed by ${editTarget} without a Root cause:/Diagnosis:/Hypothesis: record tied to failure evidence.${failurePreview}`;
+}
+
+function emptyBenchmarkFailureOnsetDiagnosis(): BenchmarkFailureOnsetDiagnosis {
+  return {
+    detected: false,
+    risk: false,
+    category: 'none',
+    failedVerificationSeq: null,
+    suspectedOnsetSeq: null,
+    suspectedOnsetTool: null,
+    suspectedOnsetTarget: null,
+    command: null,
+    diagnosisRecorded: false,
+    downstreamRepairCount: 0,
+    blindRepairCount: 0,
+    unalignedRepairCount: 0,
+    repeatedVerifierCount: 0,
+    regressionCycleCount: 0,
+    evidence: [],
+    recommendedAction: 'none',
+  };
+}
+
+function sanitizeBenchmarkFailureOnsetDiagnosis(
+  diagnosis: BenchmarkFailureOnsetDiagnosis | null | undefined,
+): BenchmarkFailureOnsetDiagnosis {
+  if (!diagnosis) return emptyBenchmarkFailureOnsetDiagnosis();
+  return {
+    detected: Boolean(diagnosis.detected),
+    risk: Boolean(diagnosis.risk),
+    category: diagnosis.category ?? 'none',
+    failedVerificationSeq: diagnosis.failedVerificationSeq ?? null,
+    suspectedOnsetSeq: diagnosis.suspectedOnsetSeq ?? null,
+    suspectedOnsetTool: diagnosis.suspectedOnsetTool
+      ? truncate(redactTraceText(diagnosis.suspectedOnsetTool), 80)
+      : null,
+    suspectedOnsetTarget: diagnosis.suspectedOnsetTarget
+      ? truncate(redactTraceText(diagnosis.suspectedOnsetTarget), 180)
+      : null,
+    command: diagnosis.command ? truncate(redactTraceText(diagnosis.command), 180) : null,
+    diagnosisRecorded: Boolean(diagnosis.diagnosisRecorded),
+    downstreamRepairCount: Math.max(0, diagnosis.downstreamRepairCount || 0),
+    blindRepairCount: Math.max(0, diagnosis.blindRepairCount || 0),
+    unalignedRepairCount: Math.max(0, diagnosis.unalignedRepairCount || 0),
+    repeatedVerifierCount: Math.max(0, diagnosis.repeatedVerifierCount || 0),
+    regressionCycleCount: Math.max(0, diagnosis.regressionCycleCount || 0),
+    evidence: diagnosis.evidence
+      .map((item) => truncate(redactTraceText(item), 220))
+      .filter(Boolean)
+      .slice(0, 8),
+    recommendedAction: diagnosis.recommendedAction ?? 'none',
+  };
+}
+
+export function buildBenchmarkFailureOnsetDiagnosis(
+  events: BenchmarkTraceEvent[],
+  input: {
+    rootCauseRecorded?: boolean;
+    rootCauseRisk?: boolean;
+    blindRepairEvents?: BenchmarkBlindRepairEvent[];
+    failureUnalignedRepairEvents?: BenchmarkFailureUnalignedRepairEvent[];
+    redundantVerifierEvents?: BenchmarkRedundantVerifierEvent[];
+    postEditRegressionCycleEvents?: BenchmarkPostEditRegressionCycleEvent[];
+  } = {},
+): BenchmarkFailureOnsetDiagnosis {
+  const sorted = [...events].sort((a, b) => a.seq - b.seq);
+  const conclusiveFailures = sorted.filter(isConclusiveFailedVerification);
+  const postEditRegressionCycleEvents = input.postEditRegressionCycleEvents
+    ?? buildBenchmarkPostEditRegressionCycleEvents(events);
+  const firstRegressionCycle = postEditRegressionCycleEvents[0] ?? null;
+  const firstConclusiveFailure = conclusiveFailures[0] ?? null;
+  const firstFailedVerifier = sorted.find((event) => event.verification && event.status === 'error') ?? null;
+
+  let failedVerifier: BenchmarkTraceEvent | null = null;
+  let category: BenchmarkFailureOnsetCategory = 'none';
+  if (firstRegressionCycle) {
+    failedVerifier = sorted.find((event) => event.seq === firstRegressionCycle.failingSeq) ?? firstConclusiveFailure ?? firstFailedVerifier;
+    category = 'post_edit_regression';
+  } else if (firstConclusiveFailure) {
+    failedVerifier = firstConclusiveFailure;
+    category = 'pre_edit_reproduction';
+  } else if (firstFailedVerifier) {
+    failedVerifier = firstFailedVerifier;
+    category = 'inconclusive_verifier';
+  }
+
+  if (!failedVerifier) return emptyBenchmarkFailureOnsetDiagnosis();
+
+  const failedSeq = failedVerifier.seq;
+  const firstRecoverySeq = sorted.find((event) => event.seq > failedSeq && event.verification && event.status === 'ok')?.seq
+    ?? Number.POSITIVE_INFINITY;
+  const priorEdit = [...sorted].reverse().find((event) => event.seq < failedSeq && isEditEvent(event)) ?? null;
+  const suspectedOnset = priorEdit && (category === 'post_edit_regression' || priorEdit.seq > (firstConclusiveFailure?.seq ?? 0))
+    ? priorEdit
+    : failedVerifier;
+  const downstreamRepairs = sorted.filter((event) =>
+    event.seq > failedSeq
+    && event.seq < firstRecoverySeq
+    && isEditEvent(event));
+  const blindRepairEvents = input.blindRepairEvents ?? buildBenchmarkBlindRepairEvents(events);
+  const failureUnalignedRepairEvents = input.failureUnalignedRepairEvents ?? buildBenchmarkFailureUnalignedRepairEvents(events);
+  const redundantVerifierEvents = input.redundantVerifierEvents ?? buildBenchmarkRedundantVerifierEvents(events);
+  const blindRepairCount = blindRepairEvents
+    .filter((event) => event.failedVerificationSeq >= failedSeq && event.failedVerificationSeq < firstRecoverySeq)
+    .length;
+  const unalignedRepairCount = failureUnalignedRepairEvents
+    .filter((event) => event.failedVerificationSeq >= failedSeq && event.failedVerificationSeq < firstRecoverySeq)
+    .length;
+  const repeatedVerifierCount = redundantVerifierEvents
+    .filter((event) =>
+      event.seq > failedSeq
+      && event.seq < firstRecoverySeq
+      && (event.repeatOfSeq === failedSeq || normalizeVerifierCommand(event.command) === normalizeVerifierCommand(verifierCommandForEvent(failedVerifier))))
+    .length;
+  if (category === 'pre_edit_reproduction' && (downstreamRepairs.length >= 2 || repeatedVerifierCount >= 2)) {
+    category = 'repair_loop';
+  }
+
+  const diagnosisRecorded = input.rootCauseRecorded === true;
+  const regressionCycleCount = postEditRegressionCycleEvents.length;
+  const risk = (input.rootCauseRisk === true && downstreamRepairs.length > 0)
+    || blindRepairCount > 0
+    || unalignedRepairCount > 0
+    || repeatedVerifierCount >= 2
+    || regressionCycleCount > 0;
+  const recommendedAction: BenchmarkFailureOnsetRecommendedAction =
+    regressionCycleCount > 0
+      ? 'stabilize_regression_cycle'
+      : blindRepairCount > 0 || unalignedRepairCount > 0
+        ? 'inspect_failure_files'
+        : repeatedVerifierCount >= 2
+          ? 'avoid_redundant_rerun'
+          : !diagnosisRecorded && downstreamRepairs.length > 0
+            ? 'diagnose_before_patch'
+            : 'none';
+  const command = verifierCommandForEvent(failedVerifier);
+  const signature = extractVerifierFailureSignature(failedVerifier);
+  const evidence = [
+    `failed_verifier=#${failedSeq} command=${command || 'unknown'} status=${failedVerifier.status}`,
+    suspectedOnset.seq !== failedSeq
+      ? `suspected_onset=${suspectedOnset.tool}#${suspectedOnset.seq} target=${formatEditTargetsForEvent(suspectedOnset)}`
+      : null,
+    signature?.files.length ? `failure_files=${signature.files.slice(0, 5).join('|')}` : null,
+    signature?.errors.length ? `errors=${signature.errors.slice(0, 2).join('|')}` : null,
+    downstreamRepairs.length ? `downstream_repairs=${downstreamRepairs.map((event) => `${event.tool}#${event.seq}:${formatEditTargetsForEvent(event)}`).slice(0, 4).join('|')}` : null,
+    repeatedVerifierCount > 0 ? `repeated_verifiers=${repeatedVerifierCount}` : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return sanitizeBenchmarkFailureOnsetDiagnosis({
+    detected: true,
+    risk,
+    category,
+    failedVerificationSeq: failedSeq,
+    suspectedOnsetSeq: suspectedOnset.seq,
+    suspectedOnsetTool: suspectedOnset.tool,
+    suspectedOnsetTarget: suspectedOnset.verification
+      ? verifierCommandForEvent(suspectedOnset)
+      : formatEditTargetsForEvent(suspectedOnset),
+    command,
+    diagnosisRecorded,
+    downstreamRepairCount: downstreamRepairs.length,
+    blindRepairCount,
+    unalignedRepairCount,
+    repeatedVerifierCount,
+    regressionCycleCount,
+    evidence,
+    recommendedAction,
+  });
 }
 
 function formatCandidateDossierEvidence(

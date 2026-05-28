@@ -807,6 +807,75 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('decision=edits:1,predicted:1,verified:1,targeted_fixes:0,missing_targeted_fixes:1');
   }, 15_000);
 
+  it('routes undiagnosed failure-onset prior runs to prior-experience warnings', async () => {
+    const root = makeRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-27-failure-onset-prior');
+    mkdirSync(priorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run' } }));
+    writeFileSync(join(root, 'TASK.md'), '- Must trim parser input.\n');
+    writeFileSync(join(root, 'src', 'parser.ts'), 'export const parse = (input: string) => input;\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T09:55:00.000Z',
+      verificationCommands: ['npm test -- parser'],
+      changedFiles: ['src/parser.ts'],
+      usage: {
+        totalTokens: 1800,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 88,
+        successfulVerificationCount: 1,
+        processDefects: [
+          { code: 'undiagnosed_failure_onset_loop' },
+        ],
+        failureOnset: {
+          detected: true,
+          risk: true,
+          category: 'repair_loop',
+          failedVerificationSeq: 3,
+          suspectedOnsetSeq: 3,
+          diagnosisRecorded: false,
+          downstreamRepairCount: 1,
+          blindRepairCount: 0,
+          unalignedRepairCount: 0,
+          repeatedVerifierCount: 2,
+          regressionCycleCount: 0,
+          evidence: ['failed_verifier=#3 command=npm test -- parser status=error', 'failure_files=src/parser.ts'],
+          recommendedAction: 'avoid_redundant_rerun',
+        },
+      },
+      experienceCard: {
+        failureOnset: {
+          detected: true,
+          risk: true,
+          category: 'repair_loop',
+          failedVerificationSeq: 3,
+          suspectedOnsetSeq: 3,
+          diagnosisRecorded: false,
+          downstreamRepairCount: 1,
+          blindRepairCount: 0,
+          unalignedRepairCount: 0,
+          repeatedVerifierCount: 2,
+          regressionCycleCount: 0,
+          evidence: ['failed_verifier=#3 command=npm test -- parser status=error', 'failure_files=src/parser.ts'],
+          recommendedAction: 'avoid_redundant_rerun',
+        },
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({ path: root }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('avoid prior run: 2026-05-27T09:55:00.000Z');
+    expect(result.output).toContain('reason=defects=undiagnosed_failure_onset_loop|failure_onset=repair_loop:avoid_redundant_rerun');
+    expect(result.output).toContain('failure_onset=detected:true,category:repair_loop,risk:true,diagnosed:false,failed:#3,onset:#3,repairs:1');
+    expect(result.output).toContain('evidence:failed_verifier=#3 command=npm test -- parser status=error');
+  }, 15_000);
+
   it('routes context-bloated prior runs to prior-experience warnings', async () => {
     const root = makeRoot();
     const traceDir = join(root, '.ventipus', 'benchmark-runs');
