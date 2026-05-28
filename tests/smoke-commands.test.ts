@@ -97,6 +97,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/tools', 'local'],
     ['/harness', 'local'],
     ['/harness providers', 'local'],
+    ['/harness providers --json', 'local'],
     ['/rules', 'local'],
     ['/perm', 'local'],
     ['/dry-run', 'local'],

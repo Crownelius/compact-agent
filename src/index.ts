@@ -1624,7 +1624,24 @@ export function handleSlashCommand(
 
     case '/harness':
     case '/harness-components': {
-      const report = buildHarnessComponentsReport({ component: args || 'all' }, process.cwd());
+      const parts = args.split(/\s+/).map((part) => part.trim()).filter(Boolean);
+      const wantsJson = parts.some((part, index) =>
+        part === '--json'
+        || part === 'json'
+        || part === 'format=json'
+        || part === '--format=json'
+        || (part === '--format' && parts[index + 1] === 'json')
+      );
+      const component = parts.find((part, index) =>
+        !part.startsWith('--')
+        && part !== 'json'
+        && part !== 'format=json'
+        && parts[index - 1] !== '--format'
+      ) || 'all';
+      const report = buildHarnessComponentsReport({
+        component,
+        format: wantsJson ? 'json' : 'text',
+      }, process.cwd());
       console.log(report.output);
       return { handled: true };
     }
@@ -3267,6 +3284,7 @@ async function main(): Promise<void> {
 
   // Initialize subsystems
   initHooksDir();
+  const nonInteractive = process.env.VENTIPUS_NON_INTERACTIVE === '1';
 
   // First-run ECC install — silent if already installed, silent if resources missing.
   // Also re-installs when the saved state's version is older than the bundle's
@@ -3278,10 +3296,14 @@ async function main(): Promise<void> {
     try {
       const report = installEcc({ verbose: false });
       const verb = needsReimport ? `refreshed to v${ECC_BUNDLE_VERSION}` : 'ready';
-      console.log(chalk.dim(`  ECC ${verb}: ${report.skills} skills, ${report.agents} agents, ${report.commands + report.prompts} commands, ${report.rules} rule sets.`));
+      if (!nonInteractive) {
+        console.log(chalk.dim(`  ECC ${verb}: ${report.skills} skills, ${report.agents} agents, ${report.commands + report.prompts} commands, ${report.rules} rule sets.`));
+      }
     } catch (err) {
       // Never block startup on ECC failures
-      console.log(chalk.dim(`  ECC install skipped: ${err instanceof Error ? err.message : err}`));
+      if (!nonInteractive) {
+        console.log(chalk.dim(`  ECC install skipped: ${err instanceof Error ? err.message : err}`));
+      }
     }
   } else if (eccResourcesAvailable() && eccState) {
     // Self-heal stale ECC hook paths on every startup. seedHooks() writes
@@ -3303,7 +3325,6 @@ async function main(): Promise<void> {
   // the setup wizard because it would block on stdin in a piped/headless
   // environment. Prefer an env-built runtime config when present; otherwise
   // require an existing config file and fail with a clear message.
-  const nonInteractive = process.env.VENTIPUS_NON_INTERACTIVE === '1';
   const envConfig = nonInteractive ? loadConfigFromEnv() : null;
   let config: VentipusConfig;
   if (!configExists()) {

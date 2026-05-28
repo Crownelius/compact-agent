@@ -44,6 +44,45 @@ interface ComponentSummary {
   docCount: number;
 }
 
+interface HarnessComponentsJsonReport {
+  version: 1;
+  format: 'cawdex-harness-components-v1';
+  source: 'harness_components';
+  root: string;
+  package: string | null;
+  summary: {
+    totalComponents: number;
+    shownComponents: number;
+    matchedEditableFiles: number;
+    matchedTestFiles: number;
+    matchedDocFiles: number;
+    componentIds: HarnessComponentId[];
+  };
+  discipline: string[];
+  redaction: {
+    secretsIncluded: false;
+    memoryContentsIncluded: false;
+    oracleContentsIncluded: false;
+  };
+  components: Array<{
+    id: HarnessComponentId;
+    title: string;
+    role: string;
+    editContract: string;
+    patterns: string[];
+    testPatterns: string[];
+    docPatterns: string[];
+    files: string[];
+    fileCount: number;
+    tests: string[];
+    testCount: number;
+    docs: string[];
+    docCount: number;
+  }>;
+}
+
+type HarnessComponentsFormat = 'text' | 'json';
+
 const IGNORE_GLOBS = [
   '**/.git/**',
   '**/node_modules/**',
@@ -277,6 +316,15 @@ export const HarnessComponentsTool: Tool = {
         type: 'number',
         description: 'Maximum matching files to list per files/tests/docs block. Default 10, max 40.',
       },
+      format: {
+        type: 'string',
+        enum: ['text', 'json'],
+        description: 'Output format. Default text. Use json for machine-readable component observability.',
+      },
+      json: {
+        type: 'boolean',
+        description: 'Shortcut for format=json.',
+      },
     },
     required: [],
     additionalProperties: false,
@@ -305,6 +353,11 @@ export function buildHarnessComponentsReport(input: Record<string, unknown>, cwd
       return { output: `harness_components: unsupported component "${component}"`, isError: true };
     }
 
+    const format = normalizeFormat(input);
+    if (!format) {
+      return { output: 'harness_components: unsupported format (use "text" or "json")', isError: true };
+    }
+
     const maxFiles = clampNumber(input.max_files_per_component, 10, 3, 40);
     const selected = component === 'all'
       ? COMPONENTS
@@ -314,6 +367,11 @@ export function buildHarnessComponentsReport(input: Record<string, unknown>, cwd
     const matchedFiles = summaries.reduce((sum, s) => sum + s.fileCount, 0);
     const matchedTests = summaries.reduce((sum, s) => sum + s.testCount, 0);
     const matchedDocs = summaries.reduce((sum, s) => sum + s.docCount, 0);
+
+    const data = buildJsonReport(root, pkg, summaries, matchedFiles, matchedTests, matchedDocs);
+    if (format === 'json') {
+      return { output: JSON.stringify(data, null, 2), isError: false };
+    }
 
     const lines: string[] = [
       '# Harness Components',
@@ -343,6 +401,57 @@ export function buildHarnessComponentsReport(input: Record<string, unknown>, cwd
   } catch (e) {
     return { output: `harness_components: ${e instanceof Error ? e.message : String(e)}`, isError: true };
   }
+}
+
+function buildJsonReport(
+  root: string,
+  pkg: string | null,
+  summaries: ComponentSummary[],
+  matchedFiles: number,
+  matchedTests: number,
+  matchedDocs: number,
+): HarnessComponentsJsonReport {
+  return {
+    version: 1,
+    format: 'cawdex-harness-components-v1',
+    source: 'harness_components',
+    root,
+    package: pkg,
+    summary: {
+      totalComponents: COMPONENTS.length,
+      shownComponents: summaries.length,
+      matchedEditableFiles: matchedFiles,
+      matchedTestFiles: matchedTests,
+      matchedDocFiles: matchedDocs,
+      componentIds: summaries.map((summary) => summary.spec.id),
+    },
+    discipline: [
+      'Read current files before editing; do not rely on this inventory as source content.',
+      'Attach a short Prediction: line to non-trivial harness edits, then verify with focused tests for the touched component.',
+      'Keep provider tokens, OAuth material, MemPalace contents, and benchmark oracle/answer files out of reports and commits.',
+      'Prefer file-local component changes over broad prompt-only edits when the failure is in tools, middleware, memory, or UX.',
+    ],
+    redaction: {
+      secretsIncluded: false,
+      memoryContentsIncluded: false,
+      oracleContentsIncluded: false,
+    },
+    components: summaries.map((summary) => ({
+      id: summary.spec.id,
+      title: summary.spec.title,
+      role: summary.spec.role,
+      editContract: summary.spec.editContract,
+      patterns: summary.spec.patterns,
+      testPatterns: summary.spec.tests,
+      docPatterns: summary.spec.docs ?? [],
+      files: summary.files,
+      fileCount: summary.fileCount,
+      tests: summary.tests,
+      testCount: summary.testCount,
+      docs: summary.docs,
+      docCount: summary.docCount,
+    })),
+  };
 }
 
 function summarizeComponent(root: string, spec: ComponentSpec, maxFiles: number): ComponentSummary {
@@ -432,8 +541,18 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Math.max(min, Math.min(max, Math.floor(n)));
 }
 
+function normalizeFormat(input: Record<string, unknown>): HarnessComponentsFormat | null {
+  if (input.json === true) return 'json';
+  if (input.format === undefined || input.format === null || input.format === '') return 'text';
+  const value = String(input.format).toLowerCase();
+  if (value === 'text' || value === 'json') return value;
+  return null;
+}
+
 export const _internal = {
   COMPONENTS,
   buildHarnessComponentsReport,
+  buildJsonReport,
   matchExisting,
+  normalizeFormat,
 };

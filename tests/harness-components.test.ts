@@ -8,7 +8,7 @@ import { getToolByName, getToolNames } from '../src/tools/index.js';
 const roots: string[] = [];
 
 function makeRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'ventipus-harness-'));
+  const root = mkdtempSync(join(tmpdir(), 'cawdex-harness-'));
   roots.push(root);
   return root;
 }
@@ -33,9 +33,9 @@ describe('harness_components tool', () => {
     expect(HarnessComponentsTool.isDestructive).toBe(false);
   });
 
-  it('maps Ventipus harness surfaces to files, tests, docs, and edit contracts', async () => {
+  it('maps Cawdex harness surfaces to files, tests, docs, and edit contracts', async () => {
     const root = makeRoot();
-    write(root, 'package.json', JSON.stringify({ name: 'ventipus', version: '9.9.9' }));
+    write(root, 'package.json', JSON.stringify({ name: 'cawdex', version: '9.9.9' }));
     write(root, 'src/system-prompt.ts');
     write(root, 'src/modes.ts');
     write(root, 'src/tools/bash.ts');
@@ -49,7 +49,7 @@ describe('harness_components tool', () => {
     write(root, 'src/command-palette.ts');
     write(root, 'resources/ecc/skills/example/SKILL.md');
     write(root, 'resources/ecc/agents/planner.md');
-    write(root, 'resources/terminal_bench/ventipus_agent.py');
+    write(root, 'resources/terminal_bench/cawdex_agent.py');
     write(root, 'bench/README.md');
     write(root, 'README.md');
     write(root, 'COMMANDS.md');
@@ -62,7 +62,7 @@ describe('harness_components tool', () => {
     const result = await HarnessComponentsTool.call({ path: root, max_files_per_component: 6 }, process.cwd());
 
     expect(result.isError).toBe(false);
-    expect(result.output).toContain('Package: ventipus@9.9.9');
+    expect(result.output).toContain('Package: cawdex@9.9.9');
     expect(result.output).toContain('System Prompts And Modes');
     expect(result.output).toContain('Tool Descriptions And Implementations');
     expect(result.output).toContain('Runtime Middleware And Turn Control');
@@ -77,9 +77,50 @@ describe('harness_components tool', () => {
     expect(result.output).not.toContain('sk-or-v1-');
   });
 
+  it('emits machine-readable component observability JSON', async () => {
+    const root = makeRoot();
+    write(root, 'package.json', JSON.stringify({ name: 'cawdex', version: '9.9.9' }));
+    write(root, 'src/openai-oauth.ts');
+    write(root, 'src/openai-smoke.ts');
+    write(root, 'tests/openai-oauth.test.ts');
+    write(root, 'README.md');
+    write(root, 'COMMANDS.md');
+
+    const result = await HarnessComponentsTool.call({
+      path: root,
+      component: 'providers',
+      format: 'json',
+    }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(result.output);
+    expect(parsed.format).toBe('cawdex-harness-components-v1');
+    expect(parsed.package).toBe('cawdex@9.9.9');
+    expect(parsed.summary).toMatchObject({
+      totalComponents: 10,
+      shownComponents: 1,
+      componentIds: ['providers'],
+    });
+    expect(parsed.redaction).toMatchObject({
+      secretsIncluded: false,
+      memoryContentsIncluded: false,
+      oracleContentsIncluded: false,
+    });
+    expect(parsed.components).toHaveLength(1);
+    expect(parsed.components[0]).toMatchObject({
+      id: 'providers',
+      title: 'Providers, Models, And Auth',
+      files: ['src/openai-oauth.ts', 'src/openai-smoke.ts'],
+      tests: ['tests/openai-oauth.test.ts'],
+      docs: ['COMMANDS.md', 'README.md'],
+    });
+    expect(result.output).toContain('Prediction:');
+    expect(result.output).not.toContain('sk-or-v1-');
+  });
+
   it('filters to one component and rejects unsupported filters', () => {
     const root = makeRoot();
-    write(root, 'package.json', JSON.stringify({ name: 'ventipus' }));
+    write(root, 'package.json', JSON.stringify({ name: 'cawdex' }));
     write(root, 'src/openai-oauth.ts');
     write(root, 'tests/openai-oauth.test.ts');
 
@@ -92,10 +133,14 @@ describe('harness_components tool', () => {
     const bad = _internal.buildHarnessComponentsReport({ path: root, component: 'bogus' }, process.cwd());
     expect(bad.isError).toBe(true);
     expect(bad.output).toContain('unsupported component');
+
+    const badFormat = _internal.buildHarnessComponentsReport({ path: root, format: 'xml' }, process.cwd());
+    expect(badFormat.isError).toBe(true);
+    expect(badFormat.output).toContain('unsupported format');
   });
 
   it('reports missing paths cleanly', () => {
-    const result = _internal.buildHarnessComponentsReport({ path: join(tmpdir(), 'no-such-ventipus-harness') }, process.cwd());
+    const result = _internal.buildHarnessComponentsReport({ path: join(tmpdir(), 'no-such-cawdex-harness') }, process.cwd());
     expect(result.isError).toBe(true);
     expect(result.output).toContain('path does not exist');
   });
