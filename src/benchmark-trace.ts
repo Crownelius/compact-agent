@@ -956,6 +956,13 @@ export interface SourceResearchCoverage {
   freshTargetedCoverage: boolean;
   kaggleCompetitionsSkipped: boolean;
   coverageNotes: string[];
+  githubAuthFound: boolean;
+  githubAuthMissing: boolean;
+  huggingFaceAuthFound: boolean;
+  huggingFaceAuthMissing: boolean;
+  kaggleAuthFound: boolean;
+  kaggleAuthMissing: boolean;
+  sourceAuthIncomplete: boolean;
   completeTargetedCoverage: boolean;
 }
 
@@ -979,6 +986,7 @@ interface ResearchSourcesJsonPacket {
   format?: unknown;
   query?: unknown;
   requested?: unknown;
+  auth?: unknown;
   coverageNotes?: unknown;
   digest?: unknown;
   hits?: unknown;
@@ -3407,6 +3415,9 @@ export function buildBenchmarkTrajectoryQuality(
   if (sourceResearchCoverage.kaggleCompetitionsSkipped) {
     warnings.push('Kaggle competition research was requested but skipped due missing auth; leaderboard/source coverage is dataset-only until Kaggle credentials are available.');
   }
+  if (sourceResearchCoverage.sourceAuthIncomplete) {
+    warnings.push('source research ran with missing optional source credentials; GitHub, Hugging Face, or Kaggle coverage may be rate-limited, public-only, or missing competitions.');
+  }
   if (sourceMiningCoverage.catalogPositiveMatchCount > 0 && sourceMiningCoverage.repoDigestCallCount === 0) {
     const projects = sourceMiningCoverage.catalogPositiveProjects.slice(0, 3).join(', ');
     warnings.push(`benchmark repo catalog surfaced positive public-source mapping(s) without a github_repo_digest follow-up: ${projects}. Digest the most relevant repo before porting source patterns.`);
@@ -4568,6 +4579,16 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       formatSourceCoverage(input.sourceResearchCoverage),
     );
   }
+  if (input.sourceResearchCoverage.sourceAuthIncomplete) {
+    add(
+      'source_research_missing_auth',
+      'source_research',
+      'low',
+      null,
+      'Source research used requested endpoints with missing optional credentials.',
+      formatSourceCoverage(input.sourceResearchCoverage),
+    );
+  }
   if (input.sourceMiningCoverage.catalogPositiveMatchCount > 0 && input.sourceMiningCoverage.repoDigestCallCount === 0) {
     add(
       'catalog_match_without_repo_digest',
@@ -5121,6 +5142,13 @@ export function buildSourceResearchCoverage(events: BenchmarkTraceEvent[]): Sour
     freshTargetedCoverage: false,
     kaggleCompetitionsSkipped: false,
     coverageNotes: [],
+    githubAuthFound: false,
+    githubAuthMissing: false,
+    huggingFaceAuthFound: false,
+    huggingFaceAuthMissing: false,
+    kaggleAuthFound: false,
+    kaggleAuthMissing: false,
+    sourceAuthIncomplete: false,
     completeTargetedCoverage: false,
   };
 
@@ -9003,17 +9031,35 @@ function detectTestHarnessEditRisk(target: string): string | null {
 function collectSourceCoverageNotes(coverage: SourceResearchCoverage, output: string): void {
   const normalized = output.replace(/\s+/g, ' ').trim();
   if (!normalized) return;
-  if (/Kaggle unauthenticated fallback: competitions skipped/i.test(normalized)) {
-    coverage.kaggleCompetitionsSkipped = true;
-    pushUnique(coverage.coverageNotes, 'kaggle competitions skipped');
+
+  let inCoverageNotes = false;
+  let sawCoverageNote = false;
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^##\s+Coverage notes\b/i.test(line)) {
+      inCoverageNotes = true;
+      continue;
+    }
+    if (/^##\s+/.test(line)) {
+      inCoverageNotes = false;
+    }
+    const authLine = line.match(/^-\s+auth:\s+(.+)$/i);
+    if (authLine) {
+      applySourceAuthPreview(coverage, authLine[1]);
+      continue;
+    }
+    if (inCoverageNotes) {
+      const note = line.match(/^-\s+(.+)$/);
+      if (note) {
+        sawCoverageNote = true;
+        applySourceCoverageNote(coverage, note[1]);
+      }
+    }
   }
-  if (/Targeted benchmark coverage requested:/i.test(normalized)) {
-    pushUnique(coverage.coverageNotes, 'targeted benchmark coverage requested');
-  }
-  const recency = normalized.match(/Recency filter requested:\s*recent_days=(\d+)/i);
-  if (recency) {
-    pushUniqueNumber(coverage.recentDays, Number(recency[1]));
-    pushUnique(coverage.coverageNotes, `recent_days=${recency[1]}`);
+
+  if (!sawCoverageNote) {
+    applySourceCoverageNote(coverage, normalized);
   }
 }
 
@@ -9033,6 +9079,24 @@ function collectSourceResearchJsonEvidence(coverage: SourceResearchCoverage, pac
   if (Number.isFinite(recentDays) && recentDays > 0) {
     pushUniqueNumber(coverage.recentDays, Math.floor(recentDays));
     pushUnique(coverage.coverageNotes, `recent_days=${Math.floor(recentDays)}`);
+  }
+
+  const auth = objectFromUnknown(packet.auth);
+  if (auth) {
+    applySourceAuthSignal(coverage, 'github', booleanFromUnknown(auth.githubAuth));
+    applySourceAuthSignal(coverage, 'huggingface', booleanFromUnknown(auth.huggingFaceAuth));
+    applySourceAuthSignal(coverage, 'kaggle', booleanFromUnknown(auth.kaggleAuth));
+    if (booleanFromUnknown(auth.kaggleCompetitionsEnabled) === false) {
+      coverage.kaggleCompetitionsSkipped = true;
+      coverage.kaggleAuthMissing = true;
+      coverage.sourceAuthIncomplete = true;
+      pushUnique(coverage.coverageNotes, 'kaggle competitions skipped');
+    }
+    const missingCredentialHints = stringArrayFromUnknown(auth.missingCredentialHints);
+    if (missingCredentialHints.length > 0) {
+      coverage.sourceAuthIncomplete = true;
+      pushUnique(coverage.coverageNotes, `missing_credentials:${missingCredentialHints.join('|')}`);
+    }
   }
 
   const notes = stringArrayFromUnknown(packet.coverageNotes);
@@ -9074,7 +9138,34 @@ function applySourceCoverageNote(coverage: SourceResearchCoverage, note: string)
   if (!normalized) return;
   if (/Kaggle unauthenticated fallback: competitions skipped|kaggle competitions skipped/i.test(normalized)) {
     coverage.kaggleCompetitionsSkipped = true;
+    coverage.kaggleAuthMissing = true;
+    coverage.sourceAuthIncomplete = true;
     pushUnique(coverage.coverageNotes, 'kaggle competitions skipped');
+  }
+  if (/GitHub auth found/i.test(normalized)) {
+    coverage.githubAuthFound = true;
+  }
+  if (/GitHub auth missing|public API rate limits apply/i.test(normalized)) {
+    coverage.githubAuthMissing = true;
+    coverage.sourceAuthIncomplete = true;
+  }
+  if (/Hugging Face auth found/i.test(normalized)) {
+    coverage.huggingFaceAuthFound = true;
+  }
+  if (/Hugging Face auth missing/i.test(normalized)) {
+    coverage.huggingFaceAuthMissing = true;
+    coverage.sourceAuthIncomplete = true;
+  }
+  if (/Kaggle auth found|competitions enabled by auth/i.test(normalized)) {
+    coverage.kaggleAuthFound = true;
+  }
+  if (/Kaggle auth missing|competitions require auth|competition search is disabled/i.test(normalized)) {
+    coverage.kaggleAuthMissing = true;
+    coverage.sourceAuthIncomplete = true;
+  }
+  if (/Missing optional source credentials:/i.test(normalized)) {
+    coverage.sourceAuthIncomplete = true;
+    pushUnique(coverage.coverageNotes, 'missing source credentials');
   }
   if (/Targeted benchmark coverage requested:/i.test(normalized)) {
     pushUnique(coverage.coverageNotes, 'targeted benchmark coverage requested');
@@ -9083,6 +9174,48 @@ function applySourceCoverageNote(coverage: SourceResearchCoverage, note: string)
   if (recency) {
     pushUniqueNumber(coverage.recentDays, Number(recency[1]));
     pushUnique(coverage.coverageNotes, `recent_days=${recency[1]}`);
+  }
+}
+
+function applySourceAuthSignal(
+  coverage: SourceResearchCoverage,
+  source: 'github' | 'huggingface' | 'kaggle',
+  value: boolean | null,
+): void {
+  if (value == null) return;
+  if (source === 'github') {
+    coverage.githubAuthFound = coverage.githubAuthFound || value;
+    coverage.githubAuthMissing = coverage.githubAuthMissing || !value;
+  } else if (source === 'huggingface') {
+    coverage.huggingFaceAuthFound = coverage.huggingFaceAuthFound || value;
+    coverage.huggingFaceAuthMissing = coverage.huggingFaceAuthMissing || !value;
+  } else {
+    coverage.kaggleAuthFound = coverage.kaggleAuthFound || value;
+    coverage.kaggleAuthMissing = coverage.kaggleAuthMissing || !value;
+  }
+  if (!value) coverage.sourceAuthIncomplete = true;
+}
+
+function applySourceAuthPreview(coverage: SourceResearchCoverage, value: string): void {
+  const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!normalized) return;
+  for (const match of normalized.matchAll(/\b(github|huggingface|kaggle)=(found|missing|none|n\/a)\b/g)) {
+    const source = match[1] as 'github' | 'huggingface' | 'kaggle';
+    const state = match[2];
+    if (state === 'found') applySourceAuthSignal(coverage, source, true);
+    if (state === 'missing') applySourceAuthSignal(coverage, source, false);
+  }
+  const kaggleCompetitions = normalized.match(/\bkaggle_competitions=(enabled|disabled|skipped|n\/a)\b/);
+  if (kaggleCompetitions && /disabled|skipped/.test(kaggleCompetitions[1])) {
+    coverage.kaggleCompetitionsSkipped = true;
+    coverage.kaggleAuthMissing = true;
+    coverage.sourceAuthIncomplete = true;
+    pushUnique(coverage.coverageNotes, 'kaggle competitions skipped');
+  }
+  const missing = normalized.match(/\bmissing=(yes|true|none|no)\b/);
+  if (missing && missing[1] !== 'none' && missing[1] !== 'no') {
+    coverage.sourceAuthIncomplete = true;
+    pushUnique(coverage.coverageNotes, 'missing source credentials');
   }
 }
 
@@ -9111,6 +9244,11 @@ function collectSourceResearchEvidence(coverage: SourceResearchCoverage, output:
 
     if (inSourceErrors && /^-\s+\S+/.test(line)) {
       coverage.sourceErrorCount++;
+    }
+
+    const authLine = line.match(/^-\s+auth:\s+(.+)$/i);
+    if (authLine) {
+      applySourceAuthPreview(coverage, authLine[1]);
     }
 
     const url = line.match(/^https?:\/\/\S+/i)?.[0];
@@ -9175,6 +9313,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('source research produced no parsed source hits')
     || warning.includes('source research reported')
     || warning.includes('Kaggle competition research')
+    || warning.includes('source research ran with missing optional source credentials')
     || warning.includes('benchmark repo catalog surfaced positive public-source mapping')
     || warning.includes('task contract signals')
     || warning.includes('task contract checklist still has incomplete')
@@ -9212,7 +9351,7 @@ export function buildBenchmarkCompletionReminder(
   return [
     'Benchmark trajectory is under-evidenced. Do not provide the final answer yet.',
     '',
-    ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
+    ...blockingWarnings.slice(0, 5).map((warning) => `- ${warning}`),
     '',
     'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, SWE-Cycle lifecycle phases, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-Cycle/SWE-CI completion, for Pi-Bench-style tasks build the user/profile/history/file/app/tool context contract and record hidden-intent hypotheses, privacy risk, clarification decision, and observable state verification before claiming proactive assistant completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, record a Root cause:/Diagnosis:/Hypothesis: line tied to failed-verifier evidence before repair edits, attach a Targeted fix:/Fix plan line before patching after failed-verifier evidence, deduplicate repeated tool output and summarize encoded/minified blobs instead of replaying them into reasoning, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line and an At-risk regression line to each non-trivial edit, then verify both the expected fix and the forecasted risk where feasible, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, lifecycle judge, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-Cycle/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, follow positive benchmark_repo_catalog mappings with github_repo_digest before porting public-agent source patterns, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, resolve harness-safety signals by avoiding protected resource access, external transfer, destructive operations, and oracle/hidden materials unless explicitly required, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
@@ -9815,6 +9954,10 @@ function numberFromUnknown(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function booleanFromUnknown(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
 function pushUnique(target: string[], value: string): void {
   const clean = value.trim().toLowerCase();
   if (clean && !target.includes(clean)) target.push(clean);
@@ -9847,6 +9990,12 @@ function formatSourceCoverage(coverage: SourceResearchCoverage): string {
   const kaggle = coverage.kaggle
     ? `kaggle:${coverage.kaggleKinds.join('|') || 'default'}`
     : 'kaggle:no';
+  const authSignals = [
+    coverage.githubAuthFound ? 'github:found' : coverage.githubAuthMissing ? 'github:missing' : null,
+    coverage.huggingFaceAuthFound ? 'huggingface:found' : coverage.huggingFaceAuthMissing ? 'huggingface:missing' : null,
+    coverage.kaggleAuthFound ? 'kaggle:found' : coverage.kaggleAuthMissing ? 'kaggle:missing' : null,
+    coverage.sourceAuthIncomplete ? 'incomplete' : null,
+  ].filter(Boolean).join('|');
   return [
     `${coverage.callCount} call${coverage.callCount === 1 ? '' : 's'}`,
     `hits:${coverage.sourceHitCount}`,
@@ -9857,6 +10006,7 @@ function formatSourceCoverage(coverage: SourceResearchCoverage): string {
     kaggle,
     coverage.recentDays.length ? `recent_days:${coverage.recentDays.join('|')}` : 'recent_days:none',
     coverage.resultSources.length ? `result_sources:${coverage.resultSources.slice(0, 8).join('|')}` : null,
+    authSignals ? `auth:${authSignals}` : null,
     coverage.kaggleCompetitionsSkipped ? 'kaggle_competitions:skipped' : null,
     coverage.coverageNotes.length ? `notes:${coverage.coverageNotes.join('|')}` : null,
     `fresh_targeted:${coverage.freshTargetedCoverage ? 'yes' : 'no'}`,
@@ -10448,6 +10598,7 @@ function formatResearchSourcesJsonPreviewLines(packet: ResearchSourcesJsonPacket
   const lines: string[] = [`Research source results for "${query}"`];
   const requested = objectFromUnknown(packet.requested);
   const notes = stringArrayFromUnknown(packet.coverageNotes);
+  const authPreview = formatResearchSourceAuthPreview(objectFromUnknown(packet.auth));
   if (notes.length > 0) {
     lines.push('', '## Coverage notes');
     for (const note of notes) lines.push(`- ${note}`);
@@ -10459,15 +10610,16 @@ function formatResearchSourcesJsonPreviewLines(packet: ResearchSourcesJsonPacket
     ? Object.entries(sources).map(([source, count]) => `${source}=${count}`).join(' | ')
     : 'none';
   const topUrls = stringArrayFromUnknown(digest?.topUrls);
-  lines.push(
-    '',
+  const digestLines = [
     '## Source digest',
     `- request: source=${String(requested?.source ?? 'all')} github_kind=${String(requested?.githubKind ?? 'repositories')} kind=${String(requested?.huggingFaceKind ?? 'all')} kaggle_kind=${String(requested?.kaggleKind ?? 'both')} recent_days=${String(requested?.recentDays ?? 'none')}`,
     `- hits: ${numberFromUnknown(digest?.hitCount) ?? 0}`,
     `- errors: ${numberFromUnknown(digest?.errorCount) ?? stringArrayFromUnknown(packet.errors).length}`,
     `- sources: ${sourceSummary}`,
+    authPreview ? `- auth: ${authPreview}` : null,
     `- top_urls: ${topUrls.length ? topUrls.join(' | ') : 'none'}`,
-  );
+  ].filter((line): line is string => line != null);
+  lines.push('', ...digestLines);
 
   for (const hit of arrayFromUnknown(packet.hits)) {
     const record = objectFromUnknown(hit);
@@ -10487,6 +10639,28 @@ function formatResearchSourcesJsonPreviewLines(packet: ResearchSourcesJsonPacket
   }
 
   return lines;
+}
+
+function formatResearchSourceAuthPreview(auth: Record<string, unknown> | null): string | null {
+  if (!auth) return null;
+  const signal = (value: boolean | null): string => {
+    if (value === true) return 'found';
+    if (value === false) return 'missing';
+    return 'n/a';
+  };
+  const competitionRequested = booleanFromUnknown(auth.kaggleCompetitionsRequested);
+  const competitionEnabled = booleanFromUnknown(auth.kaggleCompetitionsEnabled);
+  const competitionState = competitionRequested === true
+    ? competitionEnabled === true ? 'enabled' : competitionEnabled === false ? 'disabled' : 'requested'
+    : 'n/a';
+  const missing = stringArrayFromUnknown(auth.missingCredentialHints).length > 0 ? 'yes' : 'none';
+  return [
+    `github=${signal(booleanFromUnknown(auth.githubAuth))}`,
+    `huggingface=${signal(booleanFromUnknown(auth.huggingFaceAuth))}`,
+    `kaggle=${signal(booleanFromUnknown(auth.kaggleAuth))}`,
+    `kaggle_competitions=${competitionState}`,
+    `missing=${missing}`,
+  ].join(' ');
 }
 
 function extractResearchSourcesPreviewLines(text: string): string[] {

@@ -51,6 +51,17 @@ interface SourceDigest {
   topUrls: string[];
 }
 
+interface SourceAuthReadiness {
+  arxivPublic: boolean | null;
+  githubAuth: boolean | null;
+  githubUnauthenticatedRateLimit: boolean | null;
+  huggingFaceAuth: boolean | null;
+  kaggleAuth: boolean | null;
+  kaggleCompetitionsRequested: boolean;
+  kaggleCompetitionsEnabled: boolean | null;
+  missingCredentialHints: string[];
+}
+
 interface ResearchSourcesJsonReport {
   version: 1;
   format: 'cawdex-research-sources-v1';
@@ -64,6 +75,7 @@ interface ResearchSourcesJsonReport {
     limit: number;
     recentDays: number | null;
   };
+  auth: SourceAuthReadiness;
   coverageNotes: string[];
   digest: SourceDigest;
   redaction: {
@@ -306,6 +318,10 @@ function githubHeaders(): Record<string, string> {
   const token = firstNonEmpty(process.env.GITHUB_TOKEN, process.env.GH_TOKEN, process.env.GITHUB_API_TOKEN);
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
+}
+
+function hasGitHubAuth(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!firstNonEmpty(env.GITHUB_TOKEN, env.GH_TOKEN, env.GITHUB_API_TOKEN);
 }
 
 async function searchGitHub(query: string, limit: number, recentDays: number | undefined, kind: GitHubKind): Promise<SourceHit[]> {
@@ -810,6 +826,10 @@ function hasKaggleAuth(env: NodeJS.ProcessEnv = process.env): boolean {
   return Object.keys(resolveKaggleAuthHeaders(env)).length > 0;
 }
 
+function hasHuggingFaceAuth(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!resolveHuggingFaceToken(env);
+}
+
 function resolveKaggleApiToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const explicit = firstNonEmpty(env.KAGGLE_API_TOKEN, env.KAGGLE_TOKEN);
   if (explicit) return explicit;
@@ -901,6 +921,7 @@ function buildResearchSourcesJsonReport(
   hits: SourceHit[],
   errors: string[],
   notes: string[],
+  auth: SourceAuthReadiness,
 ): ResearchSourcesJsonReport {
   return {
     version: 1,
@@ -915,6 +936,7 @@ function buildResearchSourcesJsonReport(
       limit: request.limit,
       recentDays: request.recentDays ?? null,
     },
+    auth,
     coverageNotes: notes,
     digest: buildSourceDigestObject(hits, errors),
     redaction: {
@@ -1012,7 +1034,8 @@ export const ResearchSourcesTool: Tool = {
       return { output: `research_sources: unsupported kaggle_kind "${kaggleKind}"`, isError: true };
     }
 
-    const notes = buildCoverageNotes(sources, githubKind, kind, kaggleKind, recentDays);
+    const auth = buildSourceAuthReadiness(sources, kaggleKind);
+    const notes = buildCoverageNotes(sources, githubKind, kind, kaggleKind, recentDays, auth);
     const results = await Promise.all(sources.map(async (s): Promise<SourceSearchResult> => {
       const sourceHits: SourceHit[] = [];
       try {
@@ -1036,7 +1059,7 @@ export const ResearchSourcesTool: Tool = {
       recentDays,
     };
     const output = format === 'json'
-      ? JSON.stringify(buildResearchSourcesJsonReport(query, request, hits, errors, notes), null, 2)
+      ? JSON.stringify(buildResearchSourcesJsonReport(query, request, hits, errors, notes, auth), null, 2)
       : formatHits(query, hits, errors, notes);
 
     return {
@@ -1060,6 +1083,7 @@ function buildCoverageNotes(
   kind: HuggingFaceKind,
   kaggleKind: KaggleKind,
   recentDays?: number,
+  auth: SourceAuthReadiness = buildSourceAuthReadiness(sources, kaggleKind),
 ): string[] {
   const notes: string[] = [];
   if (sources.includes('arxiv')) notes.push('arXiv papers requested.');
@@ -1081,12 +1105,12 @@ function buildCoverageNotes(
     }
   }
   if (sources.includes('kaggle')) {
-    const authed = hasKaggleAuth(process.env);
-    notes.push(`Kaggle ${kaggleKind} requested; competitions ${authed ? 'enabled by auth' : 'require auth'}.`);
-    if (kaggleKind === 'both' && !authed) {
+    notes.push(`Kaggle ${kaggleKind} requested; competitions ${auth.kaggleAuth ? 'enabled by auth' : 'require auth'}.`);
+    if (kaggleKind === 'both' && !auth.kaggleAuth) {
       notes.push('Kaggle unauthenticated fallback: competitions skipped, datasets queried only.');
     }
   }
+  notes.push(...buildAuthCoverageNotes(auth));
   if (
     sources.includes('arxiv') &&
     sources.includes('github') && githubKind === 'all' &&
@@ -1094,6 +1118,59 @@ function buildCoverageNotes(
     sources.includes('kaggle') && kaggleKind === 'both'
   ) {
     notes.push('Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.');
+  }
+  return notes;
+}
+
+function buildSourceAuthReadiness(
+  sources: ResearchSource[],
+  kaggleKind: KaggleKind,
+  env: NodeJS.ProcessEnv = process.env,
+): SourceAuthReadiness {
+  const githubRequested = sources.includes('github');
+  const huggingFaceRequested = sources.includes('huggingface');
+  const kaggleRequested = sources.includes('kaggle');
+  const kaggleCompetitionsRequested = kaggleRequested && (kaggleKind === 'both' || kaggleKind === 'competitions');
+  const githubAuth = githubRequested ? hasGitHubAuth(env) : null;
+  const huggingFaceAuth = huggingFaceRequested ? hasHuggingFaceAuth(env) : null;
+  const kaggleAuth = kaggleRequested ? hasKaggleAuth(env) : null;
+  const missingCredentialHints: string[] = [];
+
+  if (githubAuth === false) missingCredentialHints.push('GITHUB_TOKEN or GH_TOKEN');
+  if (huggingFaceAuth === false) missingCredentialHints.push('HF_TOKEN');
+  if (kaggleAuth === false && kaggleCompetitionsRequested) missingCredentialHints.push('KAGGLE_API_TOKEN or KAGGLE_USERNAME/KAGGLE_KEY');
+
+  return {
+    arxivPublic: sources.includes('arxiv') ? true : null,
+    githubAuth,
+    githubUnauthenticatedRateLimit: githubRequested ? githubAuth === false : null,
+    huggingFaceAuth,
+    kaggleAuth,
+    kaggleCompetitionsRequested,
+    kaggleCompetitionsEnabled: kaggleCompetitionsRequested ? kaggleAuth === true : null,
+    missingCredentialHints,
+  };
+}
+
+function buildAuthCoverageNotes(auth: SourceAuthReadiness): string[] {
+  const notes: string[] = [];
+  if (auth.githubAuth === true) {
+    notes.push('GitHub auth found; GitHub API rate limits are expanded.');
+  } else if (auth.githubAuth === false) {
+    notes.push('GitHub auth missing; public API rate limits apply and code search coverage may be partial.');
+  }
+  if (auth.huggingFaceAuth === true) {
+    notes.push('Hugging Face auth found.');
+  } else if (auth.huggingFaceAuth === false) {
+    notes.push('Hugging Face auth missing; public endpoints still work but private/rate-limited coverage may be partial.');
+  }
+  if (auth.kaggleAuth === true) {
+    notes.push('Kaggle auth found.');
+  } else if (auth.kaggleAuth === false && auth.kaggleCompetitionsRequested) {
+    notes.push('Kaggle auth missing; competition search is disabled.');
+  }
+  if (auth.missingCredentialHints.length > 0) {
+    notes.push(`Missing optional source credentials: ${auth.missingCredentialHints.join(', ')}.`);
   }
   return notes;
 }
@@ -1114,8 +1191,11 @@ export const _internal = {
   resolveHuggingFaceToken,
   resolveKaggleApiToken,
   resolveKaggleAuthHeaders,
+  hasGitHubAuth,
+  hasHuggingFaceAuth,
   hasKaggleAuth,
   resolveKaggleLegacyCredentials,
+  buildSourceAuthReadiness,
   buildCoverageNotes,
   buildResearchSourcesJsonReport,
   buildSourceDigestObject,

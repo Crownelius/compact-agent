@@ -6217,11 +6217,24 @@ describe('benchmark trace artifacts', () => {
       coverageNotes: [
         'arXiv papers requested.',
         'GitHub all requested.',
+        'GitHub auth found; GitHub API rate limits are expanded.',
         'Hugging Face all requested.',
+        'Hugging Face auth found.',
         'Kaggle both requested; competitions enabled by auth.',
+        'Kaggle auth found.',
         'Recency filter requested: recent_days=90.',
         'Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
       ],
+      auth: {
+        arxivPublic: true,
+        githubAuth: true,
+        githubUnauthenticatedRateLimit: false,
+        huggingFaceAuth: true,
+        kaggleAuth: true,
+        kaggleCompetitionsRequested: true,
+        kaggleCompetitionsEnabled: true,
+        missingCredentialHints: [],
+      },
       digest: {
         hitCount: 4,
         errorCount: 0,
@@ -6292,10 +6305,104 @@ describe('benchmark trace artifacts', () => {
     expect(coverage.resultSources).toEqual(['arxiv', 'github', 'hf_paper', 'kaggle_competition']);
     expect(coverage.topUrls).toContain('https://arxiv.org/abs/2604.25850');
     expect(coverage.recentDays).toEqual([90]);
+    expect(coverage.githubAuthFound).toBe(true);
+    expect(coverage.huggingFaceAuthFound).toBe(true);
+    expect(coverage.kaggleAuthFound).toBe(true);
+    expect(coverage.sourceAuthIncomplete).toBe(false);
     expect(coverage.completeTargetedCoverage).toBe(true);
     expect(coverage.freshTargetedCoverage).toBe(true);
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('targeted:yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('auth:github:found|huggingface:found|kaggle:found');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('result_sources:arxiv|github|hf_paper|kaggle_competition');
+  });
+
+  it('warns when structured source research reports missing source auth', () => {
+    const packet = {
+      version: 1,
+      format: 'cawdex-research-sources-v1',
+      source: 'research_sources',
+      query: 'coding agent benchmark repair trajectory',
+      requested: {
+        source: 'all',
+        githubKind: 'all',
+        huggingFaceKind: 'all',
+        kaggleKind: 'both',
+        limit: 1,
+        recentDays: 90,
+      },
+      auth: {
+        arxivPublic: true,
+        githubAuth: false,
+        githubUnauthenticatedRateLimit: true,
+        huggingFaceAuth: false,
+        kaggleAuth: false,
+        kaggleCompetitionsRequested: true,
+        kaggleCompetitionsEnabled: false,
+        missingCredentialHints: [
+          'GITHUB_TOKEN or GH_TOKEN',
+          'HF_TOKEN',
+          'KAGGLE_API_TOKEN or KAGGLE_USERNAME/KAGGLE_KEY',
+        ],
+      },
+      coverageNotes: [
+        'arXiv papers requested.',
+        'GitHub all requested.',
+        'GitHub auth missing; public API rate limits apply and code search coverage may be partial.',
+        'Hugging Face all requested.',
+        'Hugging Face auth missing; public endpoints still work but private/rate-limited coverage may be partial.',
+        'Kaggle both requested; competitions require auth.',
+        'Kaggle unauthenticated fallback: competitions skipped, datasets queried only.',
+        'Kaggle auth missing; competition search is disabled.',
+        'Missing optional source credentials: GITHUB_TOKEN or GH_TOKEN, HF_TOKEN, KAGGLE_API_TOKEN or KAGGLE_USERNAME/KAGGLE_KEY.',
+        'Recency filter requested: recent_days=90.',
+        'Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.',
+      ],
+      digest: {
+        hitCount: 3,
+        errorCount: 0,
+        sources: {
+          arXiv: 1,
+          GitHub: 1,
+          'HF paper': 1,
+        },
+        topUrls: [
+          'https://arxiv.org/abs/2604.25850',
+          'https://github.com/example/agent',
+        ],
+      },
+      redaction: {
+        secretsIncluded: false,
+        credentialHeadersIncluded: false,
+      },
+      hits: [],
+      errors: [],
+    };
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'research_sources',
+        input: {
+          query: 'coding agent benchmark repair trajectory',
+          format: 'json',
+        },
+        output: JSON.stringify(packet, null, 2),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildSourceResearchCoverage(events);
+    expect(coverage.githubAuthMissing).toBe(true);
+    expect(coverage.huggingFaceAuthMissing).toBe(true);
+    expect(coverage.kaggleAuthMissing).toBe(true);
+    expect(coverage.sourceAuthIncomplete).toBe(true);
+    expect(coverage.kaggleCompetitionsSkipped).toBe(true);
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('auth:github:missing|huggingface:missing|kaggle:missing|incomplete');
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.warnings.join('\n')).toContain('source research ran with missing optional source credentials');
+    expect(quality.processDefects.map((d) => d.code)).toContain('source_research_missing_auth');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('source research ran with missing optional source credentials');
   });
 
   it('warns when complete targeted source research omits a recency window', () => {

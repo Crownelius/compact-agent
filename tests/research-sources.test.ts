@@ -190,6 +190,7 @@ describe('research_sources tool', () => {
   });
 
   it('calls all source endpoints and formats results', async () => {
+    vi.stubEnv('GITHUB_TOKEN', 'gh_test_token');
     vi.stubEnv('HF_TOKEN', 'hf_test_token');
     vi.stubEnv('KAGGLE_API_TOKEN', 'kg_test_token');
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -200,6 +201,7 @@ describe('research_sources tool', () => {
         });
       }
       if (url.includes('api.github.com')) {
+        expect(headers.get('Authorization')).toBe('Bearer gh_test_token');
         return Response.json({ items: [{ full_name: 'o/r', html_url: 'https://github.com/o/r', stargazers_count: 1 }] });
       }
       if (url.includes('huggingface.co/api/models')) {
@@ -247,6 +249,7 @@ describe('research_sources tool', () => {
     expect(result.output).toContain('- sources: arXiv=1 | GitHub=1 | HF model=1 | HF dataset=1 | HF paper=1 | Kaggle=1 | Kaggle competition=1');
     expect(result.output).toContain('arXiv papers requested');
     expect(result.output).toContain('GitHub repositories requested');
+    expect(result.output).toContain('GitHub auth found');
     expect(result.output).toContain('Hugging Face all requested');
     expect(result.output).toContain('Kaggle both requested; competitions enabled by auth');
     expect(result.output).toContain('arXiv: Paper');
@@ -261,9 +264,11 @@ describe('research_sources tool', () => {
     expect(result.output.indexOf('## HF paper: Agent Paper')).toBeLessThan(result.output.indexOf('## Kaggle: Data'));
     expect(result.output).not.toContain('hf_test_token');
     expect(result.output).not.toContain('kg_test_token');
+    expect(result.output).not.toContain('gh_test_token');
   });
 
   it('emits machine-readable source research JSON without credential leakage', async () => {
+    vi.stubEnv('GITHUB_TOKEN', 'gh_json_token');
     vi.stubEnv('HF_TOKEN', 'hf_json_token');
     vi.stubEnv('KAGGLE_API_TOKEN', 'kg_json_token');
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -343,6 +348,16 @@ describe('research_sources tool', () => {
       'Kaggle competition': 1,
     });
     expect(parsed.digest.topUrls).toContain('https://arxiv.org/abs/2604.25850');
+    expect(parsed.auth).toMatchObject({
+      arxivPublic: true,
+      githubAuth: true,
+      githubUnauthenticatedRateLimit: false,
+      huggingFaceAuth: true,
+      kaggleAuth: true,
+      kaggleCompetitionsRequested: true,
+      kaggleCompetitionsEnabled: true,
+      missingCredentialHints: [],
+    });
     expect(parsed.coverageNotes).toContain('Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.');
     expect(parsed.redaction).toMatchObject({
       secretsIncluded: false,
@@ -355,6 +370,7 @@ describe('research_sources tool', () => {
     });
     expect(result.output).not.toContain('hf_json_token');
     expect(result.output).not.toContain('kg_json_token');
+    expect(result.output).not.toContain('gh_json_token');
   });
 
   it('can query GitHub repositories, issues, pulls, and code explicitly', async () => {
@@ -642,16 +658,51 @@ describe('research_sources tool', () => {
   });
 
   it('formats targeted benchmark coverage notes without leaking credentials', () => {
+    vi.stubEnv('GITHUB_TOKEN', 'gh_note_secret');
+    vi.stubEnv('HF_TOKEN', 'hf_note_secret');
     vi.stubEnv('KAGGLE_API_TOKEN', 'kg_note_secret');
     const notes = _internal.buildCoverageNotes(['arxiv', 'github', 'huggingface', 'kaggle'], 'all', 'all', 'both');
     expect(notes).toContain('Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.');
     expect(notes.join('\n')).toContain('Kaggle both requested; competitions enabled by auth');
+    expect(notes.join('\n')).toContain('GitHub auth found');
     expect(notes.join('\n')).not.toContain('kg_note_secret');
+    expect(notes.join('\n')).not.toContain('gh_note_secret');
+    expect(notes.join('\n')).not.toContain('hf_note_secret');
     const output = _internal.formatHits('agent benchmark', [], [], notes);
     expect(output).toContain('Coverage notes');
     expect(output).toContain('Source digest');
     expect(output).toContain('- hits: 0');
     expect(output).toContain('Targeted benchmark coverage requested');
+  });
+
+  it('records missing source credentials as readiness metadata without leaking values', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ventipus-source-auth-empty-'));
+    try {
+      vi.stubEnv('GITHUB_TOKEN', '');
+      vi.stubEnv('GH_TOKEN', '');
+      vi.stubEnv('GITHUB_API_TOKEN', '');
+      vi.stubEnv('KAGGLE_API_TOKEN', '');
+      vi.stubEnv('KAGGLE_TOKEN', '');
+      vi.stubEnv('KAGGLE_USERNAME', '');
+      vi.stubEnv('KAGGLE_KEY', '');
+      vi.stubEnv('KAGGLE_CONFIG_DIR', dir);
+      const auth = _internal.buildSourceAuthReadiness(['github', 'kaggle'], 'both', process.env);
+      expect(auth).toMatchObject({
+        githubAuth: false,
+        githubUnauthenticatedRateLimit: true,
+        kaggleAuth: false,
+        kaggleCompetitionsRequested: true,
+        kaggleCompetitionsEnabled: false,
+      });
+      expect(auth.missingCredentialHints).toContain('GITHUB_TOKEN or GH_TOKEN');
+      expect(auth.missingCredentialHints).toContain('KAGGLE_API_TOKEN or KAGGLE_USERNAME/KAGGLE_KEY');
+      const notes = _internal.buildCoverageNotes(['github', 'kaggle'], 'all', 'all', 'both', undefined, auth);
+      expect(notes.join('\n')).toContain('GitHub auth missing');
+      expect(notes.join('\n')).toContain('Kaggle auth missing');
+      expect(notes.join('\n')).not.toContain('gh_');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('rejects unsupported research source output formats', async () => {
