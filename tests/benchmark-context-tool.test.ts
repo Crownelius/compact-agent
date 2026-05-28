@@ -404,6 +404,85 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('do not overclaim a public repo');
   });
 
+  it('routes prior source-mining catalog hits without repo digests to warnings', async () => {
+    const root = makeRoot();
+    const traceDir = join(root, '.ventipus', 'benchmark-runs');
+    const priorRunDir = join(traceDir, '2026-05-27-source-mining-missing-digest');
+    mkdirSync(priorRunDir, { recursive: true });
+    process.env.VENTIPUS_BENCHMARK_TRACE_DIR = traceDir;
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      'Improve Terminal-Bench leaderboard source mining for Codex CLI.',
+      '',
+    ].join('\n'));
+    writeFileSync(join(root, 'README.md'), '# Source mining notes\n');
+    writeFileSync(join(priorRunDir, 'summary.json'), JSON.stringify({
+      cwd: root,
+      endedAt: '2026-05-27T10:30:00.000Z',
+      verificationCommands: ['npm test'],
+      changedFiles: ['README.md'],
+      usage: {
+        totalTokens: 900,
+        estimatedCostUsd: 0,
+      },
+      trajectoryQuality: {
+        processScore: 96,
+        successfulVerificationCount: 1,
+        processDefects: [],
+        sourceMiningCoverage: {
+          catalogCallCount: 1,
+          repoDigestCallCount: 0,
+          catalogUsed: true,
+          repoDigestUsed: false,
+          catalogQueries: ['codex status:official'],
+          catalogPositiveMatchCount: 1,
+          catalogGapCount: 0,
+          catalogPositiveProjects: ['Codex CLI'],
+          catalogGapProjects: [],
+          catalogRepos: ['openai/codex'],
+          repoDigestRepos: [],
+          contextCatalogHintCount: 0,
+          contextCatalogGapCount: 0,
+        },
+      },
+      experienceCard: {
+        version: 1,
+        replayCheckpoints: [],
+        failureSignatures: [],
+        sourceMiningCoverage: {
+          catalogCallCount: 1,
+          repoDigestCallCount: 0,
+          catalogUsed: true,
+          repoDigestUsed: false,
+          catalogQueries: ['codex status:official'],
+          catalogPositiveMatchCount: 1,
+          catalogGapCount: 0,
+          catalogPositiveProjects: ['Codex CLI'],
+          catalogGapProjects: [],
+          catalogRepos: ['openai/codex'],
+          repoDigestRepos: [],
+          contextCatalogHintCount: 0,
+          contextCatalogGapCount: 0,
+        },
+        verificationCommands: ['npm test'],
+        changedFiles: ['README.md'],
+        warnings: [],
+      },
+    }, null, 2));
+
+    const result = await BenchmarkContextTool.call({
+      path: root,
+      probe_network: false,
+      task: 'Terminal-Bench leaderboard source mining for Codex CLI',
+    }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('Prior Benchmark Experience Warnings');
+    expect(result.output).toContain('avoid prior run: 2026-05-27T10:30:00.000Z');
+    expect(result.output).toContain('reason=source_mining_catalog_without_digest=Codex CLI');
+    expect(result.output).toContain('source_mining=catalog_calls:1,repo_digest_calls:0,context_hints:0,context_gaps:0,matches:1,gaps:0,projects:Codex CLI,catalog_repos:openai/codex,queries:codex status:official');
+  });
+
   it('surfaces offline environment indicators without leaking env values', async () => {
     const root = makeRoot();
     writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'npm test' } }));
@@ -485,6 +564,21 @@ describe('benchmark_context tool', () => {
           kaggleCompetitionsSkipped: false,
           coverageNotes: ['targeted benchmark coverage requested'],
           completeTargetedCoverage: true,
+        },
+        sourceMiningCoverage: {
+          catalogCallCount: 1,
+          repoDigestCallCount: 1,
+          catalogUsed: true,
+          repoDigestUsed: true,
+          catalogQueries: ['openhands status:all'],
+          catalogPositiveMatchCount: 1,
+          catalogGapCount: 1,
+          catalogPositiveProjects: ['OpenHands'],
+          catalogGapProjects: ['SageAgent'],
+          catalogRepos: ['OpenHands/openhands'],
+          repoDigestRepos: ['OpenHands/openhands'],
+          contextCatalogHintCount: 2,
+          contextCatalogGapCount: 1,
         },
         proactivity: {
           detected: true,
@@ -648,6 +742,7 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('reliability=final_verifiers:2,final_ok:2,stable:true,broad_ok:true,ci_ok:false,regressions:0,post_success_mutations:0,latest:ok,commands:npm test|npm run build');
     expect(result.output).toContain('context=inspects:4,hits:3,misses:1,utilization:75.00%,risk:false,unused:read_file#2 src/unrelated.ts,pre_edit:3/4,pre_edit_utilization:75.00%,pre_edit_bloat:false,pre_edit_unused:read_file#2 src/unrelated.ts');
     expect(result.output).toContain('source_research=calls:1,hits:4,errors:0,sources:arxiv|github|huggingface|kaggle,github:repositories|issues,hf:papers,kaggle:competitions,result_sources:arxiv|github_repo|hf_paper|kaggle_competition,targeted:true,fresh:true,kaggle_skipped:false,recent_days:90,top:https://arxiv.org/abs/2602.08316|https://github.com/example/benchmark-agent,notes:targeted benchmark coverage requested');
+    expect(result.output).toContain('source_mining=catalog_calls:1,repo_digest_calls:1,context_hints:2,context_gaps:1,matches:1,gaps:1,projects:OpenHands,gap_projects:SageAgent,catalog_repos:OpenHands/openhands,repo_digests:OpenHands/openhands,queries:openhands status:all');
     expect(result.output).toContain('proactivity=detected:true,risk:false,signals:0,context:6/6,hidden_intent:true,clarification:true,privacy:true,completion:true,actions:1');
     expect(result.output).toContain('efficiency=tools:8,tool_elapsed_ms:620000,slow_tools:2,usage_calls:2,tokens:1200,cost:$0.0000,cost_risk:false,time_risk:true,invalid:0,invalid_pct:0.00,success_verifiers:1,process_score:95,process_defects:0,warnings:0');
   }, 15_000);

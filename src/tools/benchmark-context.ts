@@ -139,6 +139,12 @@ interface PriorTrajectoryTriageSummary {
   scoreBonus: number;
 }
 
+interface PriorSourceMiningSummary {
+  text: string | null;
+  harmReasons: string[];
+  scoreBonus: number;
+}
+
 export const BenchmarkContextTool: Tool = {
   name: 'benchmark_context',
   description:
@@ -857,6 +863,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     const priorCleanup = summarizePriorTrajectoryCleanup(summary, quality);
     const priorEfficiency = summarizePriorRunEfficiency(summary, quality, usage);
     const priorSourceResearch = summarizePriorSourceResearchCoverage(summary, quality);
+    const priorSourceMining = summarizePriorSourceMiningCoverage(summary, quality);
     const priorProactivity = summarizePriorProactivity(summary, quality);
     const priorChangeEvaluation = summarizePriorChangeEvaluationForReuse(summary);
 
@@ -881,7 +888,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       successfulVerificationCount,
       defectCodes,
       finalAnswerEvidence,
-    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons, priorRootCause.harmReasons, priorFailureOnset.harmReasons, priorTrajectoryTriage.harmReasons, priorCleanup.harmReasons);
+    }).concat(priorChangeEvaluation.harmReasons, priorContext.harmReasons, priorRootCause.harmReasons, priorFailureOnset.harmReasons, priorTrajectoryTriage.harmReasons, priorCleanup.harmReasons, priorSourceMining.harmReasons);
 
     const changed = changedFiles.slice(0, 5).join(', ') || 'none recorded';
     const verifiers = verificationCommands.slice(0, 3).join(' | ') || 'none recorded';
@@ -918,6 +925,7 @@ export function summarizePriorBenchmarkExperienceSummary(
         priorTrajectoryTriage.text,
         priorCleanup.text,
         priorSourceResearch,
+        priorSourceMining.text,
         priorProactivity.text,
         priorEfficiency,
       ].filter(Boolean).join('; ');
@@ -934,6 +942,7 @@ export function summarizePriorBenchmarkExperienceSummary(
     score += priorFailureOnset.scoreBonus;
     score += priorTrajectoryTriage.scoreBonus;
     score += priorCleanup.scoreBonus;
+    score += priorSourceMining.scoreBonus;
     if (currentPiBenchLike && priorProactivity.complete) score += 20;
     if (currentPiBenchLike && priorProactivity.risk) score -= 12;
     if (score < 18) continue;
@@ -959,6 +968,7 @@ export function summarizePriorBenchmarkExperienceSummary(
       priorTrajectoryTriage.text,
       priorCleanup.text,
       priorSourceResearch,
+      priorSourceMining.text,
       priorProactivity.text,
       priorEfficiency,
       usageText,
@@ -1902,6 +1912,87 @@ function summarizePriorSourceResearchCoverage(
     topUrls.length ? `top:${topUrls.join('|')}` : null,
     notes.length ? `notes:${notes.join('|')}` : null,
   ].filter(Boolean).join(',');
+}
+
+function summarizePriorSourceMiningCoverage(
+  summary: Record<string, unknown>,
+  quality: Record<string, unknown>,
+): PriorSourceMiningSummary {
+  const card = objectRecord(summary.experienceCard);
+  const cardCoverage = objectRecord(card.sourceMiningCoverage);
+  const qualityCoverage = objectRecord(quality.sourceMiningCoverage);
+  const coverage = Object.keys(cardCoverage).length > 0 ? cardCoverage : qualityCoverage;
+  const catalogCallCount = finiteNumber(coverage.catalogCallCount);
+  const repoDigestCallCount = finiteNumber(coverage.repoDigestCallCount);
+  const contextCatalogHintCount = finiteNumber(coverage.contextCatalogHintCount);
+  const contextCatalogGapCount = finiteNumber(coverage.contextCatalogGapCount);
+  const catalogPositiveMatchCount = finiteNumber(coverage.catalogPositiveMatchCount);
+  const catalogGapCount = finiteNumber(coverage.catalogGapCount);
+  const catalogUsed = firstBooleanOrNull(coverage.catalogUsed);
+  const repoDigestUsed = firstBooleanOrNull(coverage.repoDigestUsed);
+  const catalogQueries = stringsFromUnknown(coverage.catalogQueries)
+    .map((query) => truncateContractSignal(redactTraceText(query), 80))
+    .slice(0, 4);
+  const catalogPositiveProjects = stringsFromUnknown(coverage.catalogPositiveProjects)
+    .map((project) => truncateContractSignal(redactTraceText(project), 80))
+    .slice(0, 6);
+  const catalogGapProjects = stringsFromUnknown(coverage.catalogGapProjects)
+    .map((project) => truncateContractSignal(redactTraceText(project), 80))
+    .slice(0, 6);
+  const catalogRepos = stringsFromUnknown(coverage.catalogRepos)
+    .map((repo) => truncateContractSignal(redactTraceText(repo), 100))
+    .slice(0, 6);
+  const repoDigestRepos = stringsFromUnknown(coverage.repoDigestRepos)
+    .map((repo) => truncateContractSignal(redactTraceText(repo), 100))
+    .slice(0, 6);
+
+  const hasEvidence =
+    catalogUsed === true ||
+    repoDigestUsed === true ||
+    (catalogCallCount ?? 0) > 0 ||
+    (repoDigestCallCount ?? 0) > 0 ||
+    (contextCatalogHintCount ?? 0) > 0 ||
+    (contextCatalogGapCount ?? 0) > 0 ||
+    (catalogPositiveMatchCount ?? 0) > 0 ||
+    (catalogGapCount ?? 0) > 0 ||
+    catalogQueries.length > 0 ||
+    catalogPositiveProjects.length > 0 ||
+    catalogGapProjects.length > 0 ||
+    catalogRepos.length > 0 ||
+    repoDigestRepos.length > 0;
+  if (!hasEvidence) return { text: null, harmReasons: [], scoreBonus: 0 };
+
+  const positiveWithoutDigest = (catalogPositiveMatchCount ?? catalogPositiveProjects.length) > 0
+    && (repoDigestCallCount ?? 0) <= 0
+    && repoDigestRepos.length === 0
+    && repoDigestUsed !== true;
+  const harmReasons = positiveWithoutDigest
+    ? [`source_mining_catalog_without_digest=${catalogPositiveProjects.slice(0, 3).join('|') || 'positive_match'}`]
+    : [];
+  const scoreBonus = repoDigestUsed === true || repoDigestRepos.length > 0
+    ? Math.min(6, 2 + repoDigestRepos.length + Math.min(2, catalogPositiveProjects.length))
+    : catalogUsed === true || (catalogCallCount ?? 0) > 0
+      ? 1
+      : 0;
+  const text = [
+    `source_mining=catalog_calls:${catalogCallCount ?? 0}`,
+    `repo_digest_calls:${repoDigestCallCount ?? 0}`,
+    `context_hints:${contextCatalogHintCount ?? 0}`,
+    `context_gaps:${contextCatalogGapCount ?? 0}`,
+    `matches:${catalogPositiveMatchCount ?? catalogPositiveProjects.length}`,
+    `gaps:${catalogGapCount ?? catalogGapProjects.length}`,
+    catalogPositiveProjects.length ? `projects:${catalogPositiveProjects.join('|')}` : null,
+    catalogGapProjects.length ? `gap_projects:${catalogGapProjects.join('|')}` : null,
+    catalogRepos.length ? `catalog_repos:${catalogRepos.join('|')}` : null,
+    repoDigestRepos.length ? `repo_digests:${repoDigestRepos.join('|')}` : null,
+    catalogQueries.length ? `queries:${catalogQueries.join('|')}` : null,
+  ].filter(Boolean).join(',');
+
+  return {
+    text,
+    harmReasons,
+    scoreBonus,
+  };
 }
 
 function summarizePriorProactivity(
