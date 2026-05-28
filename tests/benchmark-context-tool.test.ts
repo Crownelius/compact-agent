@@ -348,6 +348,9 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('benchmark_repo_catalog');
     expect(result.output).toContain('source repository digest');
     expect(result.output).toContain('github_repo_digest');
+    expect(result.output).toContain('Terminal-Bench Source Catalog Hints');
+    expect(result.output).toContain('catalog seed: no exact packaged repo match');
+    expect(result.output).toContain('catalog gaps: use benchmark_repo_catalog');
     expect(result.output).toContain('github_kind:"all"');
     expect(result.output).toContain('kind:"all"');
     expect(result.output).toContain('kaggle_kind:"both"');
@@ -375,6 +378,31 @@ describe('benchmark_context tool', () => {
     expect(result.output).toContain('replay only the relevant read/search/verifier steps');
     expect(result.output).toContain('avoid any prior patterns listed as warnings');
   }, 15_000);
+
+  it('ranks packaged Terminal-Bench public-repo and no-source catalog hints from task focus', async () => {
+    const root = makeRoot();
+    writeFileSync(join(root, 'TASK.md'), [
+      '# Task',
+      'Improve benchmark source mining for public agents.',
+      'Compare against OpenHands and SageAgent before adding new leaderboard guidance.',
+      '',
+    ].join('\n'));
+
+    const result = await BenchmarkContextTool.call({
+      path: root,
+      probe_network: false,
+      task: 'Terminal-Bench leaderboard source mining for OpenHands and SageAgent',
+    }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain('Terminal-Bench Source Catalog Hints');
+    expect(result.output).toContain('catalog match: OpenHands [official');
+    expect(result.output).toContain('repos=OpenHands/openhands');
+    expect(result.output).toContain('next=github_repo_digest repo=OpenHands/openhands');
+    expect(result.output).toContain('catalog gap: SageAgent [unverified');
+    expect(result.output).toContain('repos=(none verified)');
+    expect(result.output).toContain('do not overclaim a public repo');
+  });
 
   it('surfaces offline environment indicators without leaking env values', async () => {
     const root = makeRoot();

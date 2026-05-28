@@ -5,6 +5,7 @@ import { globSync } from 'glob';
 import { getConfigDir } from '../config.js';
 import { redactTraceText } from '../benchmark-trace.js';
 import type { BenchmarkExperienceReplayCheckpoint } from '../benchmark-trace.js';
+import { TERMINAL_BENCH_REPO_CATALOG, type BenchmarkRepoEntry } from '../benchmark-repos.js';
 import { isMemoryEnabled, search as searchMemPalace } from '../mempalace/index.js';
 import type { SearchHit } from '../mempalace/types.js';
 import { resolveUserPath } from './path-utils.js';
@@ -157,6 +158,14 @@ export const BenchmarkContextTool: Tool = {
         type: 'boolean',
         description: 'Run short read-only TCP reachability probes for common package/model hosts. Defaults to true outside tests; set false to skip.',
       },
+      task: {
+        type: 'string',
+        description: 'Optional task or source-mining focus text used to rank packaged Terminal-Bench public-repo catalog hints.',
+      },
+      query: {
+        type: 'string',
+        description: 'Optional source-mining query used to rank packaged Terminal-Bench public-repo catalog hints.',
+      },
     },
     required: [],
     additionalProperties: false,
@@ -208,6 +217,7 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
     const harnessFiles = findBenchmarkHarnessFiles(sortedFiles);
     const harnessHints = summarizeBenchmarkHarnessHints(sortedFiles, verifierCommands);
     const methodHints = summarizeBenchmarkMethodHints(instructions, carefulFiles, verifierCommands, serviceHints, harnessHints, ciHints);
+    const repoCatalogHints = summarizeBenchmarkRepoCatalogHints(root, instructions, instructionExcerpts, taskContractSignals, harnessHints, input);
     const priorExperience = summarizePriorBenchmarkExperienceSummary(
       root,
       sortedFiles,
@@ -317,6 +327,11 @@ export function buildBenchmarkContextReport(input: Record<string, unknown>, cwd:
       '## Benchmark Method Hints',
       formatList(methodHints, 30),
       '',
+      '## Terminal-Bench Source Catalog Hints',
+      repoCatalogHints.length
+        ? formatList(repoCatalogHints, 10)
+        : '(no packaged public-repo catalog match from current task text; for source-mining work, call benchmark_repo_catalog with a competitor or agent-surface query, then verify positive hits with github_repo_digest)',
+      '',
       '## Prior Benchmark Experience Hints',
       experienceHints.length
         ? formatList(experienceHints.map((hint) => hint.line), 6)
@@ -413,6 +428,146 @@ function summarizeBenchmarkMethodHints(
   hints.push('benchmark repo catalog: for Terminal-Bench public-agent source mining, call benchmark_repo_catalog before ad hoc web discovery, then github_repo_digest the relevant repo(s).');
   hints.push('source repository digest: when Source digest includes public GitHub repos relevant to agent or harness design, call github_repo_digest on the top repo(s) before porting patterns; compare manifests, CI files, likely commands, and component surface signals to the current task.');
   return hints;
+}
+
+function summarizeBenchmarkRepoCatalogHints(
+  root: string,
+  instructions: string[],
+  instructionExcerpts: string[],
+  taskContractSignals: string[],
+  harnessHints: string[],
+  input: Record<string, unknown>,
+): string[] {
+  const focus = [
+    stringInput(input.task),
+    stringInput(input.query),
+    basename(normalizePath(root)),
+    ...instructions,
+    ...instructionExcerpts,
+    ...taskContractSignals,
+    ...harnessHints,
+  ].filter(Boolean).join('\n');
+
+  const matches = TERMINAL_BENCH_REPO_CATALOG
+    .map((entry) => ({ entry, score: scoreBenchmarkRepoCatalogEntry(entry, focus) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || statusRank(a.entry.status) - statusRank(b.entry.status) || a.entry.project.localeCompare(b.entry.project))
+    .slice(0, 8)
+    .map(({ entry, score }) => formatBenchmarkRepoCatalogHint(entry, score));
+
+  if (matches.length > 0) return matches;
+
+  if (hasBenchmarkSourceMiningTrigger(focus)) {
+    return [
+      'catalog seed: no exact packaged repo match from current task text; call benchmark_repo_catalog with --all and a named competitor, agent, framework, or repo-surface query, then run github_repo_digest on positive owner/repo hits.',
+      'catalog gaps: use benchmark_repo_catalog status:"unverified" or /benchmark-repos --unverified before live search so website-only/profile-only leaderboard entries are not overclaimed as public source repos.',
+    ];
+  }
+
+  return [];
+}
+
+function scoreBenchmarkRepoCatalogEntry(entry: BenchmarkRepoEntry, focus: string): number {
+  const text = normalizeCatalogText(focus);
+  const compact = compactCatalogText(focus);
+  if (!text && !compact) return 0;
+
+  let score = 0;
+  let strongMatch = false;
+  const project = normalizeCatalogText(entry.project);
+  const projectCompact = compactCatalogText(entry.project);
+  if (project && text.includes(project)) {
+    score += 12;
+    strongMatch = true;
+  }
+  if (projectCompact && compact.includes(projectCompact)) {
+    score += 12;
+    strongMatch = true;
+  }
+
+  for (const repo of entry.repos) {
+    const slug = normalizeCatalogText(repo.slug);
+    const slugCompact = compactCatalogText(repo.slug);
+    const repoName = normalizeCatalogText(repo.slug.split('/').pop() || '');
+    const repoNameCompact = compactCatalogText(repo.slug.split('/').pop() || '');
+    if (slug && text.includes(slug)) {
+      score += 10;
+      strongMatch = true;
+    }
+    if (slugCompact && compact.includes(slugCompact)) {
+      score += 10;
+      strongMatch = true;
+    }
+    if (repoName.length >= 5 && text.includes(repoName)) {
+      score += 6;
+      strongMatch = true;
+    }
+    if (repoNameCompact.length >= 5 && compact.includes(repoNameCompact)) {
+      score += 6;
+      strongMatch = true;
+    }
+    if (repo.role) {
+      const role = normalizeCatalogText(repo.role);
+      if (role.length >= 8 && text.includes(role)) score += 3;
+    }
+  }
+
+  for (const tag of entry.tags) {
+    const normalized = normalizeCatalogText(tag);
+    if (isGenericCatalogTag(normalized)) continue;
+    if (normalized.length >= 5 && text.includes(normalized)) score += 3;
+  }
+
+  if (entry.status === 'unverified' && /\b(?:no[-_\s]?source|unverified|missing public source|website[-_\s]?only|profile[-_\s]?only)\b/i.test(focus)) {
+    score += 2;
+  }
+
+  return strongMatch ? score : 0;
+}
+
+function formatBenchmarkRepoCatalogHint(entry: BenchmarkRepoEntry, score: number): string {
+  const repos = entry.repos.map((repo) => repo.role ? `${repo.slug} (${repo.role})` : repo.slug).join(' | ');
+  const base = `catalog ${entry.status === 'unverified' ? 'gap' : 'match'}: ${entry.project} [${entry.status} score=${score}] repos=${repos || '(none verified)'} tags=${entry.tags.slice(0, 6).join(', ')} note=${entry.note}`;
+  if (entry.status === 'unverified') {
+    return `${base} next=do not overclaim a public repo; only run targeted live search if this exact competitor matters.`;
+  }
+  const firstRepo = entry.repos[0]?.slug;
+  return firstRepo
+    ? `${base} next=github_repo_digest repo=${firstRepo}`
+    : `${base} next=benchmark_repo_catalog --all`;
+}
+
+function hasBenchmarkSourceMiningTrigger(text: string): boolean {
+  return /\b(?:terminal[-\s]?bench|leaderboard|public[-\s]?agent|source[-\s]?mining|agent[-\s]?improvement|benchmark[-\s]?methodology|repo[-\s]?digest|benchmark_repo_catalog|github_repo_digest)\b/i.test(text);
+}
+
+function normalizeCatalogText(value: string): string {
+  return value.toLowerCase().replace(/[_/]+/g, ' ').replace(/[^a-z0-9.+-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function compactCatalogText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function isGenericCatalogTag(tag: string): boolean {
+  return [
+    'agent',
+    'cli',
+    'coding-agent',
+    'gap',
+    'python',
+    'typescript',
+    'terminal-bench',
+    'terminal-agent',
+  ].includes(tag);
+}
+
+function statusRank(status: BenchmarkRepoEntry['status']): number {
+  return status === 'official' ? 0 : status === 'related' ? 1 : 2;
+}
+
+function stringInput(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function summarizeBenchmarkMemoryHints(
