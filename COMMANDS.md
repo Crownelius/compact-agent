@@ -113,7 +113,7 @@ These trigger an LLM workflow with an injected prompt. `/tdd`, `/review`, `/secu
 | `/tdd <feature>` | TDD workflow — agent writes tests first, then implementation. |
 | `/security-review` | Security audit: SQLi, XSS, secrets, auth bypasses, etc. |
 | `/audit` | Local-only project health check (git, tests, linter, secrets). No data leaves your machine. |
-| `/doctor [json\|no-registry\|offline]` | Install/config/benchmark readiness check. JSON mode prints machine-readable output; no token values are printed. |
+| `/doctor [json\|no-registry\|offline]` | Install/config/source-research/benchmark readiness check. JSON mode prints machine-readable output; no token values are printed. |
 | `/verify [cmd]` | Run tests, fix failures, repeat until green. |
 | `/build-fix` | Auto-detect language/build tool and fix build errors. |
 | `/test-coverage` | Analyze coverage and suggest missing tests. |
@@ -437,6 +437,7 @@ For env-built provider config, the new `CAWDEX_*` spellings are accepted alongsi
 | `VENTIPUS_BUNDLE_ROOT` | (unset) | Terminal-Bench offline install source: unpacked Cawdex tree with `bin/`, `dist/`, and preferably `node_modules/`. |
 | `VENTIPUS_BUNDLE_TARBALL` | (unset) | Terminal-Bench offline/local install source: path to a Cawdex `.tgz` checked before the npm registry. |
 | `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `NVIDIA_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `GLM_API_KEY`, `ZHIPUAI_API_KEY` | (unset) | Provider-specific key env vars used by env-built configs. |
+| `GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_API_TOKEN` | unauthenticated public API | Optional GitHub auth for `research_sources` repo/issue/pull/code search and `github_repo_digest`; improves rate limits and private/internal access where the token is allowed. |
 | `HF_TOKEN`, `HUGGING_FACE_HUB_TOKEN`, `HUGGINGFACE_TOKEN`, `HUGGINGFACE_API_KEY`, `HF_API_KEY` | token file fallback | Optional Hugging Face auth for `research_sources` papers/models/datasets; also checks `HF_TOKEN_PATH`, `HF_HOME/token`, and the default Hugging Face token cache. |
 | `KAGGLE_API_TOKEN`, `KAGGLE_TOKEN` | token file fallback | Optional Kaggle bearer auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/access_token`. |
 | `KAGGLE_USERNAME` + `KAGGLE_KEY` | `kaggle.json` fallback | Optional legacy Kaggle auth for `research_sources` datasets/competitions; also checks `KAGGLE_CONFIG_DIR/kaggle.json` or `~/.kaggle/kaggle.json`. |

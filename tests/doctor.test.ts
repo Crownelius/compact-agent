@@ -29,6 +29,7 @@ describe('doctor readiness checks', () => {
         VENTIPUS_PROVIDER: 'openrouter',
         VENTIPUS_MODEL: 'openrouter/free',
         VENTIPUS_API_KEY: secret,
+        GITHUB_TOKEN: secret,
         HF_TOKEN: secret,
         KAGGLE_USERNAME: 'tester',
         KAGGLE_KEY: secret,
@@ -40,7 +41,42 @@ describe('doctor readiness checks', () => {
     expect(text).toContain('Cawdex Doctor');
     expect(report.checks.some((check) => check.id === 'benchmark_adapters' && check.status === 'pass')).toBe(true);
     expect(report.checks.some((check) => check.id === 'openrouter_free_tier' && check.status === 'pass')).toBe(true);
+    const researchAuth = report.checks.find((check) => check.id === 'research_auth');
+    expect(researchAuth?.status).toBe('pass');
+    expect(researchAuth?.detail).toContain('GitHub auth found');
+    expect(researchAuth?.detail).toContain('Kaggle competitions enabled');
     expect(text).not.toContain(secret);
+  });
+
+  it('warns when source-research auth is incomplete without printing secrets', () => {
+    const emptyKaggleDir = tempHome();
+    const report = buildDoctorReport({
+      includeRegistry: false,
+      env: {
+        ...process.env,
+        VENTIPUS_HOME: tempHome(),
+        VENTIPUS_PROVIDER: 'openrouter',
+        VENTIPUS_MODEL: 'openrouter/free',
+        VENTIPUS_API_KEY: 'test-token-value',
+        GITHUB_TOKEN: '',
+        GH_TOKEN: '',
+        GITHUB_API_TOKEN: '',
+        KAGGLE_API_TOKEN: '',
+        KAGGLE_TOKEN: '',
+        KAGGLE_USERNAME: '',
+        KAGGLE_KEY: '',
+        KAGGLE_CONFIG_DIR: emptyKaggleDir,
+      },
+    });
+
+    const researchAuth = report.checks.find((check) => check.id === 'research_auth');
+    expect(researchAuth?.status).toBe('warn');
+    expect(researchAuth?.detail).toContain('arXiv public access available');
+    expect(researchAuth?.detail).toContain('GitHub auth missing');
+    expect(researchAuth?.detail).toContain('Kaggle auth missing');
+    expect(researchAuth?.detail).toContain('Kaggle competitions disabled');
+    expect(researchAuth?.hint).toContain('GITHUB_TOKEN');
+    expect(formatDoctorReport(report)).not.toContain('test-token-value');
   });
 
   it('prints JSON from the CLI wrapper before first-time setup', () => {

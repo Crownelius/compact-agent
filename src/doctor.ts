@@ -47,7 +47,7 @@ const SECRET_PATTERNS: RegExp[] = [
   /sk-or-v1-[A-Za-z0-9_-]{20,}/g,
   /npm_[A-Za-z0-9]{16,}/g,
   /KGAT_[A-Za-z0-9]{16,}/g,
-  /(?:OPENAI|OPENROUTER|ANTHROPIC|DEEPSEEK|NVIDIA|GOOGLE|GEMINI|GLM|ZHIPUAI|KAGGLE|HF)_[A-Z0-9_]*(?:KEY|TOKEN)=\S+/gi,
+  /(?:OPENAI|OPENROUTER|ANTHROPIC|DEEPSEEK|NVIDIA|GOOGLE|GEMINI|GLM|ZHIPUAI|KAGGLE|HF|GITHUB|GH)_[A-Z0-9_]*(?:KEY|TOKEN)=\S+/gi,
 ];
 
 function redact(value: string): string {
@@ -227,6 +227,10 @@ function hasKaggleAuth(env: NodeJS.ProcessEnv): boolean {
   return fileExists(join(kaggleDir, 'kaggle.json')) || fileExists(join(kaggleDir, 'access_token'));
 }
 
+function hasGitHubAuth(env: NodeJS.ProcessEnv): boolean {
+  return hasEnv(env, 'GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_API_TOKEN');
+}
+
 function benchmarkAdapterPaths(): { label: string; path: string }[] {
   return [
     { label: 'Terminal-Bench adapter', path: join(packageRoot, 'resources', 'terminal_bench', 'ventipus_agent.py') },
@@ -375,14 +379,24 @@ export function buildDoctorReport(options: DoctorOptions = {}): DoctorReport {
     hint: compact.includes('openrouter') && !openrouterFree ? 'Run /openrouter-free or cawdex --model openrouter/free for free-tier-only accounts.' : undefined,
   });
 
+  const github = hasGitHubAuth(env);
   const hf = hasHuggingFaceAuth(env);
   const kaggle = hasKaggleAuth(env);
+  const sourceResearchReady = github && hf && kaggle;
   add(checks, {
     id: 'research_auth',
-    label: 'Research credentials',
-    status: hf && kaggle ? 'pass' : 'warn',
-    detail: `Hugging Face auth ${hf ? 'found' : 'missing'}; Kaggle auth ${kaggle ? 'found' : 'missing'}.`,
-    hint: hf && kaggle ? undefined : 'Source research still works partially, but HF/Kaggle coverage needs credentials for private/rate-limited queries.',
+    label: 'Source research readiness',
+    status: sourceResearchReady ? 'pass' : 'warn',
+    detail: [
+      'arXiv public access available',
+      `GitHub auth ${github ? 'found' : 'missing'}`,
+      `Hugging Face auth ${hf ? 'found' : 'missing'}`,
+      `Kaggle auth ${kaggle ? 'found' : 'missing'}`,
+      `Kaggle competitions ${kaggle ? 'enabled' : 'disabled'}`,
+    ].join('; ') + '.',
+    hint: sourceResearchReady
+      ? undefined
+      : 'Source research still works partially, but leaderboard-grade coverage should set GITHUB_TOKEN or GH_TOKEN, HF_TOKEN, and KAGGLE_API_TOKEN or KAGGLE_USERNAME/KAGGLE_KEY.',
   });
 
   const mempalace = commandResult('mempalace', ['--version'], { timeoutMs: 5000, cwd, env });

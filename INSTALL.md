@@ -18,7 +18,7 @@ cawdex --doctor
 cawdex
 ```
 
-`cawdex --doctor` checks the install, registry metadata, config, MemPalace, research credentials, and benchmark adapters without printing token values. First run launches the setup wizard.
+`cawdex --doctor` checks the install, registry metadata, config, MemPalace, source-research readiness, and benchmark adapters without printing token values. First run launches the setup wizard.
 
 Inside the REPL, type `/walkthrough` for an agent-led tour, `/help` for a
 quick command list, or see [COMMANDS.md](COMMANDS.md) for a complete
