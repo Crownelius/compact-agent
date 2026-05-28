@@ -20,12 +20,15 @@ describe('benchmark repo catalog', () => {
   });
 
   it('contains official and related Terminal-Bench source mappings', () => {
-    expect(TERMINAL_BENCH_REPO_CATALOG.length).toBeGreaterThanOrEqual(27);
+    expect(TERMINAL_BENCH_REPO_CATALOG.length).toBeGreaterThanOrEqual(45);
     expect(TERMINAL_BENCH_REPO_CATALOG.some((entry) =>
       entry.project === 'Codex CLI' && entry.repos.some((repo) => repo.slug === 'openai/codex'),
     )).toBe(true);
     expect(TERMINAL_BENCH_REPO_CATALOG.some((entry) =>
       entry.project === 'Meta-Harness' && entry.status === 'related',
+    )).toBe(true);
+    expect(TERMINAL_BENCH_REPO_CATALOG.some((entry) =>
+      entry.project === 'JJAgent' && entry.status === 'unverified' && entry.repos.length === 0,
     )).toBe(true);
   });
 
@@ -35,6 +38,7 @@ describe('benchmark repo catalog', () => {
     expect(output).toContain('Terminal-Bench Public Repo Catalog');
     expect(output).toContain('OpenHands/openhands');
     expect(output).toContain('Source: Terminal-Bench 2.0 public source mapping report');
+    expect(output).toContain('no-public-source gaps');
     expect(output).toContain('/repo-digest <owner/repo>');
   });
 
@@ -45,6 +49,19 @@ describe('benchmark repo catalog', () => {
     expect(official.map((entry) => entry.project)).toContain('Codex CLI');
     expect(official.map((entry) => entry.project)).not.toContain('Simple Codex');
     expect(all.map((entry) => entry.project)).toContain('Simple Codex');
+  });
+
+  it('surfaces known no-public-source gaps without repo slugs', () => {
+    const missing = filterBenchmarkRepoCatalog({ query: 'sage', status: 'unverified' });
+    expect(missing.map((entry) => entry.project)).toContain('SageAgent');
+
+    const output = formatBenchmarkRepoCatalog({ query: 'sage', status: 'unverified', limit: 5 });
+    expect(output).toContain('SageAgent [unverified');
+    expect(output).toContain('repos: (none verified)');
+    expect(output).toContain('do not overclaim unverified gaps');
+
+    const reposOnly = formatBenchmarkRepoCatalog({ query: 'sage', status: 'unverified', repos_only: true });
+    expect(reposOnly).toBe('');
   });
 
   it('parses slash command flags and sentinel payloads', () => {
@@ -58,6 +75,13 @@ describe('benchmark repo catalog', () => {
       repos_only: true,
     });
 
+    const unverified = parseBenchmarkRepoCatalogCommandArgs('--no-source --limit=20');
+    expect(unverified.error).toBeUndefined();
+    expect(unverified.input).toMatchObject({
+      status: 'unverified',
+      limit: 20,
+    });
+
     const encoded = encodeBenchmarkReposSentinel(parsed.input!);
     expect(encoded.startsWith('__BENCHMARK_REPOS__')).toBe(true);
     expect(decodeBenchmarkReposSentinel(encoded)).toEqual(parsed.input);
@@ -68,6 +92,8 @@ describe('benchmark repo catalog', () => {
 
     expect(parsed.error).toContain('unknown option');
     expect(formatBenchmarkRepoCatalogUsage()).toContain('/benchmark-repos');
+    expect(formatBenchmarkRepoCatalogUsage()).toContain('--unverified');
     expect(_internal.tokenizeArgs('"open ai" --all')).toEqual(['open ai', '--all']);
+    expect(_internal.normalizeStatusAlias('missing')).toBe('unverified');
   });
 });

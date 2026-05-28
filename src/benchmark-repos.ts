@@ -1,6 +1,6 @@
 import type { Tool, ToolResult } from './tools/types.js';
 
-export type BenchmarkRepoStatus = 'official' | 'related';
+export type BenchmarkRepoStatus = 'official' | 'related' | 'unverified';
 
 export interface BenchmarkRepoRef {
   slug: string;
@@ -246,6 +246,132 @@ export const TERMINAL_BENCH_REPO_CATALOG: BenchmarkRepoEntry[] = [
     note: 'Relevant terminal-agent work is SETA under CAMEL-AI; mapping is organization-level and indirect.',
     lastSeen: '2026-02-16',
   },
+  {
+    project: 'JJAgent',
+    status: 'unverified',
+    repos: [],
+    tags: ['github-profile-only', 'terminal-bench', 'gap'],
+    note: 'Official metadata points to a GitHub profile, not a verified implementation repository.',
+  },
+  {
+    project: 'Capy',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official Capy site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'Polaris',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official PolarisOps site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'TongAgents',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official BIGAI site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'SageAgent',
+    status: 'unverified',
+    repos: [],
+    tags: ['github-org-only', 'opensage-agent', 'terminal-bench', 'gap'],
+    note: 'Official metadata points to a GitHub organization, not a verified implementation repository.',
+  },
+  {
+    project: 'Droid',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'factory-ai', 'terminal-bench', 'gap'],
+    note: 'Official Factory AI site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'CodeBrain-1.5',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official Feeling AI site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'Terminus-KIRA',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'krafton-ai', 'terminal-bench', 'gap'],
+    note: 'Official KRAFTON AI site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'MAYA-V2',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'adya', 'terminal-bench', 'gap'],
+    note: 'Official ADYA MAYA page was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'spoox-o-m',
+    status: 'unverified',
+    repos: [],
+    tags: ['hugging-face-trace-only', 'terminal-bench', 'gap'],
+    note: 'Public leaderboard and Hugging Face traces exist, but no public source repository was verified.',
+  },
+  {
+    project: 'Junie CLI',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'jetbrains', 'terminal-bench', 'gap'],
+    note: 'Official JetBrains Junie CLI page was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'Ante',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'antigma', 'terminal-bench', 'gap'],
+    note: 'Official Antigma Labs site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'IndusAGI Coding Agent',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official IndusAGI site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'Terminus 2',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official Terminal-Bench Terminus product page was found, but no separate public source repository was verified.',
+  },
+  {
+    project: 'hookele',
+    status: 'unverified',
+    repos: [],
+    tags: ['technical-writeup-only', 'terminal-bench', 'gap'],
+    note: 'Public technical write-up and Hugging Face submission traces exist, but no repository was verified.',
+  },
+  {
+    project: 'Simplai Agent',
+    status: 'unverified',
+    repos: [],
+    tags: ['website-only', 'terminal-bench', 'gap'],
+    note: 'Official SimplAI site was found, but no public source repository was verified in the report.',
+  },
+  {
+    project: 'Dakou Agent',
+    status: 'unverified',
+    repos: [],
+    tags: ['product-docs-only', 'iflow', 'terminal-bench', 'gap'],
+    note: 'Public iflow product documentation exists, but no public source repository was verified.',
+  },
+  {
+    project: 'Bash Agent',
+    status: 'unverified',
+    repos: [],
+    tags: ['model-card-only', 'hugging-face', 'terminal-bench', 'gap'],
+    note: 'Official metadata points to a Hugging Face model card, not a verified agent-source repository.',
+  },
 ];
 
 export function formatBenchmarkRepoCatalog(input: Record<string, unknown> = {}): string {
@@ -254,6 +380,7 @@ export function formatBenchmarkRepoCatalog(input: Record<string, unknown> = {}):
   const matches = allMatches.slice(0, normalized.limit);
   const officialCount = TERMINAL_BENCH_REPO_CATALOG.filter((entry) => entry.status === 'official').length;
   const relatedCount = TERMINAL_BENCH_REPO_CATALOG.filter((entry) => entry.status === 'related').length;
+  const unverifiedCount = TERMINAL_BENCH_REPO_CATALOG.filter((entry) => entry.status === 'unverified').length;
 
   if (normalized.reposOnly) {
     return uniqueStrings(matches.flatMap((entry) => entry.repos.map((repo) => repo.slug))).join('\n');
@@ -262,8 +389,8 @@ export function formatBenchmarkRepoCatalog(input: Record<string, unknown> = {}):
   const lines = [
     '# Terminal-Bench Public Repo Catalog',
     `Source: ${CATALOG_SOURCE}.`,
-    `Coverage seed: ${officialCount} official/direct project mappings, ${relatedCount} related or partial mappings.`,
-    'Caveat: this is a packaged source-mining seed, not live leaderboard truth; verify with /repo-digest before porting patterns.',
+    `Coverage seed: ${officialCount} official/direct project mappings, ${relatedCount} related or partial mappings, ${unverifiedCount} no-public-source gaps.`,
+    'Caveat: this is a packaged source-mining seed, not live leaderboard truth; verify positive hits with /repo-digest before porting patterns and do not overclaim unverified gaps.',
     '',
     `Filters: status=${normalized.status}, query=${normalized.query ? JSON.stringify(normalized.query) : '(none)'}, limit=${normalized.limit}`,
     `Matches: ${allMatches.length}${allMatches.length > matches.length ? ` (showing ${matches.length})` : ''}`,
@@ -279,7 +406,7 @@ export function formatBenchmarkRepoCatalog(input: Record<string, unknown> = {}):
   for (const entry of matches) {
     const repoText = entry.repos
       .map((repo) => repo.role ? `${repo.slug} (${repo.role})` : repo.slug)
-      .join(' | ');
+      .join(' | ') || '(none verified)';
     const seen = entry.lastSeen ? `; last_seen=${entry.lastSeen}` : '';
     lines.push(`- ${entry.project} [${entry.status}${seen}]`);
     lines.push(`  repos: ${repoText}`);
@@ -294,7 +421,7 @@ export function formatBenchmarkRepoCatalog(input: Record<string, unknown> = {}):
 
 export function filterBenchmarkRepoCatalog(input: {
   query?: string;
-  status: 'official' | 'related' | 'all';
+  status: 'official' | 'related' | 'unverified' | 'all';
 }): BenchmarkRepoEntry[] {
   const query = input.query?.trim().toLowerCase();
   return TERMINAL_BENCH_REPO_CATALOG.filter((entry) => {
@@ -339,6 +466,10 @@ export function parseBenchmarkRepoCatalogCommandArgs(args: string): BenchmarkRep
       input.status = 'related';
       continue;
     }
+    if (token === '--unverified' || token === '--no-source' || token === '--missing') {
+      input.status = 'unverified';
+      continue;
+    }
     if (token === '--repos-only' || token === '--slugs') {
       input.repos_only = true;
       continue;
@@ -356,10 +487,10 @@ export function parseBenchmarkRepoCatalogCommandArgs(args: string): BenchmarkRep
       case '--status':
       case '--kind': {
         const normalized = value.toLowerCase();
-        if (!['official', 'related', 'partial', 'all'].includes(normalized)) {
+        if (!['official', 'related', 'partial', 'unverified', 'no-source', 'no_source', 'missing', 'all'].includes(normalized)) {
           return { error: `unsupported status "${value}"` };
         }
-        input.status = normalized === 'partial' ? 'related' : normalized;
+        input.status = normalizeStatusAlias(normalized);
         break;
       }
       case '--limit':
@@ -379,10 +510,11 @@ export function parseBenchmarkRepoCatalogCommandArgs(args: string): BenchmarkRep
 
 export function formatBenchmarkRepoCatalogUsage(): string {
   return [
-    '  Usage: /benchmark-repos [query] [--all|--official|--related] [--limit n] [--repos-only]',
+    '  Usage: /benchmark-repos [query] [--all|--official|--related|--unverified] [--limit n] [--repos-only]',
     '  Defaults: --official --limit 12',
     '  Examples:',
     '    /benchmark-repos openhands --all',
+    '    /benchmark-repos --unverified --limit 20',
     '    /benchmark-repos terminal-agent --all --repos-only',
   ].join('\n');
 }
@@ -416,8 +548,8 @@ export const BenchmarkRepoCatalogTool: Tool = {
       },
       status: {
         type: 'string',
-        enum: ['official', 'related', 'all'],
-        description: 'Catalog subset to show. Defaults to official/direct mappings.',
+        enum: ['official', 'related', 'unverified', 'all'],
+        description: 'Catalog subset to show. Defaults to official/direct mappings. Use unverified for known no-public-source gaps.',
       },
       limit: {
         type: 'number',
@@ -439,17 +571,26 @@ export const BenchmarkRepoCatalogTool: Tool = {
 
 function normalizeBenchmarkRepoCatalogInput(input: Record<string, unknown>): {
   query?: string;
-  status: 'official' | 'related' | 'all';
+  status: 'official' | 'related' | 'unverified' | 'all';
   limit: number;
   reposOnly: boolean;
 } {
   const rawStatus = String(input.status || 'official').toLowerCase();
-  const status = rawStatus === 'all' || rawStatus === 'related' ? rawStatus : 'official';
+  const status = normalizeStatusAlias(rawStatus);
   const n = Number(input.limit ?? 12);
   const limit = Number.isFinite(n) && n > 0 ? Math.min(50, Math.floor(n)) : 12;
   const query = typeof input.query === 'string' && input.query.trim() ? input.query.trim() : undefined;
   const reposOnly = input.repos_only === true;
   return { query, status, limit, reposOnly };
+}
+
+function normalizeStatusAlias(value: string): 'official' | 'related' | 'unverified' | 'all' {
+  if (value === 'all') return 'all';
+  if (value === 'related' || value === 'partial') return 'related';
+  if (value === 'unverified' || value === 'no-source' || value === 'no_source' || value === 'missing') {
+    return 'unverified';
+  }
+  return 'official';
 }
 
 function splitFlag(token: string): { name: string; inlineValue?: string } {
@@ -505,5 +646,6 @@ function uniqueStrings(values: string[]): string[] {
 export const _internal = {
   tokenizeArgs,
   normalizeBenchmarkRepoCatalogInput,
+  normalizeStatusAlias,
   CATALOG_SOURCE,
 };

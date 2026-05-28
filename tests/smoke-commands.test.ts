@@ -315,5 +315,19 @@ describe('Non-interactive slash dispatch', () => {
       limit: 5,
       repos_only: true,
     });
+
+    const gaps = resolveNonInteractivePrompt(
+      '/benchmark-repos --unverified --limit 20',
+      config,
+      [],
+      session,
+      { current: 'dev' as const },
+    );
+
+    expect(gaps.kind).toBe('benchmarkRepos');
+    expect((gaps as { input: Record<string, unknown> }).input).toMatchObject({
+      status: 'unverified',
+      limit: 20,
+    });
   });
 });
