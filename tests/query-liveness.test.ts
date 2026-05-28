@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { streamChat, resetClient } from '../src/api.js';
-import { runQuery } from '../src/query.js';
+import { runQuery, shouldUseFastDirectReply } from '../src/query.js';
 import type { CawdexConfig, Message } from '../src/types.js';
 
 vi.mock('../src/api.js', () => ({
@@ -29,6 +29,7 @@ describe('runQuery provider liveness recovery', () => {
   const originalTimeout = process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
   const originalNonInteractive = process.env.CAWDEX_NON_INTERACTIVE;
   const originalAllowFlaky = process.env.CAWDEX_ALLOW_FLAKY_MODELS;
+  const originalCompactionTrigger = process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS;
 
   beforeEach(() => {
     vi.mocked(streamChat).mockReset();
@@ -53,6 +54,11 @@ describe('runQuery provider liveness recovery', () => {
       delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
     } else {
       process.env.CAWDEX_ALLOW_FLAKY_MODELS = originalAllowFlaky;
+    }
+    if (originalCompactionTrigger === undefined) {
+      delete process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS;
+    } else {
+      process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS = originalCompactionTrigger;
     }
   });
 
@@ -191,7 +197,7 @@ describe('runQuery provider liveness recovery', () => {
     const messages: Message[] = [
       { role: 'user', content: 'write a poem about Dungeons and Dragons' },
       { role: 'assistant', content: 'A dragon poem.' },
-      { role: 'user', content: 'write a short poem about dinner' },
+      { role: 'user', content: 'Can you write a short poem for me about dinner' },
     ];
     const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-fast-direct-'));
     const ctx = {
@@ -210,9 +216,61 @@ describe('runQuery provider liveness recovery', () => {
 
     expect(sentTools).toEqual([]);
     expect(sentMessages.filter((m) => m.role === 'user')).toEqual([
-      { role: 'user', content: 'write a short poem about dinner' },
+      { role: 'user', content: 'Can you write a short poem for me about dinner' },
     ]);
     expect(sentMessages.map((m) => String(m.content ?? '')).join('\n')).not.toContain('Dungeons');
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'A fresh short poem.' });
+  });
+
+  it('routes polite casual prompts through fast-direct without catching repo work', () => {
+    expect(shouldUseFastDirectReply('Can you write a poem for me?', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('please summarize this paragraph', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('I need you to explain novocaine', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('could you please continue that', 'dev')).toBe(false);
+    expect(shouldUseFastDirectReply('can you fix the tests', 'dev')).toBe(false);
+    expect(shouldUseFastDirectReply('give me a git command', 'dev')).toBe(false);
+  });
+
+  it('does not compact bloated history before an isolated fast-direct prompt', async () => {
+    process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS = '1';
+
+    let sentMessages: Message[] = [];
+    vi.mocked(streamChat).mockImplementation(async function* (
+      _cfg: CawdexConfig,
+      apiMessages: Message[],
+    ) {
+      sentMessages = apiMessages;
+      yield { type: 'text', content: 'Dinner poem.' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'openrouter/free';
+    const bloated = 'old Dungeons context '.repeat(10_000);
+    const messages: Message[] = [
+      { role: 'user', content: bloated },
+      { role: 'assistant', content: bloated },
+      { role: 'user', content: 'Could you write a short poem about dinner?' },
+    ];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-fast-direct-no-compact-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-fast-direct-no-compact',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(streamChat).toHaveBeenCalledTimes(1);
+    expect(sentMessages.filter((m) => m.role === 'user')).toEqual([
+      { role: 'user', content: 'Could you write a short poem about dinner?' },
+    ]);
+    expect(sentMessages.map((m) => String(m.content ?? '')).join('\n')).not.toContain('Dungeons');
   });
 });

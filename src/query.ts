@@ -130,14 +130,18 @@ const FAST_DIRECT_SYSTEM_PROMPT =
 const FAST_DIRECT_POSITIVE = [
   /^(hi|hello|hey|thanks|thank you)\b/i,
   /^(what|who|when|where|why|how|which)\b/i,
+  /^(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create|tell|give)\b/i,
+  /^(?:please\s+)?(?:tell|give)\s+me\b/i,
+  /^please\s+(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create)\b/i,
+  /^(?:i\s+need|i(?:'|’)d\s+like|i\s+would\s+like)\s+(?:you\s+to\s+)?(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create)\b/i,
   /^(explain|define|summarize|translate|calculate|compute)\b/i,
   /^(?:write|draft|make|create)\s+(?:a|an|the)?\s*(?:short\s+)?(?:poem|haiku|joke|story|paragraph|message|email)\b/i,
   /\b(square root|sqrt)\b/i,
   /\?$/,
 ];
 
-const FAST_DIRECT_REPO_OR_TOOL = /\b(repo|repository|codebase|workspace|file|folder|directory|path|terminal|powershell|shell|command|npm|node|python|typescript|javascript|git|commit|diff|pr|pull request|branch|test|build|lint|install|package|debug|error|stack trace|log|fix|implement|refactor|review|audit|security|benchmark|run|execute|read|search|grep|edit|write[- ]file)\b/i;
-const FAST_DIRECT_CONTEXTUAL = /^(continue|carry on|resume|do it|same|again|that|this|those|these|it)\b/i;
+const FAST_DIRECT_REPO_OR_TOOL = /\b(repo|repository|codebase|workspace|file|folder|directory|path|terminal|powershell|shell|command|npm|node|python|typescript|javascript|git|commit|diff|pr|pull request|branch|test|build|lint|install|package|debug|error|stack trace|log|fix|implement|refactor|review|audit|security|benchmark|run|execute|read|search|grep|edit|patch|write[- ]file)\b/i;
+const FAST_DIRECT_CONTEXTUAL = /^(?:(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?|please\s+)?(continue|carry on|resume|do it|same|again|that|this|those|these|it)\b/i;
 
 export function shouldUseFastDirectReply(
   userQuery: string | undefined,
@@ -1180,13 +1184,15 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // Track total wall time for this response chain (user message →
   // assistant ending without a tool call). Printed once when the loop exits.
   const chainStart = Date.now();
+  const initialLastUserMsg = [...ctx.messages].reverse().find((m) => m.role === 'user');
+  const initialUserQuery = typeof initialLastUserMsg?.content === 'string' ? initialLastUserMsg.content : undefined;
+  const chainFastDirect = shouldUseFastDirectReply(initialUserQuery, ctx.mode);
 
   // ── Voice: echo the user's input in the user-echo voice ────
   // Run async without awaiting — we don't want to block the API call on
   // ElevenLabs latency. The echo will play while the model is thinking.
   if (isVoiceEnabled(ctx.config) && getTtsConfig(ctx.config).echoUser) {
-    const lastUser = [...ctx.messages].reverse().find((m) => m.role === 'user');
-    const text = typeof lastUser?.content === 'string' ? lastUser.content : '';
+    const text = initialUserQuery || '';
     if (text) speakUserEcho(text, ctx.config).catch(() => { /* noop */ });
   }
 
@@ -1215,7 +1221,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     console.log(theme.dim('    Override only if you really want it: CAWDEX_ALLOW_FLAKY_MODELS=1'));
   }
 
-  printInteractiveTurnAccepted(ctx.config);
+  if (!chainFastDirect) {
+    printInteractiveTurnAccepted(ctx.config);
+  }
 
   // Tracks whether ANY reasoning tokens arrived across the entire chain.
   // Used at chain-end to print a one-time "/thinking is ON but this model
@@ -1272,7 +1280,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // SUCCESSFUL repeats and just rewrites stale messages. They compose.
   const toolCallDedupMap = new Map<string, number>();
   let contextCapNoticeCount = 0;
-  let chainUsedFastDirect = false;
+  let chainUsedFastDirect = chainFastDirect;
 
   // ── F5+: DeCRIM 3-stage self-critique gate ──
   //
@@ -1328,27 +1336,30 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   const isScreenReader = ctx.config.voice?.accessibility?.screenReader === true;
   const inputGuard = startInputSuppression(isScreenReader);
   try {
+    if (!chainFastDirect) {
+      // Turn-boundary collapse runs BEFORE compaction. Every completed prior
+      // turn becomes [user, "<final text>\n[Completed: used X, Y]"] — the
+      // model no longer sees stale tool_calls that it might mistake for
+      // pending work (the "I'll handle BOTH requests" / "all THREE requests"
+      // bug). The current turn (latest user message forward) is left intact
+      // because its tool_calls and tool messages are still in flight.
+      ctx.messages = collapseCompletedTurns(ctx.messages);
 
-  // Turn-boundary collapse runs BEFORE compaction. Every completed prior
-  // turn becomes [user, "<final text>\n[Completed: used X, Y]"] — the
-  // model no longer sees stale tool_calls that it might mistake for
-  // pending work (the "I'll handle BOTH requests" / "all THREE requests"
-  // bug). The current turn (latest user message forward) is left intact
-  // because its tool_calls and tool messages are still in flight.
-  ctx.messages = collapseCompletedTurns(ctx.messages);
-
-  // Auto-compact if context is getting large. The trigger scales with the
-  // provider's context window so smaller/free-tier models get breathing room
-  // before the hard context cap has to drop middle history.
-  const compactionConfig = buildCompactionConfig(ctx.config);
-  if (shouldCompact(ctx.messages, compactionConfig)) {
-    console.log(theme.dim(`  ${sym.running} auto-compacting conversation context...`));
-    setStatus({ state: 'compacting' });
-    ctx.messages = await compactMessages(ctx.messages, ctx.config, compactionConfig);
-  } else {
-    // Quick compact: truncate oversized tool results
-    ctx.messages = quickCompact(ctx.messages);
-  }
+      // Auto-compact if context is getting large. The trigger scales with the
+      // provider's context window so smaller/free-tier models get breathing room
+      // before the hard context cap has to drop middle history. Short direct
+      // prompts skip this entirely because their API request is isolated to the
+      // current user message; compacting old history first defeats the fast path.
+      const compactionConfig = buildCompactionConfig(ctx.config);
+      if (shouldCompact(ctx.messages, compactionConfig)) {
+        console.log(theme.dim(`  ${sym.running} auto-compacting conversation context...`));
+        setStatus({ state: 'compacting' });
+        ctx.messages = await compactMessages(ctx.messages, ctx.config, compactionConfig);
+      } else {
+        // Quick compact: truncate oversized tool results
+        ctx.messages = quickCompact(ctx.messages);
+      }
+    }
 
   // Tell the status singleton who we are. This is what F2 ("where am I?")
   // speaks back to the user. Updated once per chain — model/provider/mode
@@ -1366,7 +1377,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // Get the last user message for context-aware system prompt
     const lastUserMsg = ctx.messages.filter((m) => m.role === 'user').pop();
     const userQuery = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : undefined;
-    const fastDirect = shouldUseFastDirectReply(userQuery, ctx.mode);
+    const fastDirect = turns === 1
+      ? chainFastDirect
+      : shouldUseFastDirectReply(userQuery, ctx.mode);
     if (fastDirect) chainUsedFastDirect = true;
 
     // Build full messages array with system prompt.
@@ -1375,14 +1388,15 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // contents with a short stub. Only the last MASKING_WINDOW tool
     // results stay verbatim. Stub keeps role + tool_call_id intact
     // so the API stays valid; only the content shrinks.
-    ctx.messages = quickCompact(ctx.messages);
+    if (!fastDirect) {
+      ctx.messages = quickCompact(ctx.messages);
+    }
     const systemPrompt = fastDirect
       ? FAST_DIRECT_SYSTEM_PROMPT
       : buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery);
-    let visibleMessages = maskOldToolResults(ctx.messages);
-    if (fastDirect) {
-      visibleMessages = userQuery ? [{ role: 'user', content: userQuery }] : [];
-    }
+    let visibleMessages = fastDirect
+      ? (userQuery ? [{ role: 'user' as const, content: userQuery }] : [])
+      : maskOldToolResults(ctx.messages);
     const cap = enforceContextCap(
       visibleMessages,
       contextCapTokens(inferContextWindowTokens(ctx.config)),
