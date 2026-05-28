@@ -41,6 +41,7 @@ describe('research_sources tool', () => {
     const [hit] = _internal.parseArxivFeed(xml, 5);
     expect(hit.title).toBe('Agent Verification & Coding');
     expect(hit.url).toBe('https://arxiv.org/abs/2501.00001v1');
+    expect(hit.date).toBe('2025-01-02');
     expect(hit.meta).toContain('cs.SE');
     expect(hit.summary).toContain('verifying coding agents');
   });
@@ -58,6 +59,7 @@ describe('research_sources tool', () => {
       }],
     }, 5);
     expect(repo.meta).toContain('1,234 stars');
+    expect(repo.date).toBe('2026-05-20');
 
     const [issue] = _internal.parseGitHubIssues({
       items: [{
@@ -75,6 +77,7 @@ describe('research_sources tool', () => {
     expect(issue.source).toBe('GitHub issue');
     expect(issue.title).toContain('owner/agent');
     expect(issue.meta).toContain('3 comments');
+    expect(issue.date).toBe('2026-05-20');
 
     const [code] = _internal.parseGitHubCode({
       items: [{
@@ -97,6 +100,7 @@ describe('research_sources tool', () => {
     }], 'HF model', 5);
     expect(model.url).toBe('https://huggingface.co/org/model');
     expect(model.meta).toContain('updated 2026-05-01');
+    expect(model.date).toBe('2026-05-01');
 
     const [paper] = _internal.parseHuggingFacePapers([{
       paper: {
@@ -115,6 +119,7 @@ describe('research_sources tool', () => {
     expect(paper.url).toBe('https://huggingface.co/papers/2601.00001');
     expect(paper.meta).toContain('Grace Hopper');
     expect(paper.meta).toContain('12 upvotes');
+    expect(paper.date).toBe('2026-01-01');
 
     const [dataset] = _internal.parseKaggleDatasets([{
       titleNullable: 'Agent Bench Data',
@@ -134,6 +139,7 @@ describe('research_sources tool', () => {
       deadline: '2026-06-01T00:00:00Z',
       teamCount: 321,
       evaluationMetric: 'Accuracy',
+      enabledDate: '2026-05-01T00:00:00Z',
       tagNames: ['llm', 'agents'],
       description: 'A competition for agent benchmarks.',
     }], 5);
@@ -141,6 +147,7 @@ describe('research_sources tool', () => {
     expect(competition.url).toBe('https://www.kaggle.com/competitions/agent-bench');
     expect(competition.meta).toContain('321 teams');
     expect(competition.meta).toContain('metric Accuracy');
+    expect(competition.date).toBe('2026-05-01');
   });
 
   it('resolves Hugging Face tokens from common env names and token files', () => {
@@ -196,21 +203,21 @@ describe('research_sources tool', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       if (url.includes('export.arxiv.org')) {
-        return new Response('<feed><entry><id>https://arxiv.org/abs/1</id><title>Paper</title><summary>Summary</summary></entry></feed>', {
+        return new Response('<feed><entry><id>https://arxiv.org/abs/1</id><published>2026-05-20T00:00:00Z</published><title>Paper</title><summary>Summary</summary></entry></feed>', {
           status: 200,
         });
       }
       if (url.includes('api.github.com')) {
         expect(headers.get('Authorization')).toBe('Bearer gh_test_token');
-        return Response.json({ items: [{ full_name: 'o/r', html_url: 'https://github.com/o/r', stargazers_count: 1 }] });
+        return Response.json({ items: [{ full_name: 'o/r', html_url: 'https://github.com/o/r', stargazers_count: 1, pushed_at: '2026-05-21T00:00:00Z' }] });
       }
       if (url.includes('huggingface.co/api/models')) {
         expect(headers.get('Authorization')).toBe('Bearer hf_test_token');
-        return Response.json([{ id: 'o/m', downloads: 2 }]);
+        return Response.json([{ id: 'o/m', downloads: 2, lastModified: '2026-05-22T00:00:00.000Z' }]);
       }
       if (url.includes('huggingface.co/api/datasets')) {
         expect(headers.get('Authorization')).toBe('Bearer hf_test_token');
-        return Response.json([{ id: 'o/d', downloads: 3 }]);
+        return Response.json([{ id: 'o/d', downloads: 3, lastModified: '2026-05-23T00:00:00.000Z' }]);
       }
       if (url.includes('huggingface.co/api/daily_papers')) {
         expect(headers.get('Authorization')).toBe('Bearer hf_test_token');
@@ -231,11 +238,12 @@ describe('research_sources tool', () => {
           title: 'Agent Competition',
           teamCount: 7,
           deadline: '2026-06-01T00:00:00Z',
+          enabledDate: '2026-05-24T00:00:00Z',
         }]);
       }
       if (url.includes('kaggle.com/api/v1/datasets/list')) {
         expect(headers.get('Authorization')).toBe('Bearer kg_test_token');
-        return Response.json([{ titleNullable: 'Data', urlNullable: '/datasets/o/d' }]);
+        return Response.json([{ titleNullable: 'Data', urlNullable: '/datasets/o/d', lastUpdatedNullable: '2026-05-25T00:00:00Z' }]);
       }
       return new Response('', { status: 404 });
     }));
@@ -247,6 +255,8 @@ describe('research_sources tool', () => {
     expect(result.output).toContain('- hits: 7');
     expect(result.output).toContain('- errors: 0');
     expect(result.output).toContain('- sources: arXiv=1 | GitHub=1 | HF model=1 | HF dataset=1 | HF paper=1 | Kaggle=1 | Kaggle competition=1');
+    expect(result.output).toContain('- dated_hits: 7');
+    expect(result.output).toContain('- date_range: 2026-01-01..2026-05-25');
     expect(result.output).toContain('arXiv papers requested');
     expect(result.output).toContain('GitHub repositories requested');
     expect(result.output).toContain('GitHub auth found');
@@ -268,26 +278,28 @@ describe('research_sources tool', () => {
   });
 
   it('emits machine-readable source research JSON without credential leakage', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-27T12:00:00Z'));
     vi.stubEnv('GITHUB_TOKEN', 'gh_json_token');
     vi.stubEnv('HF_TOKEN', 'hf_json_token');
     vi.stubEnv('KAGGLE_API_TOKEN', 'kg_json_token');
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       if (url.includes('export.arxiv.org')) {
-        return new Response('<feed><entry><id>https://arxiv.org/abs/2604.25850</id><title>AHE</title><summary>Harness observability.</summary></entry></feed>', {
+        return new Response('<feed><entry><id>https://arxiv.org/abs/2604.25850</id><published>2026-05-01T00:00:00Z</published><title>AHE</title><summary>Harness observability.</summary></entry></feed>', {
           status: 200,
         });
       }
       if (url.includes('api.github.com')) {
-        return Response.json({ items: [{ full_name: 'o/harness', html_url: 'https://github.com/o/harness', stargazers_count: 10 }] });
+        return Response.json({ items: [{ full_name: 'o/harness', html_url: 'https://github.com/o/harness', stargazers_count: 10, pushed_at: '2026-05-02T00:00:00Z' }] });
       }
       if (url.includes('huggingface.co/api/models')) {
         expect(headers.get('Authorization')).toBe('Bearer hf_json_token');
-        return Response.json([{ id: 'o/m', downloads: 2 }]);
+        return Response.json([{ id: 'o/m', downloads: 2, lastModified: '2026-05-03T00:00:00.000Z' }]);
       }
       if (url.includes('huggingface.co/api/datasets')) {
         expect(headers.get('Authorization')).toBe('Bearer hf_json_token');
-        return Response.json([{ id: 'o/d', downloads: 3 }]);
+        return Response.json([{ id: 'o/d', downloads: 3, lastModified: '2026-05-04T00:00:00.000Z' }]);
       }
       if (url.includes('huggingface.co/api/daily_papers')) {
         expect(headers.get('Authorization')).toBe('Bearer hf_json_token');
@@ -302,11 +314,11 @@ describe('research_sources tool', () => {
       }
       if (url.includes('kaggle.com/api/v1/competitions/list')) {
         expect(headers.get('Authorization')).toBe('Bearer kg_json_token');
-        return Response.json([{ ref: 'agent-leaderboard', title: 'Agent Leaderboard' }]);
+        return Response.json([{ ref: 'agent-leaderboard', title: 'Agent Leaderboard', enabledDate: '2026-05-05T00:00:00Z' }]);
       }
       if (url.includes('kaggle.com/api/v1/datasets/list')) {
         expect(headers.get('Authorization')).toBe('Bearer kg_json_token');
-        return Response.json([{ titleNullable: 'Agent Data', urlNullable: '/datasets/o/agent-data' }]);
+        return Response.json([{ titleNullable: 'Agent Data', urlNullable: '/datasets/o/agent-data', lastUpdatedNullable: '2026-05-06T00:00:00Z' }]);
       }
       return new Response('', { status: 404 });
     }));
@@ -337,6 +349,13 @@ describe('research_sources tool', () => {
     expect(parsed.digest).toMatchObject({
       hitCount: 7,
       errorCount: 0,
+      recencyWindowDays: 90,
+      datedHitCount: 7,
+      freshHitCount: 7,
+      staleHitCount: 0,
+      unknownDateHitCount: 0,
+      oldestDate: '2026-05-01',
+      newestDate: '2026-05-13',
     });
     expect(parsed.digest.sources).toMatchObject({
       arXiv: 1,
@@ -367,6 +386,7 @@ describe('research_sources tool', () => {
       source: 'arXiv',
       title: 'AHE',
       url: 'https://arxiv.org/abs/2604.25850',
+      date: '2026-05-01',
     });
     expect(result.output).not.toContain('hf_json_token');
     expect(result.output).not.toContain('kg_json_token');

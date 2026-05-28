@@ -6248,6 +6248,13 @@ describe('benchmark trace artifacts', () => {
           'https://arxiv.org/abs/2604.25850',
           'https://github.com/example/agent',
         ],
+        recencyWindowDays: 90,
+        datedHitCount: 4,
+        freshHitCount: 4,
+        staleHitCount: 0,
+        unknownDateHitCount: 0,
+        oldestDate: '2026-05-01',
+        newestDate: '2026-05-21',
       },
       redaction: {
         secretsIncluded: false,
@@ -6258,21 +6265,25 @@ describe('benchmark trace artifacts', () => {
           source: 'arXiv',
           title: 'Agentic Harness Engineering',
           url: 'https://arxiv.org/abs/2604.25850',
+          date: '2026-05-01',
         },
         {
           source: 'GitHub',
           title: 'example/agent',
           url: 'https://github.com/example/agent',
+          date: '2026-05-10',
         },
         {
           source: 'HF paper',
           title: 'Effective Harness Engineering',
           url: 'https://huggingface.co/papers/2605.15221',
+          date: '2026-05-13',
         },
         {
           source: 'Kaggle competition',
           title: 'Coding Agent Leaderboard',
           url: 'https://www.kaggle.com/competitions/coding-agent-leaderboard',
+          date: '2026-05-21',
         },
       ],
       errors: [],
@@ -6302,6 +6313,12 @@ describe('benchmark trace artifacts', () => {
     expect(coverage.kaggleKinds).toEqual(['both']);
     expect(coverage.sourceHitCount).toBe(4);
     expect(coverage.sourceErrorCount).toBe(0);
+    expect(coverage.datedHitCount).toBe(4);
+    expect(coverage.freshHitCount).toBe(4);
+    expect(coverage.staleHitCount).toBe(0);
+    expect(coverage.unknownDateHitCount).toBe(0);
+    expect(coverage.oldestDate).toBe('2026-05-01');
+    expect(coverage.newestDate).toBe('2026-05-21');
     expect(coverage.resultSources).toEqual(['arxiv', 'github', 'hf_paper', 'kaggle_competition']);
     expect(coverage.topUrls).toContain('https://arxiv.org/abs/2604.25850');
     expect(coverage.recentDays).toEqual([90]);
@@ -6312,6 +6329,9 @@ describe('benchmark trace artifacts', () => {
     expect(coverage.completeTargetedCoverage).toBe(true);
     expect(coverage.freshTargetedCoverage).toBe(true);
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('targeted:yes');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('dated_hits:4');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('fresh_hits:4');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('date_range:2026-05-01..2026-05-21');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('auth:github:found|huggingface:found|kaggle:found');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('result_sources:arxiv|github|hf_paper|kaggle_competition');
   });

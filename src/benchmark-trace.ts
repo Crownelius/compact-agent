@@ -953,6 +953,12 @@ export interface SourceResearchCoverage {
   resultSources: string[];
   topUrls: string[];
   recentDays: number[];
+  datedHitCount: number;
+  freshHitCount: number;
+  staleHitCount: number;
+  unknownDateHitCount: number;
+  newestDate: string | null;
+  oldestDate: string | null;
   freshTargetedCoverage: boolean;
   kaggleCompetitionsSkipped: boolean;
   coverageNotes: string[];
@@ -5139,6 +5145,12 @@ export function buildSourceResearchCoverage(events: BenchmarkTraceEvent[]): Sour
     resultSources: [],
     topUrls: [],
     recentDays: [],
+    datedHitCount: 0,
+    freshHitCount: 0,
+    staleHitCount: 0,
+    unknownDateHitCount: 0,
+    newestDate: null,
+    oldestDate: null,
     freshTargetedCoverage: false,
     kaggleCompetitionsSkipped: false,
     coverageNotes: [],
@@ -9109,6 +9121,15 @@ function collectSourceResearchJsonEvidence(coverage: SourceResearchCoverage, pac
   const digestErrorCount = numberFromUnknown(digest?.errorCount);
   if (digestHitCount != null) coverage.sourceHitCount += digestHitCount;
   if (digestErrorCount != null) coverage.sourceErrorCount += digestErrorCount;
+  const digestDatedCount = numberFromUnknown(digest?.datedHitCount);
+  const digestFreshCount = numberFromUnknown(digest?.freshHitCount);
+  const digestStaleCount = numberFromUnknown(digest?.staleHitCount);
+  const digestUnknownDateCount = numberFromUnknown(digest?.unknownDateHitCount);
+  if (digestDatedCount != null) coverage.datedHitCount += digestDatedCount;
+  if (digestFreshCount != null) coverage.freshHitCount += digestFreshCount;
+  if (digestStaleCount != null) coverage.staleHitCount += digestStaleCount;
+  if (digestUnknownDateCount != null) coverage.unknownDateHitCount += digestUnknownDateCount;
+  mergeSourceResearchDateRange(coverage, stringFromUnknown(digest?.oldestDate), stringFromUnknown(digest?.newestDate));
 
   const digestSources = objectFromUnknown(digest?.sources);
   if (digestSources) {
@@ -9126,11 +9147,59 @@ function collectSourceResearchJsonEvidence(coverage: SourceResearchCoverage, pac
     const record = objectFromUnknown(hit);
     const source = typeof record?.source === 'string' ? record.source : '';
     const url = typeof record?.url === 'string' ? record.url : '';
+    const date = typeof record?.date === 'string' ? record.date : '';
     if (source) pushUnique(coverage.resultSources, normalizeResearchSourceLabel(source));
     if (url && coverage.topUrls.length < 12) pushUnique(coverage.topUrls, url.replace(/[),.;]+$/, ''));
+    if (digestDatedCount == null && digestFreshCount == null && digestStaleCount == null && digestUnknownDateCount == null) {
+      collectSourceResearchHitFreshness(coverage, date, recentDays);
+    }
   }
 
   if (digestErrorCount == null) coverage.sourceErrorCount += stringArrayFromUnknown(packet.errors).length;
+}
+
+function collectSourceResearchHitFreshness(
+  coverage: SourceResearchCoverage,
+  date: string,
+  recentDays: number,
+): void {
+  const normalized = normalizeTraceIsoDate(date);
+  if (!normalized) {
+    coverage.unknownDateHitCount++;
+    return;
+  }
+  coverage.datedHitCount++;
+  mergeSourceResearchDateRange(coverage, normalized, normalized);
+  if (Number.isFinite(recentDays) && recentDays > 0) {
+    const ms = Date.parse(normalized);
+    if (Number.isFinite(ms) && ms >= Date.now() - Math.floor(recentDays) * 24 * 60 * 60 * 1000) {
+      coverage.freshHitCount++;
+    } else {
+      coverage.staleHitCount++;
+    }
+  }
+}
+
+function mergeSourceResearchDateRange(
+  coverage: SourceResearchCoverage,
+  oldest: string | undefined,
+  newest: string | undefined,
+): void {
+  const normalizedOldest = normalizeTraceIsoDate(oldest);
+  const normalizedNewest = normalizeTraceIsoDate(newest);
+  if (normalizedOldest && (!coverage.oldestDate || normalizedOldest < coverage.oldestDate)) {
+    coverage.oldestDate = normalizedOldest;
+  }
+  if (normalizedNewest && (!coverage.newestDate || normalizedNewest > coverage.newestDate)) {
+    coverage.newestDate = normalizedNewest;
+  }
+}
+
+function normalizeTraceIsoDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return undefined;
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 function applySourceCoverageNote(coverage: SourceResearchCoverage, note: string): void {
@@ -9249,6 +9318,19 @@ function collectSourceResearchEvidence(coverage: SourceResearchCoverage, output:
     const authLine = line.match(/^-\s+auth:\s+(.+)$/i);
     if (authLine) {
       applySourceAuthPreview(coverage, authLine[1]);
+    }
+
+    const datedHits = line.match(/^-\s+dated_hits:\s+(\d+)/i);
+    if (datedHits) coverage.datedHitCount += Number(datedHits[1]);
+    const freshHits = line.match(/^-\s+fresh_hits:\s+(\d+)/i);
+    if (freshHits) coverage.freshHitCount += Number(freshHits[1]);
+    const staleHits = line.match(/^-\s+stale_hits:\s+(\d+)/i);
+    if (staleHits) coverage.staleHitCount += Number(staleHits[1]);
+    const unknownDateHits = line.match(/^-\s+unknown_date_hits:\s+(\d+)/i);
+    if (unknownDateHits) coverage.unknownDateHitCount += Number(unknownDateHits[1]);
+    const dateRange = line.match(/^-\s+date_range:\s+(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})/i);
+    if (dateRange) {
+      mergeSourceResearchDateRange(coverage, dateRange[1], dateRange[2]);
     }
 
     const url = line.match(/^https?:\/\/\S+/i)?.[0];
@@ -9954,6 +10036,10 @@ function numberFromUnknown(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function stringFromUnknown(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 function booleanFromUnknown(value: unknown): boolean | null {
   return typeof value === 'boolean' ? value : null;
 }
@@ -10005,6 +10091,11 @@ function formatSourceCoverage(coverage: SourceResearchCoverage): string {
     huggingFace,
     kaggle,
     coverage.recentDays.length ? `recent_days:${coverage.recentDays.join('|')}` : 'recent_days:none',
+    `dated_hits:${coverage.datedHitCount}`,
+    `fresh_hits:${coverage.freshHitCount}`,
+    `stale_hits:${coverage.staleHitCount}`,
+    `unknown_date_hits:${coverage.unknownDateHitCount}`,
+    coverage.oldestDate && coverage.newestDate ? `date_range:${coverage.oldestDate}..${coverage.newestDate}` : null,
     coverage.resultSources.length ? `result_sources:${coverage.resultSources.slice(0, 8).join('|')}` : null,
     authSignals ? `auth:${authSignals}` : null,
     coverage.kaggleCompetitionsSkipped ? 'kaggle_competitions:skipped' : null,
@@ -10618,6 +10709,11 @@ function formatResearchSourcesJsonPreviewLines(packet: ResearchSourcesJsonPacket
     `- sources: ${sourceSummary}`,
     authPreview ? `- auth: ${authPreview}` : null,
     `- top_urls: ${topUrls.length ? topUrls.join(' | ') : 'none'}`,
+    `- dated_hits: ${numberFromUnknown(digest?.datedHitCount) ?? 0}`,
+    `- fresh_hits: ${numberFromUnknown(digest?.freshHitCount) ?? 0}`,
+    `- stale_hits: ${numberFromUnknown(digest?.staleHitCount) ?? 0}`,
+    `- unknown_date_hits: ${numberFromUnknown(digest?.unknownDateHitCount) ?? 0}`,
+    `- date_range: ${stringFromUnknown(digest?.oldestDate) && stringFromUnknown(digest?.newestDate) ? `${stringFromUnknown(digest?.oldestDate)}..${stringFromUnknown(digest?.newestDate)}` : 'none'}`,
   ].filter((line): line is string => line != null);
   lines.push('', ...digestLines);
 
@@ -10630,6 +10726,9 @@ function formatResearchSourcesJsonPreviewLines(packet: ResearchSourcesJsonPacket
     if (!source || !title) continue;
     lines.push('', `## ${source}: ${title}`);
     if (url) lines.push(url);
+    if (typeof record.date === 'string' && record.date.trim()) {
+      lines.push(`date ${record.date.trim()}`);
+    }
   }
 
   const errors = stringArrayFromUnknown(packet.errors);

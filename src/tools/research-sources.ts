@@ -23,6 +23,7 @@ interface SourceHit {
   source: string;
   title: string;
   url: string;
+  date?: string;
   meta?: string;
   summary?: string;
 }
@@ -49,6 +50,13 @@ interface SourceDigest {
   errorCount: number;
   sources: Record<string, number>;
   topUrls: string[];
+  recencyWindowDays: number | null;
+  datedHitCount: number;
+  freshHitCount: number;
+  staleHitCount: number;
+  unknownDateHitCount: number;
+  newestDate: string | null;
+  oldestDate: string | null;
 }
 
 export interface SourceAuthReadiness {
@@ -146,6 +154,12 @@ function parseDateMs(value: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function normalizeIsoDate(value: string | null | undefined): string | undefined {
+  const ms = parseDateMs(value);
+  if (ms == null) return undefined;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 function dateWithinRecentDays(value: string | null | undefined, recentDays?: number): boolean {
   if (!recentDays || recentDays <= 0) return true;
   const ms = parseDateMs(value);
@@ -190,6 +204,7 @@ function parseArxivFeed(xml: string, limit: number): SourceHit[] {
       source: 'arXiv',
       title,
       url: id || 'https://arxiv.org',
+      date: normalizeIsoDate(published),
       meta: [published, category, authors.length ? authors.join(', ') : undefined].filter(Boolean).join(' | '),
       summary: truncate(summary),
     };
@@ -253,6 +268,7 @@ function parseGitHubRepos(json: unknown, limit: number): SourceHit[] {
     source: 'GitHub',
     title: r.full_name ?? '(unknown repository)',
     url: r.html_url ?? 'https://github.com',
+    date: normalizeIsoDate(r.pushed_at),
     meta: [
       r.language ?? undefined,
       typeof r.stargazers_count === 'number' ? `${r.stargazers_count.toLocaleString()} stars` : undefined,
@@ -273,6 +289,7 @@ function parseGitHubIssues(json: unknown, limit: number, kind: 'issue' | 'pull')
       source: kind === 'pull' ? 'GitHub pull' : 'GitHub issue',
       title: [repo, issue.number ? `#${issue.number}` : undefined, issue.title].filter(Boolean).join(' '),
       url: issue.html_url ?? issue.pull_request?.html_url ?? 'https://github.com',
+      date: normalizeIsoDate(issue.updated_at ?? issue.created_at),
       meta: [
         issue.state ?? undefined,
         typeof issue.comments === 'number' ? `${issue.comments.toLocaleString()} comments` : undefined,
@@ -449,6 +466,7 @@ function parseHuggingFaceRepos(json: unknown, sourceLabel: string, limit: number
         source: sourceLabel,
         title: id,
         url: id ? `https://huggingface.co/${kindPath ? `${kindPath}/` : ''}${id}` : 'https://huggingface.co',
+        date: normalizeIsoDate(r.lastModified ?? r.createdAt),
         meta: [
           r.pipeline_tag,
           typeof r.downloads === 'number' ? `${r.downloads.toLocaleString()} downloads` : undefined,
@@ -496,6 +514,7 @@ function parseHuggingFacePapers(json: unknown, query: string, limit: number): So
         source: 'HF paper',
         title: entry.title,
         url: id ? `https://huggingface.co/papers/${id}` : 'https://huggingface.co/papers',
+        date: normalizeIsoDate(paper.publishedAt ?? paper.submittedOnDailyAt),
         meta: [
           paper.publishedAt ? `published ${paper.publishedAt.slice(0, 10)}` : undefined,
           paper.submittedOnDailyAt ? `daily ${paper.submittedOnDailyAt.slice(0, 10)}` : undefined,
@@ -694,6 +713,7 @@ function parseKaggleDatasets(json: unknown, limit: number, recentDays?: number):
       source: 'Kaggle',
       title: d.titleNullable ?? d.title ?? '(unknown dataset)',
       url: normalizeKaggleUrl(d.urlNullable ?? d.url),
+      date: normalizeIsoDate(d.lastUpdatedNullable ?? d.lastUpdated),
       meta: [
         d.ownerNameNullable || d.creatorNameNullable,
         typeof d.downloadCountNullable === 'number' ? `${d.downloadCountNullable.toLocaleString()} downloads` : undefined,
@@ -725,6 +745,7 @@ function parseKaggleCompetitions(json: unknown, limit: number, recentDays?: numb
         source: 'Kaggle competition',
         title: c.title ?? c.ref ?? '(unknown competition)',
         url: normalizeKaggleCompetitionUrl(c.url, c.ref),
+        date: normalizeIsoDate(c.enabledDate ?? c.deadline),
         meta: [
           c.category ?? undefined,
           c.reward ?? c.prize ?? undefined,
@@ -863,7 +884,7 @@ function resolveKaggleLegacyCredentials(
   return undefined;
 }
 
-function formatHits(query: string, hits: SourceHit[], errors: string[], notes: string[] = []): string {
+function formatHits(query: string, hits: SourceHit[], errors: string[], notes: string[] = [], recentDays?: number): string {
   if (hits.length === 0 && errors.length === 0 && notes.length === 0) {
     return `No source results for "${query}". Try a broader query.`;
   }
@@ -873,10 +894,11 @@ function formatHits(query: string, hits: SourceHit[], errors: string[], notes: s
     for (const note of notes) lines.push(`- ${note}`);
     lines.push('');
   }
-  lines.push(...buildSourceDigest(hits, errors), '');
+  lines.push(...buildSourceDigest(hits, errors, recentDays), '');
   for (const h of hits) {
     lines.push(`## ${h.source}: ${h.title}`);
     lines.push(h.url);
+    if (h.date) lines.push(`date ${h.date}`);
     if (h.meta) lines.push(h.meta);
     if (h.summary) lines.push(h.summary);
     lines.push('');
@@ -888,21 +910,49 @@ function formatHits(query: string, hits: SourceHit[], errors: string[], notes: s
   return lines.join('\n').trim();
 }
 
-function buildSourceDigestObject(hits: SourceHit[], errors: string[]): SourceDigest {
+function buildSourceDigestObject(hits: SourceHit[], errors: string[], recentDays?: number): SourceDigest {
   const counts: Record<string, number> = {};
   for (const hit of hits) {
     counts[hit.source] = (counts[hit.source] ?? 0) + 1;
   }
+  const dated = hits
+    .map((hit) => hit.date)
+    .map((date) => normalizeIsoDate(date))
+    .filter((date): date is string => Boolean(date));
+  const uniqueDates = Array.from(new Set(dated)).sort();
+  const cutoffMs = recentDays && recentDays > 0
+    ? Date.now() - recentDays * MS_PER_DAY
+    : null;
+  const freshHitCount = cutoffMs == null
+    ? 0
+    : hits.filter((hit) => {
+        const ms = parseDateMs(hit.date);
+        return ms != null && ms >= cutoffMs;
+      }).length;
+  const staleHitCount = cutoffMs == null
+    ? 0
+    : hits.filter((hit) => {
+        const ms = parseDateMs(hit.date);
+        return ms != null && ms < cutoffMs;
+      }).length;
+  const datedHitCount = dated.length;
   return {
     hitCount: hits.length,
     errorCount: errors.length,
     sources: counts,
     topUrls: Array.from(new Set(hits.map((hit) => hit.url).filter(Boolean))).slice(0, 6),
+    recencyWindowDays: recentDays && recentDays > 0 ? recentDays : null,
+    datedHitCount,
+    freshHitCount,
+    staleHitCount,
+    unknownDateHitCount: Math.max(0, hits.length - datedHitCount),
+    newestDate: uniqueDates.at(-1) ?? null,
+    oldestDate: uniqueDates[0] ?? null,
   };
 }
 
-function buildSourceDigest(hits: SourceHit[], errors: string[]): string[] {
-  const digest = buildSourceDigestObject(hits, errors);
+function buildSourceDigest(hits: SourceHit[], errors: string[], recentDays?: number): string[] {
+  const digest = buildSourceDigestObject(hits, errors, recentDays);
   const sources = Object.entries(digest.sources)
     .map(([source, count]) => `${source}=${count}`)
     .join(' | ') || 'none';
@@ -912,6 +962,11 @@ function buildSourceDigest(hits: SourceHit[], errors: string[]): string[] {
     `- errors: ${digest.errorCount}`,
     `- sources: ${sources}`,
     `- top_urls: ${digest.topUrls.length ? digest.topUrls.join(' | ') : 'none'}`,
+    `- dated_hits: ${digest.datedHitCount}`,
+    `- fresh_hits: ${digest.freshHitCount}`,
+    `- stale_hits: ${digest.staleHitCount}`,
+    `- unknown_date_hits: ${digest.unknownDateHitCount}`,
+    `- date_range: ${digest.oldestDate && digest.newestDate ? `${digest.oldestDate}..${digest.newestDate}` : 'none'}`,
   ];
 }
 
@@ -938,7 +993,7 @@ function buildResearchSourcesJsonReport(
     },
     auth,
     coverageNotes: notes,
-    digest: buildSourceDigestObject(hits, errors),
+    digest: buildSourceDigestObject(hits, errors, request.recentDays),
     redaction: {
       secretsIncluded: false,
       credentialHeadersIncluded: false,
@@ -1060,7 +1115,7 @@ export const ResearchSourcesTool: Tool = {
     };
     const output = format === 'json'
       ? JSON.stringify(buildResearchSourcesJsonReport(query, request, hits, errors, notes, auth), null, 2)
-      : formatHits(query, hits, errors, notes);
+      : formatHits(query, hits, errors, notes, recentDays);
 
     return {
       output,
