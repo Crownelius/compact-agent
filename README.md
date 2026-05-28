@@ -1,6 +1,4 @@
-# Cawdex
-
-Terminal coding agents with a mind for the whole repo.
+# Cawdex — terminal coding agents with a mind for the whole repo
 
 [![npm](https://img.shields.io/npm/v/cawdex?color=cyan)](https://www.npmjs.com/package/cawdex)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -180,7 +178,7 @@ ADAPTER="$(cawdex --print-terminal-bench-adapter)"
 ROOT="$(cd "$(dirname "$ADAPTER")/../.." && pwd)"
 PYTHONPATH="$ROOT:${PYTHONPATH:-}" \
 tb run \
-  --agent-import-path resources.terminal_bench.ventipus_agent:VentipusTerminalBenchAgent \
+  --agent-import-path resources.terminal_bench.ventipus_agent:CawdexTerminalBenchAgent \
   --task-id hello-world
 ```
 

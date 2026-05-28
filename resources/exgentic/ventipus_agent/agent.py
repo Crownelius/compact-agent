@@ -584,3 +584,22 @@ def _single_action_to_data(action: Action) -> Any:
         return values
     except Exception:
         return {"id": safe_id(str(action)), "text": str(action)}
+
+
+class CawdexAgentInstance(VentipusAgentInstance):
+    """Preferred Exgentic runtime class name for Cawdex."""
+
+
+class CawdexAgent(VentipusAgent):
+    """Preferred Exgentic host class name for Cawdex."""
+
+    display_name: ClassVar[str] = "Cawdex"
+    slug_name: ClassVar[str] = "cawdex_agent"
+
+    @classmethod
+    def _get_instance_class(cls):
+        return CawdexAgentInstance
+
+    @classmethod
+    def _get_instance_class_ref(cls) -> str:
+        return f"{cls.__module__}:CawdexAgentInstance"

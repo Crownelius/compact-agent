@@ -93,8 +93,8 @@ const __require = createRequire(import.meta.url);
 
 function printCliHelp() {
   const pkg = __require('../package.json');
-  process.stdout.write(`Cawdex ${pkg.version}
-terminal coding agents with a mind for the whole repo
+  process.stdout.write(`Cawdex — terminal coding agents with a mind for the whole repo
+version ${pkg.version}
 
 Usage:
   cawdex [options]

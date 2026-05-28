@@ -1,12 +1,13 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { LEGACY_STATE_DIR } from './brand.js';
 import { PROVIDERS, type VentipusConfig } from './types.js';
 
 // Cawdex keeps config, sessions, skills, memory, and benchmark artifacts
 // under ~/.ventipus by default for compatibility. CAWDEX_HOME is the new
 // spelling; VENTIPUS_HOME remains a legacy alias for existing installs.
-export const CONFIG_DIR_NAME = '.ventipus';
+export const CONFIG_DIR_NAME = LEGACY_STATE_DIR;
 
 // Resolve the config dir LAZILY (every call) instead of caching at
 // module-load time. The cached form prevented tests + sandboxed runs

@@ -12,6 +12,7 @@ describe('Terminal-Bench adapter packaging', () => {
     expect(existsSync(setupPath)).toBe(true);
     const adapter = readFileSync(adapterPath, 'utf-8');
     expect(adapter).toContain('AbstractInstalledAgent');
+    expect(adapter).toContain('CawdexTerminalBenchAgent');
     expect(adapter).toContain('VentipusTerminalBenchAgent');
     expect(adapter).toContain('/benchmark terminal-bench');
     expect(adapter).toContain('Cawdex');

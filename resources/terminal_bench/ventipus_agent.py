@@ -1,7 +1,7 @@
 """Terminal-Bench adapter for Cawdex.
 
 Usage:
-    tb run --agent-import-path resources.terminal_bench.ventipus_agent:VentipusTerminalBenchAgent ...
+    tb run --agent-import-path resources.terminal_bench.ventipus_agent:CawdexTerminalBenchAgent ...
 
 The adapter installs the npm package in the task container, then runs
 Cawdex in non-interactive benchmark mode with the task instruction.
@@ -24,7 +24,7 @@ except ImportError:  # terminal-bench moved this in newer releases
 
 
 class VentipusTerminalBenchAgent(AbstractInstalledAgent):
-    """Run Cawdex as an installed command-line agent."""
+    """Legacy Terminal-Bench class name for Cawdex."""
 
     @staticmethod
     def name() -> str:
@@ -172,3 +172,7 @@ class VentipusTerminalBenchAgent(AbstractInstalledAgent):
                 block=True,
             )
         ]
+
+
+class CawdexTerminalBenchAgent(VentipusTerminalBenchAgent):
+    """Preferred Terminal-Bench class name for Cawdex."""

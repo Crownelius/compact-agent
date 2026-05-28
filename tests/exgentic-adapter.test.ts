@@ -19,6 +19,8 @@ describe('Exgentic adapter packaging', () => {
     expect(existsSync(requirementsPath)).toBe(true);
 
     const agent = readFileSync(agentPath, 'utf-8');
+    expect(agent).toContain('class CawdexAgent(VentipusAgent)');
+    expect(agent).toContain('class CawdexAgentInstance(VentipusAgentInstance)');
     expect(agent).toContain('class VentipusAgent(Agent)');
     expect(agent).toContain('class VentipusAgentInstance(AgentInstance)');
     expect(agent).toContain('slug_name: ClassVar[str] = "ventipus_agent"');
@@ -68,6 +70,7 @@ describe('Exgentic adapter packaging', () => {
       cwd: process.cwd(),
       encoding: 'utf-8',
     });
+    expect(help).toContain('Cawdex — terminal coding agents with a mind for the whole repo');
     expect(help).toContain('Usage:');
     expect(help).toContain('cawdex [options]');
     expect(help).toContain('ventipus [options]');

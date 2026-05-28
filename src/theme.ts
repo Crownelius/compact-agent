@@ -18,6 +18,7 @@
  * without spreading raw hex values through the app.
  */
 import chalk from 'chalk';
+import { BRAND_SPACED_NAME, BRAND_TAGLINE } from './brand.js';
 
 // ── Palette catalog ─────────────────────────────────────
 // All palettes use the same 13 slots so UI code can treat them uniformly.
@@ -397,8 +398,8 @@ export function printBanner(
 
   console.log('');
   console.log(leftPad + brand(heavyBar));
-  console.log(leftPad + b(center(`${sym.mark}   C A W D E X   ${sym.mark}`, BAR_WIDTH)));
-  console.log(leftPad + d(center('terminal coding agents with a mind for the whole repo', BAR_WIDTH)));
+  console.log(leftPad + b(center(`${sym.mark}   ${BRAND_SPACED_NAME}   ${sym.mark}`, BAR_WIDTH)));
+  console.log(leftPad + d(center(BRAND_TAGLINE, BAR_WIDTH)));
   console.log(row(d(divider)));
   console.log(row(s(providerCell) + d(' │ ') + w(modelCell)));
   console.log(row(s(modeCell) + d(' │ ') + w(permCell)));

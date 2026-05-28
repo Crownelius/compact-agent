@@ -5,6 +5,7 @@ import { readFileSync as fsReadFileSync, writeFileSync as fsWriteFileSync, unlin
 import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { BRAND_LOCKUP, BRAND_NAME } from './brand.js';
 import { initDebug, emit as dbgEmit, setDebugLevel, getDebugStatus, tailDebug, type DebugLevel } from './debug.js';
 import chalk from 'chalk';
 import { loadConfig, saveConfig, configExists, getConfigDir, loadConfigFromEnv, applyRuntimeConfigOverrides } from './config.js';
@@ -187,7 +188,7 @@ function applyModelSelection(
 
 // ── Setup Wizard ──────────────────────────────────────────
 async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfig): Promise<VentipusConfig> {
-  console.log(chalk.bold.cyan('\n  Cawdex — First-time Setup\n'));
+  console.log(chalk.bold.cyan(`\n  ${BRAND_NAME} — First-time Setup\n`));
   const providerKeys = Object.keys(PROVIDERS);
   const normalizeProvider = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
   const currentProviderKey = normalizeProvider(currentConfig?.provider ?? '');
@@ -234,7 +235,7 @@ async function setupWizard(rl: readline.Interface, currentConfig?: VentipusConfi
       if (status.email) console.log(chalk.dim(`  Account: ${status.email}`));
     } else {
       console.log(chalk.yellow('  Codex OAuth token not found yet.'));
-      console.log(chalk.dim('  After setup, run /openai-login or run "codex login". Cawdex will read ~/.codex/auth.json.'));
+      console.log(chalk.dim(`  After setup, run /openai-login or run "codex login". ${BRAND_NAME} will read ~/.codex/auth.json.`));
     }
   }
 
@@ -3473,7 +3474,7 @@ async function main(): Promise<void> {
     );
   } else {
     // Minimal mode: just a one-liner
-    console.log(theme.brandBold('Cawdex') + theme.dim(' — terminal coding agents with a mind for the whole repo'));
+    console.log(theme.brandBold(BRAND_NAME) + theme.dim(BRAND_LOCKUP.slice(BRAND_NAME.length)));
     console.log('');
   }
 

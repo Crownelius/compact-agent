@@ -1,5 +1,5 @@
-"""ventipus adapter package for Exgentic."""
+"""Cawdex adapter package for Exgentic."""
 
-from .agent import VentipusAgent, VentipusAgentInstance
+from .agent import CawdexAgent, CawdexAgentInstance, VentipusAgent, VentipusAgentInstance
 
-__all__ = ["VentipusAgent", "VentipusAgentInstance"]
+__all__ = ["CawdexAgent", "CawdexAgentInstance", "VentipusAgent", "VentipusAgentInstance"]

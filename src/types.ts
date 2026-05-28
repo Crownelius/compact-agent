@@ -14,7 +14,7 @@ export interface Message {
 }
 
 // ── Config ────────────────────────────────────────────────
-export interface VentipusConfig {
+export interface CawdexConfig {
   apiKey: string;
   // Optional pool of API keys (e.g. multiple OpenRouter free-tier accounts).
   // When present, the client rotates through them on 429/401, isolating
@@ -46,6 +46,9 @@ export interface VentipusConfig {
   memory?: MemoryConfig;   // MemPalace-style persistent memory (wings/rooms/drawers/tunnels/KG)
   sandbox?: SandboxConfig; // OS-native sandbox wrap for bash tool (Seatbelt/bwrap)
 }
+
+/** @deprecated Use CawdexConfig. Kept for legacy plugin/test imports during the rebrand. */
+export type VentipusConfig = CawdexConfig;
 
 export interface OpenAIAuthConfig {
   type: 'api_key' | 'codex_oauth';

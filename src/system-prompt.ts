@@ -1,5 +1,6 @@
 import { readdirSync, existsSync } from 'node:fs';
 import { platform, release, homedir } from 'node:os';
+import { BRAND_LOCKUP } from './brand.js';
 import type { VentipusConfig } from './types.js';
 import { getModePromptAddition, type Mode } from './modes.js';
 import { buildRulesPrompt } from './rules.js';
@@ -158,7 +159,7 @@ export function buildSystemPrompt(
   // User context
   const userAddition = buildUserContext();
 
-  return `You are Cawdex, terminal coding agents with a mind for the whole repo, running in the user's shell.
+  return `You are ${BRAND_LOCKUP}, running in the user's shell.
 You help with software engineering tasks: writing code, fixing bugs, refactoring, explaining code, running commands, and more.
 
 # Environment
