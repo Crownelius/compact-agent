@@ -12,7 +12,7 @@ export function formatSourceCommandUsage(): string {
   return [
     '  Usage: /sources <query> [--source all|arxiv|github|huggingface|kaggle]',
     '         [--github repositories|issues|pulls|code|all] [--hf models|datasets|papers|both|all]',
-    '         [--kaggle datasets|competitions|both] [--recent days] [--limit n]',
+    '         [--kaggle datasets|competitions|both] [--recent days] [--limit n] [--json]',
     '  Defaults: --source all --github all --hf all --kaggle both --recent 90 --limit 5',
     '  Example: /sources coding agent verification --recent 30 --github all --hf papers',
   ].join('\n');
@@ -49,10 +49,14 @@ export function parseSourceCommandArgs(args: string): SourceCommandParseResult {
       input.recent_days = 90;
       continue;
     }
+    if (token === '--json') {
+      input.format = 'json';
+      continue;
+    }
 
     const { name, inlineValue } = splitFlag(token);
     const value = inlineValue ?? tokens[i + 1];
-    const needsValue = !['--benchmark', '--targeted'].includes(name);
+    const needsValue = !['--benchmark', '--targeted', '--json'].includes(name);
     if (needsValue && (!value || value.startsWith('-'))) {
       return { error: `${name} requires a value` };
     }
@@ -116,6 +120,14 @@ export function parseSourceCommandArgs(args: string): SourceCommandParseResult {
           return { error: `limit must be a positive number, got "${value}"` };
         }
         input.limit = Math.floor(n);
+        break;
+      }
+      case '--format': {
+        const normalized = value.toLowerCase();
+        if (normalized !== 'text' && normalized !== 'json') {
+          return { error: `unsupported format "${value}"` };
+        }
+        input.format = normalized;
         break;
       }
       default:

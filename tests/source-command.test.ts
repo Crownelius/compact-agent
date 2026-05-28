@@ -24,7 +24,7 @@ describe('/sources command parser', () => {
   });
 
   it('parses quoted queries and source-specific flags', () => {
-    const result = parseSourceCommandArgs('"agent harness" --source=github --github prs --hf papers --kaggle competitions --recent 30 --limit 2');
+    const result = parseSourceCommandArgs('"agent harness" --source=github --github prs --hf papers --kaggle competitions --recent 30 --limit 2 --json');
 
     expect(result.error).toBeUndefined();
     expect(result.input).toMatchObject({
@@ -35,7 +35,20 @@ describe('/sources command parser', () => {
       kaggle_kind: 'competitions',
       recent_days: 30,
       limit: 2,
+      format: 'json',
     });
+  });
+
+  it('parses explicit source output formats', () => {
+    expect(parseSourceCommandArgs('agent --format=json').input).toMatchObject({
+      query: 'agent',
+      format: 'json',
+    });
+    expect(parseSourceCommandArgs('agent --format text').input).toMatchObject({
+      query: 'agent',
+      format: 'text',
+    });
+    expect(parseSourceCommandArgs('agent --format xml').error).toContain('unsupported format');
   });
 
   it('round-trips the async slash-command sentinel payload', () => {
@@ -51,6 +64,7 @@ describe('/sources command parser', () => {
 
     expect(result.error).toContain('unknown option');
     expect(formatSourceCommandUsage()).toContain('/sources <query>');
+    expect(formatSourceCommandUsage()).toContain('--json');
   });
 
   it('tokenizes shell-style quoted text', () => {

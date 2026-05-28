@@ -4512,7 +4512,9 @@ async function main(): Promise<void> {
             console.log(chalk.yellow('  /sources: could not parse source query arguments.'));
             continue;
           }
-          console.log(chalk.dim('  Searching arXiv, GitHub, Hugging Face, and Kaggle sources...'));
+          if (sourceInput.format !== 'json' && sourceInput.json !== true) {
+            console.log(chalk.dim('  Searching arXiv, GitHub, Hugging Face, and Kaggle sources...'));
+          }
           const sourceResult = await ResearchSourcesTool.call(sourceInput, process.cwd());
           console.log(sourceResult.output);
           continue;

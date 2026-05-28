@@ -263,6 +263,100 @@ describe('research_sources tool', () => {
     expect(result.output).not.toContain('kg_test_token');
   });
 
+  it('emits machine-readable source research JSON without credential leakage', async () => {
+    vi.stubEnv('HF_TOKEN', 'hf_json_token');
+    vi.stubEnv('KAGGLE_API_TOKEN', 'kg_json_token');
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      if (url.includes('export.arxiv.org')) {
+        return new Response('<feed><entry><id>https://arxiv.org/abs/2604.25850</id><title>AHE</title><summary>Harness observability.</summary></entry></feed>', {
+          status: 200,
+        });
+      }
+      if (url.includes('api.github.com')) {
+        return Response.json({ items: [{ full_name: 'o/harness', html_url: 'https://github.com/o/harness', stargazers_count: 10 }] });
+      }
+      if (url.includes('huggingface.co/api/models')) {
+        expect(headers.get('Authorization')).toBe('Bearer hf_json_token');
+        return Response.json([{ id: 'o/m', downloads: 2 }]);
+      }
+      if (url.includes('huggingface.co/api/datasets')) {
+        expect(headers.get('Authorization')).toBe('Bearer hf_json_token');
+        return Response.json([{ id: 'o/d', downloads: 3 }]);
+      }
+      if (url.includes('huggingface.co/api/daily_papers')) {
+        expect(headers.get('Authorization')).toBe('Bearer hf_json_token');
+        return Response.json([{
+          paper: {
+            id: '2605.15221',
+            title: 'Effective Harness Engineering',
+            summary: 'Harness design and hack detection.',
+            publishedAt: '2026-05-13T00:00:00.000Z',
+          },
+        }]);
+      }
+      if (url.includes('kaggle.com/api/v1/competitions/list')) {
+        expect(headers.get('Authorization')).toBe('Bearer kg_json_token');
+        return Response.json([{ ref: 'agent-leaderboard', title: 'Agent Leaderboard' }]);
+      }
+      if (url.includes('kaggle.com/api/v1/datasets/list')) {
+        expect(headers.get('Authorization')).toBe('Bearer kg_json_token');
+        return Response.json([{ titleNullable: 'Agent Data', urlNullable: '/datasets/o/agent-data' }]);
+      }
+      return new Response('', { status: 404 });
+    }));
+
+    const result = await ResearchSourcesTool.call({
+      query: 'agent harness',
+      source: 'all',
+      github_kind: 'all',
+      kind: 'all',
+      kaggle_kind: 'both',
+      recent_days: 90,
+      limit: 1,
+      format: 'json',
+    }, process.cwd());
+
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(result.output);
+    expect(parsed.format).toBe('cawdex-research-sources-v1');
+    expect(parsed.query).toBe('agent harness');
+    expect(parsed.requested).toMatchObject({
+      source: 'all',
+      githubKind: 'all',
+      huggingFaceKind: 'all',
+      kaggleKind: 'both',
+      limit: 1,
+      recentDays: 90,
+    });
+    expect(parsed.digest).toMatchObject({
+      hitCount: 7,
+      errorCount: 0,
+    });
+    expect(parsed.digest.sources).toMatchObject({
+      arXiv: 1,
+      GitHub: 1,
+      'HF model': 1,
+      'HF dataset': 1,
+      'HF paper': 1,
+      Kaggle: 1,
+      'Kaggle competition': 1,
+    });
+    expect(parsed.digest.topUrls).toContain('https://arxiv.org/abs/2604.25850');
+    expect(parsed.coverageNotes).toContain('Targeted benchmark coverage requested: arXiv + GitHub all + Hugging Face all + Kaggle both.');
+    expect(parsed.redaction).toMatchObject({
+      secretsIncluded: false,
+      credentialHeadersIncluded: false,
+    });
+    expect(parsed.hits[0]).toMatchObject({
+      source: 'arXiv',
+      title: 'AHE',
+      url: 'https://arxiv.org/abs/2604.25850',
+    });
+    expect(result.output).not.toContain('hf_json_token');
+    expect(result.output).not.toContain('kg_json_token');
+  });
+
   it('can query GitHub repositories, issues, pulls, and code explicitly', async () => {
     const urls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -557,5 +651,15 @@ describe('research_sources tool', () => {
     expect(output).toContain('Source digest');
     expect(output).toContain('- hits: 0');
     expect(output).toContain('Targeted benchmark coverage requested');
+  });
+
+  it('rejects unsupported research source output formats', async () => {
+    const result = await ResearchSourcesTool.call({
+      query: 'agent',
+      format: 'xml',
+    }, process.cwd());
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('unsupported format');
   });
 });

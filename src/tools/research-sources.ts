@@ -33,6 +33,47 @@ interface SourceSearchResult {
   error?: string;
 }
 
+type ResearchSourcesFormat = 'text' | 'json';
+
+interface ResearchSourcesRequest {
+  source: ResearchSource;
+  githubKind: GitHubKind;
+  huggingFaceKind: HuggingFaceKind;
+  kaggleKind: KaggleKind;
+  limit: number;
+  recentDays?: number;
+}
+
+interface SourceDigest {
+  hitCount: number;
+  errorCount: number;
+  sources: Record<string, number>;
+  topUrls: string[];
+}
+
+interface ResearchSourcesJsonReport {
+  version: 1;
+  format: 'cawdex-research-sources-v1';
+  source: 'research_sources';
+  query: string;
+  requested: {
+    source: ResearchSource;
+    githubKind: GitHubKind;
+    huggingFaceKind: HuggingFaceKind;
+    kaggleKind: KaggleKind;
+    limit: number;
+    recentDays: number | null;
+  };
+  coverageNotes: string[];
+  digest: SourceDigest;
+  redaction: {
+    secretsIncluded: false;
+    credentialHeadersIncluded: false;
+  };
+  hits: SourceHit[];
+  errors: string[];
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 function decodeEntities(s: string): string {
@@ -827,22 +868,62 @@ function formatHits(query: string, hits: SourceHit[], errors: string[], notes: s
   return lines.join('\n').trim();
 }
 
-function buildSourceDigest(hits: SourceHit[], errors: string[]): string[] {
-  const counts = new Map<string, number>();
+function buildSourceDigestObject(hits: SourceHit[], errors: string[]): SourceDigest {
+  const counts: Record<string, number> = {};
   for (const hit of hits) {
-    counts.set(hit.source, (counts.get(hit.source) ?? 0) + 1);
+    counts[hit.source] = (counts[hit.source] ?? 0) + 1;
   }
-  const sources = Array.from(counts.entries())
+  return {
+    hitCount: hits.length,
+    errorCount: errors.length,
+    sources: counts,
+    topUrls: Array.from(new Set(hits.map((hit) => hit.url).filter(Boolean))).slice(0, 6),
+  };
+}
+
+function buildSourceDigest(hits: SourceHit[], errors: string[]): string[] {
+  const digest = buildSourceDigestObject(hits, errors);
+  const sources = Object.entries(digest.sources)
     .map(([source, count]) => `${source}=${count}`)
     .join(' | ') || 'none';
-  const topUrls = Array.from(new Set(hits.map((hit) => hit.url).filter(Boolean))).slice(0, 6);
   return [
     '## Source digest',
-    `- hits: ${hits.length}`,
-    `- errors: ${errors.length}`,
+    `- hits: ${digest.hitCount}`,
+    `- errors: ${digest.errorCount}`,
     `- sources: ${sources}`,
-    `- top_urls: ${topUrls.length ? topUrls.join(' | ') : 'none'}`,
+    `- top_urls: ${digest.topUrls.length ? digest.topUrls.join(' | ') : 'none'}`,
   ];
+}
+
+function buildResearchSourcesJsonReport(
+  query: string,
+  request: ResearchSourcesRequest,
+  hits: SourceHit[],
+  errors: string[],
+  notes: string[],
+): ResearchSourcesJsonReport {
+  return {
+    version: 1,
+    format: 'cawdex-research-sources-v1',
+    source: 'research_sources',
+    query,
+    requested: {
+      source: request.source,
+      githubKind: request.githubKind,
+      huggingFaceKind: request.huggingFaceKind,
+      kaggleKind: request.kaggleKind,
+      limit: request.limit,
+      recentDays: request.recentDays ?? null,
+    },
+    coverageNotes: notes,
+    digest: buildSourceDigestObject(hits, errors),
+    redaction: {
+      secretsIncluded: false,
+      credentialHeadersIncluded: false,
+    },
+    hits,
+    errors,
+  };
 }
 
 export const ResearchSourcesTool: Tool = {
@@ -884,6 +965,15 @@ export const ResearchSourcesTool: Tool = {
         type: 'number',
         description: 'Optional recency window. Applies directly to arXiv and GitHub repo/issue/pull queries, sorts and filters Hugging Face/Kaggle date metadata when available, and records caveats for endpoints without date qualifiers.',
       },
+      format: {
+        type: 'string',
+        enum: ['text', 'json'],
+        description: 'Output format. Default text. Use json for machine-readable source research packets.',
+      },
+      json: {
+        type: 'boolean',
+        description: 'Shortcut for format=json.',
+      },
     },
     required: ['query'],
   },
@@ -901,6 +991,10 @@ export const ResearchSourcesTool: Tool = {
     const recentDays = Number.isFinite(Number(input.recent_days)) && Number(input.recent_days) > 0
       ? Math.min(3650, Math.floor(Number(input.recent_days)))
       : undefined;
+    const format = normalizeFormat(input);
+    if (!format) {
+      return { output: 'research_sources: unsupported format (use "text" or "json")', isError: true };
+    }
 
     const sources: ResearchSource[] = source === 'all'
       ? ['arxiv', 'github', 'huggingface', 'kaggle']
@@ -933,13 +1027,32 @@ export const ResearchSourcesTool: Tool = {
     }));
     const hits = results.flatMap((result) => result.hits);
     const errors = results.flatMap((result) => result.error ? [result.error] : []);
+    const request: ResearchSourcesRequest = {
+      source,
+      githubKind,
+      huggingFaceKind: kind,
+      kaggleKind,
+      limit,
+      recentDays,
+    };
+    const output = format === 'json'
+      ? JSON.stringify(buildResearchSourcesJsonReport(query, request, hits, errors, notes), null, 2)
+      : formatHits(query, hits, errors, notes);
 
     return {
-      output: formatHits(query, hits, errors, notes),
+      output,
       isError: hits.length === 0 && errors.length > 0,
     };
   },
 };
+
+function normalizeFormat(input: Record<string, unknown>): ResearchSourcesFormat | null {
+  if (input.json === true) return 'json';
+  if (input.format === undefined || input.format === null || input.format === '') return 'text';
+  const value = String(input.format).toLowerCase();
+  if (value === 'text' || value === 'json') return value;
+  return null;
+}
 
 function buildCoverageNotes(
   sources: ResearchSource[],
@@ -1004,5 +1117,8 @@ export const _internal = {
   hasKaggleAuth,
   resolveKaggleLegacyCredentials,
   buildCoverageNotes,
+  buildResearchSourcesJsonReport,
+  buildSourceDigestObject,
   formatHits,
+  normalizeFormat,
 };

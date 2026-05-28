@@ -113,6 +113,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
     ['/sources coding agent verification --limit 1 --source arxiv', 'local'],
+    ['/sources coding agent verification --limit 1 --source arxiv --json', 'local'],
     ['/benchmark-repos openhands --all --limit 2', 'local'],
     ['/repo-digest openai/codex --files 20 --text-files 0', 'local'],
     ['/source-research coding agent verification', 'llm'],
@@ -264,7 +265,7 @@ describe('Non-interactive slash dispatch', () => {
 
   it('routes /sources as a local non-interactive source scan', () => {
     const res = resolveNonInteractivePrompt(
-      '/sources "coding agent" --source arxiv --recent 30 --limit 2',
+      '/sources "coding agent" --source arxiv --recent 30 --limit 2 --json',
       config,
       [],
       session,
@@ -277,6 +278,7 @@ describe('Non-interactive slash dispatch', () => {
       source: 'arxiv',
       recent_days: 30,
       limit: 2,
+      format: 'json',
     });
   });
 
