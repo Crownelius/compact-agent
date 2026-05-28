@@ -29,6 +29,7 @@ import {
   buildBenchmarkScratchArtifactEvents,
   buildBenchmarkSkillViewEvents,
   buildBenchmarkSpecComplianceSignals,
+  buildBenchmarkSourceMiningCoverage,
   buildBenchmarkTaskAlignmentSignals,
   buildBenchmarkTestHarnessEditEvents,
   buildBenchmarkTrajectoryCleanupEvents,
@@ -6079,6 +6080,124 @@ describe('benchmark trace artifacts', () => {
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('recent_days:90');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('hits:4');
     expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('result_sources:arxiv|github|hf_paper|kaggle_competition');
+  });
+
+  it('records benchmark catalog and repo digest source-mining coverage', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: [
+          '## Terminal-Bench Source Catalog Hints',
+          '- catalog match: OpenHands [official score=20] repos=OpenHands/openhands tags=terminal-bench note=public source next=github_repo_digest repo=OpenHands/openhands',
+          '- catalog gap: SageAgent [unverified score=16] repos=(none verified) tags=gap note=no verified public repo next=do not overclaim a public repo',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'benchmark_repo_catalog',
+        input: { query: 'openhands', status: 'all' },
+        output: [
+          '# Terminal-Bench Public Repo Catalog',
+          'Coverage seed: 10 official/direct project mappings, 5 related or partial mappings, 3 no-public-source gaps.',
+          '',
+          '- OpenHands [official; last_seen=2026-05]',
+          '  repos: OpenHands/openhands (agent)',
+          '  tags: terminal-bench, agent',
+          '  note: Public source mapping.',
+          '- SageAgent [unverified]',
+          '  repos: (none verified)',
+          '  tags: terminal-bench, gap',
+          '  note: No public source repository verified.',
+          '',
+          'Next step: run /repo-digest <owner/repo> --files 500 --text-files 6 on the most relevant repo, then verify exact files locally.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 3,
+        tool: 'github_repo_digest',
+        input: { repo: 'OpenHands/openhands', max_files: 500, max_text_files: 6 },
+        output: [
+          '# GitHub Repo Digest',
+          'Repo: OpenHands/openhands',
+          'URL: https://github.com/OpenHands/openhands',
+          '## Source Digest',
+          '- manifests: package.json | pyproject.toml',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const coverage = buildBenchmarkSourceMiningCoverage(events);
+    expect(coverage.catalogCallCount).toBe(1);
+    expect(coverage.repoDigestCallCount).toBe(1);
+    expect(coverage.catalogUsed).toBe(true);
+    expect(coverage.repoDigestUsed).toBe(true);
+    expect(coverage.catalogQueries).toEqual(['openhands status:all']);
+    expect(coverage.catalogPositiveProjects).toEqual(['OpenHands']);
+    expect(coverage.catalogGapProjects).toEqual(['SageAgent']);
+    expect(coverage.catalogPositiveMatchCount).toBe(1);
+    expect(coverage.catalogGapCount).toBe(1);
+    expect(coverage.catalogRepos).toEqual(['OpenHands/openhands']);
+    expect(coverage.repoDigestRepos).toEqual(['OpenHands/openhands']);
+    expect(coverage.contextCatalogHintCount).toBe(2);
+    expect(coverage.contextCatalogGapCount).toBe(1);
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.sourceMiningCoverage.repoDigestRepos).toEqual(['OpenHands/openhands']);
+    expect(quality.warnings.join('\n')).not.toContain('without a github_repo_digest follow-up');
+
+    const block = buildBenchmarkTrajectorySystemBlock(events);
+    expect(block).toContain('source_catalog=yes');
+    expect(block).toContain('repo_digest=yes');
+    expect(block).toContain('Source mining: catalog_calls:1');
+    expect(block).toContain('repo_digest_calls:1');
+    expect(block).toContain('match_projects:OpenHands');
+    expect(block).toContain('gap_projects:SageAgent');
+    expect(block).toContain('repo_digests:OpenHands/openhands');
+  });
+
+  it('warns when a positive catalog mapping is not followed by a repo digest', () => {
+    const events = [
+      makeBenchmarkTraceEvent({
+        seq: 1,
+        tool: 'benchmark_context',
+        input: {},
+        output: 'context',
+        isError: false,
+        elapsedMs: 1,
+      }),
+      makeBenchmarkTraceEvent({
+        seq: 2,
+        tool: 'benchmark_repo_catalog',
+        input: { query: 'codex', status: 'official' },
+        output: [
+          '# Terminal-Bench Public Repo Catalog',
+          '- Codex CLI [official; last_seen=2026-05]',
+          '  repos: openai/codex (agent)',
+          '  tags: terminal-bench, cli',
+          '  note: Official source repository.',
+          '',
+          'Next step: run /repo-digest <owner/repo> --files 500 --text-files 6 on the most relevant repo, then verify exact files locally.',
+        ].join('\n'),
+        isError: false,
+        elapsedMs: 1,
+      }),
+    ];
+
+    const quality = buildBenchmarkTrajectoryQuality(events);
+    expect(quality.sourceMiningCoverage.catalogPositiveProjects).toEqual(['Codex CLI']);
+    expect(quality.sourceMiningCoverage.catalogRepos).toEqual(['openai/codex']);
+    expect(quality.warnings.join('\n')).toContain('benchmark repo catalog surfaced positive public-source mapping(s) without a github_repo_digest follow-up');
+    expect(quality.processDefects.map((defect) => defect.code)).toContain('catalog_match_without_repo_digest');
+    expect(buildBenchmarkTrajectorySystemBlock(events)).toContain('Source mining: catalog_calls:1');
+    expect(buildBenchmarkCompletionReminder(events)).toContain('benchmark repo catalog surfaced positive public-source mapping(s)');
   });
 
   it('records complete targeted source research coverage from structured JSON packets', () => {

@@ -52,6 +52,7 @@ export interface BenchmarkExperienceCard {
   replayCheckpoints: BenchmarkExperienceReplayCheckpoint[];
   failureSignatures: BenchmarkVerifierFailureSignature[];
   sourceResearchCoverage: SourceResearchCoverage;
+  sourceMiningCoverage: BenchmarkSourceMiningCoverage;
   componentObservability: BenchmarkExperienceComponentObservability;
   taskContract: BenchmarkExperienceTaskContract;
   taskAlignment: BenchmarkExperienceTaskAlignment;
@@ -434,6 +435,7 @@ export interface BenchmarkAgentContextCompilation {
     changedFiles: string[];
     verificationCommands: string[];
     sourceResearchCoverage: SourceResearchCoverage;
+    sourceMiningCoverage: BenchmarkSourceMiningCoverage;
     warnings: string[];
   };
 }
@@ -755,6 +757,7 @@ export interface BenchmarkTrajectoryQuality {
   benchmarkContextUsed: boolean;
   sourceResearchUsed: boolean;
   sourceResearchCoverage: SourceResearchCoverage;
+  sourceMiningCoverage: BenchmarkSourceMiningCoverage;
   taskContractSignalCount: number;
   taskContractChecklistUsed: boolean;
   taskContractChecklistAfterContext: boolean | null;
@@ -954,6 +957,22 @@ export interface SourceResearchCoverage {
   kaggleCompetitionsSkipped: boolean;
   coverageNotes: string[];
   completeTargetedCoverage: boolean;
+}
+
+export interface BenchmarkSourceMiningCoverage {
+  catalogCallCount: number;
+  repoDigestCallCount: number;
+  catalogUsed: boolean;
+  repoDigestUsed: boolean;
+  catalogQueries: string[];
+  catalogPositiveMatchCount: number;
+  catalogGapCount: number;
+  catalogPositiveProjects: string[];
+  catalogGapProjects: string[];
+  catalogRepos: string[];
+  repoDigestRepos: string[];
+  contextCatalogHintCount: number;
+  contextCatalogGapCount: number;
 }
 
 interface ResearchSourcesJsonPacket {
@@ -1420,11 +1439,13 @@ function buildBenchmarkAgentContextCompilation(input: {
     .map((warning) => truncate(redactTraceText(warning), 220))
     .slice(0, 12);
   const sourceCoverage = formatSourceCoverage(input.trajectoryQuality.sourceResearchCoverage);
+  const sourceMining = formatSourceMiningCoverage(input.trajectoryQuality.sourceMiningCoverage);
   const context = truncate([
     `Task: ${task || 'not recorded'}`,
     `Run: mode=${input.input.mode}; provider=${redactTraceText(input.input.config.provider)}; model=${redactTraceText(input.input.config.model)}`,
     `Verification: latest=${input.verificationEvidence.lastVerificationStatus ?? 'n/a'}; successful=${input.trajectoryQuality.successfulVerificationCount}; commands=${verificationCommands.join(' | ') || 'none'}`,
     `Source coverage: ${sourceCoverage}`,
+    `Source mining: ${sourceMining}`,
     changedFiles.length ? `Changed files: ${changedFiles.join(', ')}` : 'Changed files: none recorded',
     warnings.length ? `Warnings: ${warnings.join(' | ')}` : 'Warnings: none',
     'Tool observations:',
@@ -1459,6 +1480,7 @@ function buildBenchmarkAgentContextCompilation(input: {
       changedFiles,
       verificationCommands,
       sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
+      sourceMiningCoverage: input.trajectoryQuality.sourceMiningCoverage,
       warnings,
     },
   };
@@ -1509,6 +1531,7 @@ export function buildBenchmarkExperienceCard(input: {
         raw: truncate(redactTraceText(signature.raw), 240),
       })),
     sourceResearchCoverage: input.trajectoryQuality.sourceResearchCoverage,
+    sourceMiningCoverage: input.trajectoryQuality.sourceMiningCoverage,
     componentObservability: buildBenchmarkExperienceComponentObservability(input.trajectoryQuality),
     taskContract: buildBenchmarkExperienceTaskContract(input.events, input.trajectoryQuality),
     taskAlignment: buildBenchmarkExperienceTaskAlignment(input.trajectoryQuality),
@@ -2898,6 +2921,7 @@ export function buildBenchmarkTrajectoryQuality(
   const benchmarkContextUsed = events.some((event) => event.tool === 'benchmark_context');
   const sourceResearchUsed = events.some((event) => event.tool === 'research_sources');
   const sourceResearchCoverage = buildSourceResearchCoverage(events);
+  const sourceMiningCoverage = buildBenchmarkSourceMiningCoverage(events);
   const taskContractSignalCount = countTaskContractSignals(events);
   const firstTaskContractSeq = firstSeq(events, (event) => event.tool === 'benchmark_context' && countTaskContractSignalsInOutput(event.outputPreview) > 0);
   const firstNoEditContractSeq = firstSeq(events, (event) => event.tool === 'benchmark_context' && hasNoEditContractInOutput(event.outputPreview));
@@ -3383,6 +3407,10 @@ export function buildBenchmarkTrajectoryQuality(
   if (sourceResearchCoverage.kaggleCompetitionsSkipped) {
     warnings.push('Kaggle competition research was requested but skipped due missing auth; leaderboard/source coverage is dataset-only until Kaggle credentials are available.');
   }
+  if (sourceMiningCoverage.catalogPositiveMatchCount > 0 && sourceMiningCoverage.repoDigestCallCount === 0) {
+    const projects = sourceMiningCoverage.catalogPositiveProjects.slice(0, 3).join(', ');
+    warnings.push(`benchmark repo catalog surfaced positive public-source mapping(s) without a github_repo_digest follow-up: ${projects}. Digest the most relevant repo before porting source patterns.`);
+  }
   if (taskContractSignalCount > 0 && taskContractChecklistAfterContext !== true) {
     warnings.push('task contract signals were detected but no post-context todo_write checklist was recorded; preserve visible acceptance criteria before editing or finalizing.');
   }
@@ -3630,6 +3658,7 @@ export function buildBenchmarkTrajectoryQuality(
     requireFinalPostEditDiffReview,
     sourceResearchUsed,
     sourceResearchCoverage,
+    sourceMiningCoverage,
     taskContractSignalCount,
     taskContractChecklistAfterContext,
     taskContractChecklistComplete,
@@ -3855,6 +3884,7 @@ export function buildBenchmarkTrajectoryQuality(
     benchmarkContextUsed,
     sourceResearchUsed,
     sourceResearchCoverage,
+    sourceMiningCoverage,
     taskContractSignalCount,
     taskContractChecklistUsed,
     taskContractChecklistAfterContext,
@@ -4011,9 +4041,10 @@ export function buildBenchmarkTrajectorySystemBlock(
   const verificationEvidence = buildBenchmarkVerificationEvidence(events);
   const lines = [
     '<benchmark_trajectory>',
-    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, failure_onset=${yn(quality.failureOnset.detected)} failure_onset_risk=${yn(quality.failureOnset.risk)} failure_onset_category=${quality.failureOnset.category} failure_onset_repairs=${quality.failureOnset.downstreamRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} targeted_fixes=${quality.targetedFixCount} missing_targeted_fixes=${quality.missingTargetedFixCount} targeted_fix_risk=${yn(quality.targetedFixManifestRisk)} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} root_cause=${yn(quality.rootCauseHypothesisRecorded)} root_cause_risk=${yn(quality.rootCauseHypothesisRisk)} root_cause_signals=${quality.rootCauseHypothesisSignalCount} trajectory_cleanup_risk=${yn(quality.trajectoryCleanupRisk)} trajectory_cleanup_events=${quality.trajectoryCleanupEventCount} trajectory_cleanup_noisy=${quality.trajectoryCleanupNoisyOutputCount} trajectory_cleanup_duplicates=${quality.trajectoryCleanupDuplicateOutputCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
+    `Signals: benchmark_context=${yn(quality.benchmarkContextUsed)}, source_research=${yn(quality.sourceResearchUsed)}, source_catalog=${yn(quality.sourceMiningCoverage.catalogUsed)}, repo_digest=${yn(quality.sourceMiningCoverage.repoDigestUsed)}, usage_calls=${quality.usageCallCount} usage_tokens=${quality.usageTotalTokens} usage_cost=$${quality.usageEstimatedCostUsd.toFixed(4)} cost_risk=${yn(quality.costEfficiencyRisk)} tool_elapsed=${quality.totalToolElapsedMs}ms slow_tools=${quality.slowToolCallCount} time_risk=${yn(quality.timeEfficiencyRisk)}, invalid_actions=${quality.invalidToolActionCount} invalid_action_pct=${quality.invalidToolActionPercent.toFixed(2)}, skill_views=${quality.skillViewCount} skill_before_context=${yn(quality.skillLoadedBeforeLocalContext)} excessive_skills=${yn(quality.excessiveSkillViewCount)}, task_alignment_risk=${yn(quality.taskAlignmentRisk)} task_alignment_signals=${quality.taskAlignmentSignalCount}, spec_compliance_risk=${yn(quality.specComplianceRisk)} spec_compliance_signals=${quality.specComplianceSignalCount}, reward_hack_risk=${yn(quality.rewardHackRisk)} reward_hack_signals=${quality.rewardHackSignalCount}, harness_safety=${yn(quality.harnessSafetyRisk)} harness_safety_signals=${quality.harnessSafetySignalCount}, long_horizon_risk=${yn(quality.longHorizonRisk)} long_horizon_signals=${quality.longHorizonSignalCount}, proactivity_detected=${yn(quality.proactivityDetected)} proactivity_risk=${yn(quality.proactivityRisk)} proactivity_signals=${quality.proactivitySignalCount}, leakage_risks=${quality.leakageRiskEvents.length}, test_harness_edits=${quality.testHarnessEditEvents.length}, scratch_artifacts=${quality.scratchArtifactEvents.length}, redundant_calls=${quality.redundantToolCallCount}, redundant_verifiers=${quality.redundantVerifierCount}, blind_repairs=${quality.blindRepairCount}, failure_aligned_repairs=${quality.failureAlignedRepairCount} failure_unaligned_repairs=${quality.failureUnalignedRepairCount}, failure_onset=${yn(quality.failureOnset.detected)} failure_onset_risk=${yn(quality.failureOnset.risk)} failure_onset_category=${quality.failureOnset.category} failure_onset_repairs=${quality.failureOnset.downstreamRepairCount}, regression_cycles=${quality.postEditRegressionCycleCount}, post_success_mutations=${quality.postSuccessMutationCount}, predicted_edits=${quality.predictedEditCount} targeted_fixes=${quality.targetedFixCount} missing_targeted_fixes=${quality.missingTargetedFixCount} targeted_fix_risk=${yn(quality.targetedFixManifestRisk)} regression_forecasts=${quality.regressionForecastCount} missing_regression_forecasts=${quality.missingRegressionForecastCount} regression_foresight_risk=${yn(quality.regressionForesightRisk)} unpredicted_edits=${quality.unpredictedEditCount} contradicted_predictions=${quality.contradictedEditPredictionCount} unverified_predictions=${quality.unverifiedEditPredictionCount} decision_risk=${yn(quality.decisionObservabilityRisk)}, env_setup_failures=${quality.environmentSetupFailureCount} unresolved_env=${quality.unresolvedEnvironmentSetupFailureCount} env_setup=${quality.environmentSetupCount} env_setup_ok=${quality.successfulEnvironmentSetupCount}, dependency_manifests=${quality.dependencyManifestEditCount} dependency_lockfiles=${quality.dependencyLockfileEditCount} dependency_setup_after_manifest=${tri(quality.dependencySetupAfterManifestEdit)} dependency_setup_ok_after_manifest=${tri(quality.passingDependencySetupAfterManifestEdit)} dependency_validation_after_manifest=${tri(quality.dependencyValidationAfterManifestEdit)} dependency_validation_ok_after_manifest=${tri(quality.passingDependencyValidationAfterManifestEdit)}, ci_verifiers=${quality.ciWorkflowCommandCount}, inspect=${quality.inspectCount}, context_utilization=${formatPercent(quality.contextUtilizationPercent)} context_hits=${quality.contextUtilizationHitCount}/${quality.contextUtilizationInspectCount} context_misses=${quality.contextUtilizationMissCount} context_risk=${yn(quality.contextUtilizationRisk)} pre_edit_context=${quality.preEditContextHitCount}/${quality.preEditContextInspectCount} pre_edit_context_bloat=${quality.contextBloatEventCount} candidate_dossier=${yn(quality.candidateDossierRecorded)} candidate_dossier_risk=${yn(quality.candidateDossierRisk)} candidate_dossier_signals=${quality.candidateDossierSignalCount} root_cause=${yn(quality.rootCauseHypothesisRecorded)} root_cause_risk=${yn(quality.rootCauseHypothesisRisk)} root_cause_signals=${quality.rootCauseHypothesisSignalCount} trajectory_cleanup_risk=${yn(quality.trajectoryCleanupRisk)} trajectory_cleanup_events=${quality.trajectoryCleanupEventCount} trajectory_cleanup_noisy=${quality.trajectoryCleanupNoisyOutputCount} trajectory_cleanup_duplicates=${quality.trajectoryCleanupDuplicateOutputCount} evidence_grounding=${quality.evidenceGroundingEventCount}, edits=${quality.editCount}, component_edits=${quality.componentEditCount} component_unclassified=${quality.componentUnclassifiedEditCount} components=${formatBenchmarkComponentSummary(quality.componentEditComponents)}, edit_targets=${quality.editTargetCount} localized=${quality.localizedEditTargetCount} unlocalized=${quality.unlocalizedEditTargetEvents.length}, large_edit_targets=${quality.largeEditSurfaceTargetCount} broad_contract=${yn(quality.broadEditContractDetected)}, verifiers=${quality.verificationCount} ok=${quality.successfulVerificationCount} fail=${quality.failedVerificationCount} final_verifiers=${quality.finalEditVerificationCount} final_ok=${quality.finalEditPassingVerificationCount} stable_final=${tri(quality.stableValidationAfterLastEdit)} incomplete=${quality.incompleteVerifierCount} inconclusive=${quality.inconclusiveVerifierEvents.length}.`,
     `Verifier evidence: ${formatVerificationEvidence(verificationEvidence)}.`,
     `Source coverage: ${formatSourceCoverage(quality.sourceResearchCoverage)}.`,
+    `Source mining: ${formatSourceMiningCoverage(quality.sourceMiningCoverage)}.`,
     `Task contract: signals=${quality.taskContractSignalCount}, checklist=${tri(quality.taskContractChecklistAfterContext)}, complete=${tri(quality.taskContractChecklistComplete)}, incomplete=${quality.todoIncompleteCount}, no_edit=${yn(quality.noEditContractDetected)}, edited=${yn(quality.editAfterNoEditContract)}.`,
     `Proactivity ledger: detected=${yn(quality.proactivityDetected)}, context=${quality.proactivityContextContract.coverageCount}/6, hidden_intent=${yn(quality.proactivityHiddenIntentEvidence)}, clarification=${yn(quality.proactivityClarificationEvidence)}, privacy=${yn(quality.proactivityPrivacyEvidence)}, completion=${yn(quality.proactivityCompletionEvidence)}, actions=${quality.proactivityActionCount}.`,
     `Trajectory triage: trajectory_triage=${quality.trajectoryTriage.score}, triage_informative=${yn(quality.trajectoryTriage.informative)}, triage_signals=${quality.trajectoryTriage.signalCount}, categories=interaction:${quality.trajectoryTriage.categories.interaction}/execution:${quality.trajectoryTriage.categories.execution}/environment:${quality.trajectoryTriage.categories.environment}, summary=${quality.trajectoryTriage.summary}.`,
@@ -4129,6 +4160,7 @@ interface BenchmarkProcessDefectInput {
   requireFinalPostEditDiffReview: boolean;
   sourceResearchUsed: boolean;
   sourceResearchCoverage: SourceResearchCoverage;
+  sourceMiningCoverage: BenchmarkSourceMiningCoverage;
   taskContractSignalCount: number;
   taskContractChecklistAfterContext: boolean | null;
   taskContractChecklistComplete: boolean | null;
@@ -4534,6 +4566,16 @@ function buildBenchmarkProcessDefects(input: BenchmarkProcessDefectInput): Bench
       null,
       'Kaggle competition research was requested but skipped due missing auth.',
       formatSourceCoverage(input.sourceResearchCoverage),
+    );
+  }
+  if (input.sourceMiningCoverage.catalogPositiveMatchCount > 0 && input.sourceMiningCoverage.repoDigestCallCount === 0) {
+    add(
+      'catalog_match_without_repo_digest',
+      'source_research',
+      'low',
+      null,
+      'Benchmark repo catalog surfaced positive public-source mappings without a follow-up repository digest.',
+      formatSourceMiningCoverage(input.sourceMiningCoverage),
     );
   }
   if (input.taskContractSignalCount > 0 && input.taskContractChecklistAfterContext !== true) {
@@ -5131,6 +5173,151 @@ export function buildSourceResearchCoverage(events: BenchmarkTraceEvent[]): Sour
   coverage.freshTargetedCoverage = coverage.completeTargetedCoverage && coverage.recentDays.length > 0;
 
   return coverage;
+}
+
+export function buildBenchmarkSourceMiningCoverage(events: BenchmarkTraceEvent[]): BenchmarkSourceMiningCoverage {
+  const coverage: BenchmarkSourceMiningCoverage = {
+    catalogCallCount: 0,
+    repoDigestCallCount: 0,
+    catalogUsed: false,
+    repoDigestUsed: false,
+    catalogQueries: [],
+    catalogPositiveMatchCount: 0,
+    catalogGapCount: 0,
+    catalogPositiveProjects: [],
+    catalogGapProjects: [],
+    catalogRepos: [],
+    repoDigestRepos: [],
+    contextCatalogHintCount: 0,
+    contextCatalogGapCount: 0,
+  };
+
+  for (const event of events) {
+    if (event.tool === 'benchmark_context') {
+      collectBenchmarkSourceCatalogEvidence(coverage, event.outputPreview, true);
+      continue;
+    }
+
+    if (event.tool === 'benchmark_repo_catalog') {
+      coverage.catalogCallCount++;
+      const query = benchmarkRepoCatalogQueryForEvent(event);
+      addSourceMiningValue(coverage.catalogQueries, query, 12);
+      collectBenchmarkSourceCatalogEvidence(coverage, event.outputPreview, false);
+      continue;
+    }
+
+    if (event.tool === 'github_repo_digest') {
+      coverage.repoDigestCallCount++;
+      collectGithubRepoDigestEvidence(coverage, event);
+    }
+  }
+
+  coverage.catalogPositiveMatchCount = coverage.catalogPositiveProjects.length;
+  coverage.catalogGapCount = coverage.catalogGapProjects.length;
+  coverage.catalogUsed =
+    coverage.catalogCallCount > 0 ||
+    coverage.contextCatalogHintCount > 0 ||
+    coverage.contextCatalogGapCount > 0 ||
+    coverage.catalogPositiveMatchCount > 0 ||
+    coverage.catalogGapCount > 0 ||
+    coverage.catalogRepos.length > 0;
+  coverage.repoDigestUsed = coverage.repoDigestCallCount > 0 || coverage.repoDigestRepos.length > 0;
+  return coverage;
+}
+
+function benchmarkRepoCatalogQueryForEvent(event: BenchmarkTraceEvent): string {
+  const input = parseEventInputPreview(event.inputPreview);
+  const parts = [
+    typeof input.query === 'string' ? input.query.trim() : '',
+    typeof input.status === 'string' && input.status.trim() ? `status:${input.status.trim()}` : '',
+  ].filter(Boolean);
+  return parts.join(' ') || event.target || 'Terminal-Bench public repo catalog';
+}
+
+function collectBenchmarkSourceCatalogEvidence(
+  coverage: BenchmarkSourceMiningCoverage,
+  outputPreview: string,
+  fromBenchmarkContext: boolean,
+): void {
+  for (const rawLine of outputPreview.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const contextHint = /\bcatalog\s+(?:match|gap|seed|gaps):/i.test(line);
+    if (fromBenchmarkContext && contextHint) {
+      coverage.contextCatalogHintCount++;
+      if (/\bcatalog\s+gap:/i.test(line)) coverage.contextCatalogGapCount++;
+    }
+
+    const contextMatch = /\bcatalog\s+(match|gap):\s*([^[]+?)\s*\[([A-Za-z]+)(?:[;\]\s])/i.exec(line);
+    const listMatch = /^-\s+(.+?)\s+\[(official|related|unverified)(?:[;\]\s])/i.exec(line);
+    const project = contextMatch?.[2]?.trim() ?? listMatch?.[1]?.trim() ?? '';
+    const status = (contextMatch?.[3] ?? listMatch?.[2] ?? '').toLowerCase();
+    if (project && (status === 'official' || status === 'related')) {
+      addSourceMiningValue(coverage.catalogPositiveProjects, project, 24);
+    } else if (project && status === 'unverified') {
+      addSourceMiningValue(coverage.catalogGapProjects, project, 24);
+    }
+
+    if (/\brepos[:=]|\bnext=github_repo_digest\b/i.test(line)) {
+      for (const repo of extractGitHubRepoSlugs(line)) {
+        addSourceMiningValue(coverage.catalogRepos, repo, 24);
+      }
+    }
+  }
+}
+
+function collectGithubRepoDigestEvidence(
+  coverage: BenchmarkSourceMiningCoverage,
+  event: BenchmarkTraceEvent,
+): void {
+  const input = parseEventInputPreview(event.inputPreview);
+  for (const text of stringsFromUnknown([input.repo, event.target])) {
+    for (const repo of extractGitHubRepoSlugs(text)) {
+      addSourceMiningValue(coverage.repoDigestRepos, repo, 24);
+    }
+  }
+
+  const repoLine = /^Repo:\s*(.+)$/mi.exec(event.outputPreview);
+  if (repoLine?.[1]) {
+    for (const repo of extractGitHubRepoSlugs(repoLine[1])) {
+      addSourceMiningValue(coverage.repoDigestRepos, repo, 24);
+    }
+  }
+}
+
+function extractGitHubRepoSlugs(text: string): string[] {
+  const repos: string[] = [];
+  const add = (owner: string, repo: string): void => {
+    const cleanOwner = owner.trim();
+    const cleanRepo = repo.trim().replace(/\.git$/i, '').replace(/[),.;:]+$/g, '');
+    if (!/^[A-Za-z0-9-]+$/.test(cleanOwner) || !/^[A-Za-z0-9_.-]+$/.test(cleanRepo)) return;
+    if (/^(?:owner|user|org)$/i.test(cleanOwner) && /^(?:repo|repository)$/i.test(cleanRepo)) return;
+    if (/^(?:raw|api|repos?)$/i.test(cleanOwner)) return;
+    addSourceMiningValue(repos, `${cleanOwner}/${cleanRepo}`, 40);
+  };
+
+  const urlRe = /github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)(?:\.git)?/gi;
+  let urlMatch: RegExpExecArray | null;
+  while ((urlMatch = urlRe.exec(text)) !== null) {
+    add(urlMatch[1], urlMatch[2]);
+  }
+
+  const slugRe = /(?:^|[^A-Za-z0-9_.-])([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)(?=$|[^A-Za-z0-9_.-])/g;
+  let slugMatch: RegExpExecArray | null;
+  while ((slugMatch = slugRe.exec(text)) !== null) {
+    add(slugMatch[1], slugMatch[2]);
+  }
+
+  return repos;
+}
+
+function addSourceMiningValue(values: string[], value: string, max: number): void {
+  const clean = truncate(redactTraceText(value.replace(/\s+/g, ' ').trim()), 160);
+  if (!clean) return;
+  if (values.length >= max) return;
+  if (values.some((existing) => existing.toLowerCase() === clean.toLowerCase())) return;
+  values.push(clean);
 }
 
 export function countTaskContractSignals(events: BenchmarkTraceEvent[]): number {
@@ -8988,6 +9175,7 @@ export function buildBenchmarkCompletionReminder(
     || warning.includes('source research produced no parsed source hits')
     || warning.includes('source research reported')
     || warning.includes('Kaggle competition research')
+    || warning.includes('benchmark repo catalog surfaced positive public-source mapping')
     || warning.includes('task contract signals')
     || warning.includes('task contract checklist still has incomplete')
     || warning.includes('no-edit/no-op task contract')
@@ -9026,7 +9214,7 @@ export function buildBenchmarkCompletionReminder(
     '',
     ...blockingWarnings.slice(0, 4).map((warning) => `- ${warning}`),
     '',
-    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, SWE-Cycle lifecycle phases, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-Cycle/SWE-CI completion, for Pi-Bench-style tasks build the user/profile/history/file/app/tool context contract and record hidden-intent hypotheses, privacy risk, clarification decision, and observable state verification before claiming proactive assistant completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, record a Root cause:/Diagnosis:/Hypothesis: line tied to failed-verifier evidence before repair edits, attach a Targeted fix:/Fix plan line before patching after failed-verifier evidence, deduplicate repeated tool output and summarize encoded/minified blobs instead of replaying them into reasoning, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line and an At-risk regression line to each non-trivial edit, then verify both the expected fix and the forecasted risk where feasible, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, lifecycle judge, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-Cycle/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, resolve harness-safety signals by avoiding protected resource access, external transfer, destructive operations, and oracle/hidden materials unless explicitly required, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
+    'Use tools to close these gaps now: run benchmark_context if it has not been used, convert visible task-contract signals into todo_write checklist items, mark completed task-contract todo items with todo_write, re-check task-alignment and ignore distractors, complete long-horizon roadmap milestones, WebDevBench canaries, SWE-Cycle lifecycle phases, and SWE-CI evolution requirements before claiming RoadmapBench/SaaSBench/mobile/WebDevBench/SWE-Cycle/SWE-CI completion, for Pi-Bench-style tasks build the user/profile/history/file/app/tool context contract and record hidden-intent hypotheses, privacy risk, clarification decision, and observable state verification before claiming proactive assistant completion, localize the relevant files/functions, narrow broad context gathering to candidate files/tests, tighten pre-edit context to a small candidate-file dossier before patching, record a Root cause:/Diagnosis:/Hypothesis: line tied to failed-verifier evidence before repair edits, attach a Targeted fix:/Fix plan line before patching after failed-verifier evidence, deduplicate repeated tool output and summarize encoded/minified blobs instead of replaying them into reasoning, reduce or explicitly justify a large edit surface, refresh current file state with read_file/grep/git diff before retrying a target after stale/no-effect edit evidence, remove or justify scratch/probe artifacts, change query/target/strategy instead of repeating identical read/search calls, fix malformed JSON/schema/tool-name/permission issues before repeating invalid tool actions, inspect failures or patch before repeating identical failing verifier commands, inspect failed verifier output or referenced files before patching again after a failure, inspect parsed source failure files before patching a different target, verify skill domain/version fit against local repo evidence and avoid loading multiple generic skill prompts, close the highest-value evidence gap before spending more turns when cost-efficiency risk is high, stop long-running unchanged commands when time-efficiency risk is high, attach a Prediction line and an At-risk regression line to each non-trivial edit, then verify both the expected fix and the forecasted risk where feasible, Read or search the target file before patching benchmark code, run the narrowest visible reproduction/verifier, run project-native setup/restore/install when verifier failures look like missing dependencies, toolchains, or build artifacts, run the package-manager install/update/lockfile step after dependency manifest edits, inspect full logs or rerun with a narrower/longer verifier when timeout/truncation makes evidence inconclusive, fix any latest verifier failure before relying on earlier passing validation, explain or close any post-edit regression cycle before treating final validation as clean, rerun validation after any post-success edit or state-changing shell command, run a verifier after the final edit, rerun the final narrow verifier or run broad/CI validation to reduce lucky-pass risk, add a broader/spec-generalization check when visible tests may not cover held-out behavior, run a broad integration/platform verifier, lifecycle judge, or frontend-backend/security/CI-loop verifier, for long-horizon SaaS/mobile/roadmap/WebDevBench/SWE-Cycle/SWE-CI tasks when feasible, inspect git diff or git status after validated edits and again after the final edit, run the broad harness/build/test command after narrow validation when feasible, rerun matching CI-derived test/build/lint commands discovered by benchmark_context when feasible, follow positive benchmark_repo_catalog mappings with github_repo_digest before porting public-agent source patterns, avoid edit tools when a no-edit/no-op contract is verified, revert or justify test/harness edits unless the task explicitly asks for them, avoid verifier/oracle/result-bypass surfaces, resolve harness-safety signals by avoiding protected resource access, external transfer, destructive operations, and oracle/hidden materials unless explicitly required, complete targeted research_sources coverage when relevant, or make a concrete evidence-based case that no verifier/source exists for this task.',
   ].join('\n');
 }
 
@@ -9673,6 +9861,23 @@ function formatSourceCoverage(coverage: SourceResearchCoverage): string {
     coverage.coverageNotes.length ? `notes:${coverage.coverageNotes.join('|')}` : null,
     `fresh_targeted:${coverage.freshTargetedCoverage ? 'yes' : 'no'}`,
     `targeted:${coverage.completeTargetedCoverage ? 'yes' : 'no'}`,
+  ].filter(Boolean).join(', ');
+}
+
+function formatSourceMiningCoverage(coverage: BenchmarkSourceMiningCoverage): string {
+  if (!coverage.catalogUsed && !coverage.repoDigestUsed) return 'none';
+  return [
+    `catalog_calls:${coverage.catalogCallCount}`,
+    `repo_digest_calls:${coverage.repoDigestCallCount}`,
+    `context_hints:${coverage.contextCatalogHintCount}`,
+    `context_gaps:${coverage.contextCatalogGapCount}`,
+    `matches:${coverage.catalogPositiveMatchCount}`,
+    coverage.catalogPositiveProjects.length ? `match_projects:${coverage.catalogPositiveProjects.slice(0, 8).join('|')}` : null,
+    `gaps:${coverage.catalogGapCount}`,
+    coverage.catalogGapProjects.length ? `gap_projects:${coverage.catalogGapProjects.slice(0, 8).join('|')}` : null,
+    coverage.catalogRepos.length ? `catalog_repos:${coverage.catalogRepos.slice(0, 8).join('|')}` : null,
+    coverage.repoDigestRepos.length ? `repo_digests:${coverage.repoDigestRepos.slice(0, 8).join('|')}` : null,
+    coverage.catalogQueries.length ? `queries:${coverage.catalogQueries.slice(0, 6).join('|')}` : null,
   ].filter(Boolean).join(', ');
 }
 
