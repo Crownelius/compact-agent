@@ -148,6 +148,7 @@ import { applyScreenReader, summarize } from './accessibility.js';
 import { COMMAND_CATALOG, allSlashCommandNames, completeSlashCommandNames, resolveCommandEntry, suggestCommandEntries } from './command-palette.js';
 import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand, type InlineSuggestResult } from './inline-suggest.js';
 import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
+import { maybeInstantAnswer } from './instant-answer.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -4662,6 +4663,15 @@ async function main(): Promise<void> {
         continue;
       }
       if (result.handled) continue;
+    }
+
+    const instantAnswer = maybeInstantAnswer(trimmed);
+    if (instantAnswer) {
+      console.log(theme.primary(instantAnswer));
+      messages.push({ role: 'user', content: trimmed });
+      messages.push({ role: 'assistant', content: instantAnswer });
+      await saveWithSnapshot();
+      continue;
     }
 
     // Auto-route model if enabled

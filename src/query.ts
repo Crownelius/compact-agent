@@ -53,8 +53,11 @@ import { archiveLargeToolOutput } from './tool-output-archive.js';
 // sessions get fresh hints.
 const _thinkingHintShownForSession = new Set<string>();
 
-const DEFAULT_FIRST_TOKEN_TIMEOUT_MS = 60_000;
-const FLAKY_FIRST_TOKEN_TIMEOUT_MS = 20_000;
+const INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 12_000;
+const INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS = 6_000;
+const NON_INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 60_000;
+const NON_INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS = 20_000;
+const FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS = 8_000;
 const KNOWN_FLAKY_OPENROUTER_MODEL_PATTERNS = [
   'owl-alpha',
   'horizon-alpha',
@@ -75,7 +78,10 @@ export function resolveFirstTokenTimeoutMs(
   config: Pick<CawdexConfig, 'model' | 'provider'>,
 ): number {
   const flaky = isKnownFlakyOpenRouterModel(config);
-  const fallback = flaky ? FLAKY_FIRST_TOKEN_TIMEOUT_MS : DEFAULT_FIRST_TOKEN_TIMEOUT_MS;
+  const nonInteractive = process.env.CAWDEX_NON_INTERACTIVE === '1';
+  const fallback = nonInteractive
+    ? (flaky ? NON_INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS : NON_INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS)
+    : (flaky ? INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS : INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS);
   return envTimeoutMs('CAWDEX_FIRST_TOKEN_TIMEOUT_MS', fallback);
 }
 
@@ -115,6 +121,38 @@ export function isTurnCancelKeySequence(chunk: Buffer): boolean {
     seq === '\x1b[15;6~' ||
     seq === '\x1b[15;3~'
   );
+}
+
+const FAST_DIRECT_SYSTEM_PROMPT =
+  'You are Cawdex. Answer the user directly and concisely. ' +
+  'Do not mention tools, repositories, or implementation steps unless the user asks.';
+
+const FAST_DIRECT_POSITIVE = [
+  /^(hi|hello|hey|thanks|thank you)\b/i,
+  /^(what|who|when|where|why|how|which)\b/i,
+  /^(explain|define|summarize|translate|calculate|compute)\b/i,
+  /^(?:write|draft|make|create)\s+(?:a|an|the)?\s*(?:short\s+)?(?:poem|haiku|joke|story|paragraph|message|email)\b/i,
+  /\b(square root|sqrt)\b/i,
+  /\?$/,
+];
+
+const FAST_DIRECT_REPO_OR_TOOL = /\b(repo|repository|codebase|workspace|file|folder|directory|path|terminal|powershell|shell|command|npm|node|python|typescript|javascript|git|commit|diff|pr|pull request|branch|test|build|lint|install|package|debug|error|stack trace|log|fix|implement|refactor|review|audit|security|benchmark|run|execute|read|search|grep|edit|write[- ]file)\b/i;
+const FAST_DIRECT_CONTEXTUAL = /^(continue|carry on|resume|do it|same|again|that|this|those|these|it)\b/i;
+
+export function shouldUseFastDirectReply(
+  userQuery: string | undefined,
+  mode: Mode,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.CAWDEX_FAST_DIRECT === '0') return false;
+  if (env.CAWDEX_NON_INTERACTIVE === '1') return false;
+  if (mode !== 'dev') return false;
+  const text = (userQuery || '').trim();
+  if (!text || text.length > 600) return false;
+  if (text.includes('\n') || text.includes('```')) return false;
+  if (FAST_DIRECT_CONTEXTUAL.test(text)) return false;
+  if (FAST_DIRECT_REPO_OR_TOOL.test(text)) return false;
+  return FAST_DIRECT_POSITIVE.some((pattern) => pattern.test(text));
 }
 
 function printInteractiveTurnAccepted(config: CawdexConfig): void {
@@ -1234,6 +1272,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // SUCCESSFUL repeats and just rewrites stale messages. They compose.
   const toolCallDedupMap = new Map<string, number>();
   let contextCapNoticeCount = 0;
+  let chainUsedFastDirect = false;
 
   // ── F5+: DeCRIM 3-stage self-critique gate ──
   //
@@ -1327,6 +1366,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // Get the last user message for context-aware system prompt
     const lastUserMsg = ctx.messages.filter((m) => m.role === 'user').pop();
     const userQuery = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : undefined;
+    const fastDirect = shouldUseFastDirectReply(userQuery, ctx.mode);
+    if (fastDirect) chainUsedFastDirect = true;
 
     // Build full messages array with system prompt.
     // F2 — Observation window masking: before sending to the model,
@@ -1335,8 +1376,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // results stay verbatim. Stub keeps role + tool_call_id intact
     // so the API stays valid; only the content shrinks.
     ctx.messages = quickCompact(ctx.messages);
-    const systemPrompt = buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery);
+    const systemPrompt = fastDirect
+      ? FAST_DIRECT_SYSTEM_PROMPT
+      : buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery);
     let visibleMessages = maskOldToolResults(ctx.messages);
+    if (fastDirect) {
+      visibleMessages = userQuery ? [{ role: 'user', content: userQuery }] : [];
+    }
     const cap = enforceContextCap(
       visibleMessages,
       contextCapTokens(inferContextWindowTokens(ctx.config)),
@@ -1363,24 +1409,24 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // sits right after so the model sees it as ambient context for
     // the upcoming turn. Skipped on short chains or via env-var
     // override.
-    const stateBlock = buildStateBlock(visibleMessages);
-    const runtimeInfoBlock = buildRuntimeInfoBlock(ctx.cwd);
-    const repoMapBlock = buildAutoRepoMapBlock(ctx.cwd, userQuery);
-    const globalPlanBlock = buildGlobalPlanBlock(visibleMessages);
-    const todoStateBlock = buildTodoStateBlock(ctx.cwd);
-    const benchmarkTrajectoryBlock = ctx.mode === 'benchmark'
+    const stateBlock = fastDirect ? null : buildStateBlock(visibleMessages);
+    const runtimeInfoBlock = fastDirect ? null : buildRuntimeInfoBlock(ctx.cwd);
+    const repoMapBlock = fastDirect ? null : buildAutoRepoMapBlock(ctx.cwd, userQuery);
+    const globalPlanBlock = fastDirect ? null : buildGlobalPlanBlock(visibleMessages);
+    const todoStateBlock = fastDirect ? null : buildTodoStateBlock(ctx.cwd);
+    const benchmarkTrajectoryBlock = !fastDirect && ctx.mode === 'benchmark'
       ? buildBenchmarkTrajectorySystemBlock(chainStats.benchmarkTraceEvents, chainStats.benchmarkUsageEvents, visibleMessages)
       : null;
-    const editVerificationBlock = !chainStats.verificationAttemptedSinceEdit
+    const editVerificationBlock = !fastDirect && !chainStats.verificationAttemptedSinceEdit
       ? buildEditVerificationReminder(chainStats.pendingEditFiles, chainStats.editCountSinceVerification)
       : null;
-    const recoveryReminderBlock = buildRecoveryReminderBlock(chainStats.recoveryReminders);
+    const recoveryReminderBlock = fastDirect ? null : buildRecoveryReminderBlock(chainStats.recoveryReminders);
     if (recoveryReminderBlock) {
       chainStats.recoveryReminders = [];
     }
     const apiMessages: Message[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'system', content: runtimeInfoBlock },
+      ...(runtimeInfoBlock ? [{ role: 'system' as const, content: runtimeInfoBlock }] : []),
       ...(repoMapBlock ? [{ role: 'system' as const, content: repoMapBlock }] : []),
       ...(stateBlock ? [{ role: 'system' as const, content: stateBlock }] : []),
       ...(globalPlanBlock ? [{ role: 'system' as const, content: globalPlanBlock }] : []),
@@ -1557,7 +1603,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       }
     }, 30_000);
     let firstTokenTimedOut = false;
-    const firstTokenTimeoutMs = resolveFirstTokenTimeoutMs(ctx.config);
+    const firstTokenTimeoutMs = fastDirect
+      ? Math.min(resolveFirstTokenTimeoutMs(ctx.config), FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS)
+      : resolveFirstTokenTimeoutMs(ctx.config);
     const firstTokenTimer = firstTokenTimeoutMs > 0
       ? setTimeout(() => {
           if (!firstTokenSeen) {
@@ -1568,7 +1616,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       : null;
 
     try {
-      for await (const event of streamChat(ctx.config, apiMessages, ALL_TOOLS, streamAbort.signal)) {
+      const requestConfig = fastDirect
+        ? { ...ctx.config, maxTokens: Math.min(ctx.config.maxTokens ?? 700, 700) }
+        : ctx.config;
+      const requestTools = fastDirect ? [] : ALL_TOOLS;
+      for await (const event of streamChat(requestConfig, apiMessages, requestTools, streamAbort.signal)) {
         // First event of any kind — model is alive. Cancel the slow-
         // model warning timer; subsequent events are normal streaming.
         if (!firstTokenSeen) {
@@ -1588,7 +1640,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         if (event.type === 'thinking' && event.content) {
           sawAnyThinking = true;
           // showThinking defaults to true; only off when explicitly disabled.
-          if (ctx.config.showThinking !== false) {
+          if (!fastDirect && ctx.config.showThinking !== false) {
             if (!thinkingActive) {
               // Await the boot animation before streaming the first
               // thinking token — the animation paints in-place on the
@@ -1964,7 +2016,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // (DeepSeek-R1, Claude with extended thinking, o1, etc.) actually emit
   // reasoning over the API.
   const showThinking = ctx.config.showThinking !== false;
-  if (showThinking && !sawAnyThinking && !_thinkingHintShownForSession.has(ctx.sessionId)) {
+  if (showThinking && !chainUsedFastDirect && !sawAnyThinking && !_thinkingHintShownForSession.has(ctx.sessionId)) {
     _thinkingHintShownForSession.add(ctx.sessionId);
     console.log(theme.dim(`  [hint] /thinking is ON, but ${ctx.config.model} didn't emit reasoning tokens.`));
     console.log(theme.dim(`         Reasoning models (DeepSeek-R1, o1, Claude with extended thinking) emit them; most general-purpose models don't.`));

@@ -170,4 +170,49 @@ describe('runQuery provider liveness recovery', () => {
     expect(String(ctx.messages.at(-1)?.content)).toContain('[interrupted by user steer');
     expect((globalThis as { __turnCancelCurrent?: unknown }).__turnCancelCurrent).toBeNull();
   });
+
+  it('uses an isolated no-tools request for short direct prompts', async () => {
+    let sentMessages: Message[] = [];
+    let sentTools: unknown[] = [];
+    vi.mocked(streamChat).mockImplementation(async function* (
+      _cfg: CawdexConfig,
+      apiMessages: Message[],
+      tools: unknown[],
+    ) {
+      sentMessages = apiMessages;
+      sentTools = tools;
+      yield { type: 'text', content: 'A fresh short poem.' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'openrouter/free';
+    cfg.showThinking = true;
+    const messages: Message[] = [
+      { role: 'user', content: 'write a poem about Dungeons and Dragons' },
+      { role: 'assistant', content: 'A dragon poem.' },
+      { role: 'user', content: 'write a short poem about dinner' },
+    ];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-fast-direct-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-fast-direct',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(sentTools).toEqual([]);
+    expect(sentMessages.filter((m) => m.role === 'user')).toEqual([
+      { role: 'user', content: 'write a short poem about dinner' },
+    ]);
+    expect(sentMessages.map((m) => String(m.content ?? '')).join('\n')).not.toContain('Dungeons');
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'A fresh short poem.' });
+  });
 });

@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type { CawdexConfig, Message } from './types.js';
 import type { Tool } from './tools/types.js';
-import { withRetry } from './retry.js';
+import { type RetryConfig, withRetry } from './retry.js';
 import { setPool, pickKey, reportFailure, reportSuccess, poolSize } from './key-rotation.js';
 import {
   getOpenAICodexBaseURL,
@@ -217,6 +217,26 @@ export function shouldRequestChatStreamUsage(
   ].some((host) => baseURL.includes(host));
 }
 
+function envInteger(name: string, env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const raw = env[name];
+  if (!raw || !raw.trim()) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return Math.floor(parsed);
+}
+
+export function resolveChatRetryConfig(
+  _config: Pick<CawdexConfig, 'baseURL'>,
+  env: NodeJS.ProcessEnv = process.env,
+): RetryConfig {
+  const explicitRetries = envInteger('CAWDEX_API_RETRIES', env);
+  return {
+    maxRetries: explicitRetries ?? (env.CAWDEX_NON_INTERACTIVE === '1' ? 2 : 0),
+    baseDelay: envInteger('CAWDEX_API_RETRY_BASE_MS', env) ?? 500,
+    maxDelay: envInteger('CAWDEX_API_RETRY_MAX_MS', env) ?? 5000,
+  };
+}
+
 type StreamChatEvent = {
   type: 'text' | 'thinking' | 'tool_call' | 'done';
   content?: string;
@@ -261,7 +281,7 @@ export async function* streamChat(
           // OpenAI SDK supports cancellation via signal; pass it through
           // so the underlying fetch can be aborted on Steer.
         }, signal ? { signal } : undefined),
-      { maxRetries: 3, baseDelay: 1000, maxDelay: 30000 },
+      resolveChatRetryConfig(config),
     );
   } catch (err) {
     // Hand the failure to the rotation pool so subsequent calls skip
@@ -363,7 +383,7 @@ async function* streamResponsesChat(
           buildCodexResponsesRequest(config, messages, tools) as never,
           signal ? { signal } : undefined,
         ) as never,
-      { maxRetries: 3, baseDelay: 1000, maxDelay: 30000 },
+      resolveChatRetryConfig(config),
     );
   } catch (err) {
     throw err;

@@ -3,6 +3,7 @@ import {
   buildCodexResponsesRequest,
   messagesToResponsesInput,
   messagesToResponsesInstructions,
+  resolveChatRetryConfig,
   shouldRequestChatStreamUsage,
   toolsToResponsesTools,
 } from '../src/api.js';
@@ -92,6 +93,26 @@ describe('Responses API conversion', () => {
       parameters: tools[0].parameters,
       strict: false,
     }]);
+  });
+});
+
+describe('Chat stream retry policy', () => {
+  it('fails fast by default in the interactive REPL', () => {
+    expect(resolveChatRetryConfig(
+      { baseURL: 'https://openrouter.ai/api/v1' },
+      {},
+    ).maxRetries).toBe(0);
+  });
+
+  it('keeps limited retries for non-interactive harness runs and supports override', () => {
+    expect(resolveChatRetryConfig(
+      { baseURL: 'https://openrouter.ai/api/v1' },
+      { CAWDEX_NON_INTERACTIVE: '1' },
+    ).maxRetries).toBe(2);
+    expect(resolveChatRetryConfig(
+      { baseURL: 'https://openrouter.ai/api/v1' },
+      { CAWDEX_API_RETRIES: '4' },
+    ).maxRetries).toBe(4);
   });
 });
 

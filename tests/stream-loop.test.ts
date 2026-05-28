@@ -144,6 +144,7 @@ describe('countTailRepetitions', () => {
 
 describe('resolveFirstTokenTimeoutMs', () => {
   const original = process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
+  const originalNonInteractive = process.env.CAWDEX_NON_INTERACTIVE;
 
   afterEach(() => {
     if (original === undefined) {
@@ -151,19 +152,34 @@ describe('resolveFirstTokenTimeoutMs', () => {
     } else {
       process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = original;
     }
+    if (originalNonInteractive === undefined) {
+      delete process.env.CAWDEX_NON_INTERACTIVE;
+    } else {
+      process.env.CAWDEX_NON_INTERACTIVE = originalNonInteractive;
+    }
   });
 
-  it('uses a shorter watchdog for known flaky OpenRouter models', () => {
+  it('uses fast interactive watchdogs for OpenRouter models', () => {
     delete process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
+    delete process.env.CAWDEX_NON_INTERACTIVE;
 
     expect(resolveFirstTokenTimeoutMs({
       provider: 'OpenRouter (Any Model)',
       model: 'openrouter/owl-alpha',
-    })).toBe(20_000);
+    })).toBe(6_000);
+    expect(resolveFirstTokenTimeoutMs({
+      provider: 'OpenRouter (Any Model)',
+      model: 'openrouter/free',
+    })).toBe(12_000);
   });
 
-  it('keeps a more patient default for ordinary models and allows env override', () => {
+  it('keeps more patient defaults for non-interactive harness runs and allows env override', () => {
     delete process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
+    process.env.CAWDEX_NON_INTERACTIVE = '1';
+    expect(resolveFirstTokenTimeoutMs({
+      provider: 'OpenRouter (Any Model)',
+      model: 'openrouter/owl-alpha',
+    })).toBe(20_000);
     expect(resolveFirstTokenTimeoutMs({
       provider: 'OpenRouter (Any Model)',
       model: 'openrouter/free',
