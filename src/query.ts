@@ -173,9 +173,12 @@ export function shouldUseFastDirectReply(
   const text = (userQuery || '').trim();
   if (!text || text.length > 600) return false;
   if (text.includes('\n') || text.includes('```')) return false;
+  // Follow-up turns should preserve full session context. Fast-direct is
+  // intentionally first-turn-biased to avoid context drift/regressions.
+  if (hasPriorAssistantContext) return false;
   if (FAST_DIRECT_CONTEXTUAL.test(text)) return false;
   if (FAST_DIRECT_REVISION_CONTEXT.test(text)) return false;
-  if (hasPriorAssistantContext && FAST_DIRECT_FOLLOWUP_EDIT_WITH_HISTORY.test(text)) return false;
+  if (FAST_DIRECT_FOLLOWUP_EDIT_WITH_HISTORY.test(text)) return false;
   if (FAST_DIRECT_REPO_OR_TOOL.test(text)) return false;
   return FAST_DIRECT_POSITIVE.some((pattern) => pattern.test(text));
 }
@@ -1741,7 +1744,6 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       : resolveFirstTokenTimeoutMs(ctx.config);
     let streamIdleTimedOut = false;
     const streamIdleTimeoutMs = resolveStreamIdleTimeoutMs(fastDirect);
-    let streamWaitTimer: ReturnType<typeof setTimeout> | null = null;
 
     try {
       const requestConfig = fastDirect
@@ -1749,34 +1751,47 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         : ctx.config;
       const stream = streamChat(requestConfig, apiMessages, requestTools, streamAbort.signal);
       const iterator = stream[Symbol.asyncIterator]();
+      async function waitForNextEvent(
+        nextPromise: Promise<Awaited<ReturnType<typeof iterator.next>>>,
+        waitTimeoutMs: number,
+      ): Promise<Awaited<ReturnType<typeof iterator.next>>> {
+        if (waitTimeoutMs <= 0) return nextPromise;
+        const deadline = Date.now() + waitTimeoutMs;
+        while (true) {
+          const remainingMs = deadline - Date.now();
+          if (remainingMs <= 0) {
+            try { streamAbort.abort(); } catch { /* noop */ }
+            if (!firstTokenSeen) {
+              firstTokenTimedOut = true;
+              throw new Error('__CAWDEX_FIRST_TOKEN_TIMEOUT__');
+            }
+            streamIdleTimedOut = true;
+            throw new Error('__CAWDEX_STREAM_IDLE_TIMEOUT__');
+          }
+          const sliceMs = Math.max(1, Math.min(250, remainingMs));
+          const tick = new Promise<'__CAWDEX_WAIT_TICK__'>((resolve) => {
+            setTimeout(() => resolve('__CAWDEX_WAIT_TICK__'), sliceMs);
+          });
+          const winner = await Promise.race([nextPromise, tick]);
+          if (winner !== '__CAWDEX_WAIT_TICK__') {
+            return winner;
+          }
+          if (!firstTokenSeen && isFooterActive()) {
+            // Keep the waiting row visibly alive even if background render
+            // timers are flaky in the host terminal.
+            setFooterActivity('Sumi ink moving', turns, turnStart);
+          }
+        }
+      }
       while (true) {
         const nextPromise = iterator.next();
-        let next: Awaited<ReturnType<typeof iterator.next>>;
         const waitTimeoutMs = !firstTokenSeen ? firstTokenTimeoutMs : streamIdleTimeoutMs;
-        if (waitTimeoutMs > 0) {
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            streamWaitTimer = setTimeout(() => {
-              try { streamAbort.abort(); } catch { /* noop */ }
-              if (!firstTokenSeen) {
-                firstTokenTimedOut = true;
-                reject(new Error('__CAWDEX_FIRST_TOKEN_TIMEOUT__'));
-              } else {
-                streamIdleTimedOut = true;
-                reject(new Error('__CAWDEX_STREAM_IDLE_TIMEOUT__'));
-              }
-            }, waitTimeoutMs);
-          });
-          try {
-            next = await Promise.race([nextPromise, timeoutPromise]);
-          } catch (err) {
-            nextPromise.catch(() => { /* avoid unhandled rejection if provider notices abort later */ });
-            throw err;
-          } finally {
-            if (streamWaitTimer) clearTimeout(streamWaitTimer);
-            streamWaitTimer = null;
-          }
-        } else {
-          next = await nextPromise;
+        let next: Awaited<ReturnType<typeof iterator.next>>;
+        try {
+          next = await waitForNextEvent(nextPromise, waitTimeoutMs);
+        } catch (err) {
+          nextPromise.catch(() => { /* avoid unhandled rejection if provider notices abort later */ });
+          throw err;
         }
         if (next.done) break;
         const event = next.value;
@@ -1786,7 +1801,6 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           firstTokenSeen = true;
           firstTokenLatencyMs = Date.now() - turnStart;
           clearTimeout(slowTimer);
-          if (streamWaitTimer) clearTimeout(streamWaitTimer);
           // Tear down the live waiting indicator so the next print
           // (thinking header, response text, or tool call) lands cleanly.
           workingIndicator?.stop();
@@ -1891,7 +1905,6 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         usageRecorded = true;
       }
       clearTimeout(slowTimer);
-      if (streamWaitTimer) clearTimeout(streamWaitTimer);
       workingIndicator?.stop();
       workingIndicator = null;
     } catch (err: unknown) {
@@ -1899,7 +1912,6 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       // timer so its 30s callback doesn't fire after the error is
       // already on stdout (would look like a false positive).
       clearTimeout(slowTimer);
-      if (streamWaitTimer) clearTimeout(streamWaitTimer);
       // Tear down the waiting indicator if it's still ticking — error
       // print below shouldn't trail an animated row.
       workingIndicator?.stop();

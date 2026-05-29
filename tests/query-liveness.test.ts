@@ -298,7 +298,7 @@ describe('runQuery provider liveness recovery', () => {
     expect((globalThis as { __turnCancelCurrent?: unknown }).__turnCancelCurrent).toBeNull();
   });
 
-  it('uses an isolated no-tools request for short direct prompts', async () => {
+  it('uses an isolated no-tools request for first-turn short direct prompts', async () => {
     let sentMessages: Message[] = [];
     let sentTools: unknown[] = [];
     vi.mocked(streamChat).mockImplementation(async function* (
@@ -316,8 +316,6 @@ describe('runQuery provider liveness recovery', () => {
     cfg.model = 'openrouter/free';
     cfg.showThinking = true;
     const messages: Message[] = [
-      { role: 'user', content: 'write a poem about Dungeons and Dragons' },
-      { role: 'assistant', content: 'A dragon poem.' },
       { role: 'user', content: 'Can you write a short poem for me about dinner' },
     ];
     const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-fast-direct-'));
@@ -339,7 +337,6 @@ describe('runQuery provider liveness recovery', () => {
     expect(sentMessages.filter((m) => m.role === 'user')).toEqual([
       { role: 'user', content: 'Can you write a short poem for me about dinner' },
     ]);
-    expect(sentMessages.map((m) => String(m.content ?? '')).join('\n')).not.toContain('Dungeons');
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'A fresh short poem.' });
   });
 
@@ -443,7 +440,7 @@ Use short, bounded shell commands for this repository.
 
   it('keeps follow-up rewrites on full-context path when prior assistant context exists', () => {
     const followup = 'I need you to make the bear cub distinctively male';
-    expect(shouldUseFastDirectReply(followup, 'dev', false)).toBe(true);
+    expect(shouldUseFastDirectReply(followup, 'dev', false)).toBe(false);
     expect(shouldUseFastDirectReply(followup, 'dev', true)).toBe(false);
   });
 
@@ -487,7 +484,7 @@ Use short, bounded shell commands for this repository.
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'Done.' });
   });
 
-  it('does not compact bloated history before an isolated fast-direct prompt', async () => {
+  it('uses full-context path for short follow-ups when prior assistant context exists', async () => {
     process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS = '1';
 
     let sentMessages: Message[] = [];
@@ -524,10 +521,9 @@ Use short, bounded shell commands for this repository.
     }
 
     expect(streamChat).toHaveBeenCalledTimes(1);
-    expect(sentMessages.filter((m) => m.role === 'user')).toEqual([
-      { role: 'user', content: 'Could you write a short poem about dinner?' },
-    ]);
-    expect(sentMessages.map((m) => String(m.content ?? '')).join('\n')).not.toContain('Dungeons');
+    const convo = sentMessages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    expect(convo.length).toBeGreaterThan(1);
+    expect(convo.some((m) => m.role === 'assistant')).toBe(true);
   });
 
   it('preserves message-array identity so autosave sees multi-turn history', async () => {
