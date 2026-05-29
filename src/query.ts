@@ -1707,6 +1707,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // waiting line", which is noisier than helpful).
     let firstTokenSeen = false;
     let firstTokenLatencyMs: number | null = null;
+    let firstRenderableOutputSeen = false;
     let lastWaitHeartbeatSec = -1;
     // Note: the outer `isScreenReader` declared at the top of runQuery
     // (line ~340) is in scope here via closure — no need for a second
@@ -1726,7 +1727,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // UX hint; the watchdog is the hard recovery path for providers
     // that accept a request but then never produce a stream event.
     const slowTimer = setTimeout(() => {
-      if (!firstTokenSeen) {
+      if (!firstRenderableOutputSeen) {
         // Clear the animated row before printing a persistent warning,
         // then restart it on the following line so the terminal stays tidy.
         workingIndicator?.stop();
@@ -1734,7 +1735,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         console.log(chalk.yellow(
           `  ⏳ model is taking longer than 30s. Shift+F5 cancels, Ctrl+C exits. Often means the model returned no tokens (try /model <other> if this hangs).`,
         ));
-        if (!firstTokenSeen) {
+        if (!firstRenderableOutputSeen) {
           workingIndicator = startWorkingIndicator(turnStart, isScreenReader, turns);
         }
       }
@@ -1777,7 +1778,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           if (winner !== '__CAWDEX_WAIT_TICK__') {
             return winner;
           }
-          if (!firstTokenSeen) {
+          if (!firstRenderableOutputSeen) {
             const elapsedSec = Math.floor((Date.now() - turnStart) / 1000);
             // Keep footer activity live when enabled.
             if (isFooterActive()) {
@@ -1812,16 +1813,17 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         if (!firstTokenSeen) {
           firstTokenSeen = true;
           firstTokenLatencyMs = Date.now() - turnStart;
-          clearTimeout(slowTimer);
-          // Tear down the live waiting indicator so the next print
-          // (thinking header, response text, or tool call) lands cleanly.
-          workingIndicator?.stop();
-          workingIndicator = null;
         }
         if (event.type === 'thinking' && event.content) {
           sawAnyThinking = true;
           // showThinking defaults to true; only off when explicitly disabled.
           if (!fastDirect && ctx.config.showThinking !== false) {
+            if (!firstRenderableOutputSeen) {
+              firstRenderableOutputSeen = true;
+              clearTimeout(slowTimer);
+              workingIndicator?.stop();
+              workingIndicator = null;
+            }
             if (!thinkingActive) {
               // Await the boot animation before streaming the first
               // thinking token — the animation paints in-place on the
@@ -1833,6 +1835,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
             printThinkingText(event.content);
           }
         } else if (event.type === 'text' && event.content) {
+          if (!firstRenderableOutputSeen) {
+            firstRenderableOutputSeen = true;
+            clearTimeout(slowTimer);
+            workingIndicator?.stop();
+            workingIndicator = null;
+          }
           if (thinkingActive) {
             // Await the collapse animation so subsequent text streams
             // onto a fresh row beneath the settled footer.
