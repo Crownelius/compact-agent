@@ -156,16 +156,25 @@ function ansiVisibleLen(s: string): number {
 }
 
 export function filterSuggestItems(items: SuggestItem[], filter: string): SuggestItem[] {
-  let f = filter.replace(/^\//, '').toLowerCase();
-  const spaceIdx = f.indexOf(' ');
+  const trimmed = filter.trimStart();
+  const commandMode = trimmed.startsWith('/');
+  const cleaned = trimmed.replace(/^\//, '').toLowerCase();
+  const spaceIdx = cleaned.indexOf(' ');
   const hasArgs = spaceIdx >= 0;
-  if (hasArgs) f = f.slice(0, spaceIdx);
-  if (!f) return items.slice();
+  const query = (hasArgs ? cleaned.slice(0, spaceIdx) : cleaned).trim();
+  if (!query) return items.slice();
+
+  if (commandMode) {
+    return rankCommandMatches(items, query)
+      .filter((entry) => entry.score > 0)
+      .map((entry) => entry.item);
+  }
+
   return items.filter((it) => {
-    const cmdMatch = it.command.toLowerCase().includes(f);
-    const aliasMatch = (it.aliases ?? []).some((alias) => alias.toLowerCase().includes(f));
-    const hintMatch = !hasArgs && (it.hint ?? '').toLowerCase().includes(f);
-    const descMatch = !hasArgs && it.description.toLowerCase().includes(f);
+    const cmdMatch = it.command.toLowerCase().includes(query);
+    const aliasMatch = (it.aliases ?? []).some((alias) => alias.toLowerCase().includes(query));
+    const hintMatch = !hasArgs && (it.hint ?? '').toLowerCase().includes(query);
+    const descMatch = !hasArgs && it.description.toLowerCase().includes(query);
     return cmdMatch || aliasMatch || hintMatch || descMatch;
   });
 }
@@ -227,17 +236,133 @@ export function resolveInlineSuggestAccept(
   visibleItems: SuggestItem[],
   selected: number,
 ): string | null {
+  const rawFilter = filter.startsWith('/') ? filter : `/${filter}`;
   if (filter.includes(' ')) {
-    return filter.startsWith('/') ? filter : `/${filter}`;
+    const commandToken = rawFilter.split(/\s+/, 1)[0];
+    const args = rawFilter.slice(commandToken.length);
+    const query = commandToken.replace(/^\//, '').toLowerCase();
+    const ranked = rankCommandMatches(visibleItems, query);
+    if (ranked.length > 0 && ranked[0].score > 0) {
+      return `${ranked[0].item.command}${args}`;
+    }
+    return rawFilter;
   }
   if (visibleItems.length > 0) {
     const safeSelected = Math.max(0, Math.min(visibleItems.length - 1, selected));
     return visibleItems[safeSelected].command;
   }
-  if (filter.length > 1) {
-    return filter.startsWith('/') ? filter : `/${filter}`;
+  if (rawFilter.length > 1) {
+    return rawFilter;
   }
   return null;
+}
+
+function rankCommandMatches(
+  items: SuggestItem[],
+  query: string,
+): Array<{ item: SuggestItem; score: number }> {
+  const q = query.trim().toLowerCase();
+  if (!q) return items.map((item) => ({ item, score: 1 }));
+  return items
+    .map((item) => ({ item, score: bestCommandScore(item, q) }))
+    .sort((a, b) => b.score - a.score || a.item.command.localeCompare(b.item.command));
+}
+
+function bestCommandScore(item: SuggestItem, query: string): number {
+  const command = normalizeCommandToken(item.command);
+  let best = scoreCommandCandidate(query, command);
+  for (const alias of item.aliases ?? []) {
+    const aliasScore = scoreCommandCandidate(query, normalizeCommandToken(alias));
+    // Keep aliases competitive but prefer canonical command when tied.
+    best = Math.max(best, aliasScore - 1);
+  }
+  return best;
+}
+
+function normalizeCommandToken(value: string): string {
+  return value.trim().replace(/^\//, '').toLowerCase();
+}
+
+function scoreCommandCandidate(query: string, candidate: string): number {
+  if (!query || !candidate) return 0;
+  if (candidate === query) return 5_000 + query.length;
+  if (candidate.startsWith(query)) return 4_000 + query.length * 4 - (candidate.length - query.length);
+
+  const idx = candidate.indexOf(query);
+  if (idx >= 0) {
+    return 3_000 + query.length * 3 - idx;
+  }
+
+  const contiguous = longestCommonSubstringLength(query, candidate);
+  let score = 0;
+  if (isSubsequence(query, candidate)) {
+    score = 2_000 + contiguous * 12 - (candidate.length - query.length);
+  }
+
+  const maxDist = Math.max(1, Math.floor(query.length / 3));
+  const dist = boundedLevenshtein(query, candidate, maxDist);
+  if (dist <= maxDist) {
+    score = Math.max(score, 1_500 + contiguous * 16 - dist * 80);
+  }
+  return score;
+}
+
+function isSubsequence(needle: string, haystack: string): boolean {
+  let pos = 0;
+  for (const ch of haystack) {
+    if (ch === needle[pos]) pos++;
+    if (pos === needle.length) return true;
+  }
+  return false;
+}
+
+function longestCommonSubstringLength(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const width = b.length + 1;
+  const dp = new Array<number>(width).fill(0);
+  let best = 0;
+  for (let i = 1; i <= a.length; i++) {
+    let prev = 0;
+    for (let j = 1; j <= b.length; j++) {
+      const hold = dp[j];
+      if (a[i - 1] === b[j - 1]) {
+        dp[j] = prev + 1;
+        if (dp[j] > best) best = dp[j];
+      } else {
+        dp[j] = 0;
+      }
+      prev = hold;
+    }
+  }
+  return best;
+}
+
+function boundedLevenshtein(a: string, b: string, maxDistance: number): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+
+  const prev: number[] = new Array(b.length + 1);
+  const curr: number[] = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const del = prev[j] + 1;
+      const ins = curr[j - 1] + 1;
+      const sub = prev[j - 1] + cost;
+      const next = Math.min(del, ins, sub);
+      curr[j] = next;
+      if (next < rowMin) rowMin = next;
+    }
+    if (rowMin > maxDistance) return maxDistance + 1;
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return prev[b.length];
 }
 
 export function resolveInlineSuggestQuestionInput(

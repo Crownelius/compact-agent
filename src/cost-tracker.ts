@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import chalk from 'chalk';
 import { getConfigDir } from './config.js';
 
-const USAGE_FILE = join(getConfigDir(), 'usage.json');
+function getUsageFile(): string {
+  return join(getConfigDir(), 'usage.json');
+}
 
 // Cost per 1M tokens (input/output) for common models via OpenRouter
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
@@ -39,11 +41,14 @@ const MODEL_COSTS: Record<string, { input: number; output: number }> = {
 export interface UsageEntry {
   timestamp: string;
   sessionId: string;
+  provider?: string;
   model: string;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   estimatedCost: number; // USD
+  firstTokenMs?: number;
+  durationMs?: number;
 }
 
 export interface UsageData {
@@ -60,7 +65,8 @@ export interface UsageData {
 }
 
 function loadUsage(): UsageData {
-  if (!existsSync(USAGE_FILE)) {
+  const usageFile = getUsageFile();
+  if (!existsSync(usageFile)) {
     return {
       entries: [],
       budget: { dailyLimit: 0, monthlyLimit: 0, alertThreshold: 0.8 },
@@ -68,7 +74,7 @@ function loadUsage(): UsageData {
     };
   }
   try {
-    return JSON.parse(readFileSync(USAGE_FILE, 'utf-8'));
+    return JSON.parse(readFileSync(usageFile, 'utf-8'));
   } catch {
     return {
       entries: [],
@@ -80,7 +86,7 @@ function loadUsage(): UsageData {
 
 function saveUsage(data: UsageData): void {
   mkdirSync(getConfigDir(), { recursive: true });
-  writeFileSync(USAGE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  writeFileSync(getUsageFile(), JSON.stringify(data, null, 2), 'utf-8');
 }
 
 export function getModelCost(model: string): { input: number; output: number } {
@@ -103,18 +109,26 @@ export function trackUsage(
   model: string,
   promptTokens: number,
   completionTokens: number,
-): { cost: number; warning?: string } {
+  metadata: {
+    provider?: string;
+    firstTokenMs?: number | null;
+    durationMs?: number | null;
+  } = {},
+): { cost: number; warning?: string; entry: UsageEntry } {
   const data = loadUsage();
   const cost = estimateCost(model, promptTokens, completionTokens);
 
   const entry: UsageEntry = {
     timestamp: new Date().toISOString(),
     sessionId,
+    provider: metadata.provider,
     model,
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens,
     estimatedCost: cost,
+    firstTokenMs: finiteOptional(metadata.firstTokenMs),
+    durationMs: finiteOptional(metadata.durationMs),
   };
 
   data.entries.push(entry);
@@ -151,34 +165,46 @@ export function trackUsage(
     warning = `Approaching daily limit: $${todayCost.toFixed(4)} / $${data.budget.dailyLimit}`;
   }
 
-  return { cost, warning };
+  return { cost, warning, entry };
 }
 
-export function getUsageSummary(): {
-  today: { tokens: number; cost: number; calls: number };
-  month: { tokens: number; cost: number; calls: number };
+export interface UsagePeriodSummary {
+  tokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+  calls: number;
+  averageFirstTokenMs: number | null;
+  averageDurationMs: number | null;
+}
+
+export interface UsageSummary {
+  today: UsagePeriodSummary;
+  month: UsagePeriodSummary;
   allTime: { tokens: number; cost: number };
+  session: UsagePeriodSummary;
+  last: UsageEntry | null;
   budget: UsageData['budget'];
-} {
+}
+
+export function getUsageSummary(sessionId?: string): UsageSummary {
   const data = loadUsage();
   const today = new Date().toISOString().slice(0, 10);
   const month = new Date().toISOString().slice(0, 7);
 
   const todayEntries = data.entries.filter((e) => e.timestamp.startsWith(today));
   const monthEntries = data.entries.filter((e) => e.timestamp.startsWith(month));
+  const sessionEntries = sessionId
+    ? data.entries.filter((e) => e.sessionId === sessionId)
+    : [];
+  const last = sessionEntries.at(-1) ?? data.entries.at(-1) ?? null;
 
   return {
-    today: {
-      tokens: todayEntries.reduce((s, e) => s + e.totalTokens, 0),
-      cost: todayEntries.reduce((s, e) => s + e.estimatedCost, 0),
-      calls: todayEntries.length,
-    },
-    month: {
-      tokens: monthEntries.reduce((s, e) => s + e.totalTokens, 0),
-      cost: monthEntries.reduce((s, e) => s + e.estimatedCost, 0),
-      calls: monthEntries.length,
-    },
+    today: summarizeEntries(todayEntries),
+    month: summarizeEntries(monthEntries),
     allTime: { tokens: data.totals.allTimeTokens, cost: data.totals.allTimeCost },
+    session: summarizeEntries(sessionEntries),
+    last,
     budget: data.budget,
   };
 }
@@ -189,14 +215,76 @@ export function setBudget(daily: number, monthly: number, threshold = 0.8): void
   saveUsage(data);
 }
 
-export function printUsageSummary(): void {
-  const s = getUsageSummary();
+export function printUsageSummary(sessionId?: string): void {
+  const s = getUsageSummary(sessionId);
   console.log(chalk.cyan('\n  Usage Summary'));
+  if (sessionId) {
+    console.log(chalk.dim(`  Session:  ${s.session.tokens.toLocaleString()} tokens | $${s.session.cost.toFixed(4)} | ${s.session.calls} calls${formatLatencySummary(s.session)}`));
+  }
   console.log(chalk.dim(`  Today:    ${s.today.tokens.toLocaleString()} tokens | $${s.today.cost.toFixed(4)} | ${s.today.calls} calls`));
   console.log(chalk.dim(`  Month:    ${s.month.tokens.toLocaleString()} tokens | $${s.month.cost.toFixed(4)} | ${s.month.calls} calls`));
   console.log(chalk.dim(`  All-time: ${s.allTime.tokens.toLocaleString()} tokens | $${s.allTime.cost.toFixed(4)}`));
+  if (s.last) {
+    const provider = s.last.provider ? `${s.last.provider} | ` : '';
+    console.log(chalk.dim(
+      `  Last:     ${provider}${s.last.model} | ${s.last.totalTokens.toLocaleString()} tokens | $${s.last.estimatedCost.toFixed(4)}` +
+      `${formatLastLatency(s.last)}`,
+    ));
+  }
   if (s.budget.dailyLimit > 0) {
     console.log(chalk.dim(`  Budget:   $${s.budget.dailyLimit}/day, $${s.budget.monthlyLimit}/month`));
   }
   console.log();
 }
+
+function summarizeEntries(entries: UsageEntry[]): UsagePeriodSummary {
+  const firstTokenValues = entries
+    .map((e) => e.firstTokenMs)
+    .filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
+  const durationValues = entries
+    .map((e) => e.durationMs)
+    .filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
+  return {
+    tokens: entries.reduce((s, e) => s + e.totalTokens, 0),
+    promptTokens: entries.reduce((s, e) => s + e.promptTokens, 0),
+    completionTokens: entries.reduce((s, e) => s + e.completionTokens, 0),
+    cost: entries.reduce((s, e) => s + e.estimatedCost, 0),
+    calls: entries.length,
+    averageFirstTokenMs: average(firstTokenValues),
+    averageDurationMs: average(durationValues),
+  };
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function finiteOptional(value: number | null | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : undefined;
+}
+
+function formatLatencySummary(summary: UsagePeriodSummary): string {
+  const bits: string[] = [];
+  if (summary.averageFirstTokenMs !== null) bits.push(`avg first ${formatMs(summary.averageFirstTokenMs)}`);
+  if (summary.averageDurationMs !== null) bits.push(`avg turn ${formatMs(summary.averageDurationMs)}`);
+  return bits.length ? ` | ${bits.join(', ')}` : '';
+}
+
+function formatLastLatency(entry: UsageEntry): string {
+  const bits: string[] = [];
+  if (typeof entry.firstTokenMs === 'number') bits.push(`first ${formatMs(entry.firstTokenMs)}`);
+  if (typeof entry.durationMs === 'number') bits.push(`turn ${formatMs(entry.durationMs)}`);
+  return bits.length ? ` | ${bits.join(', ')}` : '';
+}
+
+function formatMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+}
+
+export const _internal = {
+  getUsageFile,
+  summarizeEntries,
+};

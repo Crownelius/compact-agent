@@ -33,7 +33,7 @@ Everything in this section is typed inside the REPL after `❯ `.
 
 At an empty prompt, `/` opens the inline command selector. It stays below the prompt, keeps the widget under roughly half the terminal height, lets you type to narrow, scroll with arrows/PageUp/PageDown, jump with Home/End, and press Enter to fill the prompt with the highlighted command so you can edit it or press Enter again to run it. If a slash prefix is already typed, Tab reopens the same bounded selector with that filter instead of printing the full command list. It only erases its own prompt/dropdown rows instead of clearing the rest of the terminal.
 
-During model/tool work, typing is captured in a fixed bottom type-ahead line and restored into the next editable prompt. If an OpenRouter preview/free model accepts a request but sends no stream event, Cawdex cancels after a first-token watchdog and retries once with `/fallback` (default `openrouter/free` for OpenRouter), so the prompt returns instead of appearing frozen.
+During model/tool work, the bottom five-row footer stays pinned while only the transcript above it scrolls. Typing remains visible in that footer and is restored into the next editable prompt if you cancel. The first interactive prompt opens with `/model` prefilled by default; change that with `/footer opening <prompt>`. While waiting, a subtle Edo/neon-style animation keeps the Esc/F5 interrupt hint visible without relying on a stuck timer. If an OpenRouter preview/free model accepts a request but sends no stream event, Cawdex cancels after a first-token watchdog and retries once only when `/fallback` is configured; otherwise the prompt returns with a timeout note instead of appearing frozen.
 
 ### 2.1 General & session control
 
@@ -45,10 +45,11 @@ During model/tool work, typing is captured in a fixed bottom type-ahead line and
 | `/history` | Show message count + estimated tokens + whether compaction is recommended. |
 | `/export [md\|json\|txt]` | Save the current conversation to a file in CWD. Default: `md`. |
 | `/exit` / `/quit` | Quit the REPL. |
-| `/config` | Re-run the setup wizard (change provider/key/model/permissions). |
-| `/theme [full\|compact\|minimal]` | Toggle startup display verbosity. `full` shows splash + banner; `minimal` is a single line. |
-| `/palette <id>` | Switch to one of 12 Coolors trending color schemes. |
+| `/config` | Re-run the main setup wizard (provider/key/model/fallback, permissions, swarm). |
+| `/theme [full\|compact\|minimal]` | With no args, opens the combined display-theme and color-palette picker. With an arg, sets startup display verbosity. |
+| `/palette [id]` | With no args, opens the combined appearance picker. With an id, switches to one of 12 Coolors trending color schemes. Typo alias: `/pallete`. |
 | `/palettes` | List palette IDs with color swatch previews. |
+| `/footer [sub]` | Customize the fixed bottom footer. Supports `on`, `off`, `text <template>`, `opening <prompt>`, `clear`, and `reset`. |
 | `!<cmd>` | Run a shell command directly without involving the AI. Example: `!ls -la`. |
 
 Palette IDs: `olive-garden-feast`, `fiery-ocean`, `refreshing-summer-fun`, `ocean-blue-serenity`, `pastel-dreamland-adventure`, `sunny-beach-day`, `dark-sunset`, `fiery-red-sunset`, `fiery-palette`, `rustic-earthy-tones`, `golden-summer-fields`, `vibrant-tones`.
@@ -67,17 +68,23 @@ Modes change the system prompt to bias the agent toward a particular workflow.
 | `/mode debug` | Debug | Systematic root-cause hunt with hypothesis tracking. |
 | `/mode benchmark` | Benchmark | SWE-bench/Terminal-Bench-style runs: localize, patch, verify, and report harness-grade evidence. |
 | `/mode architect` | Architect | System-level design, component boundaries, trade-offs. |
-| `/mode hermes` | Hermes | Self-improving learning loop — recalls prior memory, models the user, parallelizes, distills skills, persists knowledge. Inspired by nousresearch/hermes-agent. |
+| `/mode sentience` | Sentience | Self-improving learning loop — recalls prior memory, models the user, parallelizes, distills skills, persists knowledge. |
 | `/mode design` | Design | Stitch-powered UI generation. Agent uses Google Stitch automatically for any visual work and integrates the generated HTML into your code. Requires `/stitch-config`. |
 | `/modes` | (list-only) | Print all available modes. **Does NOT switch** — use `/mode <name>`. |
-| `/hermes` | Alias | Same as `/mode hermes`. |
+| `/sentience` | Alias | Same as `/mode sentience`. |
+| `/hermes` | Legacy alias | Same as `/sentience`. |
 | `/design [task]` | Alias + shortcut | Switch to design mode. If `[task]` given, also kicks off the task immediately (e.g. `/design build a stock portfolio app, edgy red, no blue/green`). |
 
 ### 2.3 Model & provider
 
 | Command | What it does |
 |---|---|
-| `/model [name]` | Show current model, or switch to `<name>` (e.g. `/model anthropic/claude-sonnet-4`). |
+| `/model [name]` | Show current model, or switch to `<name>` (e.g. `/model anthropic/claude-sonnet-4`). Built-in aliases include `free` for `openrouter/free`. |
+| `/model alias <name> <model>` | Save a user alias, e.g. `/model alias paid anthropic/claude-sonnet-4`. |
+| `/model aliases` | List user and built-in model aliases. |
+| `/model unalias <name>` | Remove a saved alias. |
+| `/model once <model-or-alias> [--effort <level>]` | Use a model and optional reasoning effort for the next user turn only. Does not mutate `config.json`. |
+| `/model effort <none\|minimal\|low\|medium\|high\|xhigh>` | Use a reasoning effort override for the next user turn only. |
 | `/models` | List models the provider can serve. |
 | `/provider` | Show provider name, base URL, masked key, current model. |
 | `/openai-login [status\|smoke]` | Configure Codex OAuth, show token status, or run a smoke request through the OAuth stream path. |
@@ -91,7 +98,7 @@ Sessions are JSON snapshots stored in `~/.cawdex/sessions/`.
 |---|---|
 | `/sessions` | List saved sessions with ID, name, model, message count. |
 | `/save [name]` | Save the current session. Auto-named if `name` omitted. |
-| `/resume <id>` | Replay a saved session into the current REPL. |
+| `/resume [id\|prefix\|last]` | With no args, open the bounded session picker. With an arg, replay that saved session into the current REPL. |
 | `/delete <id>` | Remove a saved session. |
 
 ### 2.5 Git
@@ -140,6 +147,7 @@ The legacy per-language slash commands (`/ts-review`, `/py-review`, `/go-review`
 | Command | What it does |
 |---|---|
 | `/orchestrate <task>` | Decomposes a task and runs sub-agents in parallel. |
+| `/swarm <task>` | Asks a compact setup wizard, infers roles, runs analysis-only workers, and prints a main-agent handoff. Expert form: `/swarm <agents> <task>`. |
 | `/pr-loop` | Autonomous loop: read PRs, write feedback, repeat. |
 | `/multi-plan <task>` | Several agents propose independent plans, then converge. |
 | `/multi-execute <plan>` | Several agents execute the same plan, vote on output. |
@@ -152,7 +160,7 @@ The legacy per-language slash commands (`/ts-review`, `/py-review`, `/go-review`
 |---|---|
 | `/search-first <task>` | Forces research-before-code mode: web/grep/glob first, then edit. |
 | `/sources <query> [flags]` | Direct source scan without a model call. Defaults to all sources, GitHub all, Hugging Face all, Kaggle both, recent 90 days, limit 5. Flags: `--source`, `--github`, `--hf`, `--kaggle`, `--recent`, `--limit`, `--json`. |
-| `/benchmark-repos [query] [flags]` | Offline public Terminal-Bench repo catalog from the packaged research seed, including known no-public-source gaps. Flags: `--all`, `--official`, `--related`, `--unverified`, `--limit`, `--repos-only`. |
+| `/benchmark-repos [query] [flags]` | Offline public Terminal-Bench repo catalog from the packaged research seed, including known no-public-source gaps. Flags: `--all`, `--official`, `--related`, `--unverified`, `--limit`, `--repos-only`, `--top-open-source`, `--from-top`, `--docs-only`. |
 | `/repo-digest <github-url\|owner/repo> [flags]` | Direct GitHub repo digest without a model call or clone. Flags: `--ref`, `--files`, `--text-files`, `--chars`. |
 | `/docs-lookup <query>` | Search docs (project + web) for a concept or API. |
 
@@ -163,6 +171,7 @@ The legacy per-language slash commands (`/ts-review`, `/py-review`, `/go-review`
 | `/tools` | List the tools the LLM has access to with flags `[R]` read-only, `[RW]` read-write, `[!]` destructive. |
 | `/harness [component] [--json]` | Show an AHE-style harness component map with files, tests, docs, and edit contracts. Add `--json` for machine-readable component observability. Components: `system_prompts`, `tooling`, `middleware`, `skills`, `subagents`, `memory`, `providers`, `benchmark_adapters`, `cli_ui`, `verification`. |
 | `/rules` | Show language-specific coding rules currently in the system prompt. |
+| `/agents` | Show discovered `AGENTS.md` files plus active model/tool scoped sections. |
 | `/perm <ask\|auto\|yolo>` | Permission mode: `ask` prompts every time, `auto` allows non-destructive, `yolo` allows everything. |
 | `/dry-run` | Toggle. When ON, tools print what they WOULD do without executing. |
 | `/thinking` | Toggle. When ON, model "thinking" / reasoning tokens are displayed. |
@@ -387,7 +396,7 @@ Any tool name you see in error output other than these (e.g. `web_search_exa`, `
 
 These affect the REPL's runtime behavior. Set in your shell before launching `cawdex` (`cawdex` remains a legacy alias).
 
-For env-built provider config, the new `CAWDEX_*` spellings are accepted alongside the legacy `CAWDEX_*` names for provider, base URL, model, fallback model, token/turn/context limits, temperature, permission, memory, theme, thinking, and per-run overrides.
+For env-built provider config, `CAWDEX_*` variables cover provider, base URL, model, fallback model, token/turn/context limits, temperature, permission, memory, theme, thinking, reasoning effort, and per-run overrides.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -400,8 +409,10 @@ For env-built provider config, the new `CAWDEX_*` spellings are accepted alongsi
 | `CAWDEX_BASE_URL` | provider default | OpenAI-compatible endpoint for env-built configs. |
 | `CAWDEX_MODEL` | provider default | Model name for env-built configs. |
 | `CAWDEX_MODEL_OVERRIDE` | (unset) | Per-run model override applied after loading config; used by `--model`. |
-| `CAWDEX_FALLBACK_MODEL` | provider default | Optional fallback model used by the API retry path. |
+| `CAWDEX_FALLBACK_MODEL` | unset | Optional fallback model used by the API retry path. `/config` and `/fallback` are the interactive paths. |
 | `CAWDEX_FALLBACK_MODEL_OVERRIDE` | (unset) | Per-run fallback override used by `--fallback-model`. |
+| `CAWDEX_REASONING_EFFORT` | unset | Optional Chat Completions `reasoning_effort` for env-built configs: `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `CAWDEX_REASONING_EFFORT_OVERRIDE` | (unset) | Per-run reasoning-effort override applied after loading config. |
 | `CAWDEX_MAX_TOKENS` | `8192` | Max output tokens for env-built configs. |
 | `CAWDEX_MAX_TOKENS_OVERRIDE` | (unset) | Per-run max-token override used by `--max-tokens`. |
 | `CAWDEX_CONTEXT_WINDOW_TOKENS` | provider/client default | Optional context budget cap. |
@@ -426,7 +437,8 @@ For env-built provider config, the new `CAWDEX_*` spellings are accepted alongsi
 | `CAWDEX_BENCHMARK_PROBE_NETWORK` | `1` outside tests | Set `0` to skip `benchmark_context` TCP reachability probes for package/model hosts, or `1` to force them. Tool calls can override with `probe_network`. |
 | `CAWDEX_REPO_MAP` | `1` | Set `0` to disable automatic bounded repo-map context injection for larger codebases. |
 | `CAWDEX_STREAM_USAGE` | auto | Force streamed token-usage accounting on/off (`1` or `0`). Auto enables it for known cloud OpenAI-compatible endpoints and skips local endpoints. |
-| `CAWDEX_ALLOW_FLAKY_MODELS` | `0` | Set `1` to disable startup/pre-turn fallback protection for known-stuck OpenRouter preview models such as `openrouter/owl-alpha`. |
+| `CAWDEX_UPDATE_CHECK` | `1` | Check npm for a newer Cawdex package on every interactive launch. Set `0`/`off` to disable. |
+| `CAWDEX_AUTO_UPDATE` | `1` | When an update is found, start `npm install -g cawdex@latest --force` in the background. Set `0`/`off` to only log the availability in debug. |
 | `CAWDEX_BENCHMARK_TRACE` | (unset) | Set `1` to write redacted benchmark-style trace artifacts even outside benchmark mode. |
 | `CAWDEX_BENCHMARK_TRACE_DIR` | `~/.cawdex/benchmark-runs` | Directory for benchmark `summary.json`, `trace.jsonl`, `open-agent-leaderboard-draft.json`, `agent-context-compiled.jsonl`, `change-evaluation.json`, `submission-bundle-manifest.json`, and git `worktree.patch` / `git-status.txt` artifacts. `summary.json` includes a compact `experienceCard` for future replay/context reuse with bounded task-contract signals, Pi-Bench proactivity ledger evidence, environment-reconstruction setup/failure evidence, dependency-upgrade setup-validation evidence, root-cause hypothesis state, failure-onset diagnosis state, decision-observability edit predictions, validation-reliability evidence, context-utilization precision/miss evidence, candidate-file dossier status, and run-efficiency action/usage/cost/time evidence used for prior-run relevance ranking; `agent-context-compiled.jsonl` stores a redacted ACC-style task/context/answer record for retrieval, replay, or training-data curation; `change-evaluation.json` stores AHE-style edit prediction verdicts, unpredicted edits, and pass/fail/pass regression-cycle evidence; `submission-bundle-manifest.json` indexes artifact paths and SHA-256 hashes while marking missing official score/session fields before leaderboard claims; patch output includes unstaged, staged, and untracked file diffs where git can render them. |
 | `CAWDEX_BENCHMARK_EXPERIENCE` | `1` | Set `0` to disable prior local benchmark trace summaries in `benchmark_context`. Current task files and verifier output always override prior experience; similar failed/unsafe prior runs are shown as warnings to avoid copying. |
@@ -554,14 +566,14 @@ Write your own hooks: add an entry to `hooks.json` with `event`, `match` (tool n
 ❯ /multi-execute (use the chosen plan from above)
 ```
 
-**Hermes mode for ongoing work:**
+**Sentience mode for ongoing work:**
 
 ```
-❯ /mode hermes
+❯ /mode sentience
 ❯ help me continue what I was doing yesterday on the billing rewrite
 ```
 
-Hermes will search prior sessions + instincts before asking clarifying questions.
+Sentience will search prior sessions + instincts before asking clarifying questions.
 
 ---
 
@@ -570,4 +582,3 @@ Hermes will search prior sessions + instincts before asking clarifying questions
 - [README.md](README.md) — feature overview + privacy/data scope table
 - [INSTALL.md](INSTALL.md) — installation, providers, troubleshooting
 - Upstream [everything-claude-code](https://github.com/Crownelius/everything-claude-code) — the bundled skill library
-- Upstream [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) — inspiration for Hermes mode

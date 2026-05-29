@@ -4,12 +4,23 @@ import { maybeInstantAnswer } from '../src/instant-answer.js';
 describe('instant local answers', () => {
   it('answers trivial conversational prompts without touching the provider', () => {
     expect(maybeInstantAnswer('hi there')).toBe('Hi. What would you like Cawdex to work on?');
+    expect(maybeInstantAnswer('I need your help')).toBe('What do you need help with?');
+    expect(maybeInstantAnswer('help me')).toBe('What do you need help with?');
     expect(maybeInstantAnswer('THANK YOU!')).toBe("You're welcome.");
     expect(maybeInstantAnswer("what's Cawdex?")).toBe('I am Cawdex: terminal coding agents with a mind for the whole repo.');
   });
 
+  it('answers current time and date prompts locally', () => {
+    const now = new Date('2026-05-28T12:34:00Z');
+    expect(maybeInstantAnswer('do you know what time it is right now?', { now, timeZone: 'UTC' }))
+      .toBe('It is 12:34 PM UTC on Thursday, May 28, 2026.');
+    expect(maybeInstantAnswer('what day is it today?', { now, timeZone: 'UTC' }))
+      .toBe('Today is Thursday, May 28, 2026.');
+  });
+
   it('does not catch substantive prompts that need the model or tools', () => {
     expect(maybeInstantAnswer('hi there, fix the tests')).toBeNull();
+    expect(maybeInstantAnswer('help me fix the tests')).toBeNull();
     expect(maybeInstantAnswer('thanks, now write a poem')).toBeNull();
   });
 

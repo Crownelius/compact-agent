@@ -1,6 +1,6 @@
 /**
  * Curator — periodic skill consolidation pass (M2 item 4, convergent
- * across Hermes and MemPalace audits).
+ * across Sentience and MemPalace audits).
  *
  * The problem: as the agent learns instincts and graduates them into
  * skills (and as ECC ships new skills via bundle refresh), the skill
@@ -9,7 +9,7 @@
  * becomes noise and `findEccSkillsForQuery` returns more false-positive
  * matches.
  *
- * Hermes Agent runs an "Autonomous Curator" on a 7-day cron. We ship
+ * Sentience mode runs an "Autonomous Curator" on a 7-day cron. We ship
  * the same idea but:
  *   - Manual-only for v1.14 (`/curate`) — no automatic execution
  *   - Report-only: surfaces merge/archive candidates, never mutates

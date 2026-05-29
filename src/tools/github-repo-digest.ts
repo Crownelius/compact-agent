@@ -112,6 +112,26 @@ const KEY_FILE_CANDIDATES = [
   'agent.py',
 ];
 
+const DOCS_ONLY_KEY_FILE_CANDIDATES = [
+  'README.md',
+  'README.rst',
+  'README.txt',
+  'docs/README.md',
+  'docs/index.md',
+  'docs/quickstart.md',
+  'docs/getting-started.md',
+  'docs/usage.md',
+  'docs/architecture.md',
+  'docs/design.md',
+  'package.json',
+  'pyproject.toml',
+  'Cargo.toml',
+  'go.mod',
+  'requirements.txt',
+  'Dockerfile',
+  'Makefile',
+];
+
 const SURFACE_PATTERNS: Array<{ id: HarnessSurfaceId; label: string; re: RegExp }> = [
   { id: 'prompts', label: 'prompts', re: /(^|\/)(prompts?|system[-_ ]?prompt|instructions?|rules?)(\/|\.|-|_|$)/i },
   { id: 'tools', label: 'tools', re: /(^|\/)(tools?|commands?|actions?|functions?)(\/|\.|-|_|$)/i },
@@ -181,6 +201,10 @@ export const GitHubRepoDigestTool: Tool = {
         type: 'number',
         description: 'Maximum characters to keep per key file excerpt. Default 1200, max 4000.',
       },
+      docs_only: {
+        type: 'boolean',
+        description: 'If true, fetch only docs and manifest excerpts, skipping source-code key files.',
+      },
     },
     required: ['repo'],
     additionalProperties: false,
@@ -206,6 +230,7 @@ export async function buildGitHubRepoDigest(input: Record<string, unknown>): Pro
   const maxFiles = clampNumber(input.max_files, 300, 20, 2000);
   const maxTextFiles = clampNumber(input.max_text_files, 5, 0, 12);
   const maxExcerptChars = clampNumber(input.max_excerpt_chars, 1200, 200, 4000);
+  const docsOnly = input.docs_only === true;
 
   try {
     const meta = await fetchJson<GitHubRepoMeta>(`${GITHUB_API}/repos/${parsed.owner}/${parsed.repo}`);
@@ -216,7 +241,7 @@ export async function buildGitHubRepoDigest(input: Record<string, unknown>): Pro
       .map((item) => normalizePath(item.path!))
       .sort((a, b) => a.localeCompare(b));
     const paths = selectAnalysisPaths(allPaths, maxFiles);
-    const selectedKeyFiles = selectKeyFiles(allPaths, maxTextFiles);
+    const selectedKeyFiles = selectKeyFiles(allPaths, maxTextFiles, docsOnly);
     const keyFiles = await fetchKeyFiles(parsed, ref, selectedKeyFiles, maxExcerptChars);
 
     return {
@@ -229,6 +254,7 @@ export async function buildGitHubRepoDigest(input: Record<string, unknown>): Pro
         treeTruncated: tree.truncated === true || allPaths.length > paths.length,
         keyFiles,
         keyFileErrors: selectedKeyFiles.filter((path) => !keyFiles.some((file) => file.path === path)),
+        docsOnly,
       }),
       isError: false,
     };
@@ -328,6 +354,7 @@ function formatRepoDigest(input: {
   treeTruncated: boolean;
   keyFiles: KeyFile[];
   keyFileErrors: string[];
+  docsOnly: boolean;
 }): string {
   const repoName = input.meta.full_name || `${input.repo.owner}/${input.repo.repo}`;
   const repoUrl = input.meta.html_url || `https://github.com/${input.repo.owner}/${input.repo.repo}`;
@@ -362,6 +389,7 @@ function formatRepoDigest(input: {
     '## Source Digest',
     `- files_indexed: ${input.paths.length}${input.totalPaths > input.paths.length ? ` of ${input.totalPaths}` : ''}`,
     `- tree_truncated: ${input.treeTruncated ? 'yes' : 'no'}`,
+    `- docs_only: ${input.docsOnly ? 'yes' : 'no'}`,
     `- manifests: ${manifests.length ? manifests.join(' | ') : 'none'}`,
     `- ci_files: ${ciFiles.length ? ciFiles.join(' | ') : 'none'}`,
     '',
@@ -399,7 +427,9 @@ function formatRepoDigest(input: {
     '## AHE Fit',
     '- component_observability: use the surface counts above to target prompts, tools, middleware, memory, providers, and benchmark/eval files separately.',
     '- experience_observability: prefer repos with visible benchmarks/evals/tests and CI files when mining reusable agent lessons.',
-    '- decision_observability: treat this digest as orientation only; verify claims by reading the exact files before porting a pattern.',
+    input.docsOnly
+      ? '- source_code_guard: this digest intentionally skipped source-code excerpts; use docs/manifests for design lessons unless source reading is explicitly approved.'
+      : '- decision_observability: treat this digest as orientation only; verify claims by reading the exact files before porting a pattern.',
   );
 
   return lines.join('\n').trim();
@@ -466,7 +496,7 @@ function summarizeCommands(files: KeyFile[]): string[] {
   return Array.from(commands).slice(0, 20).map((command) => `- ${command}`);
 }
 
-function selectKeyFiles(paths: string[], maxTextFiles: number): string[] {
+function selectKeyFiles(paths: string[], maxTextFiles: number, docsOnly = false): string[] {
   if (maxTextFiles <= 0) return [];
   const pathSet = new Set(paths);
   const selected: string[] = [];
@@ -474,12 +504,16 @@ function selectKeyFiles(paths: string[], maxTextFiles: number): string[] {
     if (selected.length >= maxTextFiles) return;
     if (pathSet.has(path) && !selected.includes(path)) selected.push(path);
   };
-  for (const candidate of KEY_FILE_CANDIDATES) add(candidate);
+  const candidates = docsOnly ? DOCS_ONLY_KEY_FILE_CANDIDATES : KEY_FILE_CANDIDATES;
+  for (const candidate of candidates) add(candidate);
   if (selected.length < maxTextFiles) {
     for (const path of paths) {
       if (selected.length >= maxTextFiles) break;
-      if (/readme|quickstart|getting[-_ ]?started|usage|agent|harness|benchmark|eval/i.test(path) &&
-          /\.(md|rst|txt|json|toml|ya?ml|py|ts|js)$/i.test(path)) {
+      const docOrManifest = /readme|quickstart|getting[-_ ]?started|usage|architecture|design|agent|harness|benchmark|eval|package\.json|pyproject\.toml|cargo\.toml|go\.mod|requirements\.txt|dockerfile|makefile/i.test(path);
+      const allowedExt = docsOnly
+        ? /\.(md|rst|txt|json|toml|ya?ml)$/i.test(path) || /(^|\/)(go\.mod|requirements.*\.txt|dockerfile|makefile)$/i.test(path)
+        : /\.(md|rst|txt|json|toml|ya?ml|py|ts|js)$/i.test(path);
+      if (docOrManifest && allowedExt) {
         add(path);
       }
     }

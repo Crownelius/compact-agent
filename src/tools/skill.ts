@@ -1,11 +1,11 @@
 /**
  * skill_view tool — the Level-1 step in the progressive-disclosure
- * skill schema (M2 item 3, from the Hermes audit).
+ * skill schema (M2 item 3, from the Sentience audit).
  *
  * Background. The system prompt used to inject the FULL prompt body of
  * the best-matching ECC skill on every turn (up to 4KB). With 228
  * skills bundled, even injecting only one match costs a lot of tokens
- * for every interaction. Hermes Agent solves this with three loading
+ * for every interaction. Sentience mode solves this with three loading
  * levels:
  *
  *   Level 0 — names + one-line descriptions ONLY in system prompt

@@ -30,7 +30,8 @@ describe('inline command selector helpers', () => {
     expect(filterSuggestItems(items, '/pal').map((i) => i.command)).toEqual(
       expect.arrayContaining(['/palette', '/palettes']),
     );
-    expect(filterSuggestItems(items, '/git').some((i) => i.hint === 'Git')).toBe(true);
+    expect(filterSuggestItems(items, '/sentience')[0]?.command).toBe('/sentience');
+    expect(filterSuggestItems(items, 'git').some((i) => i.hint === 'Git')).toBe(true);
     expect(filterSuggestItems(items, '/tb').map((i) => i.command)).toContain('/benchmark-repos');
   });
 
@@ -109,10 +110,12 @@ describe('inline command selector helpers', () => {
     const items: SuggestItem[] = [
       { command: '/help', description: 'show help' },
       { command: '/perm', description: 'permissions' },
+      { command: '/palette', aliases: ['/pallete'], description: 'palette switcher' },
     ];
 
     expect(resolveInlineSuggestAccept('/', items, 1)).toBe('/perm');
     expect(resolveInlineSuggestAccept('/perm yolo', items, 0)).toBe('/perm yolo');
+    expect(resolveInlineSuggestAccept('/palete fiery-ocean', items, 0)).toBe('/palette fiery-ocean');
     expect(resolveInlineSuggestAccept('/unknown', [], 0)).toBe('/unknown');
     expect(resolveInlineSuggestAccept('/', [], 0)).toBeNull();
   });
@@ -148,5 +151,12 @@ describe('inline command selector helpers', () => {
       kind: 'submit',
       clearAccepted: true,
     });
+  });
+
+  it('renders footer prompt submissions once from the REPL loop', () => {
+    const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf-8');
+
+    expect(source).toContain("askWithFooterPrompt(rl, prefill, { echoSubmittedLine: false })");
+    expect(source).toContain('writeFooterSubmittedLine(input);');
   });
 });

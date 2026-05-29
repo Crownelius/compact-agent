@@ -8,7 +8,34 @@ function parseNumber(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function maybeInstantAnswer(input: string): string | null {
+export interface InstantAnswerOptions {
+  now?: Date;
+  locale?: string;
+  timeZone?: string;
+}
+
+function formatCurrentDateTime(options: InstantAnswerOptions = {}): { date: string; time: string } {
+  const now = options.now ?? new Date();
+  const locale = options.locale ?? 'en-US';
+  const timeZone = options.timeZone;
+  const common = timeZone ? { timeZone } : {};
+  const date = new Intl.DateTimeFormat(locale, {
+    ...common,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(now);
+  const time = new Intl.DateTimeFormat(locale, {
+    ...common,
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(now);
+  return { date, time };
+}
+
+export function maybeInstantAnswer(input: string, options: InstantAnswerOptions = {}): string | null {
   const text = input.trim().replace(/\s+/g, ' ');
   if (!text) return null;
   const normalized = text.toLowerCase().replace(/[.!?]+$/g, '');
@@ -17,12 +44,33 @@ export function maybeInstantAnswer(input: string): string | null {
     return 'Hi. What would you like Cawdex to work on?';
   }
 
+  if (/^(?:i\s+)?need\s+(?:your\s+)?help$/.test(normalized) || /^help(?: me)?$/.test(normalized)) {
+    return 'What do you need help with?';
+  }
+
   if (/^(?:thanks|thank you|thx|ty|appreciate it)$/.test(normalized)) {
     return "You're welcome.";
   }
 
   if (/^(?:who are you|what are you|what is cawdex|what's cawdex)$/.test(normalized)) {
     return 'I am Cawdex: terminal coding agents with a mind for the whole repo.';
+  }
+
+  if (
+    /^(?:do you know )?what(?:'s| is)? (?:the )?time(?:(?: is it)|(?: it is))?(?: right now| now)?$/.test(normalized)
+    || /^(?:tell me|give me) (?:the )?(?:current )?time(?: right now| now)?$/.test(normalized)
+    || /^current time$/.test(normalized)
+  ) {
+    const { date, time } = formatCurrentDateTime(options);
+    return `It is ${time} on ${date}.`;
+  }
+
+  if (
+    /^(?:what(?:'s| is)? )?(?:today's date|the date|the current date|current date|date today)$/.test(normalized)
+    || /^what day is it(?: today)?$/.test(normalized)
+  ) {
+    const { date } = formatCurrentDateTime(options);
+    return `Today is ${date}.`;
   }
 
   const sqrt = text.match(/^(?:(?:what(?:'s| is)?|calculate|compute)\s+)?(?:the\s+)?(?:square\s+root|sqrt)\s+(?:of\s+)?(-?\d+(?:,\d{3})*(?:\.\d+)?)\??$/i);

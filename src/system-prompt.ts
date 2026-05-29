@@ -7,11 +7,13 @@ import { buildRulesPrompt } from './rules.js';
 import { getRelevantInstincts } from './learning.js';
 import { findEccSkillsForQuery } from './ecc.js';
 import { ALL_TOOLS } from './tools/index.js';
+import type { Tool } from './tools/types.js';
 import { buildUserContext } from './users.js';
 import * as mempalace from './mempalace/index.js';
+import { buildAgentsInstructionsPrompt } from './agents-md.js';
 
-function buildToolList(): string {
-  const lines = ALL_TOOLS.map((t) => {
+function buildToolList(tools: Tool[] = ALL_TOOLS): string {
+  const lines = tools.map((t) => {
     const oneLine = t.description.split('\n')[0];
     return `  - ${t.name}: ${oneLine}`;
   });
@@ -21,8 +23,8 @@ function buildToolList(): string {
 // In coding-oriented modes (dev/architect/plan), append a brief nudge that
 // the user can switch to design mode for UI work — but only when Stitch is
 // available so we don't waste tokens advertising a dead end.
-function buildDesignHint(mode: Mode): string {
-  if (mode === 'design' || mode === 'hermes') return '';
+function buildDesignHint(mode: Mode | string): string {
+  if (mode === 'design' || mode === 'sentience' || mode === 'hermes') return '';
   if (mode !== 'dev' && mode !== 'architect' && mode !== 'plan') return '';
   // Stitch availability is determined by tool registry — the stitch tool is
   // only registered when stitchConfigured() returns true.
@@ -36,6 +38,7 @@ export function buildSystemPrompt(
   cwd: string,
   mode: Mode = 'dev',
   userQuery?: string,
+  tools: Tool[] = ALL_TOOLS,
 ): string {
   const os = `${platform()} ${release()}`;
   // The shell label here MUST match what the bash tool actually runs.
@@ -64,6 +67,11 @@ export function buildSystemPrompt(
   // Mode-specific prompt addition
   const modeAddition = getModePromptAddition(mode);
 
+  // Repo-local AGENTS.md instructions. Global sections and matching
+  // model-scoped sections are injected here; matching tool-scoped sections
+  // are attached to tool descriptions before the provider call.
+  const agentsAddition = buildAgentsInstructionsPrompt(cwd, config.model);
+
   // Language-specific rules. Pass userQuery so the detector can scope
   // injection to languages mentioned in the message or changed in git
   // — narrower than the old "every language found anywhere in cwd"
@@ -80,10 +88,10 @@ export function buildSystemPrompt(
     }
   }
 
-  // ── ECC skills — Level 0 disclosure (M2 item 3, Hermes audit) ───
+  // ── ECC skills — Level 0 disclosure (M2 item 3, Sentience audit) ───
   // Previously we injected the FULL prompt body of the single best-
   // matching ECC skill (~4KB ceiling) into every system prompt. With
-  // 228 skills bundled that's an expensive default. Hermes's
+  // 228 skills bundled that's an expensive default. Sentience's
   // progressive-disclosure schema is sharper:
   //
   //   Level 0 (here) — top-3 matching skill NAMES + one-line desc only
@@ -115,7 +123,7 @@ export function buildSystemPrompt(
   }
 
   // ── Recall-first pre-turn hook ────────────────────────
-  // Both the MemPalace and Hermes audits independently arrived at this:
+  // Both the MemPalace and Sentience audits independently arrived at this:
   // make memory recall a DETERMINISTIC pre-step, not something the model
   // has to remember to do via memory_search. Search MemPalace using the
   // current user query and inject the top hits into the system prompt
@@ -173,7 +181,7 @@ You help with software engineering tasks: writing code, fixing bugs, refactoring
 ${fileList ? `- Files in cwd: ${fileList}` : ''}
 
 # Available Tools (these and ONLY these — do not invent tool names)
-${buildToolList()}
+${buildToolList(tools)}
 
 ${config.memory?.enabled !== false ? `# Memory (MemPalace) — when to use the memory_* tools
 
@@ -246,6 +254,6 @@ IMPORTANT — tool-call rules:
 - Use markdown formatting in your responses.
 - For git operations: prefer new commits over amending, never force-push without asking.
 - Respond in the same language the user writes in.
-${modeAddition}${buildDesignHint(mode)}${rulesAddition}${instinctAddition}${eccSkillAddition}${recalledMemoryAddition}${userAddition}
+${modeAddition}${buildDesignHint(mode)}${agentsAddition}${rulesAddition}${instinctAddition}${eccSkillAddition}${recalledMemoryAddition}${userAddition}
 `;
 }

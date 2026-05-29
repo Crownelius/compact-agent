@@ -35,8 +35,9 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/walkthrough', description: 'Agent-led tour of Cawdex', category: 'General', aliases: ['/tour', '/guide'] },
   { command: '/config', description: 'Reconfigure provider / model / key (re-runs the setup wizard)', category: 'General' },
   { command: '/theme', description: 'Change display mode (full/compact/minimal)', category: 'General' },
-  { command: '/palette', description: 'Switch color palette (run /palettes to list)', category: 'General' },
+  { command: '/palette', description: 'Switch color palette (run /palettes to list)', category: 'General', aliases: ['/pallete'] },
   { command: '/palettes', description: 'List the 12 Coolors-based color palettes', category: 'General' },
+  { command: '/footer', description: 'Customize the fixed bottom footer and opening prompt', category: 'General' },
 
   // ── Model & Provider ──
   { command: '/model', description: 'Switch model (no arg → interactive picker on OpenRouter)', category: 'Model' },
@@ -49,9 +50,9 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/route', description: 'Auto-route to a model based on the next message', category: 'Model' },
 
   // ── Modes ──
-  { command: '/mode', description: 'Switch mode (dev/review/tdd/research/plan/debug/benchmark/architect/hermes/design)', category: 'Modes' },
+  { command: '/mode', description: 'Switch mode (dev/review/tdd/research/plan/debug/benchmark/architect/sentience/design)', category: 'Modes' },
   { command: '/modes', description: 'List all available modes', category: 'Modes' },
-  { command: '/hermes', description: 'Switch to Hermes mode (self-improving learning loop)', category: 'Modes' },
+  { command: '/sentience', description: 'Switch to Sentience mode (self-improving learning loop)', category: 'Modes', aliases: ['/hermes'] },
   { command: '/design', description: 'Switch to design mode (Stitch-powered UI work)', category: 'Modes' },
 
   // ── Session ──
@@ -59,6 +60,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/save', description: 'Save current session', category: 'Session' },
   { command: '/resume', description: 'Resume a saved session (accepts id, prefix, or "last")', category: 'Session' },
   { command: '/delete', description: 'Delete a session', category: 'Session' },
+  { command: '/import', description: 'Import Claude/Codex/MemPalace conversations and memory', category: 'Session', usage: '/import <scan|preview|run|status|rollback>' },
 
   // ── Git ──
   { command: '/commit', description: 'AI-generated commit message', category: 'Git' },
@@ -90,7 +92,8 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/tools', description: 'List currently-available tools', category: 'Config' },
   { command: '/harness', description: 'Map harness components to files, tests, and docs', category: 'Config', aliases: ['/harness-components'], usage: '/harness [component] [--json]' },
   { command: '/rules', description: 'Show the active coding and safety rules', category: 'Config' },
-  { command: '/perm', description: 'Permission mode (ask/auto/yolo)', category: 'Config' },
+  { command: '/agents', description: 'Show active AGENTS.md instruction files and scoped sections', category: 'Config' },
+  { command: '/perm', description: 'Permission mode and /perm why explanations', category: 'Config', aliases: ['/permissions'], usage: '/perm ask|auto|yolo | /perm why <tool> [command-or-path]' },
   { command: '/perm-reset', description: 'Clear the per-tool always-allow list', category: 'Config' },
   { command: '/sandbox', description: 'OS-native bash sandbox (off/standard/strict)', category: 'Config' },
   { command: '/dry-run', description: 'Toggle dry-run mode (preview tool calls)', category: 'Config' },
@@ -112,14 +115,15 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/search-first', description: 'Research before coding', category: 'Planning' },
   { command: '/docs-lookup', description: 'Search documentation for an answer', category: 'Planning' },
   { command: '/sources', description: 'Direct arXiv/GitHub/HF/Kaggle source scan without a model call', category: 'Planning', aliases: ['/source-scan'], usage: '/sources <query> [--source arxiv|github|huggingface|kaggle] [--json]' },
-  { command: '/benchmark-repos', description: 'Public Terminal-Bench repo catalog for source mining', category: 'Planning', aliases: ['/bench-repos', '/leaderboard-repos', '/tb-repos'], usage: '/benchmark-repos [query] [--all|--unverified] [--limit n]' },
+  { command: '/benchmark-repos', description: 'Public Terminal-Bench repo catalog for source mining', category: 'Planning', aliases: ['/bench-repos', '/leaderboard-repos', '/tb-repos'], usage: '/benchmark-repos [query] [--all|--unverified|--top-open-source] [--limit n]' },
   { command: '/repo-digest', description: 'Direct GitHub repo component/source digest without a model call', category: 'Planning', aliases: ['/repo-inspect', '/github-digest'], usage: '/repo-digest <owner/repo> [--files n]' },
+  { command: '/context', description: 'Cheap local repo/context preflight without a model call', category: 'Planning', usage: '/context brief [path]' },
   { command: '/source-research', description: 'Research arXiv, GitHub, Hugging Face, and Kaggle', category: 'Planning', aliases: ['/research-sources'] },
   { command: '/update-docs', description: 'Sync documentation with code', category: 'Planning' },
 
   // ── Orchestration ──
   { command: '/orchestrate', description: 'Decompose into parallel sub-agents', category: 'Orchestration' },
-  { command: '/swarm', description: 'Parallel fan-out: N agents on the same task', category: 'Orchestration' },
+  { command: '/swarm', description: 'Infer agent roles for a task; expert form accepts agent CSV', category: 'Orchestration', usage: '/swarm <task>' },
   { command: '/pr-loop', description: 'Autonomous pull-request review loop', category: 'Orchestration' },
   { command: '/multi-plan', description: 'Multi-agent planning', category: 'Orchestration' },
   { command: '/multi-execute', description: 'Execute the current multi-agent plan', category: 'Orchestration' },

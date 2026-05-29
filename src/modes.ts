@@ -3,7 +3,7 @@
  * Each mode injects specialized system prompt additions and behavior.
  */
 
-export type Mode = 'dev' | 'review' | 'tdd' | 'research' | 'plan' | 'debug' | 'benchmark' | 'architect' | 'hermes' | 'design';
+export type Mode = 'dev' | 'review' | 'tdd' | 'research' | 'plan' | 'debug' | 'benchmark' | 'architect' | 'sentience' | 'design';
 
 export interface ModeConfig {
   name: Mode;
@@ -213,16 +213,16 @@ Consider both current needs and reasonable future growth.`,
     temperature: 0.5,
   },
 
-  hermes: {
-    name: 'hermes',
-    label: 'Hermes (Growing Agent)',
-    description: 'Self-improving loop — search prior work, learn skills from experience, model the user, parallelize, persist knowledge. Inspired by nousresearch/hermes-agent.',
+  sentience: {
+    name: 'sentience',
+    label: 'Sentience (Growing Agent)',
+    description: 'Self-improving loop - search prior work, learn skills from experience, model the user, parallelize, persist knowledge.',
     systemPromptAddition: `
-# Mode: Hermes — The Agent That Grows With You
+# Mode: Sentience — The Agent That Grows With You
 
 You operate as a continuously-learning agent. The current session is one link in
 a chain — your effectiveness depends on what you remember from prior chains and
-what you bank for the next one. Inspired by nousresearch/hermes-agent.
+what you bank for the next one. 
 
 ## Core loop — every turn, in order
 
@@ -459,12 +459,19 @@ Then offer to fall back to plain HTML/CSS coding without Stitch.`,
   },
 };
 
+export function normalizeModeName(name: string): Mode | null {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === 'hermes') return 'sentience';
+  return normalized in MODES ? normalized as Mode : null;
+}
+
 export function getMode(name: string): ModeConfig | undefined {
-  return MODES[name as Mode];
+  const mode = normalizeModeName(name);
+  return mode ? MODES[mode] : undefined;
 }
 
 export function getModePromptAddition(mode: Mode): string {
-  return MODES[mode]?.systemPromptAddition || '';
+  return getMode(mode)?.systemPromptAddition || '';
 }
 
 export function listModes(): ModeConfig[] {

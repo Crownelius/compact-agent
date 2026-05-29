@@ -20,15 +20,17 @@
  *   └────────────────────────────────────────┘
  *
  * Caveats:
- *   - DECSTBM is widely supported (xterm, iTerm, Windows Terminal,
- *     Alacritty, Kitty) but legacy ConHost has quirks. If activation
- *     fails or the terminal isn't a TTY, we no-op.
+ *   - DECSTBM is widely supported in many xterm-like terminals, but the
+ *     Windows PowerShell host path can corrupt scrollback by repainting the
+ *     fixed row over previous output. Windows therefore opts out by default;
+ *     set CAWDEX_LIVE_QUEUE=1 to force it for a known-good terminal.
  *   - Terminal resize mid-stream isn't handled — the box stays at the
  *     row we reserved. Acceptable trade-off; resize is rare mid-chain.
  *   - Screen-reader mode skips this entirely — NVDA / JAWS read every
  *     cursor move as fresh text, which makes a live-updating widget
  *     much worse than a quiet one-line hint.
  */
+import { isFooterActive, setFooterActivity, setFooterDraft } from './fixed-footer.js';
 
 const ANSI = {
   saveCursor: '\x1B7',                              // DECSC (more reliable than ESC[s)
@@ -51,13 +53,34 @@ interface ActiveState {
 
 let active: ActiveState | null = null;
 
+export function shouldUseLiveQueue(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const raw = (env.CAWDEX_LIVE_QUEUE || '').trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'off' || raw === 'no') return false;
+  if (raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes') return true;
+
+  // The scroll-region implementation is not reliable enough on Windows
+  // shells to be enabled implicitly. The prompt must never risk merging
+  // with streamed model output; queued text is still captured and restored.
+  if (platform === 'win32') return false;
+  return true;
+}
+
 /**
  * Begin reserving the bottom row + setting the scroll region.
  * Safe to call repeatedly; subsequent calls are no-ops.
  * Returns true if activation succeeded.
  */
 export function activate(): boolean {
+  if (isFooterActive()) {
+    setFooterActivity('Sumi ink moving', 0, Date.now());
+    setFooterDraft('');
+    return true;
+  }
   if (active) return true;
+  if (!shouldUseLiveQueue()) return false;
   const stdout = process.stdout;
   if (!stdout.isTTY) return false;
 
@@ -107,6 +130,10 @@ export function activate(): boolean {
  * (cols-12) chars so the most-recent typing is always visible.
  */
 export function update(text: string): void {
+  if (isFooterActive()) {
+    setFooterDraft(text);
+    return;
+  }
   if (!active) return;
   drawBox(text);
 }
@@ -153,6 +180,11 @@ function drawBox(text: string): void {
  * other cleanup that might also call it.
  */
 export function deactivate(): void {
+  if (isFooterActive()) {
+    setFooterDraft('');
+    setFooterActivity('Ready', 0, null);
+    return;
+  }
   if (!active) return;
   const stdout = process.stdout;
   const { boxRow } = active;

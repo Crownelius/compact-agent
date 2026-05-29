@@ -12,7 +12,6 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import {
   countTailRepetitions,
-  fallbackModelForKnownFlakyTurn,
   isKnownFlakyOpenRouterModel,
   isTurnCancelKeySequence,
   resolveFirstTokenTimeoutMs,
@@ -169,8 +168,16 @@ describe('resolveFirstTokenTimeoutMs', () => {
     })).toBe(6_000);
     expect(resolveFirstTokenTimeoutMs({
       provider: 'OpenRouter (Any Model)',
+      model: 'deepseek/deepseek-v4-flash',
+    })).toBe(6_000);
+    expect(resolveFirstTokenTimeoutMs({
+      provider: 'OpenRouter (Any Model)',
+      model: 'deepseek/deepseek-v4-pro',
+    })).toBe(6_000);
+    expect(resolveFirstTokenTimeoutMs({
+      provider: 'OpenRouter (Any Model)',
       model: 'openrouter/free',
-    })).toBe(12_000);
+    })).toBe(8_000);
   });
 
   it('keeps more patient defaults for non-interactive harness runs and allows env override', () => {
@@ -193,21 +200,19 @@ describe('resolveFirstTokenTimeoutMs', () => {
   });
 });
 
-describe('known flaky model preflight', () => {
-  const originalAllowFlaky = process.env.CAWDEX_ALLOW_FLAKY_MODELS;
-
-  afterEach(() => {
-    if (originalAllowFlaky === undefined) {
-      delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
-    } else {
-      process.env.CAWDEX_ALLOW_FLAKY_MODELS = originalAllowFlaky;
-    }
-  });
-
-  it('detects OpenRouter preview models that should not take the first submitted turn', () => {
+describe('known flaky model detection', () => {
+  it('detects OpenRouter preview models for watchdog tuning only', () => {
     expect(isKnownFlakyOpenRouterModel({
       provider: 'OpenRouter (Any Model)',
       model: 'openrouter/owl-alpha',
+    })).toBe(true);
+    expect(isKnownFlakyOpenRouterModel({
+      provider: 'OpenRouter (Any Model)',
+      model: 'deepseek/deepseek-v4-flash',
+    })).toBe(true);
+    expect(isKnownFlakyOpenRouterModel({
+      provider: 'OpenRouter (Any Model)',
+      model: 'deepseek/deepseek-v4-pro',
     })).toBe(true);
     expect(isKnownFlakyOpenRouterModel({
       provider: 'OpenRouter (Any Model)',
@@ -218,29 +223,12 @@ describe('known flaky model preflight', () => {
       model: 'local/owl-alpha',
     })).toBe(false);
   });
-
-  it('uses the configured fallback unless the user explicitly allows flaky models', () => {
-    const cfg = {
-      apiKey: 'sk-test',
-      baseURL: 'https://openrouter.ai/api/v1',
-      model: 'openrouter/owl-alpha',
-      fallbackModel: 'openrouter/free',
-      provider: 'OpenRouter (Any Model)',
-      permissionMode: 'yolo' as const,
-      maxTokens: 128,
-      temperature: 0.3,
-    };
-
-    delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
-    expect(fallbackModelForKnownFlakyTurn(cfg)).toBe('openrouter/free');
-
-    process.env.CAWDEX_ALLOW_FLAKY_MODELS = '1';
-    expect(fallbackModelForKnownFlakyTurn(cfg)).toBeNull();
-  });
 });
 
 describe('turn cancel key sequence parsing', () => {
   it('recognizes raw F5 and Shift+F5 escape sequences used by Windows/xterm terminals', () => {
+    expect(isTurnCancelKeySequence(Buffer.from('\x1b'))).toBe(true);
+    expect(isTurnCancelKeySequence(Buffer.from('\x1b[27;1;27~'))).toBe(true);
     expect(isTurnCancelKeySequence(Buffer.from('\x1b[15~'))).toBe(true);
     expect(isTurnCancelKeySequence(Buffer.from('\x1b[15;2~'))).toBe(true);
     expect(isTurnCancelKeySequence(Buffer.from('\x1b[15;5~'))).toBe(true);

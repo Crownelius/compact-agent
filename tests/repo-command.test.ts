@@ -33,6 +33,19 @@ describe('/repo-digest command parser', () => {
     });
   });
 
+  it('parses docs-only mode without requiring source-code excerpts', () => {
+    const result = parseRepoDigestCommandArgs('openai/codex --files 500 --docs-only');
+
+    expect(result.error).toBeUndefined();
+    expect(result.input).toMatchObject({
+      repo: 'openai/codex',
+      max_files: 500,
+      max_text_files: 4,
+      docs_only: true,
+    });
+    expect(formatRepoDigestCommandUsage()).toContain('--docs-only');
+  });
+
   it('round-trips the async slash-command sentinel payload', () => {
     const input = parseRepoDigestCommandArgs('google-gemini/gemini-cli --files 20').input!;
     const encoded = encodeRepoDigestSentinel(input);

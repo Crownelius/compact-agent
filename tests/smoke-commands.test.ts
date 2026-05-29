@@ -52,25 +52,41 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/export md', 'local'],
     // Model & Provider
     ['/model', 'local'],
+    ['/model aliases', 'local'],
+    ['/model alias fast openrouter/free', 'local'],
+    ['/model once free --effort low', 'local'],
+    ['/model effort medium', 'local'],
+    ['/model unalias fast', 'local'],
     ['/models', 'local'],
     ['/provider', 'local'],
     ['/openai-login status', 'local'],
     ['/openai-login smoke', 'local'],
     ['/openrouter-free', 'local'],
     // Theme & palettes
+    ['/theme', 'local'],
     ['/palette', 'local'],
+    ['/pallete fiery-ocean', 'local'],
     ['/palettes', 'local'],
     ['/palette dark-sunset', 'local'],
+    ['/footer', 'local'],
+    ['/footer text Provider {provider} | Model {model} | v{version}', 'local'],
+    ['/footer opening off', 'local'],
+    ['/footer off', 'local'],
+    ['/footer on', 'local'],
+    ['/footer reset', 'local'],
     // Modes
     ['/mode dev', 'local'],
-    ['/mode hermes', 'local'],
+    ['/mode sentience', 'local'],
     ['/mode benchmark', 'local'],
     ['/mode dev', 'local'],
     ['/modes', 'local'],
+    ['/sentience', 'local'],
     ['/hermes', 'local'],
     ['/mode dev', 'local'],
     // Session
     ['/sessions', 'local'],
+    ['/resume', 'local'],
+    ['/import scan', 'local'],
     // Git
     ['/diff', 'local'],
     ['/log 5', 'local'],
@@ -99,7 +115,9 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/harness providers', 'local'],
     ['/harness providers --json', 'local'],
     ['/rules', 'local'],
+    ['/agents', 'local'],
     ['/perm', 'local'],
+    ['/perm why bash git status', 'local'],
     ['/dry-run', 'local'],
     ['/dry-run', 'local'],
     ['/hooks', 'local'],
@@ -110,6 +128,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/detect', 'local'],
     // Planning & docs
     ['/checkpoints', 'local'],
+    ['/context brief', 'local'],
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
     ['/sources coding agent verification --limit 1 --source arxiv', 'local'],
@@ -138,6 +157,8 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/pytorch-fix', 'llm'],
     // Orchestration
     ['/orchestrate refactor billing', 'llm'],
+    ['/swarm Build a working web-game with tests', 'local'],
+    ['/swarm code-architect,silent-failure-hunter audit the auth flow', 'local'],
     ['/pr-loop', 'llm'],
     ['/multi-plan refactor billing', 'llm'],
     ['/multi-execute step 1', 'llm'],
@@ -226,6 +247,33 @@ describe('Smoke Tests — handleSlashCommand', () => {
     } finally {
       log.mockRestore();
     }
+  });
+
+  it('dispatches typo palette alias locally instead of sending it to the model', () => {
+    const res = handleSlashCommand('/pallete fiery-ocean', config, messages, session, mode);
+    expect((res as { handled: boolean; injectPrompt?: string }).handled).toBe(true);
+    expect((res as { injectPrompt?: string }).injectPrompt).toBeUndefined();
+    expect((config as { palette?: string }).palette).toBe('fiery-ocean');
+  });
+
+  it('opens the combined appearance picker for bare theme and palette commands', () => {
+    expect(handleSlashCommand('/theme', config, messages, session, mode))
+      .toMatchObject({ handled: true, injectPrompt: '__PICK_APPEARANCE__' });
+    expect(handleSlashCommand('/palette', config, messages, session, mode))
+      .toMatchObject({ handled: true, injectPrompt: '__PICK_APPEARANCE__' });
+  });
+
+  it('applies one-shot model commands without mutating the saved model', () => {
+    const localConfig = { ...config, model: 'minimax/minimax-m2.1', modelAliases: undefined };
+    const aliasResult = handleSlashCommand('/model alias paid anthropic/claude-sonnet-4', localConfig, [], session, { current: 'dev' as const });
+    expect((aliasResult as { handled: boolean }).handled).toBe(true);
+    expect(localConfig.model).toBe('minimax/minimax-m2.1');
+
+    const onceResult = handleSlashCommand('/model once paid --effort high', localConfig, [], session, { current: 'dev' as const });
+    expect((onceResult as { handled: boolean; turnOverride?: { model?: string; reasoningEffort?: string } }).handled).toBe(true);
+    expect((onceResult as { turnOverride?: { model?: string; reasoningEffort?: string } }).turnOverride)
+      .toMatchObject({ model: 'anthropic/claude-sonnet-4', reasoningEffort: 'high' });
+    expect(localConfig.model).toBe('minimax/minimax-m2.1');
   });
 
   it('suggests close matches for unknown command help queries', () => {

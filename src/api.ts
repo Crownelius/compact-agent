@@ -217,6 +217,29 @@ export function shouldRequestChatStreamUsage(
   ].some((host) => baseURL.includes(host));
 }
 
+export function buildChatCompletionsRequest(
+  config: CawdexConfig,
+  messages: Message[],
+  tools: Tool[],
+): Record<string, unknown> {
+  const toolDefs = toolsToFunctions(tools);
+  const request: Record<string, unknown> = {
+    model: config.model,
+    messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+    tools: toolDefs.length > 0 ? toolDefs : undefined,
+    max_tokens: config.maxTokens,
+    temperature: config.temperature,
+    stream: true,
+    stream_options: shouldRequestChatStreamUsage(config)
+      ? { include_usage: true }
+      : undefined,
+  };
+  if (config.reasoningEffort) {
+    request.reasoning_effort = config.reasoningEffort;
+  }
+  return request;
+}
+
 function envInteger(name: string, env: NodeJS.ProcessEnv = process.env): number | undefined {
   const raw = env[name];
   if (!raw || !raw.trim()) return undefined;
@@ -259,30 +282,20 @@ export async function* streamChat(
   // for the rotation health tracker. Multi-key users (multiple OpenRouter
   // accounts) get automatic round-robin when a key 429s or exhausts quota.
   const { client: api, activeKey } = getClientWithKey(config);
-  const toolDefs = toolsToFunctions(tools);
 
   // Bail early if the caller already cancelled before we even started
   if (signal?.aborted) throw new Error('Aborted before stream start');
 
-  let stream;
+  let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
   try {
     stream = await withRetry(
       () =>
-        api.chat.completions.create({
-          model: config.model,
-          messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-          tools: toolDefs.length > 0 ? toolDefs : undefined,
-          max_tokens: config.maxTokens,
-          temperature: config.temperature,
-          stream: true,
-          stream_options: shouldRequestChatStreamUsage(config)
-            ? { include_usage: true }
-            : undefined,
-          // OpenAI SDK supports cancellation via signal; pass it through
-          // so the underlying fetch can be aborted on Steer.
-        }, signal ? { signal } : undefined),
+        api.chat.completions.create(
+          buildChatCompletionsRequest(config, messages, tools) as never,
+          signal ? { signal } : undefined,
+        ),
       resolveChatRetryConfig(config),
-    );
+    ) as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
   } catch (err) {
     // Hand the failure to the rotation pool so subsequent calls skip
     // this key for the cool-down window. Re-throw so the outer error

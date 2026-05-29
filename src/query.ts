@@ -16,13 +16,14 @@ import {
   shouldCompact,
   compactMessages,
   quickCompact,
+  estimateTokens,
   buildCompactionConfig,
   contextCapTokens,
   enforceContextCap,
   inferContextWindowTokens,
 } from './compaction.js';
 import type { Mode } from './modes.js';
-import { theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost, printApiError, formatDuration, categorizeApiError } from './theme.js';
+import { assistantTranscriptPrefix, theme, sym, printToolRun, printToolResult, printThinkingOpen, printThinkingText, printThinkingClose, printCost, printApiError, formatDuration, categorizeApiError } from './theme.js';
 import {
   isVoiceEnabled, getTtsConfig, getAccessibilityConfig,
   speakAssistantResponse, speak, speakUserEcho,
@@ -32,7 +33,10 @@ import { audioCue } from './audio.js';
 import { setStatus } from './status.js';
 import { collapseCompletedTurns } from './turn-context.js';
 import * as liveQueue from './live-queue.js';
+import { isFooterActive, setFooterActivity, setFooterCost, writeScrollableLine } from './fixed-footer.js';
+import { applyQueuedInputChunk, drainQueuedInputBytes, queuedInputBytesToText } from './prompt-buffer.js';
 import { emit as dbgEmit } from './debug.js';
+import { applyAgentToolInstructions } from './agents-md.js';
 import {
   buildBenchmarkCompletionReminder,
   buildBenchmarkTrajectorySystemBlock,
@@ -53,17 +57,22 @@ import { archiveLargeToolOutput } from './tool-output-archive.js';
 // sessions get fresh hints.
 const _thinkingHintShownForSession = new Set<string>();
 
-const INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 12_000;
+const INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 8_000;
 const INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS = 6_000;
 const NON_INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 60_000;
 const NON_INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS = 20_000;
-const FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS = 8_000;
+const FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS = 5_000;
+const INTERACTIVE_STREAM_IDLE_TIMEOUT_MS = 45_000;
+const NON_INTERACTIVE_STREAM_IDLE_TIMEOUT_MS = 120_000;
+const FAST_DIRECT_STREAM_IDLE_TIMEOUT_MS = 20_000;
 const KNOWN_FLAKY_OPENROUTER_MODEL_PATTERNS = [
   'owl-alpha',
   'horizon-alpha',
   'horizon-beta',
   'optimus-alpha',
   'quasar-alpha',
+  'deepseek-v4-flash',
+  'deepseek-v4-pro',
 ] as const;
 
 function envTimeoutMs(name: string, fallback: number): number {
@@ -85,6 +94,15 @@ export function resolveFirstTokenTimeoutMs(
   return envTimeoutMs('CAWDEX_FIRST_TOKEN_TIMEOUT_MS', fallback);
 }
 
+export function resolveStreamIdleTimeoutMs(fastDirect = false): number {
+  const fallback = process.env.CAWDEX_NON_INTERACTIVE === '1'
+    ? NON_INTERACTIVE_STREAM_IDLE_TIMEOUT_MS
+    : fastDirect
+      ? FAST_DIRECT_STREAM_IDLE_TIMEOUT_MS
+      : INTERACTIVE_STREAM_IDLE_TIMEOUT_MS;
+  return envTimeoutMs('CAWDEX_STREAM_IDLE_TIMEOUT_MS', fallback);
+}
+
 export function isKnownFlakyOpenRouterModel(
   config: Pick<CawdexConfig, 'model' | 'provider'>,
 ): boolean {
@@ -103,18 +121,12 @@ function fallbackModelForTurn(
   return fallback;
 }
 
-export function fallbackModelForKnownFlakyTurn(
-  config: CawdexConfig,
-  usedFallbackModel: boolean = false,
-): string | null {
-  if (process.env.CAWDEX_ALLOW_FLAKY_MODELS === '1') return null;
-  if (!isKnownFlakyOpenRouterModel(config)) return null;
-  return fallbackModelForTurn(config, usedFallbackModel);
-}
-
 export function isTurnCancelKeySequence(chunk: Buffer): boolean {
   const seq = chunk.toString('utf8');
   return (
+    seq === '\x1b' ||
+    seq === '\x1b\x1b' ||
+    /^\x1b\[27(?:;\d+)*~$/.test(seq) ||
     seq === '\x1b[15~' ||
     seq === '\x1b[15;2~' ||
     seq === '\x1b[15;5~' ||
@@ -129,19 +141,24 @@ const FAST_DIRECT_SYSTEM_PROMPT =
 
 const FAST_DIRECT_POSITIVE = [
   /^(hi|hello|hey|thanks|thank you)\b/i,
+  /^(?:i\s+)?(?:need|want)\s+(?:your\s+)?help\b/i,
+  /^(?:help me|can you help|could you help|would you help)\b/i,
+  /^(?:i|we)\s+(?:like|love|hate|prefer|think|feel|am|are)\b/i,
+  /^(?:sorry,?\s*)?(?:make|rewrite|revise|adjust|redo|try)\s+(?:it|that|this)\b/i,
   /^(what|who|when|where|why|how|which)\b/i,
   /^(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create|tell|give)\b/i,
   /^(?:please\s+)?(?:tell|give)\s+me\b/i,
   /^please\s+(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create)\b/i,
-  /^(?:i\s+need|i(?:'|’)d\s+like|i\s+would\s+like)\s+(?:you\s+to\s+)?(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create)\b/i,
+  /^(?:i\s+need|i(?:'|\u2019)d\s+like|i\s+would\s+like)\s+(?:you\s+to\s+)?(?:explain|define|summarize|translate|calculate|compute|write|draft|make|create)\b/i,
   /^(explain|define|summarize|translate|calculate|compute)\b/i,
   /^(?:write|draft|make|create)\s+(?:a|an|the)?\s*(?:short\s+)?(?:poem|haiku|joke|story|paragraph|message|email)\b/i,
   /\b(square root|sqrt)\b/i,
   /\?$/,
 ];
 
-const FAST_DIRECT_REPO_OR_TOOL = /\b(repo|repository|codebase|workspace|file|folder|directory|path|terminal|powershell|shell|command|npm|node|python|typescript|javascript|git|commit|diff|pr|pull request|branch|test|build|lint|install|package|debug|error|stack trace|log|fix|implement|refactor|review|audit|security|benchmark|run|execute|read|search|grep|edit|patch|write[- ]file)\b/i;
+const FAST_DIRECT_REPO_OR_TOOL = /\b(repo|repository|codebase|workspace|file|folder|directory|path|terminal|powershell|shell|command|npm|node|python|typescript|javascript|git|commit|diff|pr|pull request|branch|test|build|lint|install|package|debug|error|stack trace|log|fix|implement|refactor|review|audit|security|benchmark|run|execute|read|search|grep|edit|patch|write[- ]file|website|web\s*site|site|portfolio|landing\s+page|web\s+page|html|css|react|vue|svelte|vite|next\.?js|single[- ]file|dashboard|component|form|desktop|save|hireable|resume)\b/i;
 const FAST_DIRECT_CONTEXTUAL = /^(?:(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?|please\s+)?(continue|carry on|resume|do it|same|again|that|this|those|these|it)\b/i;
+const FAST_DIRECT_REVISION_CONTEXT = /^(?:(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?)?(?:make|change|update|revise|rewrite|redo|adjust|convert|turn)\s+(?:it|that|this|him|her|them|he|she)\b/i;
 
 export function shouldUseFastDirectReply(
   userQuery: string | undefined,
@@ -155,6 +172,7 @@ export function shouldUseFastDirectReply(
   if (!text || text.length > 600) return false;
   if (text.includes('\n') || text.includes('```')) return false;
   if (FAST_DIRECT_CONTEXTUAL.test(text)) return false;
+  if (FAST_DIRECT_REVISION_CONTEXT.test(text)) return false;
   if (FAST_DIRECT_REPO_OR_TOOL.test(text)) return false;
   return FAST_DIRECT_POSITIVE.some((pattern) => pattern.test(text));
 }
@@ -162,9 +180,72 @@ export function shouldUseFastDirectReply(
 function printInteractiveTurnAccepted(config: CawdexConfig): void {
   if (process.env.CAWDEX_NON_INTERACTIVE === '1') return;
   if (!process.stdout.isTTY) return;
-  console.log(theme.dim(
-    `  submitted to ${config.provider} · ${config.model}. Waiting for the first model event; Esc or F5 cancels.`,
-  ));
+  const line = theme.dim(
+    `  submitted to ${config.provider} | ${config.model}. Waiting for model events; Esc or F5 cancels.`,
+  );
+  if (isFooterActive()) {
+    writeScrollableLine(line);
+  } else {
+    console.log(line);
+  }
+}
+
+export interface WorkingIndicator {
+  stop(): void;
+}
+
+export function formatWorkingIndicatorFrame(
+  elapsedMs: number,
+  frameIndex = 0,
+  message = 'Working',
+): string {
+  const frames = ['\u25dc', '\u25dd', '\u25de', '\u25df'];
+  const frame = frames[Math.abs(frameIndex) % frames.length];
+  return `  ${frame} ${message} (${formatDuration(elapsedMs)} \u2022 Esc/F5 to interrupt)`;
+}
+
+function startWorkingIndicator(startedAtMs: number, screenReader: boolean, turn = 0): WorkingIndicator | null {
+  if (screenReader) return null;
+  if (process.env.CAWDEX_NON_INTERACTIVE === '1') return null;
+  if (!process.stdout.isTTY) return null;
+
+  const messages = [
+    'Sumi ink moving',
+    'Edo lanterns cycling',
+    'Kamon crest pulsing',
+    'Neon shoji breathing',
+    'Signal blade drawn',
+  ];
+  let frame = 0;
+  let stopped = false;
+  const paint = (): void => {
+    const message = messages[Math.floor(frame / 8) % messages.length];
+    if (isFooterActive()) {
+      setFooterActivity(message, turn, startedAtMs);
+      frame++;
+      return;
+    }
+    const line = formatWorkingIndicatorFrame(
+      Date.now() - startedAtMs,
+      frame,
+      message,
+    );
+    process.stdout.write('\r\x1b[K' + theme.dim(line));
+    frame++;
+  };
+
+  paint();
+  const timer = setInterval(paint, 250);
+  if (typeof timer.unref === 'function') timer.unref();
+  return {
+    stop: (): void => {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      if (isFooterActive()) setFooterActivity('Receiving response', turn, startedAtMs);
+      else process.stdout.write('\r\x1b[K');
+    },
+  };
 }
 
 /**
@@ -206,6 +287,13 @@ export interface QueryContext {
   rl: readline.Interface;
   sessionId: string;
   mode: Mode;
+}
+
+function replaceMessagesInPlace(messages: Message[], nextMessages: Message[]): Message[] {
+  if (nextMessages !== messages) {
+    messages.splice(0, messages.length, ...nextMessages);
+  }
+  return messages;
 }
 
 /**
@@ -296,12 +384,10 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
   // can keep typing their next request while the current one's still
   // working — it appears at the prompt ready to send or edit.
   //
-  // Heuristic to avoid garbage from terminal escapes: only collect
-  // printable ASCII (0x20-0x7E) and Enter (0x0D). Drop everything else
-  // — including arrow keys, backspace, Ctrl combos — because we can't
-  // tell where a multi-byte escape starts vs ends without a full state
-  // machine. Backspace within the queued buffer is the main loss; users
-  // can clean up at the prompt anyway.
+  // Heuristic to avoid garbage from terminal escapes: collect printable
+  // ASCII plus Enter, handle backspace locally, and drop multi-byte
+  // escape sequences like arrows / function keys without corrupting the
+  // queued draft.
   const queued: number[] = [];
 
   const dataHandler = (chunk: Buffer): void => {
@@ -316,6 +402,12 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
     if (chunk[0] === 0x07 && detached) {
       if (steerHandler) {
         try { steerHandler(); } catch { /* never break input on a steer error */ }
+      }
+      return;
+    }
+    if (detached && isTurnCancelKeySequence(chunk)) {
+      if (steerHandler) {
+        try { steerHandler(); } catch { /* never break input on a cancel error */ }
       }
       return;
     }
@@ -347,33 +439,12 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
       return;
     }
     if (!detached) return;          // only collect while we're suppressing
-    // Drop chunks that look like escape sequences (start with 0x1B)
-    // — those are arrow keys, function keys, etc. Already handled by
-    // the keypress emitter for tagged hotkeys; for us they're garbage.
-    if (chunk[0] === 0x1B) return;
-    let mutated = false;
-    for (const byte of chunk) {
-      // Backspace (0x08) or DEL (0x7F) → erase last char from queue
-      if (byte === 0x08 || byte === 0x7F) {
-        if (queued.length > 0) {
-          queued.pop();
-          mutated = true;
-        }
-        continue;
-      }
-      // Printable ASCII or CR/LF → append
-      if ((byte >= 0x20 && byte < 0x7F) || byte === 0x0A || byte === 0x0D) {
-        queued.push(byte);
-        mutated = true;
-      }
-    }
-    // Cap to avoid runaway accumulation if the user holds down a key
-    if (queued.length > 4096) queued.splice(0, queued.length - 4096);
+    const { mutated } = applyQueuedInputChunk(queued, chunk);
     // Refresh the live box with current buffer contents so the user
     // sees their typing in real time. Done lazily — only when mutated
     // — to avoid drawing on every random byte.
     if (mutated && liveBoxActive) {
-      liveQueue.update(Buffer.from(queued).toString('utf-8').replace(/\r\n?/g, '\n'));
+      liveQueue.update(queuedInputBytesToText(queued));
     }
   };
   try { stdin.setRawMode(true); } catch { /* noop */ }
@@ -387,10 +458,7 @@ function startInputSuppression(screenReader: boolean = false): InputGuard {
     pause: unsuppress,    // pause suppression = allow typing (for permission prompts)
     resume: suppress,     // resume suppression = block typing again
     drainQueuedInput: (): string => {
-      const text = Buffer.from(queued).toString('utf-8');
-      queued.length = 0;
-      // Normalize CR-only or CR-LF to LF, strip trailing whitespace
-      return text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+      return drainQueuedInputBytes(queued);
     },
     onSteer: (handler: () => void): void => {
       steerHandler = handler;
@@ -496,7 +564,7 @@ export function buildStateBlock(messages: Message[]): string | null {
 
   const lines: string[] = [
     '<task_state>',
-    `Original goal: ${goal}${goal.length >= STATE_BLOCK_GOAL_MAX_CHARS ? '…' : ''}`,
+    `Original goal: ${goal}${goal.length >= STATE_BLOCK_GOAL_MAX_CHARS ? '\u2026' : ''}`,
     `Actions completed: ${actions.length}`,
   ];
   if (olderCount > 0) {
@@ -505,7 +573,7 @@ export function buildStateBlock(messages: Message[]): string | null {
     lines.push(`Actions:`);
   }
   recent.forEach((a, i) => {
-    lines.push(`  ${i + 1}. ${a.tool}(${a.argsPreview}${a.argsPreview.length >= 80 ? '…' : ''})`);
+    lines.push(`  ${i + 1}. ${a.tool}(${a.argsPreview}${a.argsPreview.length >= 80 ? '\u2026' : ''})`);
   });
   lines.push('');
   lines.push('Stay focused on the goal. Do not re-issue actions you have already completed — refer to their results in the conversation above.');
@@ -1209,21 +1277,22 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // user's configured fallbackModel. After we use it, this latches so we
   // don't bounce back and forth between failing models in a single chain.
   let usedFallbackModel = false;
-  const immediateFallback = fallbackModelForKnownFlakyTurn(ctx.config, usedFallbackModel);
-  if (immediateFallback) {
-    usedFallbackModel = true;
-    const failedModel = ctx.config.model;
-    ctx.config.model = immediateFallback;
+  // Reliability path when fallback is intentionally disabled:
+  // retry the SAME configured model once on transient empty/timeout/unknown
+  // provider failures before surfacing a hard error.
+  let usedPrimaryRetry = false;
+  const retryPrimaryModelOnce = (reason: string): boolean => {
+    if (usedPrimaryRetry) return false;
+    usedPrimaryRetry = true;
+    const model = ctx.config.model;
     resetClient();
     console.log(theme.warning(
-      `  ${sym.warn} ${failedModel} is a known-stuck OpenRouter preview model; switching this turn to ${immediateFallback}.`,
+      `  ${sym.warn} ${reason} — retrying once on the same model ${model}.`,
     ));
-    console.log(theme.dim('    Override only if you really want it: CAWDEX_ALLOW_FLAKY_MODELS=1'));
-  }
-
-  if (!chainFastDirect) {
-    printInteractiveTurnAccepted(ctx.config);
-  }
+    console.log(theme.dim('    Fallback is disabled; this is a transient-recovery retry only.'));
+    turns--;
+    return true;
+  };
 
   // Tracks whether ANY reasoning tokens arrived across the entire chain.
   // Used at chain-end to print a one-time "/thinking is ON but this model
@@ -1232,12 +1301,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // reasoning at all".
   let sawAnyThinking = false;
 
-  // Skill-graduation telemetry. The Hermes audit's deterministic rule
+  // Skill-graduation telemetry. The Sentience audit's deterministic rule
   // for "this work was worth remembering" — the model is a bad judge of
   // its own complexity, so the dispatcher counts and decides. Thresholds:
   //   - 5+ tool calls in this chain   → complex task
   //   - any tool errored then recovered → learned-from-failure
-  // Only used to inform a chain-end suggestion in hermes mode; we don't
+  // Only used to inform a chain-end suggestion in sentience mode; we don't
   // auto-create skills (which would burn an extra LLM call). We surface
   // the opportunity with a one-line nudge so the user can /skill-create
   // or /learn if they want.
@@ -1335,15 +1404,18 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // as new text, drowning the actual response).
   const isScreenReader = ctx.config.voice?.accessibility?.screenReader === true;
   const inputGuard = startInputSuppression(isScreenReader);
+  let earlyWorkingIndicator: WorkingIndicator | null = null;
   try {
     if (!chainFastDirect) {
+      printInteractiveTurnAccepted(ctx.config);
+      earlyWorkingIndicator = startWorkingIndicator(chainStart, isScreenReader, 0);
       // Turn-boundary collapse runs BEFORE compaction. Every completed prior
       // turn becomes [user, "<final text>\n[Completed: used X, Y]"] — the
       // model no longer sees stale tool_calls that it might mistake for
       // pending work (the "I'll handle BOTH requests" / "all THREE requests"
       // bug). The current turn (latest user message forward) is left intact
       // because its tool_calls and tool messages are still in flight.
-      ctx.messages = collapseCompletedTurns(ctx.messages);
+      replaceMessagesInPlace(ctx.messages, collapseCompletedTurns(ctx.messages));
 
       // Auto-compact if context is getting large. The trigger scales with the
       // provider's context window so smaller/free-tier models get breathing room
@@ -1354,10 +1426,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       if (shouldCompact(ctx.messages, compactionConfig)) {
         console.log(theme.dim(`  ${sym.running} auto-compacting conversation context...`));
         setStatus({ state: 'compacting' });
-        ctx.messages = await compactMessages(ctx.messages, ctx.config, compactionConfig);
+        replaceMessagesInPlace(
+          ctx.messages,
+          await compactMessages(ctx.messages, ctx.config, compactionConfig),
+        );
       } else {
         // Quick compact: truncate oversized tool results
-        ctx.messages = quickCompact(ctx.messages);
+        replaceMessagesInPlace(ctx.messages, quickCompact(ctx.messages));
       }
     }
 
@@ -1389,11 +1464,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // results stay verbatim. Stub keeps role + tool_call_id intact
     // so the API stays valid; only the content shrinks.
     if (!fastDirect) {
-      ctx.messages = quickCompact(ctx.messages);
+      replaceMessagesInPlace(ctx.messages, quickCompact(ctx.messages));
     }
+    const requestTools = fastDirect
+      ? []
+      : applyAgentToolInstructions(ALL_TOOLS, ctx.cwd, ctx.config.model);
     const systemPrompt = fastDirect
       ? FAST_DIRECT_SYSTEM_PROMPT
-      : buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery);
+      : buildSystemPrompt(ctx.config, ctx.cwd, ctx.mode, userQuery, requestTools);
     let visibleMessages = fastDirect
       ? (userQuery ? [{ role: 'user' as const, content: userQuery }] : [])
       : maskOldToolResults(ctx.messages);
@@ -1425,7 +1503,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // override.
     const stateBlock = fastDirect ? null : buildStateBlock(visibleMessages);
     const runtimeInfoBlock = fastDirect ? null : buildRuntimeInfoBlock(ctx.cwd);
-    const repoMapBlock = fastDirect ? null : buildAutoRepoMapBlock(ctx.cwd, userQuery);
+    const repoMapBlock = fastDirect || ctx.mode === 'design'
+      ? null
+      : buildAutoRepoMapBlock(ctx.cwd, userQuery);
     const globalPlanBlock = fastDirect ? null : buildGlobalPlanBlock(visibleMessages);
     const todoStateBlock = fastDirect ? null : buildTodoStateBlock(ctx.cwd);
     const benchmarkTrajectoryBlock = !fastDirect && ctx.mode === 'benchmark'
@@ -1456,10 +1536,12 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     let hasOutput = false;
     let thinkingActive = false;
     let leadingTrimmed = false;        // strip leading whitespace from the model's first text chunk
+    let assistantPrefixed = false;
     let lastCharWasNewline = false;    // collapse 3+ consecutive newlines down to 2
     let consecutiveNewlines = 0;
 
     const turnStart = Date.now();
+    let usageRecorded = false;
 
     // Loop detection state: a stuck model can stream the SAME N-char
     // window of text 50+ times in a single API call (observed in the
@@ -1497,6 +1579,10 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       }
       if (out.length === 0) return;
       lastCharWasNewline = out.endsWith('\n');
+      if (!assistantPrefixed) {
+        process.stdout.write(assistantTranscriptPrefix());
+        assistantPrefixed = true;
+      }
       process.stdout.write(theme.primary(out));
       fullText += out;
 
@@ -1590,66 +1676,94 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // line and then announce every subsequent token as "after the
     // waiting line", which is noisier than helpful).
     let firstTokenSeen = false;
+    let firstTokenLatencyMs: number | null = null;
     // Note: the outer `isScreenReader` declared at the top of runQuery
     // (line ~340) is in scope here via closure — no need for a second
     // declaration. Previously this re-declared inside the while loop
     // and TypeScript tolerated it as a different block scope, but it
     // was confusing and the audit flagged it as bug-bait.
     //
-    // Live spinner on the "waiting for model response…" line — ticks
-    // every ~90ms until the first event arrives. {S} placeholder is
-    // swapped for the Braille frame each tick. In screen-reader mode
-    // we skip the line entirely (the previous behavior); in non-TTY
-    // mode startSpinner falls back to painting a static placeholder.
-    let waitingSpinner: import('./animations.js').Spinner | null = null;
-    if (!isScreenReader) {
-      const { startSpinner } = await import('./animations.js');
-      waitingSpinner = startSpinner(`  {S} ${chalk.dim('waiting for model response…')}`);
+    // Live waiting indicator on the response line. It keeps motion and the
+    // interrupt hint visible while still clearing itself before the first
+    // model event writes real output.
+    let workingIndicator = turns === 1 ? earlyWorkingIndicator : null;
+    if (turns === 1) earlyWorkingIndicator = null;
+    if (!workingIndicator) {
+      workingIndicator = startWorkingIndicator(turnStart, isScreenReader, turns);
     }
     // Slow-model warning and first-token watchdog. The warning is a
     // UX hint; the watchdog is the hard recovery path for providers
     // that accept a request but then never produce a stream event.
     const slowTimer = setTimeout(() => {
       if (!firstTokenSeen) {
+        // Clear the animated row before printing a persistent warning,
+        // then restart it on the following line so the terminal stays tidy.
+        workingIndicator?.stop();
+        workingIndicator = null;
         console.log(chalk.yellow(
           `  ⏳ model is taking longer than 30s. Shift+F5 cancels, Ctrl+C exits. Often means the model returned no tokens (try /model <other> if this hangs).`,
         ));
+        if (!firstTokenSeen) {
+          workingIndicator = startWorkingIndicator(turnStart, isScreenReader, turns);
+        }
       }
     }, 30_000);
     let firstTokenTimedOut = false;
     const firstTokenTimeoutMs = fastDirect
       ? Math.min(resolveFirstTokenTimeoutMs(ctx.config), FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS)
       : resolveFirstTokenTimeoutMs(ctx.config);
-    const firstTokenTimer = firstTokenTimeoutMs > 0
-      ? setTimeout(() => {
-          if (!firstTokenSeen) {
-            firstTokenTimedOut = true;
-            try { streamAbort.abort(); } catch { /* noop */ }
-          }
-        }, firstTokenTimeoutMs)
-      : null;
+    let streamIdleTimedOut = false;
+    const streamIdleTimeoutMs = resolveStreamIdleTimeoutMs(fastDirect);
+    let streamWaitTimer: ReturnType<typeof setTimeout> | null = null;
 
     try {
       const requestConfig = fastDirect
         ? { ...ctx.config, maxTokens: Math.min(ctx.config.maxTokens ?? 700, 700) }
         : ctx.config;
-      const requestTools = fastDirect ? [] : ALL_TOOLS;
-      for await (const event of streamChat(requestConfig, apiMessages, requestTools, streamAbort.signal)) {
+      const stream = streamChat(requestConfig, apiMessages, requestTools, streamAbort.signal);
+      const iterator = stream[Symbol.asyncIterator]();
+      while (true) {
+        const nextPromise = iterator.next();
+        let next: Awaited<ReturnType<typeof iterator.next>>;
+        const waitTimeoutMs = !firstTokenSeen ? firstTokenTimeoutMs : streamIdleTimeoutMs;
+        if (waitTimeoutMs > 0) {
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            streamWaitTimer = setTimeout(() => {
+              try { streamAbort.abort(); } catch { /* noop */ }
+              if (!firstTokenSeen) {
+                firstTokenTimedOut = true;
+                reject(new Error('__CAWDEX_FIRST_TOKEN_TIMEOUT__'));
+              } else {
+                streamIdleTimedOut = true;
+                reject(new Error('__CAWDEX_STREAM_IDLE_TIMEOUT__'));
+              }
+            }, waitTimeoutMs);
+          });
+          try {
+            next = await Promise.race([nextPromise, timeoutPromise]);
+          } catch (err) {
+            nextPromise.catch(() => { /* avoid unhandled rejection if provider notices abort later */ });
+            throw err;
+          } finally {
+            if (streamWaitTimer) clearTimeout(streamWaitTimer);
+            streamWaitTimer = null;
+          }
+        } else {
+          next = await nextPromise;
+        }
+        if (next.done) break;
+        const event = next.value;
         // First event of any kind — model is alive. Cancel the slow-
         // model warning timer; subsequent events are normal streaming.
         if (!firstTokenSeen) {
           firstTokenSeen = true;
+          firstTokenLatencyMs = Date.now() - turnStart;
           clearTimeout(slowTimer);
-          if (firstTokenTimer) clearTimeout(firstTokenTimer);
-          // Tear down the live "waiting…" spinner so the next print
-          // (thinking header, response text, or tool call) lands on
-          // a fresh line. Clear the spinner row first — stop() leaves
-          // the last frame on screen.
-          if (waitingSpinner) {
-            waitingSpinner.stop();
-            process.stdout.write('\r\x1b[K');
-            waitingSpinner = null;
-          }
+          if (streamWaitTimer) clearTimeout(streamWaitTimer);
+          // Tear down the live waiting indicator so the next print
+          // (thinking header, response text, or tool call) lands cleanly.
+          workingIndicator?.stop();
+          workingIndicator = null;
         }
         if (event.type === 'thinking' && event.content) {
           sawAnyThinking = true;
@@ -1684,11 +1798,17 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         } else if (event.type === 'done') {
           if (event.usage) {
             const u = event.usage;
+            const turnDurationMs = Date.now() - turnStart;
             const { cost, warning } = trackUsage(
               ctx.sessionId,
               ctx.config.model,
               u.prompt,
               u.completion,
+              {
+                provider: ctx.config.provider,
+                firstTokenMs: firstTokenLatencyMs,
+                durationMs: turnDurationMs,
+              },
             );
             chainStats.benchmarkUsageEvents.push({
               model: ctx.config.model,
@@ -1697,28 +1817,66 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
               totalTokens: u.total || u.prompt + u.completion,
               estimatedCostUsd: cost,
             });
+            usageRecorded = true;
+            setFooterCost(cost, u.prompt, u.completion, {
+              firstTokenMs: firstTokenLatencyMs,
+              durationMs: turnDurationMs,
+            });
             // Single newline separator if we just streamed text, then the
             // compact telemetry line.
             if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
-            printCost(u.prompt, u.completion, cost, warning, Date.now() - turnStart);
+            printCost(u.prompt, u.completion, cost, warning, turnDurationMs);
           }
+          try { streamAbort.abort(); } catch { /* close any provider socket left open after done */ }
+          void iterator.return?.(undefined as never).catch(() => { /* best effort stream cleanup */ });
+          break;
         }
       }
+      if (!usageRecorded && (hasOutput || (toolCalls && toolCalls.length > 0))) {
+        const promptEstimate = Math.max(1, estimateTokens(apiMessages));
+        const completionEstimate = Math.max(
+          1,
+          Math.ceil(((fullText || '') + (toolCalls ? JSON.stringify(toolCalls) : '')).length / 3.5),
+        );
+        const turnDurationMs = Date.now() - turnStart;
+        const { cost } = trackUsage(
+          ctx.sessionId,
+          ctx.config.model,
+          promptEstimate,
+          completionEstimate,
+          {
+            provider: ctx.config.provider,
+            firstTokenMs: firstTokenLatencyMs,
+            durationMs: turnDurationMs,
+          },
+        );
+        chainStats.benchmarkUsageEvents.push({
+          model: ctx.config.model,
+          promptTokens: promptEstimate,
+          completionTokens: completionEstimate,
+          totalTokens: promptEstimate + completionEstimate,
+          estimatedCostUsd: cost,
+        });
+        setFooterCost(cost, promptEstimate, completionEstimate, {
+          firstTokenMs: firstTokenLatencyMs,
+          durationMs: turnDurationMs,
+        });
+        usageRecorded = true;
+      }
       clearTimeout(slowTimer);
-      if (firstTokenTimer) clearTimeout(firstTokenTimer);
+      if (streamWaitTimer) clearTimeout(streamWaitTimer);
+      workingIndicator?.stop();
+      workingIndicator = null;
     } catch (err: unknown) {
       // Stream threw before any token arrived — clear the slow-model
       // timer so its 30s callback doesn't fire after the error is
       // already on stdout (would look like a false positive).
       clearTimeout(slowTimer);
-      if (firstTokenTimer) clearTimeout(firstTokenTimer);
-      // Tear down the waiting spinner if it's still ticking — error
+      if (streamWaitTimer) clearTimeout(streamWaitTimer);
+      // Tear down the waiting indicator if it's still ticking — error
       // print below shouldn't trail an animated row.
-      if (waitingSpinner) {
-        waitingSpinner.stop();
-        process.stdout.write('\r\x1b[K');
-        waitingSpinner = null;
-      }
+      workingIndicator?.stop();
+      workingIndicator = null;
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
@@ -1737,10 +1895,48 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           turns--;
           continue;
         }
+        if (retryPrimaryModelOnce(`${failedModel} produced no stream events for ${formatDuration(firstTokenTimeoutMs)}`)) {
+          continue;
+        }
         const timeoutMsg = `${failedModel} produced no stream events for ${formatDuration(firstTokenTimeoutMs)}`;
         console.log(theme.error(`  ${sym.warn} ${timeoutMsg}.`));
-        console.log(theme.dim('    The request was cancelled so the prompt can recover. Try /openrouter-free or /model <known-good-model>.'));
+        console.log(theme.dim('    Fallback is disabled and the same-model retry already ran; cancelling so the prompt can recover.'));
+        console.log(theme.dim('    Use /fallback <model-id> to enable automatic retry, or /model <known-good-model> to switch primary models.'));
         ctx.messages.push({ role: 'assistant', content: `[Provider timeout: ${timeoutMsg}]` });
+        break;
+      }
+
+      if (streamIdleTimedOut) {
+        const failedModel = ctx.config.model;
+        const timeoutMsg = `${failedModel} stream stalled for ${formatDuration(streamIdleTimeoutMs)} after the first event`;
+        const fallback = !hasOutput && !toolCalls
+          ? fallbackModelForTurn(ctx.config, usedFallbackModel)
+          : null;
+        if (fallback) {
+          usedFallbackModel = true;
+          ctx.config.model = fallback;
+          resetClient();
+          console.log(theme.warning(
+            `  ${sym.warn} ${timeoutMsg} — retrying once with fallback model ${fallback}.`,
+          ));
+          console.log(theme.dim('    Configure with /fallback <model-id>, disable with /fallback off, or switch now with /openrouter-free.'));
+          turns--;
+          continue;
+        }
+        if (!hasOutput && !toolCalls && retryPrimaryModelOnce(timeoutMsg)) {
+          continue;
+        }
+        if (fullText.trim()) {
+          const partial = `${fullText.trimEnd()}\n[Provider timeout: stream stalled before completion]`;
+          console.log(theme.warning(`  ${sym.warn} stream stalled before completion; returning the partial response.`));
+          accumulatedAssistantText += (accumulatedAssistantText ? '\n\n' : '') + partial;
+          ctx.messages.push({ role: 'assistant', content: partial });
+        } else {
+          console.log(theme.error(`  ${sym.warn} ${timeoutMsg}.`));
+          console.log(theme.dim('    Same-model retry already ran; cancelling so the prompt can recover instead of hanging indefinitely.'));
+          console.log(theme.dim('    Use /fallback <model-id> to enable automatic retry, or /model <known-good-model> to switch primary models.'));
+          ctx.messages.push({ role: 'assistant', content: `[Provider timeout: ${timeoutMsg}]` });
+        }
         break;
       }
 
@@ -1814,6 +2010,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         turns--;  // this retry doesn't burn a turn slot from the max-turns budget
         continue;
       }
+      if (cat.category === 'unknown' && retryPrimaryModelOnce(`${ctx.config.model} returned a cryptic provider error`)) {
+        continue;
+      }
 
       printApiError(msg, {
         baseURL: ctx.config.baseURL,
@@ -1851,9 +2050,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         turns--;
         continue;
       }
+      if (retryPrimaryModelOnce(`${failedModel} returned an empty response`)) {
+        continue;
+      }
       const emptyMsg = `${failedModel} returned an empty response`;
       console.log(theme.error(`  ${sym.warn} ${emptyMsg}.`));
-      console.log(theme.dim('    Try /openrouter-free or /model <known-good-model>.'));
+      console.log(theme.dim('    Fallback is disabled and the same-model retry already ran.'));
+      console.log(theme.dim('    Use /fallback <model-id> to enable automatic retry, or /model <known-good-model> to switch primary models.'));
       ctx.messages.push({ role: 'assistant', content: `[Provider empty response: ${emptyMsg}]` });
       break;
     }
@@ -1971,6 +2174,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
 
   // Chain ended; back to idle so F1 reports the correct state.
   setStatus({ state: 'idle' });
+  if (isFooterActive()) setFooterActivity('Ready', 0, null);
 
   // ── Voice: read the assistant's final response ────────────
   // Off the hot path — fire-and-forget so the next prompt appears
@@ -2019,7 +2223,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // Only show if there was meaningful work — multi-second chains. Sub-second
   // chains (slash command rejects, instant returns) don't need a chain line.
   if (chainMs > 1500) {
-    console.log(theme.dim(`  chain ${formatDuration(chainMs)} · ${turns} ${turns === 1 ? 'turn' : 'turns'}`));
+    console.log(theme.dim(`  chain ${formatDuration(chainMs)} | ${turns} ${turns === 1 ? 'turn' : 'turns'}`));
   }
 
   // /thinking visibility hint. If the user has thinking enabled but the
@@ -2037,10 +2241,10 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     console.log(theme.dim(`         Hide this hint with /thinking (toggles off).`));
   }
 
-  // ── Skill graduation hint (Hermes audit, M2 item 2) ─────────
+  // ── Skill graduation hint (Sentience audit, M2 item 2) ─────────
   // Deterministic "this work was worth remembering" trigger. The model
-  // is a bad judge of its own complexity (Hermes audit's exact wording);
-  // we count instead. Fires at most once per chain in hermes mode, and
+  // is a bad judge of its own complexity (Sentience audit's exact wording);
+  // we count instead. Fires at most once per chain in sentience mode, and
   // only when a clear threshold was crossed:
   //
   //   - 5+ tool calls   → complex multi-step task
@@ -2048,9 +2252,9 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   //
   // We don't auto-execute /skill-create (it would burn another LLM call
   // and might extract noise); we surface the opportunity so the user can
-  // decide. Outside hermes mode, this is silent — keeps the noise floor
+  // decide. Outside sentience mode, this is silent — keeps the noise floor
   // low for regular dev/review/debug sessions.
-  if (ctx.mode === 'hermes') {
+  if (ctx.mode === 'sentience' || (ctx.mode as string) === 'hermes') {
     const complex = chainStats.toolCallCount >= 5;
     const learnedFromFailure = chainStats.sawToolError && chainStats.sawToolRecovery;
     if (complex || learnedFromFailure) {
@@ -2059,7 +2263,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         : complex
           ? `${chainStats.toolCallCount} tools — complex enough that a learned pattern might save time next time`
           : `recovered from a tool error — the working path is worth banking`;
-      console.log(theme.dim(`  [hermes] graduation candidate: ${reason}.`));
+      console.log(theme.dim(`  [sentience] graduation candidate: ${reason}.`));
       console.log(theme.dim(`           Run /skill-create or /learn to bank it. Skip if it was one-off.`));
     }
   }
@@ -2079,6 +2283,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     console.log(theme.dim(`  [benchmark] trace: ${trace.summaryPath}`));
   }
   } finally {
+    earlyWorkingIndicator?.stop();
+    earlyWorkingIndicator = null;
     // Drain any queued user input typed during streaming. Stash on
     // globalThis for the REPL loop in index.ts to restore into the
     // next editable prompt. Enter typed mid-stream is preserved as
@@ -2098,13 +2304,14 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       __turnAbortCtl?: AbortController | null;
       __turnCancelCurrent?: (() => void) | null;
     }).__turnCancelCurrent = null;
+    if (isFooterActive()) setFooterActivity('Ready', 0, null);
   }
 }
 
 /**
  * Chain-scope counters threaded through executeToolCalls so runQuery can
  * surface "this looked complex enough to extract a skill" hints at chain
- * end. The Hermes audit's deterministic skill-graduation triggers:
+ * end. The Sentience audit's deterministic skill-graduation triggers:
  *   - 5+ tool calls in the chain         → complex task
  *   - a tool error followed by a success → learned-from-failure
  * Counted as side-effects, not returned, so the existing call sites

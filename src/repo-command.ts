@@ -5,9 +5,10 @@ export interface RepoDigestCommandParseResult {
 
 export function formatRepoDigestCommandUsage(): string {
   return [
-    '  Usage: /repo-digest <github-url|owner/repo> [--ref branch-or-sha] [--files n] [--text-files n] [--chars n]',
+    '  Usage: /repo-digest <github-url|owner/repo> [--ref branch-or-sha] [--files n] [--text-files n] [--chars n] [--docs-only]',
     '  Defaults: --files 300 --text-files 5 --chars 1200',
     '  Example: /repo-digest openai/codex --files 500 --text-files 6',
+    '  Docs-only: /repo-digest openai/codex --files 500 --docs-only',
   ].join('\n');
 }
 
@@ -26,6 +27,12 @@ export function parseRepoDigestCommandArgs(args: string): RepoDigestCommandParse
     const token = tokens[i];
     if (!token.startsWith('-')) {
       repoParts.push(token);
+      continue;
+    }
+
+    if (token === '--docs-only' || token === '--no-source-code') {
+      input.docs_only = true;
+      input.max_text_files = 4;
       continue;
     }
 

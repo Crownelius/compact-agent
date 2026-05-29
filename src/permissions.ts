@@ -16,6 +16,75 @@ import type { CawdexConfig } from './types.js';
 import { saveConfig } from './config.js';
 import { evaluateCommand } from './execpolicy.js';
 
+export interface PermissionExplanation {
+  decision: 'allow' | 'prompt' | 'deny';
+  reason: string;
+  lines: string[];
+}
+
+export function explainPermission(
+  tool: Pick<Tool, 'name' | 'isReadOnly' | 'isDestructive'>,
+  input: Record<string, unknown>,
+  config: CawdexConfig,
+): PermissionExplanation {
+  const lines: string[] = [
+    `tool: ${tool.name}`,
+    `permission mode: ${config.permissionMode}`,
+  ];
+
+  if (tool.name === 'bash') {
+    const command = String(input.command || '').trim();
+    const policy = evaluateCommand(command);
+    lines.push(`execpolicy: ${policy.decision}${policy.ruleId ? ` (${policy.ruleId})` : ''}`);
+    if (policy.reason) lines.push(`execpolicy reason: ${policy.reason}`);
+    if (policy.decision === 'forbidden') {
+      lines.push('result: blocked before the normal permission prompt');
+      return {
+        decision: 'deny',
+        reason: policy.reason || 'blocked by execpolicy',
+        lines,
+      };
+    }
+    if (policy.decision === 'allow') {
+      lines.push('result: allowed by execpolicy before mode checks');
+      return {
+        decision: 'allow',
+        reason: `execpolicy${policy.ruleId ? ` ${policy.ruleId}` : ''}`,
+        lines,
+      };
+    }
+  }
+
+  if (config.permissionMode === 'yolo') {
+    lines.push('result: allowed because yolo permits all non-forbidden tools');
+    return { decision: 'allow', reason: 'permission mode yolo', lines };
+  }
+
+  if (tool.isReadOnly) {
+    lines.push('result: allowed because read-only tools do not prompt');
+    return { decision: 'allow', reason: 'read-only tool', lines };
+  }
+
+  if (config.alwaysAllowedTools?.includes(tool.name)) {
+    lines.push('result: allowed by the per-tool always-allow list');
+    return { decision: 'allow', reason: 'always-allow list', lines };
+  }
+
+  if (config.permissionMode === 'auto' && !tool.isDestructive) {
+    lines.push('result: allowed because auto permits non-destructive tools');
+    return { decision: 'allow', reason: 'auto mode non-destructive tool', lines };
+  }
+
+  lines.push('result: prompt required before execution');
+  return {
+    decision: 'prompt',
+    reason: config.permissionMode === 'auto'
+      ? 'destructive tool in auto mode'
+      : 'ask mode requires confirmation',
+    lines,
+  };
+}
+
 /**
  * Check if a tool call is allowed under the current permission mode.
  * Returns true if allowed, false if denied.

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { streamChat, resetClient } from '../src/api.js';
-import { runQuery, shouldUseFastDirectReply } from '../src/query.js';
+import { formatWorkingIndicatorFrame, runQuery, shouldUseFastDirectReply } from '../src/query.js';
 import type { CawdexConfig, Message } from '../src/types.js';
 
 vi.mock('../src/api.js', () => ({
@@ -27,16 +27,16 @@ function config(): CawdexConfig {
 
 describe('runQuery provider liveness recovery', () => {
   const originalTimeout = process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
+  const originalIdleTimeout = process.env.CAWDEX_STREAM_IDLE_TIMEOUT_MS;
   const originalNonInteractive = process.env.CAWDEX_NON_INTERACTIVE;
-  const originalAllowFlaky = process.env.CAWDEX_ALLOW_FLAKY_MODELS;
   const originalCompactionTrigger = process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS;
 
   beforeEach(() => {
     vi.mocked(streamChat).mockReset();
     vi.mocked(resetClient).mockReset();
     process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = '1';
+    process.env.CAWDEX_STREAM_IDLE_TIMEOUT_MS = '1';
     process.env.CAWDEX_NON_INTERACTIVE = '0';
-    delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
   });
 
   afterEach(() => {
@@ -45,15 +45,15 @@ describe('runQuery provider liveness recovery', () => {
     } else {
       process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = originalTimeout;
     }
+    if (originalIdleTimeout === undefined) {
+      delete process.env.CAWDEX_STREAM_IDLE_TIMEOUT_MS;
+    } else {
+      process.env.CAWDEX_STREAM_IDLE_TIMEOUT_MS = originalIdleTimeout;
+    }
     if (originalNonInteractive === undefined) {
       delete process.env.CAWDEX_NON_INTERACTIVE;
     } else {
       process.env.CAWDEX_NON_INTERACTIVE = originalNonInteractive;
-    }
-    if (originalAllowFlaky === undefined) {
-      delete process.env.CAWDEX_ALLOW_FLAKY_MODELS;
-    } else {
-      process.env.CAWDEX_ALLOW_FLAKY_MODELS = originalAllowFlaky;
     }
     if (originalCompactionTrigger === undefined) {
       delete process.env.CAWDEX_COMPACTION_TRIGGER_TOKENS;
@@ -62,7 +62,7 @@ describe('runQuery provider liveness recovery', () => {
     }
   });
 
-  it('preemptively switches known-stuck OpenRouter preview models to the fallback before the API call', async () => {
+  it('never preemptively switches a user-configured known-stuck OpenRouter model', async () => {
     vi.mocked(streamChat).mockImplementation(async function* (
       cfg: CawdexConfig,
     ) {
@@ -72,7 +72,7 @@ describe('runQuery provider liveness recovery', () => {
 
     const cfg = config();
     const messages: Message[] = [{ role: 'user', content: 'Say hi' }];
-    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-flaky-preflight-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-no-flaky-preflight-'));
     const ctx = {
       config: cfg,
       messages,
@@ -87,16 +87,14 @@ describe('runQuery provider liveness recovery', () => {
       rmSync(cwd, { recursive: true, force: true });
     }
 
-    expect(cfg.model).toBe('openrouter/free');
-    expect(resetClient).toHaveBeenCalledTimes(1);
+    expect(cfg.model).toBe('openrouter/owl-alpha');
+    expect(resetClient).not.toHaveBeenCalled();
     expect(streamChat).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(streamChat).mock.calls[0][0].model).toBe('openrouter/free');
-    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'model=openrouter/free' });
+    expect(vi.mocked(streamChat).mock.calls[0][0].model).toBe('openrouter/owl-alpha');
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'model=openrouter/owl-alpha' });
   });
 
   it('retries with the fallback model when the primary model never sends a first stream event', async () => {
-    process.env.CAWDEX_ALLOW_FLAKY_MODELS = '1';
-
     vi.mocked(streamChat).mockImplementation(async function* (
       cfg: CawdexConfig,
       _messages: Message[],
@@ -134,6 +132,129 @@ describe('runQuery provider liveness recovery', () => {
     expect(resetClient).toHaveBeenCalledTimes(1);
     expect(streamChat).toHaveBeenCalledTimes(2);
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'fallback response' });
+  });
+
+  it('retries once on the same model when fallback is disabled and the first response is empty', async () => {
+    let call = 0;
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      call++;
+      if (call === 1) {
+        yield { type: 'done' };
+        return;
+      }
+      yield { type: 'text', content: 'complete response' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'minimax/minimax-m2.1';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [{ role: 'user', content: 'say hi' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-empty-retry-primary-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-empty-retry-primary',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'complete response' });
+  });
+
+  it('hard-times out a provider that ignores abort before the first event', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      await new Promise(() => { /* provider never resolves */ });
+    });
+
+    const cfg = config();
+    cfg.model = 'minimax/minimax-m2.1';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [{ role: 'user', content: 'i like ketchup' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-hard-timeout-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-hard-timeout',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(ctx.messages.at(-1)?.role).toBe('assistant');
+    expect(String(ctx.messages.at(-1)?.content)).toContain('[Provider timeout: minimax/minimax-m2.1 produced no stream events');
+  });
+
+  it('hard-times out a provider stream that stalls after the first event', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: 'thinking', content: 'internal progress' };
+      await new Promise(() => { /* provider never sends text, tool calls, done, or stream close */ });
+    });
+
+    const cfg = config();
+    cfg.model = 'minimax/minimax-m2.1';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [{ role: 'user', content: 'i like ketchup' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-stream-idle-timeout-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-stream-idle-timeout',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(ctx.messages.at(-1)?.role).toBe('assistant');
+    expect(String(ctx.messages.at(-1)?.content)).toContain('[Provider timeout: minimax/minimax-m2.1 stream stalled');
+  });
+
+  it('returns as soon as the provider emits done instead of waiting for socket close', async () => {
+    vi.mocked(streamChat).mockImplementation(async function* () {
+      yield { type: 'text', content: 'complete response' };
+      yield { type: 'done' };
+      await new Promise(() => { /* provider connection never closes */ });
+    });
+
+    const cfg = config();
+    cfg.model = 'minimax/minimax-m2.1';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [{ role: 'user', content: 'say hi' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-done-break-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-done-break',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'complete response' });
   });
 
   it('treats global F5 cancellation as a user cancellation instead of a provider failure', async () => {
@@ -222,13 +343,142 @@ describe('runQuery provider liveness recovery', () => {
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'A fresh short poem.' });
   });
 
+  it('keeps buildable website prompts on the full tool-capable path', async () => {
+    let sentMessages: Message[] = [];
+    let sentTools: unknown[] = [];
+    vi.mocked(streamChat).mockImplementation(async function* (
+      _cfg: CawdexConfig,
+      apiMessages: Message[],
+      tools: unknown[],
+    ) {
+      sentMessages = apiMessages;
+      sentTools = tools;
+      yield { type: 'text', content: 'I will create the website file.' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'openrouter/free';
+    cfg.showThinking = true;
+    const messages: Message[] = [
+      { role: 'user', content: 'I need you to write a website for a man named Harry Sprouts. He is a data scientist, make him hireable.' },
+    ];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-website-full-path-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-website-full-path',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(sentTools.length).toBeGreaterThan(0);
+    expect(sentMessages[0]?.role).toBe('system');
+    expect(String(sentMessages[0]?.content)).toContain('tools available');
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'I will create the website file.' });
+  });
+
+  it('passes AGENTS.md tool-scoped instructions to the provider tool schema', async () => {
+    let sentTools: Array<{ name?: string; description?: string }> = [];
+    vi.mocked(streamChat).mockImplementation(async function* (
+      _cfg: CawdexConfig,
+      _apiMessages: Message[],
+      tools: Array<{ name?: string; description?: string }>,
+    ) {
+      sentTools = tools;
+      yield { type: 'text', content: 'I will use the scoped tool guidance.' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'openrouter/free';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [
+      { role: 'user', content: 'create a single-file HTML landing page' },
+    ];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-agents-md-'));
+    writeFileSync(join(cwd, 'AGENTS.md'), `
+## Tool: bash
+Use short, bounded shell commands for this repository.
+`);
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-agents-md',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    const bashTool = sentTools.find((tool) => tool.name === 'bash');
+    expect(bashTool?.description).toContain('Use short, bounded shell commands for this repository.');
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'I will use the scoped tool guidance.' });
+  });
+
   it('routes polite casual prompts through fast-direct without catching repo work', () => {
     expect(shouldUseFastDirectReply('Can you write a poem for me?', 'dev')).toBe(true);
     expect(shouldUseFastDirectReply('please summarize this paragraph', 'dev')).toBe(true);
     expect(shouldUseFastDirectReply('I need you to explain novocaine', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('I need your help', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('i like ketchup', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('Sorry, make it more accurate to the time', 'dev')).toBe(true);
+    expect(shouldUseFastDirectReply('I need you to write a website for Harry Sprouts', 'dev')).toBe(false);
+    expect(shouldUseFastDirectReply('make a portfolio website for a data scientist', 'dev')).toBe(false);
+    expect(shouldUseFastDirectReply('create a single-file HTML landing page', 'dev')).toBe(false);
     expect(shouldUseFastDirectReply('could you please continue that', 'dev')).toBe(false);
     expect(shouldUseFastDirectReply('can you fix the tests', 'dev')).toBe(false);
     expect(shouldUseFastDirectReply('give me a git command', 'dev')).toBe(false);
+  });
+
+  it('disables fast-direct when there is prior assistant context in the session', async () => {
+    let sentMessages: Message[] = [];
+    vi.mocked(streamChat).mockImplementation(async function* (
+      _cfg: CawdexConfig,
+      apiMessages: Message[],
+    ) {
+      sentMessages = apiMessages;
+      yield { type: 'text', content: 'Done.' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'openrouter/free';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [
+      { role: 'user', content: 'write a story about a bear cub lost in the forest' },
+      { role: 'assistant', content: 'A story about a cub named Rowan...' },
+      { role: 'user', content: 'Can you make it a male cub?' },
+    ];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-followup-context-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-followup-context',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    const convo = sentMessages.filter((m) => m.role === 'user' || m.role === 'assistant');
+    expect(convo.length).toBeGreaterThan(1);
+    expect(convo.some((m) => m.role === 'assistant' && String(m.content).includes('cub named Rowan'))).toBe(true);
+    expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'Done.' });
   });
 
   it('does not compact bloated history before an isolated fast-direct prompt', async () => {
@@ -272,5 +522,63 @@ describe('runQuery provider liveness recovery', () => {
       { role: 'user', content: 'Could you write a short poem about dinner?' },
     ]);
     expect(sentMessages.map((m) => String(m.content ?? '')).join('\n')).not.toContain('Dungeons');
+  });
+
+  it('preserves message-array identity so autosave sees multi-turn history', async () => {
+    const sentRequests: Message[][] = [];
+    vi.mocked(streamChat).mockImplementation(async function* (
+      _cfg: CawdexConfig,
+      apiMessages: Message[],
+    ) {
+      sentRequests.push(apiMessages);
+      yield { type: 'text', content: sentRequests.length === 1 ? 'First response' : 'Second response' };
+      yield { type: 'done' };
+    });
+
+    const cfg = config();
+    cfg.model = 'openrouter/free';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [{ role: 'user', content: 'First prompt' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-history-identity-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-history-identity',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+      expect(ctx.messages).toBe(messages);
+      expect(messages).toEqual([
+        { role: 'user', content: 'First prompt' },
+        { role: 'assistant', content: 'First response' },
+      ]);
+
+      messages.push({ role: 'user', content: 'Second prompt' });
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(ctx.messages).toBe(messages);
+    expect(messages).toEqual([
+      { role: 'user', content: 'First prompt' },
+      { role: 'assistant', content: 'First response' },
+      { role: 'user', content: 'Second prompt' },
+      { role: 'assistant', content: 'Second response' },
+    ]);
+    const secondConversation = sentRequests[1].filter((m) => m.role === 'user' || m.role === 'assistant');
+    expect(secondConversation).toEqual([
+      { role: 'user', content: 'First prompt' },
+      { role: 'assistant', content: 'First response' },
+      { role: 'user', content: 'Second prompt' },
+    ]);
+  });
+
+  it('formats the active-turn waiting indicator with animation and interrupt hint', () => {
+    expect(formatWorkingIndicatorFrame(83_000, 0)).toContain('Working (1m 23s • Esc/F5 to interrupt)');
+    expect(formatWorkingIndicatorFrame(83_000, 1, 'Edo lanterns lit')).toContain('Edo lanterns lit');
   });
 });

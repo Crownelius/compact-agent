@@ -2,6 +2,7 @@ import type OpenAI from 'openai';
 
 // ── Messages ──────────────────────────────────────────────
 export type Role = 'system' | 'user' | 'assistant' | 'tool';
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface Message {
   role: Role;
@@ -24,6 +25,7 @@ export interface CawdexConfig {
   apiKeys?: string[];
   baseURL: string;
   model: string;
+  modelAliases?: Record<string, string>; // user-defined short names resolved by /model
   fallbackModel?: string;  // tried automatically once when the primary model errors with an empty/unknown provider error
   provider: string;        // display name: "OpenRouter", "GLM", "Ollama", etc.
   openaiAuth?: OpenAIAuthConfig; // OpenAI API key vs ChatGPT/Codex OAuth
@@ -42,9 +44,13 @@ export interface CawdexConfig {
   theme?: 'full' | 'compact' | 'minimal';   // startup display mode (layout density)
   palette?: string;        // color palette id (Coolors trending schemes) — see src/theme.ts
   showThinking?: boolean;  // when true, display model reasoning/thinking tokens
+  reasoningEffort?: ReasoningEffort; // request-level reasoning effort; usually set as a one-shot override
   voice?: VoiceConfig;     // accessibility: STT (Whisper) + TTS (ElevenLabs) + screen-reader mode
   memory?: MemoryConfig;   // MemPalace-style persistent memory (wings/rooms/drawers/tunnels/KG)
   sandbox?: SandboxConfig; // OS-native sandbox wrap for bash tool (Seatbelt/bwrap)
+  swarm?: SwarmConfig;     // defaults for /swarm role selection and setup wizard
+  footer?: FooterConfig;   // fixed-bottom terminal footer and opening prompt behavior
+  import?: ImportConfig;   // cross-agent migration defaults (/import + startup sync)
 }
 
 export interface OpenAIAuthConfig {
@@ -84,6 +90,29 @@ export interface MemoryConfig {
 // /voice config. The three sub-blocks split cleanly along their concerns:
 // stt = dictation (user speaks → text into the prompt buffer), tts = readout
 // (assistant + optional user-echo), accessibility = output-mode + cues + UX.
+// Swarm config. These are defaults for /swarm, not replacements for the
+// per-task setup fields inferred from the user's natural-language task.
+export interface SwarmConfig {
+  setupWizard?: boolean;
+  maxAgents?: number;
+  defaultBudget?: string;
+  defaultTarget?: string;
+  defaultAssets?: string;
+  defaultQuality?: string;
+}
+
+export interface FooterConfig {
+  enabled?: boolean;        // default true in interactive TTYs
+  template?: string;        // optional custom status row; supports {provider}, {model}, {mode}, etc.
+  openingPrompt?: string;   // editable draft for the first prompt after startup; default /model
+}
+
+export interface ImportConfig {
+  defaultSource?: 'auto' | 'claude' | 'codex' | 'mempalace';
+  autoSyncOnStartup?: boolean; // default false
+  syncLimit?: number;          // default 200
+}
+
 export interface VoiceConfig {
   enabled?: boolean;
   stt?: VoiceSttConfig;

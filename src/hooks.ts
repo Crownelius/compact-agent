@@ -1,5 +1,5 @@
 /**
- * Hook system â€” configurable pre/post tool execution hooks.
+ * Hook system — configurable pre/post tool execution hooks.
  * Hooks are scripts in ~/.cawdex/hooks/ that fire on events:
  *   - PreToolUse:  before a tool runs (can block)
  *   - PostToolUse: after a tool runs (can log/alert)
@@ -98,7 +98,7 @@ function matchesTool(pattern: string, toolName: string): boolean {
   return false;
 }
 
-// â”€â”€ Broken-hook quarantine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Broken-hook quarantine ───────────────────────────────
 // When a hook's command can't be found or crashes due to a system error
 // (ENOENT, ETIMEDOUT, MODULE_NOT_FOUND, etc.) we add it to this set and
 // skip it for the rest of the session. Otherwise a single bad hook will
@@ -110,7 +110,7 @@ function hookSignature(h: HookDef): string {
   return `${h.event}::${h.match}::${h.command}`;
 }
 
-// System-level error codes from execSync â€” these mean the hook's command
+// System-level error codes from execSync — these mean the hook's command
 // couldn't run at all (file missing, shell missing, timed out). They are
 // NOT "the hook intentionally returned non-zero to block the tool". When
 // we see one, the hook is broken and we should never block on it.
@@ -169,7 +169,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       //   - Windows: omit the `shell` option so execSync uses cmd.exe
       //     (the documented default on win32). Previously we passed
       //     'bash', which routed through Git Bash / WSL bash and mangled
-      //     Windows absolute paths like C:\â€¦ into /mnt/c/â€¦/C:\â€¦.
+      //     Windows absolute paths like C:\… into /mnt/c/…/C:\….
       //   - Other platforms: keep /bin/bash because hook commands typically
       //     rely on POSIX shell features.
       const execOpts: Parameters<typeof execSync>[1] = {
@@ -189,7 +189,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
       }
     } catch (err: unknown) {
       // A SYSTEM-level error (file missing, timeout, MODULE_NOT_FOUND)
-      // means the hook is broken â€” quarantine it and DO NOT block the
+      // means the hook is broken — quarantine it and DO NOT block the
       // tool call. Stale hooks shouldn't be able to brick the agent.
       if (isSystemError(err)) {
         const sig = hookSignature(hook);
@@ -206,7 +206,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
         continue;  // do NOT block on a broken hook
       }
       // A non-system error (the hook ran but exited non-zero) is treated
-      // per the hook's blocking flag â€” that's the intentional "block this
+      // per the hook's blocking flag — that's the intentional "block this
       // tool call" path.
       if (isBlocking) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -222,7 +222,7 @@ export async function runHooks(ctx: HookContext): Promise<HookResult> {
 }
 
 /**
- * Reset the quarantine list â€” used by /reset-config when the user has
+ * Reset the quarantine list — used by /reset-config when the user has
  * fixed their hooks.json and wants to re-enable hooks without restarting.
  */
 export function clearQuarantinedHooks(): void {

@@ -11,32 +11,8 @@ const ENV_KEYS = [
   'CAWDEX_MODEL_OVERRIDE',
   'CAWDEX_FALLBACK_MODEL',
   'CAWDEX_FALLBACK_MODEL_OVERRIDE',
-  'CAWDEX_MAX_TOKENS',
-  'CAWDEX_MAX_TOKENS_OVERRIDE',
-  'CAWDEX_CONTEXT_WINDOW_TOKENS',
-  'CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE',
-  'CAWDEX_MAX_TURNS',
-  'CAWDEX_MAX_TURNS_OVERRIDE',
-  'CAWDEX_TEMPERATURE',
-  'CAWDEX_TEMPERATURE_OVERRIDE',
-  'CAWDEX_PERMISSION',
-  'CAWDEX_MEMORY',
-  'CAWDEX_THEME',
-  'CAWDEX_SHOW_THINKING',
-  'CAWDEX_BASE_URL_OVERRIDE',
-  'CAWDEX_API_KEY_OVERRIDE',
-  'CAWDEX_API_KEY_ENV',
-  'CAWDEX_PROVIDER',
-  'CAWDEX_PROVIDER',
-  'CAWDEX_API_KEY',
-  'CAWDEX_API_KEY',
-  'CAWDEX_BASE_URL',
-  'CAWDEX_BASE_URL',
-  'CAWDEX_MODEL',
-  'CAWDEX_MODEL_OVERRIDE',
-  'CAWDEX_MODEL',
-  'CAWDEX_FALLBACK_MODEL',
-  'CAWDEX_FALLBACK_MODEL_OVERRIDE',
+  'CAWDEX_REASONING_EFFORT',
+  'CAWDEX_REASONING_EFFORT_OVERRIDE',
   'CAWDEX_MAX_TOKENS',
   'CAWDEX_MAX_TOKENS_OVERRIDE',
   'CAWDEX_CONTEXT_WINDOW_TOKENS',
@@ -86,8 +62,8 @@ describe('environment config bootstrap', () => {
       provider: PROVIDERS.openrouter.name,
       baseURL: PROVIDERS.openrouter.baseURL,
       model: 'openrouter/free',
-      fallbackModel: 'openrouter/free',
     });
+    expect(cfg?.fallbackModel).toBeUndefined();
   });
 
   it('lets cawdex env override provider, model, and runtime knobs', () => {
@@ -99,6 +75,7 @@ describe('environment config bootstrap', () => {
     process.env.CAWDEX_PERMISSION = 'yolo';
     process.env.CAWDEX_MEMORY = '0';
     process.env.CAWDEX_SHOW_THINKING = '0';
+    process.env.CAWDEX_REASONING_EFFORT = 'high';
 
     const cfg = loadConfigFromEnv();
     expect(cfg?.provider).toBe(PROVIDERS.deepseek.name);
@@ -108,6 +85,7 @@ describe('environment config bootstrap', () => {
     expect(cfg?.permissionMode).toBe('yolo');
     expect(cfg?.memory?.enabled).toBe(false);
     expect(cfg?.showThinking).toBe(false);
+    expect(cfg?.reasoningEffort).toBe('high');
   });
 
   it('accepts cawdex env aliases for provider, model, and runtime knobs', () => {
@@ -160,6 +138,7 @@ describe('runtime config overrides', () => {
     process.env.CAWDEX_MAX_TURNS_OVERRIDE = '12';
     process.env.CAWDEX_TEMPERATURE_OVERRIDE = '0.1';
     process.env.CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE = '64000';
+    process.env.CAWDEX_REASONING_EFFORT_OVERRIDE = 'low';
 
     const cfg = applyRuntimeConfigOverrides(baseConfig);
 
@@ -169,6 +148,7 @@ describe('runtime config overrides', () => {
     expect(cfg.maxTurns).toBe(12);
     expect(cfg.temperature).toBe(0.1);
     expect(cfg.contextWindowTokens).toBe(64000);
+    expect(cfg.reasoningEffort).toBe('low');
   });
 
   it('applies cawdex runtime override aliases to an existing config', () => {

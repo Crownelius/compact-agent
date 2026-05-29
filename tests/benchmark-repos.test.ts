@@ -7,6 +7,8 @@ import {
   formatBenchmarkRepoCatalog,
   formatBenchmarkRepoCatalogUsage,
   parseBenchmarkRepoCatalogCommandArgs,
+  selectBenchmarkRepoDigestTarget,
+  selectTopOpenSourceBenchmarkRepos,
   TERMINAL_BENCH_REPO_CATALOG,
   _internal,
 } from '../src/benchmark-repos.js';
@@ -30,6 +32,9 @@ describe('benchmark repo catalog', () => {
     expect(TERMINAL_BENCH_REPO_CATALOG.some((entry) =>
       entry.project === 'JJAgent' && entry.status === 'unverified' && entry.repos.length === 0,
     )).toBe(true);
+    expect(_internal.bestLeaderboardSnapshot(
+      TERMINAL_BENCH_REPO_CATALOG.find((entry) => entry.project === 'NexAU-AHE')!,
+    )?.rank).toBe(3);
   });
 
   it('formats a bounded catalog with next-step repo digest guidance', () => {
@@ -40,6 +45,31 @@ describe('benchmark repo catalog', () => {
     expect(output).toContain('Source: Terminal-Bench 2.0 public source mapping report');
     expect(output).toContain('no-public-source gaps');
     expect(output).toContain('/repo-digest <owner/repo>');
+  });
+
+  it('selects top open-source repo targets from the current top 20 without overclaiming gaps', () => {
+    const selected = selectTopOpenSourceBenchmarkRepos({ leaderboardTop: 20, limit: 10 });
+    const slugs = selected.map((item) => item.repo.slug);
+
+    expect(slugs).toContain('china-qijizhifeng/agentic-harness-engineering');
+    expect(slugs).toContain('Open-Lemon/LemonAgent');
+    expect(slugs).toContain('openai/codex');
+    expect(slugs).toContain('WithWoz/wozcode-plugin');
+    expect(slugs).toContain('coder/mux');
+    expect(slugs).not.toContain('kirby88/vix-releases');
+    expect(selected.length).toBeLessThan(10);
+    expect(selected.every((item) => item.leaderboard.rank <= 20)).toBe(true);
+  });
+
+  it('formats top open-source mode with docs-only repo-digest guidance and skipped gaps', () => {
+    const output = formatBenchmarkRepoCatalog({ top_open_source: true, leaderboard_top: 20, limit: 10 });
+
+    expect(output).toContain('Terminal-Bench Top Open-Source Repo Targets');
+    expect(output).toContain('Verified repo targets:');
+    expect(output).toContain('docs_only=yes');
+    expect(output).toContain('/repo-digest openai/codex --files 500 --docs-only');
+    expect(output).toContain('#2 JJAgent: no verified public implementation repository');
+    expect(output).toContain('#1 vix: release-only repository');
   });
 
   it('filters by query and status', () => {
@@ -65,7 +95,7 @@ describe('benchmark repo catalog', () => {
   });
 
   it('parses slash command flags and sentinel payloads', () => {
-    const parsed = parseBenchmarkRepoCatalogCommandArgs('"terminal-agent" --all --limit 20 --repos-only');
+    const parsed = parseBenchmarkRepoCatalogCommandArgs('"terminal-agent" --all --limit 20 --repos-only --digest');
 
     expect(parsed.error).toBeUndefined();
     expect(parsed.input).toMatchObject({
@@ -73,6 +103,7 @@ describe('benchmark repo catalog', () => {
       status: 'all',
       limit: 20,
       repos_only: true,
+      digest: true,
     });
 
     const unverified = parseBenchmarkRepoCatalogCommandArgs('--no-source --limit=20');
@@ -85,6 +116,22 @@ describe('benchmark repo catalog', () => {
     const encoded = encodeBenchmarkReposSentinel(parsed.input!);
     expect(encoded.startsWith('__BENCHMARK_REPOS__')).toBe(true);
     expect(decodeBenchmarkReposSentinel(encoded)).toEqual(parsed.input);
+
+    const top = parseBenchmarkRepoCatalogCommandArgs('--top-open-source --from-top 20 --limit 10 --docs-only');
+    expect(top.error).toBeUndefined();
+    expect(top.input).toMatchObject({
+      top_open_source: true,
+      leaderboard_top: 20,
+      limit: 10,
+      docs_only: true,
+    });
+  });
+
+  it('selects the first verified repo as the digest target', () => {
+    expect(selectBenchmarkRepoDigestTarget({ query: 'nexau', status: 'all' }))
+      .toBe('china-qijizhifeng/agentic-harness-engineering');
+    expect(selectBenchmarkRepoDigestTarget({ query: 'sage', status: 'unverified' }))
+      .toBeNull();
   });
 
   it('rejects unknown options with helpful usage', () => {
@@ -93,6 +140,8 @@ describe('benchmark repo catalog', () => {
     expect(parsed.error).toContain('unknown option');
     expect(formatBenchmarkRepoCatalogUsage()).toContain('/benchmark-repos');
     expect(formatBenchmarkRepoCatalogUsage()).toContain('--unverified');
+    expect(formatBenchmarkRepoCatalogUsage()).toContain('--digest');
+    expect(formatBenchmarkRepoCatalogUsage()).toContain('--top-open-source');
     expect(_internal.tokenizeArgs('"open ai" --all')).toEqual(['open ai', '--all']);
     expect(_internal.normalizeStatusAlias('missing')).toBe('unverified');
   });

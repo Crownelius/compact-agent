@@ -23,6 +23,7 @@ const aliasOnlyCommands = new Set([
   '/edit-prompt',
   '/github-digest',
   '/guide',
+  '/hermes',
   '/harness-components',
   '/hooks-reset',
   '/leaderboard',
@@ -97,6 +98,14 @@ describe('slash command contract', () => {
       alias: '/leaderboard-repos',
       entry: { command: '/benchmark-repos' },
     });
+    expect(resolveCommandEntry('/hermes')).toMatchObject({
+      alias: '/hermes',
+      entry: { command: '/sentience' },
+    });
+    expect(resolveCommandEntry('/permissions')).toMatchObject({
+      alias: '/permissions',
+      entry: { command: '/perm' },
+    });
   });
 
   it('includes aliases in completion names without duplicating entries', () => {
@@ -105,6 +114,8 @@ describe('slash command contract', () => {
     expect(names).toContain('/benchmark');
     expect(names).toContain('/bench');
     expect(names).toContain('/tb-repos');
+    expect(names).toContain('/permissions');
+    expect(names).toContain('/hermes');
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -112,5 +123,15 @@ describe('slash command contract', () => {
     expect(suggestCommandEntries('/bench').map((entry) => entry.command)).toContain('/benchmark');
     expect(suggestCommandEntries('/tb').map((entry) => entry.command)).toContain('/benchmark-repos');
     expect(suggestCommandEntries('memory').map((entry) => entry.command)).toContain('/memory');
+  });
+
+  it('handles local sentinel commands before the generic runQuery path', () => {
+    const source = readFileSync(join(repoRoot, 'src', 'index.ts'), 'utf-8');
+    const runQueryIdx = source.indexOf("messages.push({ role: 'user', content: result.injectPrompt });");
+    for (const sentinel of ['__RESUME_PICK__', '__PICK_MODEL__', '__SWARM__', '__SOURCES__', '__REPO_DIGEST__']) {
+      const idx = source.indexOf(sentinel);
+      expect(idx).toBeGreaterThan(0);
+      expect(idx).toBeLessThan(runQueryIdx);
+    }
   });
 });

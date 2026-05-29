@@ -41,7 +41,7 @@ There are 9 modes. Briefly explain the role of each:
 - \`plan\` — design only, no edits
 - \`debug\` — systematic root-cause hunt
 - \`architect\` — system-level design
-- \`hermes\` — self-improving learning loop (recall prior memory, model the
+- \`sentience\` — self-improving learning loop (recall prior memory, model the
   user, parallelize, distill skills, persist)
 - \`design\` — UI/visual work powered by Google Stitch. Used automatically
   for any visual work; integrates generated HTML into the user's code.
@@ -103,7 +103,7 @@ Plus admin commands: \`/ecc\` (status), \`/ecc-install\` (refresh resources),
 ### 9. Wrap-up
 Ask the user what they actually want to do today. Pick the most relevant
 command above and demonstrate it. If they have no specific task, suggest:
-- "Try \`/mode hermes\` and ask me about anything you've worked on before —
+- "Try \`/mode sentience\` and ask me about anything you've worked on before —
   I'll search your memory and prior sessions."
 - "Or run \`/audit\` to scan this project for lint/test/secret issues."
 

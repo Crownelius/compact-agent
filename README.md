@@ -11,7 +11,7 @@ cawdex --openai-oauth-smoke
 cawdex
 ```
 
-The npm package is `cawdex` and installs both the primary `cawdex` command and the legacy `cawdex` alias. `cawdex --doctor` checks the global install, npm registry metadata, provider config, MemPalace, source-research readiness, and benchmark adapter packaging without printing token values. `cawdex --openai-oauth-smoke` tests Codex OAuth auth, request creation, and streaming without printing tokens. First run prompts you for a provider, key, model, and permission mode. After that, `cawdex` from any directory drops you into a REPL with a persistent bottom-anchored input box.
+The npm package is `cawdex` and installs both the primary `cawdex` command and the legacy `cawdex` alias. `cawdex --doctor` checks the global install, npm registry metadata, provider config, MemPalace, source-research readiness, and benchmark adapter packaging without printing token values. `cawdex --openai-oauth-smoke` tests Codex OAuth auth, request creation, and streaming without printing tokens. First run prompts you for provider/key/model, fallback, permissions, and swarm defaults. After that, `cawdex` from any directory drops you into a REPL with a persistent bottom-anchored input box.
 
 ---
 
@@ -22,11 +22,11 @@ The npm package is `cawdex` and installs both the primary `cawdex` command and t
 - Permission gating: `/perm ask` prompts every tool call, `/perm auto` lets read-only and safe writes through, `/perm yolo` runs everything.
 - Optional OS sandbox: `/sandbox standard` uses `sandbox-exec` (macOS) or `bwrap` (Linux) when available. No-op on Windows.
 - Multi-key rotation pool: add several provider keys via `/keys add`. The agent round-robins and cools down keys that hit 429 / quota / auth errors so the others keep working.
-- Parallel agent swarm: `/swarm <agent,agent,...> <task>` fans out N specialized ECC agents against the same prompt and prints attributed results.
+- Parallel agent swarm: `/swarm <task>` asks a compact setup wizard, infers agent roles, runs analysis-only ECC workers in parallel, and prints a main-agent handoff. Expert form: `/swarm <agent,agent,...> <task>`.
 - Source-grounded research: `/sources <topic>` directly queries arXiv, GitHub repos/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions without a model call; `/benchmark-repos` lists a packaged public Terminal-Bench repo seed catalog plus known no-public-source gaps; `/repo-digest <owner/repo>` inspects one GitHub repo's metadata/tree/manifests/component signals; `/source-research <topic>` asks the agent to synthesize sources before coding.
 - Automatic repo-map context for larger codebases: Cawdex injects a bounded symbol/file outline ranked by local dependency references and request terms, then asks the model to read full files before editing.
 - Bundled [everything-claude-code](https://github.com/Crownelius/everything-claude-code): 228 skills, 60 agents, 75 workflow commands, 19 language rule bundles. Auto-installed on first launch; refresh with `/ecc-install`.
-- 10 modes (`/mode <name>`): `dev`, `review`, `tdd`, `research`, `plan`, `debug`, `benchmark`, `architect`, `hermes`, `design`. Each rewrites the system-prompt addendum.
+- 10 modes (`/mode <name>`): `dev`, `review`, `tdd`, `research`, `plan`, `debug`, `benchmark`, `architect`, `sentience`, `design`. Each rewrites the system-prompt addendum.
 - Optional voice + accessibility: Whisper dictation, ElevenLabs TTS readout, and a 19-binding F-row hotkey scheme designed for blind / low-vision users (see [Accessibility](#accessibility)). Off by default — opt in with `/voice on`.
 - Zero telemetry. The only outbound traffic is to your chosen LLM provider when you send a turn.
 
@@ -46,7 +46,7 @@ The npm package is `cawdex` and installs both the primary `cawdex` command and t
 | `debug` | Reproduce → hypothesize → narrow → fix → verify. Refuses to guess. |
 | `benchmark` | SWE-bench/Terminal-Bench-style runs: localize, patch, verify, and report harness-grade evidence. |
 | `architect` | Component boundaries, data flow, scalability, schemas, deployment. |
-| `hermes` | Recalls prior sessions, parallelizes independent subtasks, distills new skills from experience, suggests what's worth banking. |
+| `sentience` | Recalls prior sessions, parallelizes independent subtasks, distills new skills from experience, suggests what's worth banking. |
 | `design` | UI requests flow through Google Stitch automatically. Requires `/stitch-config`. |
 
 ---
@@ -81,16 +81,16 @@ If you have multiple keys for the same provider (e.g. several free OpenRouter ac
 
 Cool-down policy: 60s for rate-limit (`429`, `rate.?limit`), 1h for quota / auth / 403. 404 model-not-found and 5xx server errors are NOT treated as key problems — they're surfaced upward without burning a key.
 
-For a free-tier-only OpenRouter account, use `/openrouter-free` to reset the provider, primary model, and fallback to `openrouter/free`. The interactive `/model` picker floats currently free models to the top.
+For a free-tier-only OpenRouter account, use `/openrouter-free` to reset the provider and primary model to `openrouter/free`. The interactive `/model` picker floats currently free models to the top. `/model alias <name> <model>` creates shortcuts, and `/model once <model-or-alias> [--effort high]` applies a single-turn override without changing `config.json`. Automatic fallback retry is explicit: choose it in `/config` or set it later with `/fallback <model-id>`.
 
 ---
 
 ## Swarming
 
-Fan out the same task to N specialized agents in parallel.
+Use `/swarm <task>` to answer a compact setup wizard, infer roles, run analysis-only agents in parallel, and print a main-agent handoff. Expert users can still pass `/swarm <agent,agent,...> <task>`.
 
 ```
-> /swarm code-architect,silent-failure-hunter,type-design-analyzer  audit the auth flow
+> /swarm Build a working browser game with keyboard controls and tests
 
 ══════════════════════════════════════════════
   code-architect   (12.4s)
@@ -102,7 +102,7 @@ Fan out the same task to N specialized agents in parallel.
 …
 ```
 
-Agents are pulled from the bundled ECC harness. Each runs against an empty tool list (analysis only — no edits or shell). Failures in one don't kill the others (`Promise.allSettled`). Cost = N model calls.
+Agents are pulled from the bundled ECC harness. Each runs against an empty tool list (analysis only, no edits or shell). Failures in one don't kill the others (`Promise.allSettled`). Cost = N model calls.
 
 ---
 
@@ -115,16 +115,17 @@ Agents are pulled from the bundled ECC harness. Each runs against an empty tool 
 | `/walkthrough` | Agent-led tour. Aliases: `/tour`, `/guide`. |
 | `/help` | Full command list. |
 | `/mode <name>` | Switch mode. |
-| `/model [name]` | Show or switch model. |
+| `/model [name]` | Show or switch model. Also supports aliases and one-shot overrides. |
 | `/openrouter-free` | Switch OpenRouter back to the free model router. |
 | `/openai-login status\|smoke` | Check Codex OAuth status or run an OAuth stream smoke test. |
-| `/palette <id>`, `/palettes` | Switch among 12 Coolors trending color schemes. |
+| `/theme`, `/palette`, `/palette <id>`, `/palettes` | Pick display density and color palette, or switch directly by palette id. `/pallete` is accepted as a typo alias. |
+| `/footer [sub]` | Customize the fixed bottom footer. Supports `on`, `off`, `text <template>`, `opening <prompt>`, `clear`, and `reset`. |
 | `/perm ask\|auto\|yolo` | Change permission mode. |
 | `/sandbox off\|standard\|strict` | OS sandbox level (macOS / Linux only). |
 | `/keys add\|remove\|status\|clear` | Manage the key-rotation pool. |
-| `/swarm <agents> <task>` | Parallel multi-agent fan-out. |
+| `/swarm <task>` | Infer roles, run analysis-only agents, and synthesize a handoff. Expert: `/swarm <agents> <task>`. |
 | `/sources <topic> [--json]` | Direct source scan against arXiv, GitHub, Hugging Face, and Kaggle. Defaults to recent 90-day leaderboard-oriented coverage and does not call the model. Add `--json` for machine-readable source packets. |
-| `/benchmark-repos [query]` | Offline public Terminal-Bench repo catalog for source mining, including known no-public-source gaps; follow positive hits with `/repo-digest <owner/repo>`. |
+| `/benchmark-repos [query]` | Offline public Terminal-Bench repo catalog for source mining, including known no-public-source gaps; use `--top-open-source --from-top 20 --docs-only` for verified public repo targets from the top of the leaderboard, then follow positive hits with `/repo-digest <owner/repo> --docs-only`. |
 | `/repo-digest <github-url\|owner/repo>` | Direct GitHub repo digest: metadata, file tree signals, manifests, likely commands, key excerpts, and AHE-style component surfaces without cloning or a model call. |
 | `/source-research <topic>` | Research arXiv, GitHub repos/issues/PRs/code, Hugging Face papers/models/datasets, and Kaggle datasets/competitions before synthesis. |
 | `/benchmark <task>` | Run a benchmark-grade issue/terminal/general-agent workflow. Profiles: `swe-bench`, `terminal-bench`, `terminalworld`, `swe-context`, `swe-chain`, `swe-cycle`, `swe-ci`, `swe-prbench`, `tml-bench`, `pi-bench`, `ci-repair`, `wildclaw`, `arc-agi`, `specbench`, `reward-hacking`, `roadmapbench`, `saasbench`, `swe-bench-mobile`, `appworld`, `browsecomp`, `tau2`, `generic`. |
@@ -150,7 +151,7 @@ See **[COMMANDS.md](COMMANDS.md)** for the full reference.
 
 Typing `/` at an empty prompt opens a bounded inline command selector, not a full-screen overlay. It stays under the prompt, keeps the widget under roughly half the terminal height, supports typing to narrow, arrows/PageUp/PageDown to scroll, Home/End to jump, and Enter to fill the prompt with the highlighted command so you can edit it or press Enter again to run it. If a slash prefix is already typed, Tab reopens the same bounded selector with that filter instead of dumping every command into the terminal. The selector only erases its own rows, so the surrounding transcript remains visible.
 
-While a model call is running, typed text is shown in the fixed bottom type-ahead line and restored into the next editable prompt. Known-flaky OpenRouter preview/free models such as `openrouter/owl-alpha` also get a first-token watchdog: if no stream event arrives, Cawdex cancels the stuck call and retries once with the configured fallback model, usually `openrouter/free`, instead of leaving the terminal looking frozen.
+While a model call is running, typed text stays visible and editable in the fixed bottom footer and is restored into the next prompt if you cancel. The first interactive prompt opens with `/model` prefilled by default; change that with `/footer opening <prompt>`. Footer templates support `{version}` for the installed Cawdex version. The active-turn indicator uses a subtle Edo/neon-style animation and keeps Esc/F5 visible as the interrupt path. On every interactive launch, Cawdex checks npm for a newer package and starts `npm install -g cawdex@latest --force` in the background when one is available. Known-flaky OpenRouter preview/free models such as `openrouter/owl-alpha` also get a first-token watchdog: if no stream event arrives, Cawdex cancels the stuck call and retries once only when a fallback model is configured; otherwise it records the timeout and returns the prompt instead of leaving the terminal looking frozen.
 
 The 12 built-in color palettes are the first-page Coolors trending schemes: `olive-garden-feast`, `fiery-ocean`, `refreshing-summer-fun`, `ocean-blue-serenity`, `pastel-dreamland-adventure`, `sunny-beach-day`, `dark-sunset`, `fiery-red-sunset`, `fiery-palette`, `rustic-earthy-tones`, `golden-summer-fields`, and `vibrant-tones`.
 
@@ -208,7 +209,7 @@ Targeted-fix manifest tracking is live alongside decision observability: repair 
 
 Trajectory cleanup tracking is also live: redacted traces now flag base64/data-URI blobs, high-entropy encoded or minified output, repeated duplicate output, and excessive truncation as `trajectory_cleanup_*` signals. Risky cleanup events create an execution-control process defect, completion reminder, and `experienceCard.trajectoryCleanup` entry so AHE-style runs can deduplicate noisy observations before reusing prior evidence.
 
-Interactive turns are acknowledged before provider I/O starts, and active turns can be cancelled with Esc or F5/Shift+F5, including raw Windows/xterm F5 escape sequences that readline may not classify correctly. Any type-ahead captured before a cancellation or permission interruption is preserved and restored at the prompt instead of being silently submitted. Known-stuck OpenRouter preview models such as `openrouter/owl-alpha` are auto-healed to the configured fallback model on startup and before the first API call unless `CAWDEX_ALLOW_FLAKY_MODELS=1` is set.
+Interactive turns are acknowledged before provider I/O starts, and active turns can be cancelled with Esc or F5/Shift+F5, including raw Windows/xterm F5 escape sequences that readline may not classify correctly. Any type-ahead captured before a cancellation or permission interruption is preserved and restored at the prompt instead of being silently submitted. Known-stuck OpenRouter preview models such as `openrouter/owl-alpha` keep a shorter first-token watchdog, but Cawdex never replaces a user-configured model on startup or before the first API call. Automatic retry only happens after a real failure when you explicitly configure `/fallback`.
 
 Bundled ECC skills are exposed with progressive disclosure: the system prompt shows only Level-0 skill names and descriptions, and `skill_view` loads the full prompt body only after a fit check. In benchmark mode the prompt asks the agent to inspect `benchmark_context` and local repo evidence before loading a skill, prefer one strongly domain/version-matched skill, and treat local files plus verifier output as authoritative.
 
@@ -350,6 +351,5 @@ For larger features (new mode, new tool, new orchestration pattern), open an iss
 
 Bundles content from:
 - [everything-claude-code](https://github.com/Crownelius/everything-claude-code) — skill / agent / hook harness
-- [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) — Hermes mode reference
 
 [Bug reports](https://github.com/Crownelius/cawdex/issues) · [Install guide](INSTALL.md) · [Commands](COMMANDS.md) · [npm](https://www.npmjs.com/package/cawdex)

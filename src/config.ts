@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { STATE_DIR_NAME } from './brand.js';
-import { PROVIDERS, type CawdexConfig } from './types.js';
+import { PROVIDERS, type CawdexConfig, type ReasoningEffort } from './types.js';
 
 // Cawdex keeps config, sessions, skills, memory, and benchmark artifacts
 // under ~/.cawdex by default. CAWDEX_HOME can override that location.
@@ -27,7 +27,7 @@ function resolveConfigFile(): string {
  * Resolve the per-project state dir (codemap cache, project memory,
  * package-manager pref). Prefers `<cwd>/.cawdex`; falls back to
  * the legacy `<cwd>/.cawdex` only if it exists and the new one
- * doesn't. Project dirs are NOT auto-renamed â€” they often live inside
+ * doesn't. Project dirs are NOT auto-renamed — they often live inside
  * repos and migrating them silently could surprise teammates / CI.
  */
 export function getProjectStateDir(cwd: string): string {
@@ -51,7 +51,7 @@ const DEFAULT_CONFIG: CawdexConfig = {
   // Default color palette. Users switch with /palette <name>; available
   // palettes are listed via /palettes. IDs come from Coolors trending schemes.
   palette: 'olive-garden-feast',
-  // Thinking / reasoning shown by default â€” gives users live "the model isn't
+  // Thinking / reasoning shown by default — gives users live "the model isn't
   // dead" feedback during long turns. Toggle off with /thinking.
   showThinking: true,
   // Sandbox config. Default off: most workflows don't want the
@@ -61,7 +61,20 @@ const DEFAULT_CONFIG: CawdexConfig = {
   sandbox: {
     level: 'off',
   },
-  // MemPalace persistent memory. ON by default â€” it's a featured capability,
+  swarm: {
+    setupWizard: true,
+    maxAgents: 5,
+  },
+  import: {
+    defaultSource: 'auto',
+    autoSyncOnStartup: false,
+    syncLimit: 200,
+  },
+  footer: {
+    enabled: true,
+    openingPrompt: '/model',
+  },
+  // MemPalace persistent memory. ON by default — it's a featured capability,
   // zero overhead until something is written, and the agent only uses the
   // tools when it sees a durable fact worth keeping. User can opt out during
   // the setup wizard or anytime via /memory disable.
@@ -77,7 +90,7 @@ const DEFAULT_CONFIG: CawdexConfig = {
   voice: {
     enabled: false,
     stt: {
-      // apiKey unset â€” falls back to top-level apiKey for OpenAI-compatible
+      // apiKey unset — falls back to top-level apiKey for OpenAI-compatible
       // providers. Whisper specifically requires a real OpenAI key; users
       // configure a separate one via /voice config when their main provider
       // isn't OpenAI.
@@ -87,13 +100,13 @@ const DEFAULT_CONFIG: CawdexConfig = {
       autoSubmit: false,
     },
     tts: {
-      // apiKey unset â€” no fallback (ElevenLabs is a distinct provider). User
+      // apiKey unset — no fallback (ElevenLabs is a distinct provider). User
       // must run /voice config to provide it.
       baseURL: 'https://api.elevenlabs.io/v1',
       model: 'eleven_turbo_v2_5',
-      // Rachel + Domi â€” both available on every ElevenLabs free tier; using
+      // Rachel + Domi — both available on every ElevenLabs free tier; using
       // two distinct presets gives instant blind-accessibility benefit
-      // (assistant â‰  user voice).
+      // (assistant ≠ user voice).
       assistantVoiceId: '21m00Tcm4TlvDq8ikWAM',
       userVoiceId: 'AZnzlk1XvdvUeBnXmlld',
       echoUser: true,
@@ -103,7 +116,7 @@ const DEFAULT_CONFIG: CawdexConfig = {
       similarityBoost: 0.75,
     },
     accessibility: {
-      // screenReader OFF by default â€” it's lossy for sighted users (no ANSI
+      // screenReader OFF by default — it's lossy for sighted users (no ANSI
       // means no syntax highlight). Blind users turn it on via /accessibility
       // screenReader on.
       screenReader: false,
@@ -153,28 +166,26 @@ const ENV_KEYS = [
   'CAWDEX_API_KEY',
   'CAWDEX_BASE_URL',
   'CAWDEX_MODEL',
+  'CAWDEX_MODEL_OVERRIDE',
   'CAWDEX_FALLBACK_MODEL',
+  'CAWDEX_FALLBACK_MODEL_OVERRIDE',
   'CAWDEX_MAX_TOKENS',
+  'CAWDEX_MAX_TOKENS_OVERRIDE',
   'CAWDEX_CONTEXT_WINDOW_TOKENS',
+  'CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE',
   'CAWDEX_MAX_TURNS',
+  'CAWDEX_MAX_TURNS_OVERRIDE',
   'CAWDEX_TEMPERATURE',
+  'CAWDEX_TEMPERATURE_OVERRIDE',
   'CAWDEX_PERMISSION',
   'CAWDEX_MEMORY',
   'CAWDEX_THEME',
   'CAWDEX_SHOW_THINKING',
-  'CAWDEX_PROVIDER',
-  'CAWDEX_API_KEY',
-  'CAWDEX_BASE_URL',
-  'CAWDEX_MODEL',
-  'CAWDEX_FALLBACK_MODEL',
-  'CAWDEX_MAX_TOKENS',
-  'CAWDEX_CONTEXT_WINDOW_TOKENS',
-  'CAWDEX_MAX_TURNS',
-  'CAWDEX_TEMPERATURE',
-  'CAWDEX_PERMISSION',
-  'CAWDEX_MEMORY',
-  'CAWDEX_THEME',
-  'CAWDEX_SHOW_THINKING',
+  'CAWDEX_REASONING_EFFORT',
+  'CAWDEX_REASONING_EFFORT_OVERRIDE',
+  'CAWDEX_BASE_URL_OVERRIDE',
+  'CAWDEX_API_KEY_OVERRIDE',
+  'CAWDEX_API_KEY_ENV',
   'OPENROUTER_API_KEY',
   'OPENAI_API_KEY',
   'DEEPSEEK_API_KEY',
@@ -185,6 +196,8 @@ const ENV_KEYS = [
   'ZHIPUAI_API_KEY',
   'OLLAMA_BASE_URL',
 ] as const;
+
+const REASONING_EFFORTS: readonly ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
 function normalizeProviderKey(value: string | undefined): ProviderKey | null {
   const key = String(value || '').trim().toLowerCase();
@@ -213,7 +226,7 @@ function firstEnv(...keys: string[]): string | undefined {
 }
 
 function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } | null {
-  const explicit = normalizeProviderKey(firstEnv('CAWDEX_PROVIDER', 'CAWDEX_PROVIDER'));
+  const explicit = normalizeProviderKey(firstEnv('CAWDEX_PROVIDER'));
   if (explicit) {
     return { providerKey: explicit, apiKey: apiKeyForProvider(explicit) };
   }
@@ -228,7 +241,7 @@ function inferProviderFromEnv(): { providerKey: ProviderKey; apiKey?: string } |
 }
 
 function apiKeyForProvider(providerKey: ProviderKey): string | undefined {
-  const explicit = firstEnv('CAWDEX_API_KEY', 'CAWDEX_API_KEY');
+  const explicit = firstEnv('CAWDEX_API_KEY');
   if (explicit) return explicit;
   switch (providerKey) {
     case 'openrouter': return firstEnv('OPENROUTER_API_KEY');
@@ -262,6 +275,15 @@ function envFlag(name: string | string[]): boolean | undefined {
   return undefined;
 }
 
+function envReasoningEffort(name: string | string[]): ReasoningEffort | undefined {
+  const raw = Array.isArray(name) ? firstEnv(...name) : firstEnv(name);
+  const normalized = raw?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return (REASONING_EFFORTS as readonly string[]).includes(normalized)
+    ? normalized as ReasoningEffort
+    : undefined;
+}
+
 /**
  * Build a runtime config from environment variables for headless harnesses.
  * This intentionally does not write config.json; it lets benchmark containers
@@ -271,8 +293,8 @@ export function loadConfigFromEnv(): CawdexConfig | null {
   if (!envWasProvided()) return null;
 
   const inferred = inferProviderFromEnv();
-  const explicitBaseURL = firstEnv('CAWDEX_BASE_URL', 'CAWDEX_BASE_URL', 'OLLAMA_BASE_URL');
-  const explicitModel = firstEnv('CAWDEX_MODEL', 'CAWDEX_MODEL');
+  const explicitBaseURL = firstEnv('CAWDEX_BASE_URL', 'OLLAMA_BASE_URL');
+  const explicitModel = firstEnv('CAWDEX_MODEL');
   const providerKey = inferred?.providerKey ?? (explicitBaseURL || explicitModel ? 'custom' : null);
   if (!providerKey) return null;
 
@@ -289,34 +311,33 @@ export function loadConfigFromEnv(): CawdexConfig | null {
     baseURL,
     model,
     provider: preset.name,
-    fallbackModel: firstEnv('CAWDEX_FALLBACK_MODEL', 'CAWDEX_FALLBACK_MODEL'),
+    fallbackModel: firstEnv('CAWDEX_FALLBACK_MODEL'),
   };
 
-  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS', 'CAWDEX_MAX_TOKENS'], 1);
+  const maxTokens = envNumber('CAWDEX_MAX_TOKENS', 1);
   if (maxTokens) config.maxTokens = Math.floor(maxTokens);
-  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS', 'CAWDEX_CONTEXT_WINDOW_TOKENS'], 1);
+  const contextWindowTokens = envNumber('CAWDEX_CONTEXT_WINDOW_TOKENS', 1);
   if (contextWindowTokens) config.contextWindowTokens = Math.floor(contextWindowTokens);
-  const maxTurns = envNumber(['CAWDEX_MAX_TURNS', 'CAWDEX_MAX_TURNS'], 1);
+  const maxTurns = envNumber('CAWDEX_MAX_TURNS', 1);
   if (maxTurns) config.maxTurns = Math.floor(maxTurns);
-  const temperature = envNumber(['CAWDEX_TEMPERATURE', 'CAWDEX_TEMPERATURE'], 0);
+  const temperature = envNumber('CAWDEX_TEMPERATURE', 0);
   if (temperature !== undefined) config.temperature = temperature;
 
-  const permission = firstEnv('CAWDEX_PERMISSION', 'CAWDEX_PERMISSION');
+  const permission = firstEnv('CAWDEX_PERMISSION');
   if (permission === 'ask' || permission === 'auto' || permission === 'yolo') {
     config.permissionMode = permission;
   }
-  const memoryEnabled = envFlag(['CAWDEX_MEMORY', 'CAWDEX_MEMORY']);
+  const memoryEnabled = envFlag('CAWDEX_MEMORY');
   if (memoryEnabled !== undefined) {
     config.memory = { ...(config.memory || {}), enabled: memoryEnabled };
   }
-  const showThinking = envFlag(['CAWDEX_SHOW_THINKING', 'CAWDEX_SHOW_THINKING']);
+  const showThinking = envFlag('CAWDEX_SHOW_THINKING');
   if (showThinking !== undefined) config.showThinking = showThinking;
-  const theme = firstEnv('CAWDEX_THEME', 'CAWDEX_THEME');
+  const reasoningEffort = envReasoningEffort('CAWDEX_REASONING_EFFORT');
+  if (reasoningEffort) config.reasoningEffort = reasoningEffort;
+  const theme = firstEnv('CAWDEX_THEME');
   if (theme === 'full' || theme === 'compact' || theme === 'minimal') config.theme = theme;
 
-  if (providerKey === 'openrouter' && !config.fallbackModel) {
-    config.fallbackModel = PROVIDERS.openrouter.defaultModel;
-  }
   if (providerKey === 'openai-codex') {
     config.openaiAuth = {
       type: 'codex_oauth',
@@ -343,27 +364,33 @@ export function applyRuntimeConfigOverrides(config: CawdexConfig): CawdexConfig 
     sandbox: config.sandbox ? { ...config.sandbox } : config.sandbox,
     voice: config.voice ? { ...config.voice } : config.voice,
     openaiAuth: config.openaiAuth ? { ...config.openaiAuth } : config.openaiAuth,
+    swarm: config.swarm ? { ...config.swarm } : config.swarm,
+    import: config.import ? { ...config.import } : config.import,
+    footer: config.footer ? { ...config.footer } : config.footer,
+    modelAliases: config.modelAliases ? { ...config.modelAliases } : config.modelAliases,
   };
 
-  const model = firstEnv('CAWDEX_MODEL_OVERRIDE', 'CAWDEX_MODEL_OVERRIDE');
+  const model = firstEnv('CAWDEX_MODEL_OVERRIDE');
   if (model) next.model = model;
-  const fallbackModel = firstEnv('CAWDEX_FALLBACK_MODEL_OVERRIDE', 'CAWDEX_FALLBACK_MODEL_OVERRIDE');
+  const fallbackModel = firstEnv('CAWDEX_FALLBACK_MODEL_OVERRIDE');
   if (fallbackModel) next.fallbackModel = fallbackModel;
-  const baseURL = firstEnv('CAWDEX_BASE_URL_OVERRIDE', 'CAWDEX_BASE_URL_OVERRIDE');
+  const baseURL = firstEnv('CAWDEX_BASE_URL_OVERRIDE');
   if (baseURL) next.baseURL = baseURL;
-  const apiKey = firstEnv('CAWDEX_API_KEY_OVERRIDE', 'CAWDEX_API_KEY_OVERRIDE');
+  const apiKey = firstEnv('CAWDEX_API_KEY_OVERRIDE');
   if (apiKey) next.apiKey = apiKey;
-  const apiKeyEnv = firstEnv('CAWDEX_API_KEY_ENV', 'CAWDEX_API_KEY_ENV');
+  const apiKeyEnv = firstEnv('CAWDEX_API_KEY_ENV');
   if (apiKeyEnv && process.env[apiKeyEnv]?.trim()) next.apiKey = process.env[apiKeyEnv]!.trim();
 
-  const maxTokens = envNumber(['CAWDEX_MAX_TOKENS_OVERRIDE', 'CAWDEX_MAX_TOKENS_OVERRIDE'], 1);
+  const maxTokens = envNumber('CAWDEX_MAX_TOKENS_OVERRIDE', 1);
   if (maxTokens) next.maxTokens = Math.floor(maxTokens);
-  const contextWindowTokens = envNumber(['CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE', 'CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE'], 1);
+  const contextWindowTokens = envNumber('CAWDEX_CONTEXT_WINDOW_TOKENS_OVERRIDE', 1);
   if (contextWindowTokens) next.contextWindowTokens = Math.floor(contextWindowTokens);
-  const maxTurns = envNumber(['CAWDEX_MAX_TURNS_OVERRIDE', 'CAWDEX_MAX_TURNS_OVERRIDE'], 1);
+  const maxTurns = envNumber('CAWDEX_MAX_TURNS_OVERRIDE', 1);
   if (maxTurns) next.maxTurns = Math.floor(maxTurns);
-  const temperature = envNumber(['CAWDEX_TEMPERATURE_OVERRIDE', 'CAWDEX_TEMPERATURE_OVERRIDE'], 0);
+  const temperature = envNumber('CAWDEX_TEMPERATURE_OVERRIDE', 0);
   if (temperature !== undefined) next.temperature = temperature;
+  const reasoningEffort = envReasoningEffort('CAWDEX_REASONING_EFFORT_OVERRIDE');
+  if (reasoningEffort) next.reasoningEffort = reasoningEffort;
 
   validateConfig(next);
   return next;
@@ -371,7 +398,7 @@ export function applyRuntimeConfigOverrides(config: CawdexConfig): CawdexConfig 
 
 // Track which fields we've already warned about this process. loadConfig()
 // is called both from configExists() and from main(), and each invocation
-// validates â€” so without this set we'd print "Warning: Unexpected config
+// validates — so without this set we'd print "Warning: Unexpected config
 // field: X" twice on every startup. Per-process is the right scope; cross-
 // process spam would require persisting the set to disk which isn't worth
 // the complexity for a defensive log message.
@@ -402,7 +429,7 @@ function validateConfig(config: CawdexConfig): void {
   }
 
   // Warn on unexpected fields
-  const expectedFields = new Set(['apiKey', 'apiKeys', 'baseURL', 'model', 'fallbackModel', 'provider', 'openaiAuth', 'maxTokens', 'contextWindowTokens', 'maxTurns', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'voice', 'memory', 'sandbox']);
+  const expectedFields = new Set(['apiKey', 'apiKeys', 'baseURL', 'model', 'modelAliases', 'fallbackModel', 'provider', 'openaiAuth', 'maxTokens', 'contextWindowTokens', 'maxTurns', 'temperature', 'permissionMode', 'alwaysAllowedTools', 'dryRun', 'theme', 'palette', 'showThinking', 'reasoningEffort', 'voice', 'memory', 'sandbox', 'swarm', 'import', 'footer']);
   for (const key in config) {
     if (!expectedFields.has(key) && !_alreadyWarnedFields.has(key)) {
       _alreadyWarnedFields.add(key);

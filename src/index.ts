@@ -10,15 +10,18 @@ import { initDebug, emit as dbgEmit, setDebugLevel, getDebugStatus, tailDebug, t
 import chalk from 'chalk';
 import { loadConfig, saveConfig, configExists, getConfigDir, loadConfigFromEnv, applyRuntimeConfigOverrides } from './config.js';
 import { resetClient } from './api.js';
+import { explainPermission } from './permissions.js';
 import {
   CHATGPT_CODEX_BASE_URL,
   getOpenAICodexAuthStatus,
   runCodexLogin,
 } from './openai-oauth.js';
 import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from './openai-smoke.js';
-import { fallbackModelForKnownFlakyTurn, isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
+import { isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import { buildHarnessComponentsReport } from './tools/harness-components.js';
+import { buildContextBrief } from './context-brief.js';
+import { formatAgentsInstructionsReport } from './agents-md.js';
 import { GitHubRepoDigestTool } from './tools/github-repo-digest.js';
 import { ResearchSourcesTool } from './tools/research-sources.js';
 import {
@@ -53,8 +56,20 @@ import {
   OPENROUTER_UNKNOWN_FREE_MODEL_CONTEXT_WINDOW_TOKENS,
 } from './compaction.js';
 import { extractPatterns, printInstinctStatus, pruneExpired, listInstincts, exportInstincts, importInstincts } from './learning.js';
-import { MODES, type Mode, listModes } from './modes.js';
+import { MODES, type Mode, listModes, normalizeModeName } from './modes.js';
 import { printModelOptions, switchModel, classifyComplexity, routeModel } from './model-router.js';
+import {
+  deleteModelAlias,
+  formatModelResolution,
+  formatTurnOverride,
+  listModelAliases,
+  normalizeReasoningEffort,
+  parseModelOnce,
+  resolveModelReference,
+  setModelAlias,
+  tokenizeModelCommandArgs,
+  type ModelTurnOverride,
+} from './model-aliases.js';
 import { buildCommitPrompt, buildPRPrompt, printDiff, printLog, isGitRepo } from './git-workflow.js';
 import {
   buildReviewPrompt, buildTDDPrompt, buildSecurityReviewPrompt, runAudit, printAuditReport,
@@ -137,7 +152,18 @@ import { status as sandboxStatus } from './sandbox.js';
 // API key rotation pool (/keys)
 import { listStatus as keyPoolStatus, setPool as syncKeyPool } from './key-rotation.js';
 // Agentic swarm — fan-out concurrent agents on the same task (/swarm)
-import { runSwarm, resolveAgents, formatSwarmResults } from './swarm.js';
+import {
+  buildSwarmAgentTask,
+  buildSwarmPlan,
+  clampSwarmMaxAgents,
+  decodeSwarmSentinel,
+  encodeSwarmSentinel,
+  formatSwarmResults,
+  parseSwarmCommandArgs,
+  resolveAgents,
+  runSwarm,
+  type SwarmPlan,
+} from './swarm.js';
 // Voice / accessibility — built-in dictation (Whisper) + readout (ElevenLabs)
 import {
   printVoiceStatus, isVoiceEnabled, getTtsConfig, getSttConfig, getAccessibilityConfig,
@@ -149,6 +175,28 @@ import { COMMAND_CATALOG, allSlashCommandNames, completeSlashCommandNames, resol
 import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcceptedCommand, type InlineSuggestResult } from './inline-suggest.js';
 import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 import { maybeInstantAnswer } from './instant-answer.js';
+import { maybeCreateInstantArtifact } from './instant-artifact.js';
+import { getCurrentVersion, startStartupUpdateCheck } from './updater.js';
+import {
+  importStatus,
+  previewImport,
+  rollbackImport,
+  runImport,
+  scanImportSources,
+  type ImportSource,
+} from './imports.js';
+import {
+  activateFooter,
+  askWithFooterPrompt,
+  buildFooterSnapshot,
+  deactivateFooter,
+  isFooterActive,
+  setFooterActivity,
+  shouldUseFixedFooter,
+  updateFooter,
+  writeFooterSubmittedLine,
+  writeScrollableLine,
+} from './fixed-footer.js';
 
 /**
  * Unified prompt resolver — prefers the bundled ECC prompt for a given
@@ -161,6 +209,16 @@ function buildUnifiedPrompt(eccName: string, args: string, builtin: () => string
   const ecc = getEccCommandPrompt(eccName);
   if (!ecc) return builtin();
   return args.trim() ? `${ecc}\n\n## User Input\n\n${args}` : ecc;
+}
+
+function printLocalResponse(message: string): void {
+  if (!isFooterActive()) {
+    console.log(theme.primary(message));
+    return;
+  }
+  for (const line of message.split(/\r?\n/)) {
+    writeScrollableLine(line ? theme.primary(line) : '');
+  }
 }
 
 function openRouterContextHintForModel(model: string, catalogModel?: Pick<OpenRouterModel, 'contextLength'> | null): number | undefined {
@@ -185,6 +243,33 @@ function applyModelSelection(
   } else {
     delete config.contextWindowTokens;
   }
+}
+
+function clipSetupValue(value: string, max = 120): string {
+  const single = value.replace(/\s+/g, ' ').trim();
+  return single.length <= max ? single : single.slice(0, max - 1) + '…';
+}
+
+async function runSwarmSetupWizard(rl: readline.Interface, plan: SwarmPlan, config: CawdexConfig): Promise<SwarmPlan> {
+  if (!stdin.isTTY || process.env.CAWDEX_SWARM_WIZARD === '0' || config.swarm?.setupWizard === false) return plan;
+  const next: SwarmPlan = {
+    ...plan,
+    setup: { ...plan.setup },
+  };
+  const ask = async (label: string, current: string): Promise<string> => {
+    const prompt = theme.dim(`  ${label}`) + theme.syntaxPunctuation(` [${clipSetupValue(current)}]: `);
+    const answer = (await rl.question(prompt)).trim();
+    return answer || current;
+  };
+
+  console.log(theme.header('  Swarm setup'));
+  console.log(theme.dim('  Press Enter to accept an inferred value, or type a correction.'));
+  next.setup.goal = await ask('Goal', next.setup.goal);
+  next.setup.budget = await ask('Budget/time', next.setup.budget);
+  next.setup.target = await ask('Target platform/stack', next.setup.target);
+  next.setup.assets = await ask('Starting assets/resources', next.setup.assets);
+  next.setup.quality = await ask('Quality bar/release target', next.setup.quality);
+  return next;
 }
 
 // ── Setup Wizard ──────────────────────────────────────────
@@ -232,6 +317,116 @@ function printUnknownSlashCommand(cmd: string): void {
   console.log(d('  Try: ') + c(`/help ${suggestions[0].command}`) + d(' for exact usage.'));
 }
 
+async function promptSecretLine(rl: readline.Interface, prompt: string, existingValue = ''): Promise<string> {
+  const suffix = existingValue ? ' [stored; Enter keeps it]' : '';
+  const label = `${prompt}${suffix}: `;
+
+  if (!stdin.isTTY || !stdout.isTTY) {
+    const answer = await rl.question(chalk.yellow(label));
+    return answer.trim() || existingValue;
+  }
+
+  return new Promise<string>((resolve) => {
+    let value = '';
+    const wasRaw = stdin.isRaw;
+    const keypressListeners = stdin.listeners('keypress').slice() as TaggedKeypressListener[];
+    const detached = keypressListeners.filter((listener) => !listener.__cawdexHotkey__);
+
+    function render(): void {
+      const shown = value ? '*'.repeat(Math.min(value.length, 16)) : '';
+      stdout.write(`\r\x1b[2K${chalk.yellow(label)}${chalk.dim(shown)}`);
+    }
+
+    function cleanup(): void {
+      stdin.removeListener('data', onData);
+      for (const listener of detached) stdin.on('keypress', listener);
+      try { stdin.setRawMode(wasRaw); } catch { /* noop */ }
+      stdout.write('\n');
+    }
+
+    function done(nextValue: string): void {
+      cleanup();
+      resolve(nextValue.trim() || existingValue);
+    }
+
+    function onData(buf: Buffer): void {
+      if (buf.length === 1 && buf[0] === 0x03) {
+        cleanup();
+        process.exit(130);
+      }
+      if (buf.length === 1 && buf[0] === 0x1B) {
+        done(existingValue);
+        return;
+      }
+      if (buf.length === 1 && (buf[0] === 0x0D || buf[0] === 0x0A)) {
+        done(value);
+        return;
+      }
+      if (buf.length === 1 && (buf[0] === 0x7F || buf[0] === 0x08)) {
+        value = value.slice(0, -1);
+        render();
+        return;
+      }
+      const text = buf.toString('utf8').replace(/[^\x20-\x7E]/g, '');
+      if (text) {
+        value += text;
+        render();
+      }
+    }
+
+    for (const listener of detached) stdin.removeListener('keypress', listener);
+    try { stdin.setRawMode(true); } catch { /* noop */ }
+    stdin.resume();
+    stdin.on('data', onData);
+    render();
+  });
+}
+
+async function runAppearanceWizard(rl: readline.Interface, config: CawdexConfig): Promise<void> {
+  const themeChoices: ConfigChoice<'full' | 'compact' | 'minimal'>[] = [
+    { label: 'full', detail: 'banner and full context on launch', value: 'full' },
+    { label: 'compact', detail: 'same banner, tighter future surfaces', value: 'compact' },
+    { label: 'minimal', detail: 'small launch header', value: 'minimal' },
+  ];
+  const currentTheme = config.theme || 'full';
+  const themeDefault = Math.max(0, themeChoices.findIndex((choice) => choice.value === currentTheme));
+  const selectedTheme = await selectConfigChoice(rl, 'Display theme', themeChoices, {
+    defaultIndex: themeDefault,
+    fallbackPrompt: `  Display theme [${themeDefault + 1}]: `,
+    parseFallback: (answer, defaultIndex) => {
+      const raw = (answer || String(defaultIndex + 1)).trim().toLowerCase();
+      const byName = themeChoices.find((choice) => choice.value === raw);
+      if (byName) return byName.value;
+      return themeChoices[Number.parseInt(raw, 10) - 1]?.value;
+    },
+  });
+
+  const paletteChoices = listPalettes().map((meta) => ({
+    label: meta.id,
+    detail: meta.description,
+    value: meta.id,
+  }));
+  const currentPalette = getPaletteId();
+  const paletteDefault = Math.max(0, paletteChoices.findIndex((choice) => choice.value === currentPalette));
+  const selectedPalette = await selectConfigChoice(rl, 'Color palette', paletteChoices, {
+    defaultIndex: paletteDefault,
+    fallbackPrompt: `  Color palette [${paletteDefault + 1}]: `,
+    parseFallback: (answer, defaultIndex) => {
+      const raw = (answer || String(defaultIndex + 1)).trim().toLowerCase();
+      const resolved = resolvePaletteId(raw);
+      if (resolved) return resolved;
+      return paletteChoices[Number.parseInt(raw, 10) - 1]?.value;
+    },
+  });
+
+  config.theme = selectedTheme;
+  setPalette(selectedPalette);
+  config.palette = selectedPalette;
+  saveConfig(config);
+  console.log(theme.brandBold(`  ${sym.mark} Appearance: ${selectedTheme} / ${selectedPalette}`));
+  console.log(theme.dim('  Brand · ') + theme.brand('brand') + theme.dim(' · ') + theme.success('success') + theme.dim(' · ') + theme.warning('warning') + theme.dim(' · ') + theme.error('error') + theme.dim(' · ') + theme.command('command'));
+}
+
 async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig): Promise<CawdexConfig> {
   console.log(chalk.bold.cyan(`\n  ${BRAND_NAME} — First-time Setup\n`));
   const providerKeys = Object.keys(PROVIDERS);
@@ -264,8 +459,13 @@ async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig)
 
   let apiKey = '';
   let openaiAuth: CawdexConfig['openaiAuth'];
+  const sameProvider = normalizeProvider(currentConfig?.provider ?? '') === normalizeProvider(provider.name);
   if (provider.requiresKey) {
-    apiKey = await rl.question(chalk.yellow(`  API Key for ${provider.name}: `));
+    apiKey = await promptSecretLine(
+      rl,
+      `  API Key for ${provider.name}`,
+      sameProvider ? currentConfig?.apiKey ?? '' : '',
+    );
   }
   if (providerKey === 'openai-codex') {
     openaiAuth = {
@@ -284,29 +484,17 @@ async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig)
     }
   }
 
-  const sameProvider = normalizeProvider(currentConfig?.provider ?? '') === normalizeProvider(provider.name);
   let model = sameProvider && currentConfig?.model ? currentConfig.model : provider.defaultModel;
   const modelInput = await rl.question(chalk.yellow(`  Model [${model}]: `));
   if (modelInput.trim()) model = modelInput.trim();
 
-  // Auto-heal known-flaky experimental models. These OpenRouter preview
-  // IDs frequently return empty responses, the literal string "ERROR",
-  // or no first stream event. Warning-only was not enough: users could
-  // save a broken first-run config and every prompt looked like it was
-  // stuck in the live queue. Keep an explicit env escape hatch for model
-  // debugging, but default normal users back to the free router.
+  // Warn only. The user-selected model is part of their config and must
+  // never be silently replaced by a "safer" default.
   if (isKnownFlakyOpenRouterModel({ provider: provider.name, model })) {
     console.log('');
-    console.log(chalk.yellow(`  ⚠  "${model}" is an experimental / free model that's been reported to return`));
-    console.log(chalk.yellow(`     empty or "ERROR" responses, or no first stream event.`));
-    if (process.env.CAWDEX_ALLOW_FLAKY_MODELS === '1') {
-      console.log(chalk.dim('     Keeping it because CAWDEX_ALLOW_FLAKY_MODELS=1 is set.'));
-    } else {
-      const safer = providerKey === 'openrouter' ? PROVIDERS.openrouter.defaultModel : provider.defaultModel;
-      console.log(chalk.dim(`     Using safer default instead: ${safer}`));
-      console.log(chalk.dim('     Override only for debugging: CAWDEX_ALLOW_FLAKY_MODELS=1 cawdex'));
-      model = safer;
-    }
+    console.log(chalk.yellow(`  ⚠  "${model}" is known to stall badly in interactive OpenRouter sessions`));
+    console.log(chalk.yellow(`     or return empty / "ERROR" responses. Keeping your selected model.`));
+    console.log(chalk.dim('     Configure /fallback explicitly if you want an automatic retry after a real failure.'));
     console.log('');
   }
   if (providerKey === 'openrouter' && !isOpenRouterFreeModelId(model)) {
@@ -314,6 +502,43 @@ async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig)
     console.log(chalk.yellow(`  Note: "${model}" may require OpenRouter credits.`));
     console.log(chalk.dim('  Free-tier-safe default: openrouter/free'));
     console.log(chalk.dim('  Free variants usually end with :free. Switch later with /openrouter-free or /model <id>.'));
+    console.log('');
+  }
+
+  let fallbackModel: string | undefined;
+  if (providerKey === 'openrouter') {
+    const currentFallback = sameProvider ? currentConfig?.fallbackModel : undefined;
+    const fallbackDefaultIndex = currentFallback === PROVIDERS.openrouter.defaultModel
+      ? 1
+      : currentFallback
+        ? 2
+        : 0;
+    console.log(chalk.white('  OpenRouter fallback'));
+    console.log(chalk.dim('  Fallback retries can hide a bad primary model by silently switching to another model.'));
+    console.log(chalk.dim('  Choose explicitly; you can change this later with /fallback.'));
+    const fallbackChoice = await selectConfigChoice(rl, 'Fallback behavior', [
+      { label: 'Disable fallback', detail: 'show the primary model failure; never switch to free automatically', value: 'off' as const },
+      { label: 'Use openrouter/free', detail: 'retry once with the free router on timeout, empty, or cryptic errors', value: 'free' as const },
+      { label: 'Custom fallback model', detail: 'enter a specific OpenRouter model id', value: 'custom' as const },
+    ], {
+      defaultIndex: fallbackDefaultIndex,
+      fallbackPrompt: `  Fallback behavior [${fallbackDefaultIndex + 1}]: `,
+      parseFallback: (answer, defaultIndex) => {
+        const raw = (answer || String(defaultIndex + 1)).trim().toLowerCase();
+        if (['off', 'none', 'disable', 'disabled', 'no', 'n', '1'].includes(raw)) return 'off';
+        if (['free', 'openrouter/free', 'yes', 'y', '2'].includes(raw)) return 'free';
+        if (['custom', 'model', '3'].includes(raw)) return 'custom';
+        return undefined;
+      },
+    });
+    if (fallbackChoice === 'free') fallbackModel = PROVIDERS.openrouter.defaultModel;
+    if (fallbackChoice === 'custom') {
+      const customFallback = currentFallback && currentFallback !== PROVIDERS.openrouter.defaultModel
+        ? currentFallback
+        : '';
+      const answer = await rl.question(chalk.yellow(`  Fallback model${customFallback ? ` [${customFallback}]` : ''}: `));
+      fallbackModel = answer.trim() || customFallback || undefined;
+    }
     console.log('');
   }
 
@@ -336,21 +561,17 @@ async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig)
     },
   });
 
-  // ── MemPalace memory setup ──────────────────────────────
-  // Featured capability, opt-out at setup time. Explain briefly so the
-  // user can make an informed choice — most users want this on.
-  console.log(chalk.white('\n  MemPalace persistent memory'));
-  console.log(chalk.dim('  Lets the agent remember your preferences, codebase landmarks, and lessons across sessions.'));
-  console.log(chalk.dim('  Two stores: global (~/.cawdex/memory) for cross-project facts, project (.cawdex/memory'));
-  console.log(chalk.dim('  in each repo) for codebase-specific knowledge. Searchable via /memory or by the agent itself.'));
-  console.log(chalk.dim('  Zero external dependencies; storage is local JSON files. Can be toggled anytime via /memory disable.'));
-  const memoryDefaultIndex = currentConfig?.memory?.enabled === false ? 1 : 0;
-  const memoryEnabled = await selectConfigChoice(rl, 'Enable MemPalace memory', [
-    { label: 'Enable', detail: 'local global + project memory stores', value: true },
-    { label: 'Disable', detail: 'can be re-enabled later with /memory enable', value: false },
+  // /config stays focused on the main live controls: model/fallback,
+  // permissions, and swarm. Other subsystems keep their own commands.
+  console.log(chalk.white('\n  Swarm settings'));
+  console.log(chalk.dim('  Defaults for /swarm <task>. Per-task setup still comes from the task text.'));
+  const swarmWizardDefaultIndex = currentConfig?.swarm?.setupWizard === false ? 1 : 0;
+  const swarmSetupWizard = await selectConfigChoice(rl, 'Swarm setup wizard', [
+    { label: 'Enable', detail: 'ask goal/budget/stack/assets/quality before natural /swarm tasks', value: true },
+    { label: 'Disable', detail: 'infer setup fields without asking', value: false },
   ], {
-    defaultIndex: memoryDefaultIndex,
-    fallbackPrompt: `  Enable MemPalace memory? [${memoryDefaultIndex === 0 ? 'Y/n' : 'y/N'}]: `,
+    defaultIndex: swarmWizardDefaultIndex,
+    fallbackPrompt: `  Swarm setup wizard? [${swarmWizardDefaultIndex === 0 ? 'Y/n' : 'y/N'}]: `,
     parseFallback: (answer, defaultIndex) => {
       const raw = answer.trim().toLowerCase();
       if (!raw) return defaultIndex === 0;
@@ -363,31 +584,97 @@ async function setupWizard(rl: readline.Interface, currentConfig?: CawdexConfig)
     },
   });
 
+  const currentMaxAgents = clampSwarmMaxAgents(currentConfig?.swarm?.maxAgents);
+  const maxAgentsAnswer = await rl.question(chalk.yellow(`  Max swarm agents [${currentMaxAgents}]: `));
+  const maxAgents = maxAgentsAnswer.trim()
+    ? clampSwarmMaxAgents(Number.parseInt(maxAgentsAnswer.trim(), 10))
+    : currentMaxAgents;
+  const askOptionalSwarmDefault = async (label: string, current?: string): Promise<string | undefined> => {
+    const answer = await rl.question(chalk.yellow(`  ${label}${current ? ` [${current}]` : ''}: `));
+    return answer.trim() || current || undefined;
+  };
+  const defaultBudget = await askOptionalSwarmDefault('Default budget/time', currentConfig?.swarm?.defaultBudget);
+  const defaultTarget = await askOptionalSwarmDefault('Default target platform/stack', currentConfig?.swarm?.defaultTarget);
+  const defaultAssets = await askOptionalSwarmDefault('Default starting assets/resources', currentConfig?.swarm?.defaultAssets);
+  const defaultQuality = await askOptionalSwarmDefault('Default quality bar/release target', currentConfig?.swarm?.defaultQuality);
+
+  console.log(chalk.white('\n  Import settings'));
+  console.log(chalk.dim('  Defaults for /import and optional startup auto-sync.'));
+  const importSourceChoices: ConfigChoice<'auto' | 'claude' | 'codex' | 'mempalace'>[] = [
+    { label: 'Auto-detect', detail: 'scan all supported sources and import what is available', value: 'auto' },
+    { label: 'Claude', detail: 'prefer ~/.claude/projects exports', value: 'claude' },
+    { label: 'Codex', detail: 'prefer ~/.codex/sessions exports', value: 'codex' },
+    { label: 'MemPalace', detail: 'prefer ~/.mempalace notes and identity files', value: 'mempalace' },
+  ];
+  const currentImportSource = currentConfig?.import?.defaultSource ?? 'auto';
+  const importSourceDefaultIndex = Math.max(0, importSourceChoices.findIndex((c) => c.value === currentImportSource));
+  const defaultImportSource = await selectConfigChoice(rl, 'Import default source', importSourceChoices, {
+    defaultIndex: importSourceDefaultIndex,
+    fallbackPrompt: `  Import default source [${importSourceDefaultIndex + 1}]: `,
+    parseFallback: (answer, defaultIndex) => {
+      const raw = (answer || String(defaultIndex + 1)).trim().toLowerCase();
+      const byName = importSourceChoices.find((choice) => choice.value === raw);
+      if (byName) return byName.value;
+      const byNumber = importSourceChoices[Number.parseInt(raw, 10) - 1];
+      return byNumber?.value;
+    },
+  });
+  const autoSyncDefaultIndex = currentConfig?.import?.autoSyncOnStartup ? 0 : 1;
+  const autoSyncOnStartup = await selectConfigChoice(rl, 'Import auto-sync on startup', [
+    { label: 'Enable', detail: 'run /import run <source> --limit N once at startup', value: true },
+    { label: 'Disable', detail: 'import only when requested via /import run', value: false },
+  ], {
+    defaultIndex: autoSyncDefaultIndex,
+    fallbackPrompt: `  Import auto-sync? [${autoSyncDefaultIndex === 0 ? 'Y/n' : 'y/N'}]: `,
+    parseFallback: (answer, defaultIndex) => {
+      const raw = answer.trim().toLowerCase();
+      if (!raw) return defaultIndex === 0;
+      if (raw.startsWith('n')) return false;
+      if (raw.startsWith('y')) return true;
+      const byNumber = Number.parseInt(raw, 10);
+      if (byNumber === 1) return true;
+      if (byNumber === 2) return false;
+      return undefined;
+    },
+  });
+  const currentSyncLimit = Math.max(10, Math.min(5000, Number(currentConfig?.import?.syncLimit ?? 200)));
+  const syncLimitAnswer = await rl.question(chalk.yellow(`  Import sync limit [${currentSyncLimit}]: `));
+  const importSyncLimit = syncLimitAnswer.trim()
+    ? Math.max(10, Math.min(5000, Number.parseInt(syncLimitAnswer.trim(), 10) || currentSyncLimit))
+    : currentSyncLimit;
+
   const config: CawdexConfig = {
+    ...(currentConfig ?? {}),
     apiKey,
     baseURL,
     model,
-    fallbackModel: providerKey === 'openrouter' ? PROVIDERS.openrouter.defaultModel : undefined,
     provider: provider.name,
-    ...(openaiAuth ? { openaiAuth } : {}),
-    maxTokens: 8192,
-    temperature: 0.3,
+    maxTokens: currentConfig?.maxTokens ?? 8192,
+    temperature: currentConfig?.temperature ?? 0.3,
     permissionMode: permMode,
-    memory: {
-      enabled: memoryEnabled,
-      globalScope: true,
-      projectScope: true,
+    swarm: {
+      setupWizard: swarmSetupWizard,
+      maxAgents,
+      ...(defaultBudget ? { defaultBudget } : {}),
+      ...(defaultTarget ? { defaultTarget } : {}),
+      ...(defaultAssets ? { defaultAssets } : {}),
+      ...(defaultQuality ? { defaultQuality } : {}),
+    },
+    import: {
+      defaultSource: defaultImportSource,
+      autoSyncOnStartup,
+      syncLimit: importSyncLimit,
     },
   };
+  if (fallbackModel) config.fallbackModel = fallbackModel;
+  else delete config.fallbackModel;
+  if (openaiAuth) config.openaiAuth = openaiAuth;
+  else delete config.openaiAuth;
   applyModelSelection(config, model);
 
   saveConfig(config);
   console.log(chalk.green(`\n  Config saved to ${getConfigDir()}/config.json`));
-  if (memoryEnabled) {
-    console.log(chalk.dim(`  MemPalace: ENABLED — 7 memory_* tools available to the agent. Storage created on first write.`));
-  } else {
-    console.log(chalk.dim(`  MemPalace: disabled. Re-enable anytime with /memory enable.`));
-  }
+  console.log(chalk.dim(`  Configured: /model, /fallback, /perm, /swarm, and /import defaults. Memory stays under /memory.`));
   console.log();
   return config;
 }
@@ -541,6 +828,9 @@ async function askWithDecoratedPrompt(
   promptGlyph: string,
   prefill: string = '',
 ): Promise<string> {
+  if (isFooterActive()) {
+    return askWithFooterPrompt(rl, prefill, { echoSubmittedLine: false });
+  }
   const decorative = sessionTag + modeTag;
   if (decorative.length > 0) {
     process.stdout.write(decorative);
@@ -770,8 +1060,11 @@ export function handleSlashCommand(
   messages: Message[],
   session: Session,
   mode: { current: Mode },
-): { handled: boolean; shouldExit?: boolean; newMessages?: Message[]; injectPrompt?: string } {
-  const { cmd, args } = parseSlashCommand(input);
+): { handled: boolean; shouldExit?: boolean; newMessages?: Message[]; injectPrompt?: string; turnOverride?: ModelTurnOverride | null } {
+  const parsed = parseSlashCommand(input);
+  const resolved = resolveCommandEntry(parsed.cmd);
+  const cmd = resolved?.entry.command ?? parsed.cmd;
+  const args = parsed.args;
 
   switch (cmd) {
     // ── Help ──────────────────────────────────────────
@@ -796,6 +1089,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/theme [mode]') + d('     — toggle display mode (full/compact/minimal)'));
       console.log(d('  ') + c('/palette [id]') + d('     — switch color palette; run /palettes to list'));
       console.log(d('  ') + c('/palettes') + d('         — list available color palettes with preview'));
+      console.log(d('  ') + c('/footer [sub]') + d('    — customize the fixed bottom footer and startup prompt'));
       console.log(d('  ') + c('/clear') + d('            — clear conversation'));
       console.log(d('  ') + c('/back [n]') + d('         — rewind to before the nth most-recent user turn (no arg lists turns)'));
       console.log(d('  ') + c('/fork [name]') + d('      — branch current conversation; previous session reachable via /resume (alias: /branch)'));
@@ -823,15 +1117,16 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/keys [add|rm]') + d('    — multi-key rotation pool (e.g. several OpenRouter accounts)'));
       console.log(d('  ') + c('/route') + d('            — auto-route model based on next message'));
       console.log(h('\n  ── Modes ──'));
-      console.log(d('  ') + c('/mode [name]') + d('      — switch mode (dev/review/tdd/research/plan/debug/architect/hermes/design)'));
+      console.log(d('  ') + c('/mode [name]') + d('      — switch mode (dev/review/tdd/research/plan/debug/architect/sentience/design)'));
       console.log(d('  ') + c('/modes') + d('            — list all modes (read-only; use /mode <name> to switch)'));
-      console.log(d('  ') + c('/hermes') + d('           — alias for /mode hermes (self-improving learning loop)'));
+      console.log(d('  ') + c('/sentience') + d('        — self-improving learning loop (alias: /hermes)'));
       console.log(d('  ') + c('/design [task]') + d('    — switch to design mode (Stitch-powered UI generation); optional task to start immediately'));
       console.log(h('\n  ── Session ──'));
       console.log(d('  ') + c('/sessions') + d('         — list saved sessions'));
       console.log(d('  ') + c('/save [name]') + d('      — save current session'));
       console.log(d('  ') + c('/resume <id>') + d('      — resume a saved session'));
       console.log(d('  ') + c('/delete <id>') + d('      — delete a session'));
+      console.log(d('  ') + c('/import [sub]') + d('      — import Claude/Codex/MemPalace history and memory'));
       console.log(h('\n  ── Git ──'));
       console.log(d('  ') + c('/commit') + d('           — AI-generated commit'));
       console.log(d('  ') + c('/pr') + d('               — AI-generated pull request'));
@@ -861,6 +1156,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/harness') + d('          — file-level harness component map'));
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
       console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode (ask/auto/yolo); no arg shows current + always-allow list'));
+      console.log(d('  ') + c('/perm why <tool>') + d(' — explain whether a tool call allows, prompts, or blocks'));
       console.log(d('  ') + c('/perm-reset') + d('       — clear the per-tool always-allow list'));
       console.log(d('  ') + c('/sandbox [level]') + d('  — OS-native bash sandbox (off / standard / strict)'));
       console.log(d('  ') + c('/dry-run') + d('          — toggle dry-run mode'));
@@ -874,6 +1170,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/update-docs') + d('      — sync documentation with code'));
       console.log(d('  ') + c('/checkpoint [label]') + d(' — save git state checkpoint'));
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
+      console.log(d('  ') + c('/context brief') + d('   — cheap local repo/context preflight'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
       console.log(d('  ') + c('/benchmark-repos') + d('  — public Terminal-Bench repo catalog'));
@@ -886,7 +1183,7 @@ export function handleSlashCommand(
       // silent aliases for power users but are not listed here.
       console.log(h('\n  ── Orchestration ──'));
       console.log(d('  ') + c('/orchestrate <task>') + d(' — decompose into parallel sub-agents'));
-      console.log(d('  ') + c('/swarm <agents> <task>') + d(' — true parallel fan-out: N agents on same task, results merged with attribution'));
+      console.log(d('  ') + c('/swarm <task>') + d(' — infer roles, run analysis-only agents, synthesize a handoff (expert: /swarm <agents> <task>)'));
       console.log(d('  ') + c('/pr-loop') + d('          — autonomous PR review loop'));
       console.log(d('  ') + c('/multi-plan <task>') + d(' — multi-agent planning'));
       console.log(d('  ') + c('/multi-execute') + d('    — multi-agent execution'));
@@ -970,10 +1267,89 @@ export function handleSlashCommand(
           console.log(chalk.yellow(`  Invalid theme: ${args}. Use: full, compact, or minimal`));
         }
       } else {
-        const current = config.theme || 'full';
-        console.log(chalk.dim(`  Current theme: ${current}`));
+        return { handled: true, injectPrompt: '__PICK_APPEARANCE__' };
       }
       return { handled: true };
+
+    case '/footer': {
+      const input = args.trim();
+      const parts = input.split(/\s+/).filter(Boolean);
+      const sub = (parts[0] || '').toLowerCase();
+      config.footer = config.footer ?? { enabled: true, openingPrompt: '/model' };
+      const refreshFooter = (): void => {
+        const snapshot = buildFooterSnapshot(config, mode.current, session, process.cwd());
+        if (shouldUseFixedFooter(config)) activateFooter(snapshot);
+        else deactivateFooter();
+        updateFooter(snapshot);
+      };
+      const printStatus = (): void => {
+        console.log(theme.header('\n  Footer'));
+        console.log(theme.dim(`  Enabled:        ${config.footer?.enabled === false ? 'off' : 'on'}`));
+        console.log(theme.dim(`  Version:        ${getCurrentVersion()}`));
+        console.log(theme.dim(`  Opening prompt: ${config.footer?.openingPrompt ?? '/model'}`));
+        console.log(theme.dim(`  Status row:     ${config.footer?.template || '(default)'}`));
+        console.log(theme.dim(`  Template keys:  {provider}, {model}, {permissions}, {session}, {mode}, {cwd}, {workspace}, {sandbox}, {cost}, {budget}, {activity}, {version}`));
+        console.log(theme.dim('\n  Commands:'));
+        console.log(theme.dim('    /footer on | off'));
+        console.log(theme.dim('    /footer text Provider {provider} | Model {model} | v{version}'));
+        console.log(theme.dim('    /footer opening /model     (or: /footer opening off)'));
+        console.log(theme.dim('    /footer clear              (clear custom status row)'));
+        console.log(theme.dim('    /footer reset              (default footer + /model opening prompt)'));
+      };
+      if (!sub) {
+        printStatus();
+        return { handled: true };
+      }
+      if (sub === 'on') {
+        config.footer.enabled = true;
+        saveConfig(config);
+        refreshFooter();
+        console.log(chalk.green('  Footer: on'));
+        return { handled: true };
+      }
+      if (sub === 'off') {
+        config.footer.enabled = false;
+        saveConfig(config);
+        refreshFooter();
+        console.log(chalk.green('  Footer: off'));
+        return { handled: true };
+      }
+      if (sub === 'reset') {
+        config.footer = { enabled: true, openingPrompt: '/model' };
+        saveConfig(config);
+        refreshFooter();
+        console.log(chalk.green('  Footer reset to defaults.'));
+        return { handled: true };
+      }
+      if (sub === 'clear') {
+        delete config.footer.template;
+        saveConfig(config);
+        refreshFooter();
+        console.log(chalk.green('  Footer status row: default'));
+        return { handled: true };
+      }
+      if (sub === 'opening') {
+        const value = input.slice(parts[0].length).trim();
+        config.footer.openingPrompt = /^(off|none|disable)$/i.test(value) ? '' : (value || '/model');
+        saveConfig(config);
+        refreshFooter();
+        console.log(chalk.green(`  Footer opening prompt: ${config.footer.openingPrompt || '(off)'}`));
+        return { handled: true };
+      }
+      const template = sub === 'text'
+        ? input.slice(parts[0].length).trim()
+        : input;
+      if (!template) {
+        printStatus();
+        return { handled: true };
+      }
+      config.footer.template = template;
+      saveConfig(config);
+      refreshFooter();
+      console.log(chalk.green('  Footer status row updated.'));
+      console.log(chalk.dim(`  ${template}`));
+      return { handled: true };
+    }
 
     // ── Clear ─────────────────────────────────────────
     case '/clear': {
@@ -1226,18 +1602,70 @@ export function handleSlashCommand(
     // ── Model ─────────────────────────────────────────
     case '/model':
       if (args) {
-        const newModel = switchModel(config, args);
-        if (newModel) {
-          applyModelSelection(config, newModel);
+        const tokens = tokenizeModelCommandArgs(args);
+        const sub = (tokens[0] || '').toLowerCase();
+        if (sub === 'alias' || sub === 'aliases') {
+          if (tokens.length === 1 || sub === 'aliases') {
+            const aliases = listModelAliases(config);
+            console.log(chalk.cyan('\n  Model aliases:'));
+            for (const item of aliases) {
+              const source = item.source === 'builtin' ? 'built-in' : 'user';
+              console.log(chalk.dim(`  ${item.alias.padEnd(18)} -> ${item.model} (${source})`));
+            }
+            console.log(chalk.dim('\n  Set: /model alias <name> <model-id>   Remove: /model unalias <name>'));
+            return { handled: true };
+          }
+          const alias = tokens[1] || '';
+          const target = tokens.slice(2).join(' ');
+          const set = setModelAlias(config, alias, target);
+          if (!set.ok) {
+            console.log(chalk.yellow(`  ${set.error}`));
+            return { handled: true };
+          }
           saveConfig(config);
-          resetClient();
-          console.log(chalk.green(`  Model: ${config.model}`));
-        } else {
-          applyModelSelection(config, args);
-          saveConfig(config);
-          resetClient();
-          console.log(chalk.green(`  Model: ${config.model} (custom)`));
+          console.log(chalk.green(`  Model alias ${alias.toLowerCase()} -> ${set.model}`));
+          return { handled: true };
         }
+        if (sub === 'unalias' || sub === 'remove' || sub === 'rm' || sub === 'delete') {
+          const alias = tokens[1] || '';
+          if (!alias) {
+            console.log(chalk.yellow('  Usage: /model unalias <name>'));
+            return { handled: true };
+          }
+          const removed = deleteModelAlias(config, alias);
+          if (removed) {
+            saveConfig(config);
+            console.log(chalk.green(`  Removed model alias ${alias.toLowerCase()}`));
+          } else {
+            console.log(chalk.yellow(`  No user model alias named ${alias}.`));
+          }
+          return { handled: true };
+        }
+        if (sub === 'once' || sub === 'next') {
+          const parsedOnce = parseModelOnce(config, tokens.slice(1).join(' '));
+          if (parsedOnce.error || !parsedOnce.override) {
+            console.log(chalk.yellow(`  ${parsedOnce.error || 'Could not parse one-shot model override.'}`));
+            return { handled: true };
+          }
+          console.log(chalk.green(`  Next turn override: ${formatTurnOverride(parsedOnce.override, config.model)}`));
+          return { handled: true, turnOverride: parsedOnce.override };
+        }
+        if (sub === 'effort' || sub === 'reasoning') {
+          const effort = normalizeReasoningEffort(tokens[1]);
+          if (!effort) {
+            console.log(chalk.yellow('  Usage: /model effort none|minimal|low|medium|high|xhigh'));
+            return { handled: true };
+          }
+          const turnOverride: ModelTurnOverride = { reasoningEffort: effort, source: 'manual' };
+          console.log(chalk.green(`  Next turn reasoning effort: ${effort}`));
+          return { handled: true, turnOverride };
+        }
+
+        const resolvedModel = resolveModelReference(config, args);
+        applyModelSelection(config, resolvedModel.model);
+        saveConfig(config);
+        resetClient();
+        console.log(chalk.green(`  Model: ${formatModelResolution(resolvedModel)}`));
         return { handled: true };
       }
       // No args. On OpenRouter, the user wants the interactive
@@ -1266,7 +1694,7 @@ export function handleSlashCommand(
       if (!target) {
         const cur = config.fallbackModel ?? '(not set)';
         console.log(chalk.dim(`  Current fallback model: ${cur}`));
-        console.log(chalk.dim(`  Used once per chain when the primary returns "unknown" provider errors.`));
+        console.log(chalk.dim(`  Used once per chain when the primary times out, returns empty text, or hits an unknown provider error.`));
         console.log(chalk.dim(`  Set with: /fallback <model-id>  · disable with: /fallback off`));
         return { handled: true };
       }
@@ -1279,7 +1707,7 @@ export function handleSlashCommand(
       config.fallbackModel = target;
       saveConfig(config);
       console.log(chalk.green(`  Fallback model: ${target}`));
-      console.log(chalk.dim(`  Will be tried automatically once per chain if ${config.model} returns a cryptic provider error.`));
+      console.log(chalk.dim(`  Will be tried automatically once per chain if ${config.model} times out, returns empty text, or hits an unknown provider error.`));
       return { handled: true };
     }
 
@@ -1287,11 +1715,12 @@ export function handleSlashCommand(
       config.provider = PROVIDERS.openrouter.name;
       config.baseURL = PROVIDERS.openrouter.baseURL;
       applyModelSelection(config, PROVIDERS.openrouter.defaultModel);
-      config.fallbackModel = PROVIDERS.openrouter.defaultModel;
+      config.fallbackModel = undefined;
       saveConfig(config);
       resetClient();
       console.log(chalk.green('  OpenRouter free-tier mode enabled.'));
       console.log(chalk.dim(`  Model: ${config.model}`));
+      console.log(chalk.dim('  Fallback: disabled. Enable explicitly with /fallback <model-id>.'));
       console.log(chalk.dim('  The free router picks a currently available zero-cost model that supports the request shape.'));
       return { handled: true };
     }
@@ -1372,8 +1801,8 @@ export function handleSlashCommand(
 
     // ── Mode ──────────────────────────────────────────
     case '/mode':
-      if (args && MODES[args as Mode]) {
-        mode.current = args as Mode;
+      if (args && normalizeModeName(args)) {
+        mode.current = normalizeModeName(args)!;
         const m = MODES[mode.current];
         console.log(chalk.green(`  Mode: ${m.label} — ${m.description}`));
         // Soft hint when switching mode with conversation history present.
@@ -1401,10 +1830,11 @@ export function handleSlashCommand(
       }
       return { handled: true };
 
-    // ── Hermes shorthand (inspired by nousresearch/hermes-agent) ──
+    // ── Sentience shorthand (/hermes remains a compatibility alias) ──
+    case '/sentience':
     case '/hermes': {
-      mode.current = 'hermes';
-      const m = MODES.hermes;
+      mode.current = 'sentience';
+      const m = MODES.sentience;
       console.log(chalk.cyan(`  Mode: ${m.label}`));
       console.log(chalk.dim(`  ${m.description}`));
       console.log(chalk.dim(`  Recall → user-model → parallelize → distill → persist → schedule.`));
@@ -1487,9 +1917,7 @@ export function handleSlashCommand(
 
     case '/resume': {
       if (!args.trim()) {
-        console.log(chalk.yellow('  Usage: /resume <session-id> | <prefix> | last'));
-        console.log(chalk.dim('  /sessions lists what\'s saved.'));
-        return { handled: true };
+        return { handled: true, injectPrompt: '__RESUME_PICK__' };
       }
       // resolveSessionRef accepts exact ID, prefix match (like git),
       // "last"/"latest" shortcut, and strips angle/quote wrappers
@@ -1540,9 +1968,10 @@ export function handleSlashCommand(
       // mode.current is a { current: Mode } box (shared closure
       // ref) so mutation propagates to the hotkey listener +
       // prompt rendering automatically.
-      if (loaded.mode && loaded.mode !== mode.current) {
-        changes.push(`mode ${mode.current} → ${loaded.mode}`);
-        mode.current = loaded.mode as Mode;
+      const loadedMode = loaded.mode ? normalizeModeName(loaded.mode) : null;
+      if (loadedMode && loadedMode !== mode.current) {
+        changes.push(`mode ${mode.current} -> ${loadedMode}`);
+        mode.current = loadedMode;
       }
       // Adopt the resumed session's identity so subsequent
       // autosaves write to its file, not the current session's.
@@ -1597,6 +2026,121 @@ export function handleSlashCommand(
     }
 
     // ── Git ───────────────────────────────────────────
+    case '/import': {
+      const tokens = args.trim().split(/\s+/).filter(Boolean);
+      const sub = (tokens[0] || 'help').toLowerCase();
+      const sourceToken = (tokens[1] || 'auto').toLowerCase();
+      const limitIdx = tokens.findIndex((t) => t === '--limit');
+      const dryRun = tokens.includes('--dry-run');
+      const knownSources = ['claude', 'codex', 'mempalace'] as const;
+      const parsedSource = knownSources.includes(sourceToken as ImportSource)
+        ? (sourceToken as ImportSource)
+        : null;
+      const limit = limitIdx >= 0 && tokens[limitIdx + 1]
+        ? Math.max(1, Math.min(10_000, Number(tokens[limitIdx + 1]) || 1000))
+        : 1000;
+      const detected = scanImportSources();
+      const detectedSources = detected.filter((s) => s.detected && s.artifactsFound > 0).map((s) => s.source);
+      const targets: ImportSource[] = parsedSource
+        ? [parsedSource]
+        : (detectedSources.length > 0 ? detectedSources : ['claude', 'codex', 'mempalace']);
+
+      if (sub === 'help') {
+        console.log(chalk.cyan('\n  /import'));
+        console.log(chalk.dim('  Migrate prior agent work into Cawdex without losing conversation history.'));
+        console.log(chalk.dim('    /import scan'));
+        console.log(chalk.dim('    /import preview <claude|codex|mempalace|auto> [--limit N]'));
+        console.log(chalk.dim('    /import run <claude|codex|mempalace|auto> [--limit N] [--dry-run]'));
+        console.log(chalk.dim('    /import status'));
+        console.log(chalk.dim('    /import rollback <run-id>'));
+        console.log(chalk.dim('  Notes:'));
+        console.log(chalk.dim('    - Claude source: ~/.claude/projects/**/*.jsonl'));
+        console.log(chalk.dim('    - Codex source:  ~/.codex/sessions/**/*.jsonl'));
+        console.log(chalk.dim('    - MemPalace source: ~/.mempalace/session_notes + identity.txt'));
+        console.log();
+        return { handled: true };
+      }
+
+      if (sub === 'scan') {
+        console.log(chalk.cyan('\n  Import sources:'));
+        for (const item of detected) {
+          const marker = item.detected ? chalk.green('✓') : chalk.yellow('•');
+          const count = chalk.dim(`${item.artifactsFound} artifact(s)`);
+          console.log(`  ${marker} ${item.source.padEnd(10)} ${count}  ${chalk.dim(item.rootPath)}`);
+          if (item.note) console.log(chalk.dim(`     ${item.note}`));
+        }
+        console.log();
+        return { handled: true };
+      }
+
+      if (sub === 'status') {
+        const status = importStatus();
+        console.log(chalk.cyan('\n  Import status:'));
+        console.log(chalk.dim(`    ledger entries: ${status.ledgerEntries}`));
+        console.log(chalk.dim(`    runs: ${status.runs}`));
+        console.log(chalk.dim(`    sessions imported: ${status.sessionsImported}`));
+        console.log(chalk.dim(`    memory drawers imported: ${status.drawersImported}`));
+        for (const src of knownSources) {
+          const row = status.bySource[src];
+          console.log(chalk.dim(`    ${src.padEnd(10)} sessions ${String(row.sessions).padStart(4)}  drawers ${String(row.drawers).padStart(4)}`));
+        }
+        console.log();
+        return { handled: true };
+      }
+
+      if (sub === 'rollback') {
+        const runId = tokens[1];
+        if (!runId) {
+          console.log(chalk.yellow('  Usage: /import rollback <run-id>'));
+          return { handled: true };
+        }
+        const res = rollbackImport(runId, process.cwd());
+        console.log(chalk.green(`  Rolled back ${runId}.`));
+        console.log(chalk.dim(`    deleted sessions: ${res.deletedSessions}`));
+        console.log(chalk.dim(`    deleted memory drawers: ${res.deletedDrawers}`));
+        for (const warning of res.warnings) console.log(chalk.yellow(`    warning: ${warning}`));
+        return { handled: true };
+      }
+
+      if (sub === 'preview') {
+        for (const src of targets) {
+          const res = previewImport(src, { limit, cwd: process.cwd() });
+          console.log(chalk.cyan(`\n  Preview: ${src}`));
+          console.log(chalk.dim(`    artifacts found: ${res.artifactsFound}`));
+          console.log(chalk.dim(`    importable: ${res.importableArtifacts}`));
+          console.log(chalk.dim(`    already imported: ${res.alreadyImportedArtifacts}`));
+          if (res.totalMessages > 0) console.log(chalk.dim(`    messages in sample: ${res.totalMessages}`));
+          for (const thread of res.threads.slice(0, 10)) {
+            console.log(chalk.dim(`    ${thread.sourceThreadId}  ${thread.messageCount} msgs  ${thread.updatedAt.slice(0, 10)}  ${thread.model}`));
+          }
+          for (const warning of res.warnings.slice(0, 5)) console.log(chalk.yellow(`    warning: ${warning}`));
+        }
+        console.log();
+        return { handled: true };
+      }
+
+      if (sub === 'run') {
+        for (const src of targets) {
+          const res = runImport(src, { limit, dryRun, cwd: process.cwd() });
+          const prefix = dryRun ? 'Dry-run' : 'Imported';
+          console.log(chalk.green(`\n  ${prefix}: ${src}`));
+          console.log(chalk.dim(`    run id: ${res.runId}`));
+          console.log(chalk.dim(`    imported artifacts: ${res.importedArtifacts}`));
+          console.log(chalk.dim(`    skipped artifacts: ${res.skippedArtifacts}`));
+          if (res.importedSessions > 0) console.log(chalk.dim(`    sessions created: ${res.importedSessions}`));
+          if (res.importedMessages > 0) console.log(chalk.dim(`    messages imported: ${res.importedMessages}`));
+          if (res.importedDrawers > 0) console.log(chalk.dim(`    memory drawers created: ${res.importedDrawers}`));
+          for (const warning of res.warnings.slice(0, 5)) console.log(chalk.yellow(`    warning: ${warning}`));
+        }
+        console.log();
+        return { handled: true };
+      }
+
+      console.log(chalk.yellow(`  Unknown /import subcommand: ${sub}`));
+      console.log(chalk.dim('  Try: /import help'));
+      return { handled: true };
+    }
+
     case '/commit': {
       const prompt = buildCommitPrompt(process.cwd());
       if (!prompt) {
@@ -1701,11 +2245,62 @@ export function handleSlashCommand(
       return { handled: true };
     }
 
+    case '/context': {
+      const parts = args.split(/\s+/).map((part) => part.trim()).filter(Boolean);
+      const sub = (parts.shift() || '').toLowerCase();
+      if (!sub || sub === 'brief') {
+        const target = parts.join(' ').trim() || process.cwd();
+        console.log(buildContextBrief(target));
+      } else {
+        console.log(chalk.yellow('  Usage: /context brief [path]'));
+      }
+      return { handled: true };
+    }
+
     case '/rules':
       printRules();
       return { handled: true };
 
+    case '/agents':
+      console.log(formatAgentsInstructionsReport(process.cwd(), config.model, ALL_TOOLS));
+      return { handled: true };
+
     case '/perm':
+      if (args.trim().toLowerCase().startsWith('why')) {
+        const parts = args.split(/\s+/).filter(Boolean);
+        parts.shift();
+        const toolName = parts.shift();
+        if (!toolName) {
+          console.log(chalk.yellow('  Usage: /perm why <tool> [command-or-path]'));
+          console.log(chalk.dim('  Examples: /perm why bash git status'));
+          console.log(chalk.dim('            /perm why write_file src/example.ts'));
+          return { handled: true };
+        }
+        const tool = ALL_TOOLS.find((candidate) => candidate.name === toolName);
+        if (!tool) {
+          console.log(chalk.red(`  Unknown tool: ${toolName}`));
+          console.log(chalk.dim('  Run /tools to list available tool names.'));
+          return { handled: true };
+        }
+        const rest = parts.join(' ');
+        const input: Record<string, unknown> = tool.name === 'bash'
+          ? { command: rest }
+          : tool.name === 'write_file' || tool.name === 'edit_file' || tool.name === 'read_file'
+            ? { file_path: rest }
+            : {};
+        const explanation = explainPermission(tool, input, config);
+        const color = explanation.decision === 'allow'
+          ? chalk.green
+          : explanation.decision === 'deny'
+            ? chalk.red
+            : chalk.yellow;
+        console.log(chalk.cyan('\n  Permission explanation'));
+        console.log(color(`  Decision: ${explanation.decision.toUpperCase()} - ${explanation.reason}`));
+        for (const line of explanation.lines) console.log(chalk.dim(`  ${line}`));
+        const sandbox = config.sandbox?.level || 'off';
+        console.log(chalk.dim(`  sandbox: ${sandbox} (separate from permission prompts)`));
+        return { handled: true };
+      }
       if (args && ['ask', 'auto', 'yolo'].includes(args)) {
         config.permissionMode = args as CawdexConfig['permissionMode'];
         saveConfig(config);
@@ -1825,7 +2420,7 @@ export function handleSlashCommand(
 
     // ── Learning & Cost ───────────────────────────────
     case '/usage':
-      printUsageSummary();
+      printUsageSummary(session.id);
       return { handled: true };
 
     case '/budget': {
@@ -1872,29 +2467,19 @@ export function handleSlashCommand(
       const orchPrompt = buildOrchestrationPrompt(args);
       return { handled: false, injectPrompt: orchPrompt };
 
-    // ── Agentic swarm — true parallel fan-out (M3 swarm audit) ──
-    // Run N agents concurrently on the same task. Each agent gets its
-    // own ECC prompt + the task as user message; outputs are merged
-    // with attribution headers. No tools available to swarm agents —
-    // analysis only, no file edits.
-    //
-    //   /swarm <agent1,agent2,...> <task>
-    //
-    // Each agent's request uses the key rotation pool from v1.23.0,
-    // so multi-account users get true parallel throughput.
+    // ── Agentic swarm ─────────────────────────────────
+    // Default: /swarm <natural task>. Cawdex infers roles, runs them
+    // analysis-only, then hands the synthesis back to the main agent.
+    // Expert shortcut remains: /swarm <agent1,agent2> <task>.
     case '/swarm': {
-      // Match: first whitespace-free token is the agents list, rest is task
-      const m = args.match(/^(\S+)\s+([\s\S]+)$/);
-      if (!m) {
-        console.log(chalk.yellow('  Usage: /swarm <agent1,agent2,...> <task>'));
-        console.log(chalk.dim('  Example: /swarm code-architect,silent-failure-hunter,type-design-analyzer  audit the auth flow'));
-        console.log(chalk.dim('  Run /ecc-guide agents to see available agents.'));
+      const parsed = parseSwarmCommandArgs(args);
+      if ('error' in parsed) {
+        console.log(chalk.yellow(`  ${parsed.error}`));
+        console.log(chalk.dim('  Example: /swarm Build a working browser game with tests'));
+        console.log(chalk.dim('  Expert:  /swarm code-architect,silent-failure-hunter audit the auth flow'));
         return { handled: true };
       }
-      const [, agentsList, task] = m;
-      // Use a sentinel + delimiter approach so the main REPL loop can
-      // pick up the async swarm dispatch (slash handlers are sync).
-      return { handled: false, injectPrompt: '__SWARM__' + agentsList + '|||' + task };
+      return { handled: true, injectPrompt: encodeSwarmSentinel(parsed.payload) };
     }
 
     // ── Verification & Build ─────────────────────────
@@ -2970,9 +3555,7 @@ export function handleSlashCommand(
     case '/palette': {
       const target = args.trim().toLowerCase();
       if (!target) {
-        console.log(chalk.dim(`  Current palette: ${getPaletteId()}`));
-        console.log(chalk.dim(`  Run /palettes to see all options.`));
-        return { handled: true };
+        return { handled: true, injectPrompt: '__PICK_APPEARANCE__' };
       }
       const resolved = resolvePaletteId(target);
       if (!resolved) {
@@ -3435,36 +4018,6 @@ async function main(): Promise<void> {
   // for screen readers, so they're force-off in that mode. Sighted
   // users get them by default; the CAWDEX_ANIMATIONS=0 env var still
   // overrides for users who specifically don't want the motion.
-  // Saved configs can contain OpenRouter preview models that are known
-  // to hang before the first token. Do not let the CLI boot into that
-  // broken state by default; keep an env escape hatch for deliberate
-  // provider debugging.
-  const runtimeModelOverride = !!process.env.CAWDEX_MODEL_OVERRIDE || !!process.env.CAWDEX_MODEL;
-  const knownFlakyFallback = fallbackModelForKnownFlakyTurn(config)
-    || (
-      process.env.CAWDEX_ALLOW_FLAKY_MODELS !== '1'
-      && isKnownFlakyOpenRouterModel(config)
-      && /openrouter/i.test(config.provider)
-        ? PROVIDERS.openrouter.defaultModel
-        : null
-    );
-  if (knownFlakyFallback) {
-    const previousModel = config.model;
-    applyModelSelection(config, knownFlakyFallback);
-    config.fallbackModel = knownFlakyFallback;
-    resetClient();
-    if (!nonInteractive && !runtimeModelOverride) {
-      saveConfig(config);
-      console.log(theme.warning(`  ⚠  Saved model "${previousModel}" is known to stall; switched config to ${knownFlakyFallback}.`));
-      console.log(theme.dim('     Use CAWDEX_ALLOW_FLAKY_MODELS=1 only if you are deliberately testing that model.'));
-      console.log('');
-    } else if (!nonInteractive) {
-      console.log(theme.warning(`  ⚠  Requested model "${previousModel}" is known to stall; using ${knownFlakyFallback} for this session.`));
-      console.log(theme.dim('     Use CAWDEX_ALLOW_FLAKY_MODELS=1 to force the requested model.'));
-      console.log('');
-    }
-  }
-
   {
     const { setAnimationConfig } = await import('./animations.js');
     setAnimationConfig({
@@ -3491,12 +4044,45 @@ async function main(): Promise<void> {
     permissionMode: config.permissionMode,
   });
   const messages: Message[] = [];
+  const syncFooter = (): void => {
+    const snapshot = buildFooterSnapshot(config, mode.current, session, process.cwd());
+    if (!nonInteractive && shouldUseFixedFooter(config)) {
+      activateFooter(snapshot);
+    } else {
+      deactivateFooter();
+    }
+    updateFooter(snapshot);
+  };
 
   // Session start hook + memory persistence
   await runHooks({ event: 'SessionStart', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
   const memoryContext = onSessionStart(session.id, process.cwd());
   if (memoryContext) {
     messages.push({ role: 'system', content: memoryContext });
+  }
+  if (!nonInteractive && config.import?.autoSyncOnStartup) {
+    const wanted = config.import.defaultSource ?? 'auto';
+    const limit = Math.max(10, Math.min(5000, Number(config.import.syncLimit ?? 200)));
+    const scan = scanImportSources();
+    const available = scan.filter((s) => s.detected && s.artifactsFound > 0).map((s) => s.source);
+    const sources: ImportSource[] = wanted === 'auto'
+      ? available
+      : [wanted];
+    if (sources.length > 0) {
+      let totalImported = 0;
+      let totalSkipped = 0;
+      for (const src of sources) {
+        try {
+          const result = runImport(src, { limit, cwd: process.cwd() });
+          totalImported += result.importedArtifacts;
+          totalSkipped += result.skippedArtifacts;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(theme.warning(`  import auto-sync (${src}) failed: ${msg}`));
+        }
+      }
+      console.log(theme.dim(`  import auto-sync: imported ${totalImported}, skipped ${totalSkipped} (limit ${limit})`));
+    }
   }
 
   // Show startup display based on theme setting. Skipped entirely in
@@ -3534,18 +4120,14 @@ async function main(): Promise<void> {
 
   // ── Flaky-model warning at REPL launch ───────────────
   // The setup wizard already warns when a user TYPES one of these
-  // experimental free models, but returning users whose config was
-  // saved before that check landed never see the warning. Print it
-  // every launch so they get a chance to switch via /model before
-  // they hit the "model returns nothing, REPL looks frozen" footgun.
-  const flakyPatterns = [
-    'owl-alpha', 'horizon-alpha', 'horizon-beta',
-    'optimus-alpha', 'quasar-alpha',
-  ];
-  const lowerModelAtLaunch = (config.model || '').toLowerCase();
-  if (flakyPatterns.some((p) => lowerModelAtLaunch.includes(p))) {
-    console.log(theme.warning(`  ⚠  Active model "${config.model}" is an experimental / free model known to`));
-    console.log(theme.warning(`     return empty or "ERROR" responses, or get stuck in token loops.`));
+  // known-slow / known-flaky OpenRouter models, but returning users
+  // whose config was saved before that check landed never see the
+  // warning. Print it every launch so they get a chance to switch via
+  // /model before they hit the "model returns nothing, REPL looks
+  // frozen" footgun.
+  if (isKnownFlakyOpenRouterModel(config)) {
+    console.log(theme.warning(`  ⚠  Active model "${config.model}" is known to stall in interactive OpenRouter sessions`));
+    console.log(theme.warning(`     or return empty / "ERROR" responses.`));
     console.log(theme.dim(`     Switch with /openrouter-free or /model openrouter/free.`));
     console.log('');
   }
@@ -3555,7 +4137,39 @@ async function main(): Promise<void> {
     console.log('');
   }
 
+  syncFooter();
+  startStartupUpdateCheck({
+    onUpdateStarted: (currentVersion, latestVersion) => {
+      deactivateFooter();
+      console.log(theme.info(`  Update available: cawdex ${currentVersion} -> ${latestVersion}. Downloading in the background; restart Cawdex to use it.`));
+      syncFooter();
+    },
+    onError: (error) => {
+      dbgEmit('debug', 'update.check.failed', { error: error.slice(0, 200) });
+    },
+  });
+
   let autoRoute = false;
+  let nextTurnOverride: ModelTurnOverride | null = null;
+  const consumeTurnConfig = (): CawdexConfig => {
+    if (!nextTurnOverride) return config;
+    const override = nextTurnOverride;
+    nextTurnOverride = null;
+    const turnConfig: CawdexConfig = {
+      ...config,
+      memory: config.memory ? { ...config.memory } : config.memory,
+      sandbox: config.sandbox ? { ...config.sandbox } : config.sandbox,
+      voice: config.voice ? { ...config.voice } : config.voice,
+      openaiAuth: config.openaiAuth ? { ...config.openaiAuth } : config.openaiAuth,
+      swarm: config.swarm ? { ...config.swarm } : config.swarm,
+      footer: config.footer ? { ...config.footer } : config.footer,
+      modelAliases: config.modelAliases ? { ...config.modelAliases } : config.modelAliases,
+    };
+    if (override.model) applyModelSelection(turnConfig, override.model);
+    if (override.reasoningEffort) turnConfig.reasoningEffort = override.reasoningEffort;
+    console.log(chalk.dim(`  [one-shot: ${formatTurnOverride(override, config.model)}]`));
+    return turnConfig;
+  };
 
   // ── F-key hotkey listener ────────────────────────────────
   // Voice / accessibility hotkeys — all on the F-row.
@@ -4358,6 +4972,18 @@ async function main(): Promise<void> {
       try { rl.close(); } catch { /* noop */ }
       process.exit(0);
     }
+    const instantArtifact = maybeCreateInstantArtifact(resolvedPrompt.prompt, process.cwd());
+    if (instantArtifact) {
+      printLocalResponse(instantArtifact.message);
+      messages.push({ role: 'user', content: resolvedPrompt.prompt });
+      messages.push({ role: 'assistant', content: instantArtifact.assistantMessage });
+      await saveWithSnapshot();
+      try {
+        await runHooks({ event: 'SessionStop', sessionId: session.id, cwd: process.cwd(), permissionMode: config.permissionMode });
+      } catch { /* never fail a local artifact on hook errors */ }
+      try { rl.close(); } catch { /* noop */ }
+      process.exit(0);
+    }
     // ── F9: Empty-engagement guard (non-interactive nudge) ──
     //
     // Some failures in the 2026-05-25 baseline run came from the
@@ -4388,6 +5014,7 @@ async function main(): Promise<void> {
     });
     messages.push({ role: 'user', content: resolvedPrompt.prompt });
     try {
+      await saveWithSnapshot();
       await runQuery({
         config,
         messages,
@@ -4414,10 +5041,13 @@ async function main(): Promise<void> {
     }
   }
 
+  let firstInteractivePrompt = true;
+
   // Main REPL loop
   while (true) {
     let input: string;
     try {
+      syncFooter();
       // Screen-reader-aware prompt construction:
       //   - The Unicode prompt glyph (❯) gets re-substituted by the
       //     symbol→word filter on EVERY readline redraw (one per keystroke),
@@ -4439,7 +5069,9 @@ async function main(): Promise<void> {
       // repaints the prompt line on every render — it needs both the
       // styled string (to write with color) and the visible-char
       // length (to position the cursor at end-of-filter).
-      const promptStyled = sessionTag + modeTag + theme.prompt(promptGlyph);
+      const promptStyled = isFooterActive()
+        ? theme.prompt('> ')
+        : sessionTag + modeTag + theme.prompt(promptGlyph);
       (globalThis as { __cawdexPromptStyled?: string; __cawdexPromptVisLen?: number })
         .__cawdexPromptStyled = promptStyled;
       (globalThis as { __cawdexPromptStyled?: string; __cawdexPromptVisLen?: number })
@@ -4461,7 +5093,11 @@ async function main(): Promise<void> {
       g.__cawdexQueuedInput = undefined;
       g.__cawdexSlashPrefillInput = undefined;
       const restoredDraft = normalizeTypeaheadDraftForPrompt(queued);
-      const prefill = slashPrefill || restoredDraft;
+      const openingPrompt = firstInteractivePrompt && isFooterActive()
+        ? (config.footer?.openingPrompt ?? '/model')
+        : '';
+      firstInteractivePrompt = false;
+      const prefill = slashPrefill || restoredDraft || openingPrompt;
       input = await askWithDecoratedPrompt(rl, sessionTag, modeTag, promptGlyph, prefill);
     } catch {
       break;
@@ -4501,6 +5137,9 @@ async function main(): Promise<void> {
 
     const trimmed = input.trim();
     if (!trimmed) continue;
+    if (isFooterActive()) {
+      writeFooterSubmittedLine(input);
+    }
 
     // Shell escape
     if (trimmed.startsWith('!')) {
@@ -4526,7 +5165,15 @@ async function main(): Promise<void> {
         messages.length = 0;
         messages.push(...result.newMessages);
       }
+      if (result.turnOverride !== undefined) {
+        nextTurnOverride = result.turnOverride;
+      }
+      syncFooter();
+      if (isFooterActive()) {
+        setFooterActivity('Ready', 0, null);
+      }
       if (trimmed.startsWith('/config') && !result?.shouldExit) {
+        deactivateFooter();
         config = await setupWizard(rl, config);
         resetClient();
         printThemedBanner(
@@ -4537,6 +5184,7 @@ async function main(): Promise<void> {
           session.id,
           ALL_TOOLS.map((t) => t.name),
         );
+        syncFooter();
         continue;
       }
       if (trimmed === '/route') {
@@ -4591,6 +5239,28 @@ async function main(): Promise<void> {
             console.log(chalk.dim('  Cancelled — model unchanged.'));
           }
           continue;
+        } else if (result.injectPrompt === '__PICK_APPEARANCE__') {
+          await runAppearanceWizard(rl, config);
+          continue;
+        } else if (result.injectPrompt === '__RESUME_PICK__') {
+          const sessions = listSessions();
+          if (sessions.length === 0) {
+            console.log(theme.dim('  No saved sessions.'));
+            continue;
+          }
+          const { pickSession } = await import('./session-picker.js');
+          const selectedId = await pickSession(sessions, { title: 'Cawdex · resume session' });
+          if (!selectedId) {
+            console.log(theme.dim('  Cancelled — session unchanged.'));
+            continue;
+          }
+          const resumeResult = handleSlashCommand(`/resume ${selectedId}`, config, messages, session, mode);
+          if (resumeResult.newMessages !== undefined) {
+            messages.length = 0;
+            messages.push(...resumeResult.newMessages);
+          }
+          await saveWithSnapshot();
+          continue;
         } else if (result.injectPrompt === '__OPENAI_OAUTH_SMOKE__') {
           const smoke = await runOpenAICodexSmokeTest(config);
           console.log(formatOpenAICodexSmokeResult(smoke));
@@ -4626,29 +5296,34 @@ async function main(): Promise<void> {
           console.log(repoResult.output);
           continue;
         } else if (result.injectPrompt.startsWith('__SWARM__')) {
-          // Swarm dispatch: __SWARM__<agentsCsv>|||<task>. Same sentinel
-          // trick as /dictate so the slash handler stays sync; the async
-          // fan-out happens here in the main REPL loop where we already
-          // have await + the live config object.
-          const payload = result.injectPrompt.slice('__SWARM__'.length);
-          const sepIdx = payload.indexOf('|||');
-          const agentsCsv = payload.slice(0, sepIdx);
-          const task = payload.slice(sepIdx + 3);
-          const slugs = agentsCsv.split(',').map((s) => s.trim()).filter(Boolean);
+          const payload = decodeSwarmSentinel(result.injectPrompt);
+          if (!payload) {
+            console.log(chalk.yellow('  /swarm: could not parse swarm payload.'));
+            continue;
+          }
+          let plan = buildSwarmPlan(payload, config.swarm);
+          if (payload.mode === 'auto') {
+            plan = await runSwarmSetupWizard(rl, plan, config);
+          }
           try {
-            const agents = resolveAgents(slugs);
-            console.log(chalk.cyan(`  Swarming ${agents.length} agent(s) in parallel: ${agents.map((a) => a.name).join(', ')}`));
-            console.log(chalk.dim(`  Task: ${task.length > 100 ? task.slice(0, 97) + '...' : task}`));
+            const agents = resolveAgents(plan.agents);
+            console.log(chalk.cyan(`  Swarming ${agents.length} agent(s): ${agents.map((a) => a.name).join(', ')}`));
+            console.log(chalk.dim(`  Task: ${plan.task.length > 100 ? plan.task.slice(0, 97) + '...' : plan.task}`));
+            console.log(chalk.dim('  Setup: goal, budget/time, platform, assets, quality bar inferred; workers stay analysis-only.'));
             const swarmStart = Date.now();
-            const results = await runSwarm(agents, task, config);
-            const output = formatSwarmResults(results);
+            const results = await runSwarm(
+              agents,
+              buildSwarmAgentTask(plan),
+              config,
+            );
+            const output = formatSwarmResults(results, plan);
             console.log(output);
             const elapsed = ((Date.now() - swarmStart) / 1000).toFixed(1);
             const ok = results.filter((r) => !r.error).length;
             console.log(chalk.dim(`\n  swarm complete: ${ok}/${results.length} agent(s) succeeded in ${elapsed}s`));
             // Push the swarm as conversational context so follow-up
             // turns can reason about the consolidated output.
-            messages.push({ role: 'user', content: `[/swarm ${agents.map((a) => a.name).join(',')}] ${task}` });
+            messages.push({ role: 'user', content: `[/swarm ${payload.mode === 'legacy' ? agents.map((a) => a.name).join(',') + ' ' : ''}${plan.task}]` });
             messages.push({ role: 'assistant', content: output.slice(0, 8000) });
           } catch (e) {
             console.log(chalk.red(`  Swarm failed: ${e instanceof Error ? e.message : e}`));
@@ -4658,7 +5333,11 @@ async function main(): Promise<void> {
         } else {
           messages.push({ role: 'user', content: result.injectPrompt });
         }
-        await runQuery({ config, messages, cwd: process.cwd(), rl, sessionId: session.id, mode: mode.current });
+        await saveWithSnapshot();
+        const turnConfig = consumeTurnConfig();
+        updateFooter(buildFooterSnapshot(turnConfig, mode.current, session, process.cwd()));
+        await runQuery({ config: turnConfig, messages, cwd: process.cwd(), rl, sessionId: session.id, mode: mode.current });
+        syncFooter();
         await saveWithSnapshot();
         continue;
       }
@@ -4667,9 +5346,18 @@ async function main(): Promise<void> {
 
     const instantAnswer = maybeInstantAnswer(trimmed);
     if (instantAnswer) {
-      console.log(theme.primary(instantAnswer));
+      printLocalResponse(instantAnswer);
       messages.push({ role: 'user', content: trimmed });
       messages.push({ role: 'assistant', content: instantAnswer });
+      await saveWithSnapshot();
+      continue;
+    }
+
+    const instantArtifact = maybeCreateInstantArtifact(trimmed, process.cwd());
+    if (instantArtifact) {
+      printLocalResponse(instantArtifact.message);
+      messages.push({ role: 'user', content: trimmed });
+      messages.push({ role: 'assistant', content: instantArtifact.assistantMessage });
       await saveWithSnapshot();
       continue;
     }
@@ -4680,23 +5368,26 @@ async function main(): Promise<void> {
       const route = routeModel(config, complexity);
       if (route.model !== config.model) {
         console.log(chalk.dim(`  [routing: ${route.reason}]`));
-        applyModelSelection(config, route.model);
-        resetClient();
+        nextTurnOverride = { model: route.model, source: 'route' };
       }
       autoRoute = false;
     }
 
     // Add user message and run query
     messages.push({ role: 'user', content: trimmed });
+    await saveWithSnapshot();
 
+    const turnConfig = consumeTurnConfig();
+    updateFooter(buildFooterSnapshot(turnConfig, mode.current, session, process.cwd()));
     await runQuery({
-      config,
+      config: turnConfig,
       messages,
       cwd: process.cwd(),
       rl,
       sessionId: session.id,
       mode: mode.current,
     });
+    syncFooter();
 
     // Auto-save session
     await saveWithSnapshot();
@@ -4714,6 +5405,7 @@ async function main(): Promise<void> {
 
   // Final save
   await saveWithSnapshot();
+  deactivateFooter();
   console.log(chalk.dim(`\nSession saved: ${session.id}`));
   console.log(chalk.dim('Goodbye!\n'));
   rl.close();
@@ -4721,6 +5413,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  deactivateFooter();
   console.error(chalk.red(`Fatal: ${err.message || err}`));
   process.exit(1);
 });

@@ -216,6 +216,7 @@ interface Theme {
   success: ChalkFn; warning: ChalkFn; error: ChalkFn; info: ChalkFn;
   primary: ChalkFn; secondary: ChalkFn; dim: ChalkFn; muted: ChalkFn; bright: ChalkFn; italic: ChalkFn;
   header: ChalkFn; subheader: ChalkFn; command: ChalkFn; cost: ChalkFn; link: ChalkFn;
+  transcriptUser: ChalkFn;
   highlight: ChalkFn; selection: ChalkFn;
   syntaxCommand: ChalkFn; syntaxOption: ChalkFn; syntaxArgument: ChalkFn; syntaxPath: ChalkFn; syntaxString: ChalkFn; syntaxPunctuation: ChalkFn;
   prompt: ChalkFn; assistant: ChalkFn; user: ChalkFn;
@@ -251,6 +252,7 @@ function buildTheme(p: ColorPalette): Theme {
     command:     chalk.hex(p.cyanLight).bold,
     cost:        chalk.hex(p.gray),
     link:        chalk.hex(p.cyanLight).underline,
+    transcriptUser: chalk.bgHex('#1B1A22').hex(p.light).bold,
 
     highlight:   chalk.bgHex(p.cyanLight).hex(p.key).bold,
     selection:   chalk.bgHex(p.yellow).hex(p.key).bold,
@@ -289,6 +291,7 @@ function buildTheme(p: ColorPalette): Theme {
         plan:      chalk.bgHex(p.yellowDim).hex(p.key),
         debug:     chalk.bgHex(p.magentaDim).hex(p.white),
         architect: chalk.bgHex(p.cyanLight).hex(p.key),
+        sentience: chalk.bgHex(p.magenta).hex(p.white),
         hermes:    chalk.bgHex(p.magenta).hex(p.white),
         design:    chalk.bgHex(p.yellowDim).hex(p.key),
       };
@@ -411,6 +414,31 @@ export function printBanner(
 // ── Duration formatter ─────────────────────────────────
 // Human-readable elapsed time for session + chain timers.
 // Examples: 5s · 1m 23s · 2h 5m · 1d 4h
+function visibleLen(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
+function padVisible(s: string, width: number): string {
+  return s + ' '.repeat(Math.max(0, width - visibleLen(s)));
+}
+
+export function formatTranscriptUserLine(text: string, cols = process.stdout.columns || 100): string {
+  const oneLine = text.replace(/\r?\n/g, ' ').trimEnd();
+  const max = Math.max(20, cols);
+  const prefix = theme.prompt('> ');
+  const available = Math.max(1, max - visibleLen(prefix));
+  const clipped = oneLine.length > available ? oneLine.slice(0, Math.max(0, available - 1)) + '\u2026' : oneLine;
+  return theme.transcriptUser(padVisible(prefix + theme.user(clipped), max));
+}
+
+export function printTranscriptUserLine(text: string): void {
+  console.log(formatTranscriptUserLine(text));
+}
+
+export function assistantTranscriptPrefix(): string {
+  return theme.assistant(`${sym.assistant} `);
+}
+
 export function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const d = Math.floor(totalSec / 86400);

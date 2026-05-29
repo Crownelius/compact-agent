@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCodexResponsesRequest,
+  buildChatCompletionsRequest,
   messagesToResponsesInput,
   messagesToResponsesInstructions,
   resolveChatRetryConfig,
@@ -117,6 +118,22 @@ describe('Chat stream retry policy', () => {
 });
 
 describe('Chat Completions stream usage request', () => {
+  it('adds reasoning_effort when configured', () => {
+    const request = buildChatCompletionsRequest({
+      apiKey: 'sk-test',
+      baseURL: 'https://openrouter.ai/api/v1',
+      model: 'openai/gpt-5.5',
+      provider: 'OpenRouter',
+      maxTokens: 4096,
+      temperature: 0.3,
+      permissionMode: 'ask',
+      reasoningEffort: 'high',
+    }, [{ role: 'user', content: 'Think carefully.' }], []);
+
+    expect(request.reasoning_effort).toBe('high');
+    expect(request.model).toBe('openai/gpt-5.5');
+  });
+
   it('requests usage for OpenRouter cloud endpoints', () => {
     expect(shouldRequestChatStreamUsage({ baseURL: 'https://openrouter.ai/api/v1' }, {})).toBe(true);
   });
