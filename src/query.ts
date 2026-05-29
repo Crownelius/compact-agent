@@ -1707,6 +1707,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     // waiting line", which is noisier than helpful).
     let firstTokenSeen = false;
     let firstTokenLatencyMs: number | null = null;
+    let lastWaitHeartbeatSec = -1;
     // Note: the outer `isScreenReader` declared at the top of runQuery
     // (line ~340) is in scope here via closure — no need for a second
     // declaration. Previously this re-declared inside the while loop
@@ -1780,6 +1781,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
             // Keep the waiting row visibly alive even if background render
             // timers are flaky in the host terminal.
             setFooterActivity('Sumi ink moving', turns, turnStart);
+            const elapsedSec = Math.floor((Date.now() - turnStart) / 1000);
+            if (elapsedSec >= 1 && elapsedSec !== lastWaitHeartbeatSec) {
+              lastWaitHeartbeatSec = elapsedSec;
+              writeScrollableLine(
+                theme.dim(`  ◦ Working (${formatDuration(Date.now() - turnStart)} • Esc/F5 to interrupt)`),
+              );
+            }
           }
         }
       }
