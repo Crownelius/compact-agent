@@ -323,7 +323,8 @@ function syncActivityTicker(): void {
       state.activityFrame++;
       redraw();
     }, 500);
-    if (typeof activityTicker.unref === 'function') activityTicker.unref();
+    // Keep referenced so elapsed/activity frames continue while awaiting
+    // provider events; cleared immediately when activity ends.
   } else if (!shouldTick && activityTicker) {
     clearInterval(activityTicker);
     activityTicker = null;

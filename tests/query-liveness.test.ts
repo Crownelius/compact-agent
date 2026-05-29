@@ -441,6 +441,12 @@ Use short, bounded shell commands for this repository.
     expect(shouldUseFastDirectReply('give me a git command', 'dev')).toBe(false);
   });
 
+  it('keeps follow-up rewrites on full-context path when prior assistant context exists', () => {
+    const followup = 'I need you to make the bear cub distinctively male';
+    expect(shouldUseFastDirectReply(followup, 'dev', false)).toBe(true);
+    expect(shouldUseFastDirectReply(followup, 'dev', true)).toBe(false);
+  });
+
   it('disables fast-direct when there is prior assistant context in the session', async () => {
     let sentMessages: Message[] = [];
     vi.mocked(streamChat).mockImplementation(async function* (
@@ -458,7 +464,7 @@ Use short, bounded shell commands for this repository.
     const messages: Message[] = [
       { role: 'user', content: 'write a story about a bear cub lost in the forest' },
       { role: 'assistant', content: 'A story about a cub named Rowan...' },
-      { role: 'user', content: 'Can you make it a male cub?' },
+      { role: 'user', content: 'I need you to make the bear cub distinctively male' },
     ];
     const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-followup-context-'));
     const ctx = {

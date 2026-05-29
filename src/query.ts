@@ -159,10 +159,12 @@ const FAST_DIRECT_POSITIVE = [
 const FAST_DIRECT_REPO_OR_TOOL = /\b(repo|repository|codebase|workspace|file|folder|directory|path|terminal|powershell|shell|command|npm|node|python|typescript|javascript|git|commit|diff|pr|pull request|branch|test|build|lint|install|package|debug|error|stack trace|log|fix|implement|refactor|review|audit|security|benchmark|run|execute|read|search|grep|edit|patch|write[- ]file|website|web\s*site|site|portfolio|landing\s+page|web\s+page|html|css|react|vue|svelte|vite|next\.?js|single[- ]file|dashboard|component|form|desktop|save|hireable|resume)\b/i;
 const FAST_DIRECT_CONTEXTUAL = /^(?:(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?|please\s+)?(continue|carry on|resume|do it|same|again|that|this|those|these|it)\b/i;
 const FAST_DIRECT_REVISION_CONTEXT = /^(?:(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?)?(?:make|change|update|revise|rewrite|redo|adjust|convert|turn)\s+(?:it|that|this|him|her|them|he|she)\b/i;
+const FAST_DIRECT_FOLLOWUP_EDIT_WITH_HISTORY = /^(?:(?:i\s+need\s+you\s+to|i(?:'|\u2019)d\s+like\s+you\s+to|(?:can|could|would|will)\s+you)\s+)?(?:please\s+)?(?:make|change|update|revise|rewrite|redo|adjust|convert|turn)\s+(?:the|this|that|it|him|her|them|he|she)\b/i;
 
 export function shouldUseFastDirectReply(
   userQuery: string | undefined,
   mode: Mode,
+  hasPriorAssistantContext = false,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   if (env.CAWDEX_FAST_DIRECT === '0') return false;
@@ -173,8 +175,27 @@ export function shouldUseFastDirectReply(
   if (text.includes('\n') || text.includes('```')) return false;
   if (FAST_DIRECT_CONTEXTUAL.test(text)) return false;
   if (FAST_DIRECT_REVISION_CONTEXT.test(text)) return false;
+  if (hasPriorAssistantContext && FAST_DIRECT_FOLLOWUP_EDIT_WITH_HISTORY.test(text)) return false;
   if (FAST_DIRECT_REPO_OR_TOOL.test(text)) return false;
   return FAST_DIRECT_POSITIVE.some((pattern) => pattern.test(text));
+}
+
+function hasPriorAssistantContext(messages: Message[]): boolean {
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  if (lastUserIdx <= 0) return false;
+  for (let i = 0; i < lastUserIdx; i++) {
+    const msg = messages[i];
+    if (msg.role !== 'assistant') continue;
+    if (typeof msg.content !== 'string') return true;
+    if (msg.content.trim().length > 0) return true;
+  }
+  return false;
 }
 
 function printInteractiveTurnAccepted(config: CawdexConfig): void {
@@ -236,7 +257,9 @@ function startWorkingIndicator(startedAtMs: number, screenReader: boolean, turn 
 
   paint();
   const timer = setInterval(paint, 250);
-  if (typeof timer.unref === 'function') timer.unref();
+  // Keep this timer referenced so activity keeps animating even when the
+  // provider stream is pending in states that don't keep other refs alive.
+  // It is always cleared in stop()/finally paths.
   return {
     stop: (): void => {
       if (stopped) return;
@@ -1254,7 +1277,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   const chainStart = Date.now();
   const initialLastUserMsg = [...ctx.messages].reverse().find((m) => m.role === 'user');
   const initialUserQuery = typeof initialLastUserMsg?.content === 'string' ? initialLastUserMsg.content : undefined;
-  const chainFastDirect = shouldUseFastDirectReply(initialUserQuery, ctx.mode);
+  const chainFastDirect = shouldUseFastDirectReply(
+    initialUserQuery,
+    ctx.mode,
+    hasPriorAssistantContext(ctx.messages),
+  );
 
   // ── Voice: echo the user's input in the user-echo voice ────
   // Run async without awaiting — we don't want to block the API call on
@@ -1454,7 +1481,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     const userQuery = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : undefined;
     const fastDirect = turns === 1
       ? chainFastDirect
-      : shouldUseFastDirectReply(userQuery, ctx.mode);
+      : shouldUseFastDirectReply(userQuery, ctx.mode, hasPriorAssistantContext(ctx.messages));
     if (fastDirect) chainUsedFastDirect = true;
 
     // Build full messages array with system prompt.
