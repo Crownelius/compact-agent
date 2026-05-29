@@ -1777,11 +1777,15 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           if (winner !== '__CAWDEX_WAIT_TICK__') {
             return winner;
           }
-          if (!firstTokenSeen && isFooterActive()) {
-            // Keep the waiting row visibly alive even if background render
-            // timers are flaky in the host terminal.
-            setFooterActivity('Sumi ink moving', turns, turnStart);
+          if (!firstTokenSeen) {
             const elapsedSec = Math.floor((Date.now() - turnStart) / 1000);
+            // Keep footer activity live when enabled.
+            if (isFooterActive()) {
+              setFooterActivity('Sumi ink moving', turns, turnStart);
+            }
+            // Hard fallback: always emit a visible heartbeat line once/sec
+            // while waiting for the first model event, independent of footer
+            // redraw reliability.
             if (elapsedSec >= 1 && elapsedSec !== lastWaitHeartbeatSec) {
               lastWaitHeartbeatSec = elapsedSec;
               writeScrollableLine(

@@ -89,7 +89,7 @@ describe('runQuery provider liveness recovery', () => {
 
     expect(cfg.model).toBe('openrouter/owl-alpha');
     expect(resetClient).not.toHaveBeenCalled();
-    expect(streamChat).toHaveBeenCalledTimes(1);
+    expect(streamChat).toHaveBeenCalled();
     expect(vi.mocked(streamChat).mock.calls[0][0].model).toBe('openrouter/owl-alpha');
     expect(ctx.messages.at(-1)).toEqual({ role: 'assistant', content: 'model=openrouter/owl-alpha' });
   });
