@@ -179,6 +179,7 @@ import { maybeInstantAnswer } from './instant-answer.js';
 import { maybeCreateInstantArtifact } from './instant-artifact.js';
 import { buildAheManifest, parseAheManifestArgs } from './ahe-manifest.js';
 import { buildLifespanReport, formatLifespanReport, parseLifespanArgs } from './lifespan.js';
+import { buildCommandAuditReport, formatCommandAuditReport, parseCommandAuditArgs } from './command-audit.js';
 import { getCurrentVersion, startStartupUpdateCheck } from './updater.js';
 import {
   importStatus,
@@ -1157,6 +1158,7 @@ export function handleSlashCommand(
       console.log(h('\n  ── Tools & Config ──'));
       console.log(d('  ') + c('/tools') + d('            — list tools'));
       console.log(d('  ') + c('/harness') + d('          — file-level harness component map'));
+      console.log(d('  ') + c('/command-audit') + d('    — audit slash command catalog, handlers, and smoke coverage'));
       console.log(d('  ') + c('/rules') + d('            — show coding rules'));
       console.log(d('  ') + c('/perm <mode>') + d('      — set permission mode (ask/auto/yolo); no arg shows current + always-allow list'));
       console.log(d('  ') + c('/perm why <tool>') + d(' — explain whether a tool call allows, prompts, or blocks'));
@@ -2249,6 +2251,13 @@ export function handleSlashCommand(
         format: wantsJson ? 'json' : 'text',
       }, process.cwd());
       console.log(report.output);
+      return { handled: true };
+    }
+
+    case '/command-audit': {
+      const auditArgs = parseCommandAuditArgs(args);
+      const report = buildCommandAuditReport(auditArgs);
+      console.log(formatCommandAuditReport(report, auditArgs));
       return { handled: true };
     }
 

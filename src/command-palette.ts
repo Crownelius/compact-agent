@@ -91,6 +91,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   // ── Tools & Config ──
   { command: '/tools', description: 'List currently-available tools', category: 'Config' },
   { command: '/harness', description: 'Map harness components to files, tests, and docs', category: 'Config', aliases: ['/harness-components'], usage: '/harness [component] [--json]' },
+  { command: '/command-audit', description: 'Audit slash command catalog, handlers, and smoke coverage', category: 'Config', usage: '/command-audit [--json] [--strict]' },
   { command: '/rules', description: 'Show the active coding and safety rules', category: 'Config' },
   { command: '/agents', description: 'Show active AGENTS.md instruction files and scoped sections', category: 'Config' },
   { command: '/perm', description: 'Permission mode and /perm why explanations', category: 'Config', aliases: ['/permissions'], usage: '/perm ask|auto|yolo | /perm why <tool> [command-or-path]' },
