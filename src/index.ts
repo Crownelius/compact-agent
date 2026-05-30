@@ -178,6 +178,7 @@ import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 import { maybeInstantAnswer } from './instant-answer.js';
 import { maybeCreateInstantArtifact } from './instant-artifact.js';
 import { buildAheManifest, parseAheManifestArgs } from './ahe-manifest.js';
+import { buildLifespanReport, formatLifespanReport, parseLifespanArgs } from './lifespan.js';
 import { getCurrentVersion, startStartupUpdateCheck } from './updater.js';
 import {
   importStatus,
@@ -1175,6 +1176,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/context brief') + d('   — cheap local repo/context preflight'));
       console.log(d('  ') + c('/context dossier <task>') + d(' — task-aware candidate file dossier'));
       console.log(d('  ') + c('/manifest [target]') + d(' — AHE prediction/regression edit contract'));
+      console.log(d('  ') + c('/lifespan [--json]') + d(' — diagnose long-session aging risks'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
       console.log(d('  ') + c('/benchmark-repos') + d('  — public Terminal-Bench repo catalog'));
@@ -2266,6 +2268,12 @@ export function handleSlashCommand(
       } else {
         console.log(chalk.yellow('  Usage: /context brief [path] | /context dossier <task>'));
       }
+      return { handled: true };
+    }
+
+    case '/lifespan': {
+      const report = buildLifespanReport(messages, config, process.cwd());
+      console.log(formatLifespanReport(report, parseLifespanArgs(args)));
       return { handled: true };
     }
 
@@ -4144,29 +4152,31 @@ async function main(): Promise<void> {
   // warning. Print it every launch so they get a chance to switch via
   // /model before they hit the "model returns nothing, REPL looks
   // frozen" footgun.
-  if (isKnownFlakyOpenRouterModel(config)) {
+  if (!nonInteractive && isKnownFlakyOpenRouterModel(config)) {
     console.log(theme.warning(`  ⚠  Active model "${config.model}" is known to stall in interactive OpenRouter sessions`));
     console.log(theme.warning(`     or return empty / "ERROR" responses.`));
     console.log(theme.dim(`     Switch with /openrouter-free or /model openrouter/free.`));
     console.log('');
   }
-  if (/openrouter/i.test(config.provider) && !isOpenRouterFreeModelId(config.model)) {
+  if (!nonInteractive && /openrouter/i.test(config.provider) && !isOpenRouterFreeModelId(config.model)) {
     console.log(theme.warning(`  Note: Active OpenRouter model "${config.model}" may require credits.`));
     console.log(theme.dim(`     Free-tier-safe switch: /openrouter-free`));
     console.log('');
   }
 
   syncFooter();
-  startStartupUpdateCheck({
-    onUpdateStarted: (currentVersion, latestVersion) => {
-      deactivateFooter();
-      console.log(theme.info(`  Update available: cawdex ${currentVersion} -> ${latestVersion}. Downloading in the background; restart Cawdex to use it.`));
-      syncFooter();
-    },
-    onError: (error) => {
-      dbgEmit('debug', 'update.check.failed', { error: error.slice(0, 200) });
-    },
-  });
+  if (!nonInteractive) {
+    startStartupUpdateCheck({
+      onUpdateStarted: (currentVersion, latestVersion) => {
+        deactivateFooter();
+        console.log(theme.info(`  Update available: cawdex ${currentVersion} -> ${latestVersion}. Downloading in the background; restart Cawdex to use it.`));
+        syncFooter();
+      },
+      onError: (error) => {
+        dbgEmit('debug', 'update.check.failed', { error: error.slice(0, 200) });
+      },
+    });
+  }
 
   let autoRoute = false;
   let nextTurnOverride: ModelTurnOverride | null = null;

@@ -131,6 +131,8 @@ describe('Smoke Tests — handleSlashCommand', () => {
     ['/context brief', 'local'],
     ['/context dossier fix prompt freezing and footer heartbeat', 'local'],
     ['/manifest src/query.ts timeout retry', 'local'],
+    ['/lifespan', 'local'],
+    ['/lifespan --json', 'local'],
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
     ['/sources coding agent verification --limit 1 --source arxiv', 'local'],
@@ -353,6 +355,11 @@ describe('Non-interactive slash dispatch', () => {
   it('leaves ordinary non-interactive prompts unchanged', () => {
     const res = resolveNonInteractivePrompt('fix the parser', config, [], session, { current: 'dev' as const });
     expect(res).toEqual({ kind: 'query', prompt: 'fix the parser' });
+  });
+
+  it('handles local slash diagnostics in non-interactive mode without a model call', () => {
+    const res = resolveNonInteractivePrompt('/lifespan --json', config, [], session, { current: 'dev' as const });
+    expect(res).toEqual({ kind: 'handled' });
   });
 
   it('routes /sources as a local non-interactive source scan', () => {

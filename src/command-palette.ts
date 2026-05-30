@@ -119,6 +119,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/benchmark-repos', description: 'Public Terminal-Bench repo catalog for source mining', category: 'Planning', aliases: ['/bench-repos', '/leaderboard-repos', '/tb-repos'], usage: '/benchmark-repos [query] [--all|--unverified|--top-open-source] [--limit n]' },
   { command: '/repo-digest', description: 'Direct GitHub repo component/source digest without a model call', category: 'Planning', aliases: ['/repo-inspect', '/github-digest'], usage: '/repo-digest <owner/repo> [--files n]' },
   { command: '/context', description: 'Cheap repo preflight and task-aware candidate file dossier', category: 'Planning', usage: '/context brief [path] | /context dossier <task>' },
+  { command: '/lifespan', description: 'Diagnose long-session aging risks before benchmark runs', category: 'Planning', usage: '/lifespan [--json]' },
   { command: '/source-research', description: 'Research arXiv, GitHub, Hugging Face, and Kaggle', category: 'Planning', aliases: ['/research-sources'] },
   { command: '/update-docs', description: 'Sync documentation with code', category: 'Planning' },
 
