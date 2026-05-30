@@ -118,7 +118,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/sources', description: 'Direct arXiv/GitHub/HF/Kaggle source scan without a model call', category: 'Planning', aliases: ['/source-scan'], usage: '/sources <query> [--source arxiv|github|huggingface|kaggle] [--json]' },
   { command: '/benchmark-repos', description: 'Public Terminal-Bench repo catalog for source mining', category: 'Planning', aliases: ['/bench-repos', '/leaderboard-repos', '/tb-repos'], usage: '/benchmark-repos [query] [--all|--unverified|--top-open-source] [--limit n]' },
   { command: '/repo-digest', description: 'Direct GitHub repo component/source digest without a model call', category: 'Planning', aliases: ['/repo-inspect', '/github-digest'], usage: '/repo-digest <owner/repo> [--files n]' },
-  { command: '/context', description: 'Cheap local repo/context preflight without a model call', category: 'Planning', usage: '/context brief [path]' },
+  { command: '/context', description: 'Cheap repo preflight and task-aware candidate file dossier', category: 'Planning', usage: '/context brief [path] | /context dossier <task>' },
   { command: '/source-research', description: 'Research arXiv, GitHub, Hugging Face, and Kaggle', category: 'Planning', aliases: ['/research-sources'] },
   { command: '/update-docs', description: 'Sync documentation with code', category: 'Planning' },
 

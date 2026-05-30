@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildContextBrief } from '../src/context-brief.js';
+import { buildContextBrief, buildContextDossier } from '../src/context-brief.js';
 
 describe('context brief', () => {
   let root: string;
@@ -33,5 +33,22 @@ describe('context brief', () => {
     expect(output).toContain('.ts: 1');
     expect(output).toContain('npm run test');
     expect(output).toContain('npm run build');
+  });
+
+  it('builds a task-aware candidate file dossier', () => {
+    writeFileSync(join(root, 'src', 'query.ts'), 'export function runQuery() {}\n');
+    writeFileSync(join(root, 'src', 'fixed-footer.ts'), 'export function updateFooter() {}\n');
+    mkdirSync(join(root, 'tests'), { recursive: true });
+    writeFileSync(join(root, 'tests', 'query-liveness.test.ts'), 'test("liveness", () => {});\n');
+
+    const output = buildContextDossier('fix prompt freezing and footer heartbeat during third turn', root);
+
+    expect(output).toContain('# Context Dossier');
+    expect(output).toContain('## Candidate Files');
+    expect(output).toContain('src/query.ts');
+    expect(output).toContain('src/fixed-footer.ts');
+    expect(output).toContain('tests/query-liveness.test.ts');
+    expect(output).toContain('## Dossier Contract');
+    expect(output).toContain('/manifest');
   });
 });

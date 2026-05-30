@@ -20,7 +20,7 @@ import { formatOpenAICodexSmokeResult, runOpenAICodexSmokeTest } from './openai-
 import { isKnownFlakyOpenRouterModel, isTurnCancelKeySequence, runQuery } from './query.js';
 import { ALL_TOOLS } from './tools/index.js';
 import { buildHarnessComponentsReport } from './tools/harness-components.js';
-import { buildContextBrief } from './context-brief.js';
+import { buildContextBrief, buildContextDossier } from './context-brief.js';
 import { formatAgentsInstructionsReport } from './agents-md.js';
 import { GitHubRepoDigestTool } from './tools/github-repo-digest.js';
 import { ResearchSourcesTool } from './tools/research-sources.js';
@@ -1173,6 +1173,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoint [label]') + d(' — save git state checkpoint'));
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/context brief') + d('   — cheap local repo/context preflight'));
+      console.log(d('  ') + c('/context dossier <task>') + d(' — task-aware candidate file dossier'));
       console.log(d('  ') + c('/manifest [target]') + d(' — AHE prediction/regression edit contract'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
@@ -2255,8 +2256,15 @@ export function handleSlashCommand(
       if (!sub || sub === 'brief') {
         const target = parts.join(' ').trim() || process.cwd();
         console.log(buildContextBrief(target));
+      } else if (sub === 'dossier') {
+        const task = parts.join(' ').trim();
+        if (!task) {
+          console.log(chalk.yellow('  Usage: /context dossier <task>'));
+        } else {
+          console.log(buildContextDossier(task, process.cwd()));
+        }
       } else {
-        console.log(chalk.yellow('  Usage: /context brief [path]'));
+        console.log(chalk.yellow('  Usage: /context brief [path] | /context dossier <task>'));
       }
       return { handled: true };
     }

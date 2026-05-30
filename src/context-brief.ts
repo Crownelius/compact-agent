@@ -56,6 +56,62 @@ export interface ContextBriefOptions {
   maxFiles?: number;
 }
 
+export interface ContextDossierOptions extends ContextBriefOptions {
+  maxCandidates?: number;
+}
+
+interface CandidateFile {
+  file: string;
+  score: number;
+  reasons: string[];
+}
+
+const STOP_WORDS = new Set([
+  'about',
+  'after',
+  'again',
+  'against',
+  'also',
+  'and',
+  'are',
+  'because',
+  'been',
+  'before',
+  'being',
+  'between',
+  'but',
+  'can',
+  'cannot',
+  'could',
+  'does',
+  'doing',
+  'each',
+  'from',
+  'have',
+  'into',
+  'make',
+  'need',
+  'needs',
+  'not',
+  'should',
+  'that',
+  'the',
+  'their',
+  'them',
+  'then',
+  'there',
+  'these',
+  'this',
+  'those',
+  'through',
+  'when',
+  'where',
+  'while',
+  'with',
+  'work',
+  'working',
+]);
+
 export function buildContextBrief(cwd = process.cwd(), options: ContextBriefOptions = {}): string {
   const root = resolve(cwd);
   if (!existsSync(root)) return `context brief: path does not exist: ${root}`;
@@ -103,6 +159,63 @@ export function buildContextBrief(cwd = process.cwd(), options: ContextBriefOpti
     '1. Read the relevant manifest and task/instruction file before editing.',
     '2. Run the narrowest likely verifier before a broad test/build command when feasible.',
     '3. Treat dirty git entries as user work unless this task explicitly owns them.',
+  ].join('\n');
+}
+
+export function buildContextDossier(task: string, cwd = process.cwd(), options: ContextDossierOptions = {}): string {
+  const trimmedTask = task.replace(/\s+/g, ' ').trim();
+  if (!trimmedTask) return 'context dossier: missing task. Usage: /context dossier <task>';
+
+  const root = resolve(cwd);
+  if (!existsSync(root)) return `context dossier: path does not exist: ${root}`;
+  if (!statSync(root).isDirectory()) return `context dossier: path is not a directory: ${root}`;
+
+  const maxFiles = clamp(options.maxFiles ?? 1000, 50, 2000);
+  const maxCandidates = clamp(options.maxCandidates ?? 16, 5, 50);
+  const allFiles = globSync('**/*', {
+    cwd: root,
+    nodir: true,
+    dot: true,
+    maxDepth: 6,
+    ignore: IGNORE_GLOBS,
+  }).map(normalizePath).sort((a, b) => a.localeCompare(b));
+  const files = allFiles.slice(0, maxFiles);
+  const manifests = files.filter((file) => MANIFEST_NAMES.has(basename(file)));
+  const scripts = readPackageScripts(root);
+  const verifiers = inferVerifierCommands(manifests, scripts);
+  const tokens = tokenizeTask(trimmedTask);
+  const candidates = rankCandidateFiles(files, tokens, trimmedTask).slice(0, maxCandidates);
+  const candidateTests = files
+    .filter((file) => isTestLike(file))
+    .map((file) => scoreCandidate(file, tokens, trimmedTask))
+    .filter((candidate) => candidate.score > 0)
+    .sort(compareCandidates)
+    .slice(0, 10);
+
+  return [
+    '# Context Dossier',
+    `Task: ${trimmedTask}`,
+    `Root: ${root}`,
+    `Files scanned: ${files.length}${allFiles.length > files.length ? ` of ${allFiles.length}` : ''}`,
+    '',
+    '## Candidate Files',
+    formatCandidates(candidates),
+    '',
+    '## Candidate Tests',
+    formatCandidates(candidateTests),
+    '',
+    '## Manifests & Setup Files',
+    formatList(manifests, 20),
+    '',
+    '## Likely Verification Commands',
+    formatList(verifiers, 12),
+    '',
+    '## Dossier Contract',
+    '- Read the top candidate files before editing; if none fit, broaden search terms before patching.',
+    '- Record candidate files/functions, evidence, reproduction command, and ruled-out distractors before the first non-trivial edit.',
+    '- Use /manifest for the planned edit and include Prediction, At-risk regression, Verification, and Rollback criteria.',
+    '- Verify narrow first, then broad; when CI hints or package scripts exist, include the relevant CI-like build/test/lint step before finalizing.',
+    '- Treat this dossier as a retrieval starting point, not authority; current task files and verifier output override filename matches.',
   ].join('\n');
 }
 
@@ -180,6 +293,131 @@ function summarizeExtensions(files: string[]): string[] {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 16)
     .map(([ext, count]) => `${ext}: ${count}`);
+}
+
+function tokenizeTask(task: string): string[] {
+  const tokens = task
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+  return Array.from(new Set(tokens)).slice(0, 40);
+}
+
+function rankCandidateFiles(files: string[], tokens: string[], task: string): CandidateFile[] {
+  return files
+    .map((file) => scoreCandidate(file, tokens, task))
+    .filter((candidate) => candidate.score > 0 && !MANIFEST_NAMES.has(basename(candidate.file)))
+    .sort(compareCandidates);
+}
+
+function compareCandidates(a: CandidateFile, b: CandidateFile): number {
+  return b.score - a.score || a.file.localeCompare(b.file);
+}
+
+function scoreCandidate(file: string, tokens: string[], task: string): CandidateFile {
+  const lower = file.toLowerCase();
+  const base = basename(lower);
+  const reasons: string[] = [];
+  let score = 0;
+
+  for (const token of tokens) {
+    if (base.includes(token)) {
+      score += 6;
+      addReason(reasons, `name:${token}`);
+    } else if (lower.includes(token)) {
+      score += 3;
+      addReason(reasons, `path:${token}`);
+    }
+  }
+
+  for (const rule of TASK_SURFACE_RULES) {
+    if (rule.task.test(task) && rule.file.test(file)) {
+      score += rule.score;
+      addReason(reasons, rule.reason);
+    }
+  }
+
+  if (isTestLike(file) && /\b(test|spec|verify|regression|failure|failing|ci|build)\b/i.test(task)) {
+    score += 4;
+    addReason(reasons, 'test surface');
+  }
+  if (/\b(readme|docs?|guide|manual|usage)\b/i.test(task) && /(^|\/)(readme|docs?|.*\.md$)/i.test(file)) {
+    score += 4;
+    addReason(reasons, 'docs surface');
+  }
+  if (/\b(ui|screen|theme|footer|banner|palette|color|colour|input|cursor|prompt)\b/i.test(task) && /\.(tsx?|css|scss|vue|svelte)$/i.test(file)) {
+    score += 2;
+    addReason(reasons, 'interactive UI surface');
+  }
+
+  return { file, score, reasons };
+}
+
+const TASK_SURFACE_RULES: Array<{ task: RegExp; file: RegExp; score: number; reason: string }> = [
+  {
+    task: /\b(slash|command|palette|selector|help|resume|config|wizard)\b/i,
+    file: /(^|\/)(index|command-palette|picker|session-picker|config)\.ts$|tests\/.*command/i,
+    score: 8,
+    reason: 'command/CLI surface',
+  },
+  {
+    task: /\b(prompt|input|cursor|queue|queued|freeze|freezing|turn|heartbeat|footer|stream|streaming|cancel|f5|esc)\b/i,
+    file: /(^|\/)(query|live-queue|fixed-footer|prompt-buffer|status|retry|api)\.ts$|tests\/.*(query|liveness|queue|footer|prompt)/i,
+    score: 8,
+    reason: 'turn liveness surface',
+  },
+  {
+    task: /\b(model|provider|openrouter|openai|oauth|codex|api|rate|fallback)\b/i,
+    file: /(^|\/)(api|openai-oauth|openai-smoke|openrouter-models|model-router|config|query)\.ts$|tests\/.*(oauth|provider|openrouter|api|model)/i,
+    score: 7,
+    reason: 'provider/model surface',
+  },
+  {
+    task: /\b(memory|mempalace|remember|diary|import)\b/i,
+    file: /(^|\/)(mempalace|memory|imports)|tests\/.*(memory|import)/i,
+    score: 7,
+    reason: 'memory surface',
+  },
+  {
+    task: /\b(swarm|agent|orchestrate|multi-agent|handoff|roles?)\b/i,
+    file: /(^|\/)(swarm|orchestration|agents|ecc)\.ts$|tests\/.*swarm/i,
+    score: 7,
+    reason: 'agent orchestration surface',
+  },
+  {
+    task: /\b(benchmark|leaderboard|terminal-bench|swe|ci|harness|trace|ahe|contextbench|eval)\b/i,
+    file: /benchmark|harness|evaluation|kbench|terminal_bench|trace|context-brief|ahe-manifest|tests\/.*(benchmark|harness|context|trace)/i,
+    score: 7,
+    reason: 'benchmark/harness surface',
+  },
+  {
+    task: /\b(source|research|arxiv|github|hugging|kaggle|paper|dataset|competition)\b/i,
+    file: /research-sources|source-command|search-first|github-repo-digest|benchmark-repos|tests\/.*(research|source|repo)/i,
+    score: 7,
+    reason: 'source research surface',
+  },
+  {
+    task: /\b(theme|palette|color|colour|logo|banner|design|accessibility|voice)\b/i,
+    file: /(^|\/)(theme|brand|animations|accessibility|voice|fixed-footer)\.ts$|tests\/.*(theme|brand|accessibility|voice|footer)/i,
+    score: 6,
+    reason: 'UX surface',
+  },
+];
+
+function isTestLike(file: string): boolean {
+  return /(^|\/)(tests?|__tests__)\/|[._-](test|spec)\.[cm]?[jt]sx?$|[._-](test|spec)\.py$/i.test(file);
+}
+
+function addReason(reasons: string[], reason: string): void {
+  if (!reasons.includes(reason)) reasons.push(reason);
+}
+
+function formatCandidates(candidates: CandidateFile[]): string {
+  if (candidates.length === 0) return '(none found)';
+  return candidates
+    .map((candidate) => `- ${candidate.file} (score ${candidate.score}; ${candidate.reasons.slice(0, 4).join(', ') || 'matched task surface'})`)
+    .join('\n');
 }
 
 function gitSummary(root: string): string {
