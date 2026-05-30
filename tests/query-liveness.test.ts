@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { streamChat, resetClient } from '../src/api.js';
-import { formatWorkingIndicatorFrame, runQuery, shouldUseFastDirectReply } from '../src/query.js';
+import { formatWorkingIndicatorFrame, resolveTurnFirstTokenTimeoutMs, runQuery, shouldUseFastDirectReply } from '../src/query.js';
 import type { CawdexConfig, Message } from '../src/types.js';
 
 vi.mock('../src/api.js', () => ({
@@ -95,6 +95,7 @@ describe('runQuery provider liveness recovery', () => {
   });
 
   it('retries with the fallback model when the primary model never sends a first stream event', async () => {
+    process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = '10';
     vi.mocked(streamChat).mockImplementation(async function* (
       cfg: CawdexConfig,
       _messages: Message[],
@@ -533,7 +534,14 @@ Use short, bounded shell commands for this repository.
       apiMessages: Message[],
     ) {
       sentRequests.push(apiMessages);
-      yield { type: 'text', content: sentRequests.length === 1 ? 'First response' : 'Second response' };
+      yield {
+        type: 'text',
+        content: sentRequests.length === 1
+          ? 'First response'
+          : sentRequests.length === 2
+            ? 'Second response'
+            : 'Third response',
+      };
       yield { type: 'done' };
     });
 
@@ -552,6 +560,7 @@ Use short, bounded shell commands for this repository.
     };
     try {
       await runQuery(ctx);
+      expect((globalThis as { __turnCancelCurrent?: unknown }).__turnCancelCurrent).toBeNull();
       expect(ctx.messages).toBe(messages);
       expect(messages).toEqual([
         { role: 'user', content: 'First prompt' },
@@ -559,6 +568,9 @@ Use short, bounded shell commands for this repository.
       ]);
 
       messages.push({ role: 'user', content: 'Second prompt' });
+      await runQuery(ctx);
+      expect((globalThis as { __turnCancelCurrent?: unknown }).__turnCancelCurrent).toBeNull();
+      messages.push({ role: 'user', content: 'Third prompt' });
       await runQuery(ctx);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -570,6 +582,8 @@ Use short, bounded shell commands for this repository.
       { role: 'assistant', content: 'First response' },
       { role: 'user', content: 'Second prompt' },
       { role: 'assistant', content: 'Second response' },
+      { role: 'user', content: 'Third prompt' },
+      { role: 'assistant', content: 'Third response' },
     ]);
     const secondConversation = sentRequests[1].filter((m) => m.role === 'user' || m.role === 'assistant');
     expect(secondConversation).toEqual([
@@ -577,6 +591,28 @@ Use short, bounded shell commands for this repository.
       { role: 'assistant', content: 'First response' },
       { role: 'user', content: 'Second prompt' },
     ]);
+    const thirdConversation = sentRequests[2].filter((m) => m.role === 'user' || m.role === 'assistant');
+    expect(thirdConversation).toEqual([
+      { role: 'user', content: 'First prompt' },
+      { role: 'assistant', content: 'First response' },
+      { role: 'user', content: 'Second prompt' },
+      { role: 'assistant', content: 'Second response' },
+      { role: 'user', content: 'Third prompt' },
+    ]);
+    expect((globalThis as { __turnCancelCurrent?: unknown }).__turnCancelCurrent).toBeNull();
+  });
+
+  it('does not shorten fast-direct first-token recovery below the normal interactive timeout', () => {
+    delete process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS;
+    const cfg = config();
+    cfg.model = 'minimax/minimax-m2.7';
+    cfg.fallbackModel = undefined;
+
+    expect(resolveTurnFirstTokenTimeoutMs(cfg, false)).toBe(8_000);
+    expect(resolveTurnFirstTokenTimeoutMs(cfg, true)).toBe(8_000);
+
+    process.env.CAWDEX_FIRST_TOKEN_TIMEOUT_MS = '1';
+    expect(resolveTurnFirstTokenTimeoutMs(cfg, true)).toBe(1);
   });
 
   it('formats the active-turn waiting indicator with animation and interrupt hint', () => {

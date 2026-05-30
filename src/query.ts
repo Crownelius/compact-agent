@@ -61,7 +61,7 @@ const INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 8_000;
 const INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS = 6_000;
 const NON_INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS = 60_000;
 const NON_INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS = 20_000;
-const FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS = 5_000;
+const FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS = INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS;
 const INTERACTIVE_STREAM_IDLE_TIMEOUT_MS = 45_000;
 const NON_INTERACTIVE_STREAM_IDLE_TIMEOUT_MS = 120_000;
 const FAST_DIRECT_STREAM_IDLE_TIMEOUT_MS = 20_000;
@@ -92,6 +92,14 @@ export function resolveFirstTokenTimeoutMs(
     ? (flaky ? NON_INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS : NON_INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS)
     : (flaky ? INTERACTIVE_FLAKY_FIRST_TOKEN_TIMEOUT_MS : INTERACTIVE_FIRST_TOKEN_TIMEOUT_MS);
   return envTimeoutMs('CAWDEX_FIRST_TOKEN_TIMEOUT_MS', fallback);
+}
+
+export function resolveTurnFirstTokenTimeoutMs(
+  config: Pick<CawdexConfig, 'model' | 'provider'>,
+  fastDirect = false,
+): number {
+  const timeoutMs = resolveFirstTokenTimeoutMs(config);
+  return fastDirect ? Math.min(timeoutMs, FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS) : timeoutMs;
 }
 
 export function resolveStreamIdleTimeoutMs(fastDirect = false): number {
@@ -1708,7 +1716,6 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     let firstTokenSeen = false;
     let firstTokenLatencyMs: number | null = null;
     let firstRenderableOutputSeen = false;
-    let lastWaitHeartbeatSec = -1;
     // Note: the outer `isScreenReader` declared at the top of runQuery
     // (line ~340) is in scope here via closure — no need for a second
     // declaration. Previously this re-declared inside the while loop
@@ -1741,9 +1748,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       }
     }, 30_000);
     let firstTokenTimedOut = false;
-    const firstTokenTimeoutMs = fastDirect
-      ? Math.min(resolveFirstTokenTimeoutMs(ctx.config), FAST_DIRECT_FIRST_TOKEN_TIMEOUT_MS)
-      : resolveFirstTokenTimeoutMs(ctx.config);
+    const firstTokenTimeoutMs = resolveTurnFirstTokenTimeoutMs(ctx.config, fastDirect);
     let streamIdleTimedOut = false;
     const streamIdleTimeoutMs = resolveStreamIdleTimeoutMs(fastDirect);
 
@@ -1778,21 +1783,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
           if (winner !== '__CAWDEX_WAIT_TICK__') {
             return winner;
           }
-          if (!firstRenderableOutputSeen) {
-            const elapsedSec = Math.floor((Date.now() - turnStart) / 1000);
-            // Keep footer activity live when enabled.
-            if (isFooterActive()) {
-              setFooterActivity('Sumi ink moving', turns, turnStart);
-            }
-            // Hard fallback: always emit a visible heartbeat line once/sec
-            // while waiting for the first model event, independent of footer
-            // redraw reliability.
-            if (elapsedSec >= 1 && elapsedSec !== lastWaitHeartbeatSec) {
-              lastWaitHeartbeatSec = elapsedSec;
-              writeScrollableLine(
-                theme.dim(`  ◦ Working (${formatDuration(Date.now() - turnStart)} • Esc/F5 to interrupt)`),
-              );
-            }
+          if (!firstRenderableOutputSeen && isFooterActive()) {
+            setFooterActivity('Sumi ink moving', turns, turnStart);
           }
         }
       }
