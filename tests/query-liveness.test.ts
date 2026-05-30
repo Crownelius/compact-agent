@@ -199,6 +199,47 @@ describe('runQuery provider liveness recovery', () => {
     expect(String(ctx.messages.at(-1)?.content)).toContain('[Provider timeout: minimax/minimax-m2.1 produced no stream events');
   });
 
+  it('closes timed-out provider iterators before retrying', async () => {
+    const closed: Array<ReturnType<typeof vi.fn>> = [];
+    vi.mocked(streamChat).mockImplementation(() => {
+      const returnSpy = vi.fn(async () => ({ done: true, value: undefined }));
+      closed.push(returnSpy);
+      return {
+        [Symbol.asyncIterator]() {
+          return {
+            next: () => new Promise(() => { /* provider ignores abort */ }),
+            return: returnSpy,
+          };
+        },
+      } as never;
+    });
+
+    const cfg = config();
+    cfg.model = 'minimax/minimax-m2.1';
+    cfg.fallbackModel = undefined;
+    const messages: Message[] = [{ role: 'user', content: 'i like ketchup' }];
+    const cwd = mkdtempSync(join(tmpdir(), 'cawdex-query-timeout-close-'));
+    const ctx = {
+      config: cfg,
+      messages,
+      cwd,
+      rl: {} as never,
+      sessionId: 'test-session-timeout-close',
+      mode: 'dev' as const,
+    };
+    try {
+      await runQuery(ctx);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(streamChat).toHaveBeenCalledTimes(2);
+    expect(closed).toHaveLength(2);
+    expect(closed[0]).toHaveBeenCalledTimes(1);
+    expect(closed[1]).toHaveBeenCalledTimes(1);
+    expect((globalThis as { __turnCancelCurrent?: unknown }).__turnCancelCurrent).toBeNull();
+  });
+
   it('hard-times out a provider stream that stalls after the first event', async () => {
     vi.mocked(streamChat).mockImplementation(async function* () {
       yield { type: 'thinking', content: 'internal progress' };

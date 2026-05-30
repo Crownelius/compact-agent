@@ -92,6 +92,7 @@ interface ResearchSourcesJsonReport {
   };
   hits: SourceHit[];
   errors: string[];
+  nextActions: string[];
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -906,6 +907,12 @@ function formatHits(query: string, hits: SourceHit[], errors: string[], notes: s
   if (errors.length > 0) {
     lines.push('## Source errors');
     for (const e of errors) lines.push(`- ${e}`);
+    lines.push('');
+  }
+  const nextActions = buildSourceNextActions(query, hits, errors);
+  if (nextActions.length > 0) {
+    lines.push('## Suggested next actions');
+    for (const action of nextActions) lines.push(`- ${action}`);
   }
   return lines.join('\n').trim();
 }
@@ -1000,7 +1007,70 @@ function buildResearchSourcesJsonReport(
     },
     hits,
     errors,
+    nextActions: buildSourceNextActions(query, hits, errors),
   };
+}
+
+function buildSourceNextActions(query: string, hits: SourceHit[], errors: string[]): string[] {
+  const escapedQuery = escapeCommandArg(query);
+  const actions: string[] = [
+    `/context dossier "${escapedQuery}"`,
+  ];
+  for (const repo of extractGitHubRepoSlugs(hits).slice(0, 3)) {
+    actions.push(`/repo-digest ${repo} --files 500 --text-files 6`);
+  }
+  if (hits.some((hit) => hit.source === 'GitHub code')) {
+    actions.push('Treat GitHub code hits as implementation examples until a repository digest confirms manifests, tests, and component surfaces.');
+  }
+  if (hits.some((hit) => hit.source === 'Kaggle competition')) {
+    actions.push('For Kaggle competitions, record metric/deadline/public rules before designing a solution; do not tune against private leaderboard or oracle artifacts.');
+  }
+  if (errors.length > 0) {
+    actions.push('Review source errors and rerun with narrower --source/--github/--hf/--kaggle flags before relying on incomplete coverage.');
+  }
+  actions.push(`/manifest "${escapedQuery} planned edit"`);
+  return dedupe(actions).slice(0, 8);
+}
+
+function extractGitHubRepoSlugs(hits: SourceHit[]): string[] {
+  const repos: string[] = [];
+  for (const hit of hits) {
+    for (const text of [hit.url, hit.title, hit.meta, hit.summary].filter(Boolean) as string[]) {
+      const slug = extractGitHubRepoSlug(text);
+      if (slug) repos.push(slug);
+    }
+  }
+  return dedupe(repos);
+}
+
+function extractGitHubRepoSlug(text: string): string | null {
+  const githubUrl = text.match(/https?:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/i);
+  if (githubUrl) return normalizeRepoSlug(`${githubUrl[1]}/${githubUrl[2]}`);
+  const plain = text.match(/\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?::|#|\s|$)/);
+  if (plain) return normalizeRepoSlug(plain[1]);
+  return null;
+}
+
+function normalizeRepoSlug(value: string): string | null {
+  const [owner, repo] = value.split('/');
+  if (!owner || !repo) return null;
+  if (['issues', 'pull', 'pulls', 'blob', 'tree', 'commit', 'commits', 'actions'].includes(repo.toLowerCase())) return null;
+  return `${owner}/${repo.replace(/\.git$/i, '')}`;
+}
+
+function escapeCommandArg(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function dedupe(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
 export const ResearchSourcesTool: Tool = {
@@ -1254,6 +1324,8 @@ export const _internal = {
   buildCoverageNotes,
   buildResearchSourcesJsonReport,
   buildSourceDigestObject,
+  buildSourceNextActions,
+  extractGitHubRepoSlugs,
   formatHits,
   normalizeFormat,
 };

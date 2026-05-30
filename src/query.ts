@@ -33,7 +33,15 @@ import { audioCue } from './audio.js';
 import { setStatus } from './status.js';
 import { collapseCompletedTurns } from './turn-context.js';
 import * as liveQueue from './live-queue.js';
-import { isFooterActive, setFooterActivity, setFooterCost, writeScrollableLine } from './fixed-footer.js';
+import {
+  activateFooter,
+  buildFooterSnapshot,
+  isFooterActive,
+  setFooterActivity,
+  setFooterCost,
+  shouldUseFixedFooter,
+  writeScrollableLine,
+} from './fixed-footer.js';
 import { applyQueuedInputChunk, drainQueuedInputBytes, queuedInputBytesToText } from './prompt-buffer.js';
 import { emit as dbgEmit } from './debug.js';
 import { applyAgentToolInstructions } from './agents-md.js';
@@ -250,6 +258,16 @@ function startWorkingIndicator(startedAtMs: number, screenReader: boolean, turn 
   ];
   let frame = 0;
   let stopped = false;
+  if (isFooterActive()) {
+    setFooterActivity(messages[0], turn, startedAtMs);
+    return {
+      stop: (): void => {
+        if (stopped) return;
+        stopped = true;
+        if (isFooterActive()) setFooterActivity('Receiving response', turn, startedAtMs);
+      },
+    };
+  }
   const paint = (): void => {
     const message = messages[Math.floor(frame / 8) % messages.length];
     if (isFooterActive()) {
@@ -280,6 +298,29 @@ function startWorkingIndicator(startedAtMs: number, screenReader: boolean, turn 
       else process.stdout.write('\r\x1b[K');
     },
   };
+}
+
+function ensureTurnFooterActive(ctx: QueryContext, screenReader: boolean): void {
+  if (screenReader) return;
+  if (isFooterActive()) return;
+  if (!shouldUseFixedFooter(ctx.config)) return;
+  activateFooter(buildFooterSnapshot(
+    ctx.config,
+    ctx.mode,
+    { id: ctx.sessionId },
+    ctx.cwd,
+  ));
+}
+
+function clearActiveTurnHandle(streamAbort: AbortController): void {
+  const g = globalThis as {
+    __turnAbortCtl?: AbortController | null;
+    __turnCancelCurrent?: (() => void) | null;
+  };
+  if (g.__turnAbortCtl === streamAbort) {
+    g.__turnAbortCtl = null;
+    g.__turnCancelCurrent = null;
+  }
 }
 
 /**
@@ -1441,6 +1482,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
   // skips the live queue box (NVDA/JAWS would re-read every cursor move
   // as new text, drowning the actual response).
   const isScreenReader = ctx.config.voice?.accessibility?.screenReader === true;
+  ensureTurnFooterActive(ctx, isScreenReader);
   const inputGuard = startInputSuppression(isScreenReader);
   let earlyWorkingIndicator: WorkingIndicator | null = null;
   try {
@@ -1751,6 +1793,7 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
     const firstTokenTimeoutMs = resolveTurnFirstTokenTimeoutMs(ctx.config, fastDirect);
     let streamIdleTimedOut = false;
     const streamIdleTimeoutMs = resolveStreamIdleTimeoutMs(fastDirect);
+    let closeCurrentStream: (() => void) | null = null;
 
     try {
       const requestConfig = fastDirect
@@ -1758,6 +1801,13 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
         : ctx.config;
       const stream = streamChat(requestConfig, apiMessages, requestTools, streamAbort.signal);
       const iterator = stream[Symbol.asyncIterator]();
+      closeCurrentStream = () => {
+        const close = iterator.return;
+        closeCurrentStream = null;
+        if (typeof close === 'function') {
+          void close.call(iterator, undefined as never).catch(() => { /* best effort stream cleanup */ });
+        }
+      };
       async function waitForNextEvent(
         nextPromise: Promise<Awaited<ReturnType<typeof iterator.next>>>,
         waitTimeoutMs: number,
@@ -1881,10 +1931,11 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
             printCost(u.prompt, u.completion, cost, warning, turnDurationMs);
           }
           try { streamAbort.abort(); } catch { /* close any provider socket left open after done */ }
-          void iterator.return?.(undefined as never).catch(() => { /* best effort stream cleanup */ });
+          closeCurrentStream?.();
           break;
         }
       }
+      closeCurrentStream?.();
       if (!usageRecorded && (hasOutput || (toolCalls && toolCalls.length > 0))) {
         const promptEstimate = Math.max(1, estimateTokens(apiMessages));
         const completionEstimate = Math.max(
@@ -1928,6 +1979,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       // print below shouldn't trail an animated row.
       workingIndicator?.stop();
       workingIndicator = null;
+      closeCurrentStream?.();
+      clearActiveTurnHandle(streamAbort);
       const msg = err instanceof Error ? err.message : String(err);
       // Always close the streaming line first so the error doesn't glue to text.
       if (hasOutput && !lastCharWasNewline) process.stdout.write('\n');
@@ -2086,6 +2139,8 @@ export async function runQuery(ctx: QueryContext): Promise<void> {
       ctx.messages.push({ role: 'assistant', content: `[API error: ${msg}]` });
       break;
     }
+
+    clearActiveTurnHandle(streamAbort);
 
     if (!hasOutput && (!toolCalls || toolCalls.length === 0)) {
       const failedModel = ctx.config.model;

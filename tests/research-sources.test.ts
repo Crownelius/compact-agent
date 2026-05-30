@@ -269,6 +269,10 @@ describe('research_sources tool', () => {
     expect(result.output).toContain('HF paper: Agent Paper');
     expect(result.output).toContain('Kaggle: Data');
     expect(result.output).toContain('Kaggle competition: Agent Competition');
+    expect(result.output).toContain('## Suggested next actions');
+    expect(result.output).toContain('/context dossier "agent"');
+    expect(result.output).toContain('/repo-digest o/r --files 500 --text-files 6');
+    expect(result.output).toContain('/manifest "agent planned edit"');
     expect(result.output.indexOf('## arXiv: Paper')).toBeLessThan(result.output.indexOf('## GitHub: o/r'));
     expect(result.output.indexOf('## GitHub: o/r')).toBeLessThan(result.output.indexOf('## HF model: o/m'));
     expect(result.output.indexOf('## HF paper: Agent Paper')).toBeLessThan(result.output.indexOf('## Kaggle: Data'));
@@ -382,6 +386,9 @@ describe('research_sources tool', () => {
       secretsIncluded: false,
       credentialHeadersIncluded: false,
     });
+    expect(parsed.nextActions).toContain('/context dossier "agent harness"');
+    expect(parsed.nextActions).toContain('/repo-digest o/harness --files 500 --text-files 6');
+    expect(parsed.nextActions).toContain('/manifest "agent harness planned edit"');
     expect(parsed.hits[0]).toMatchObject({
       source: 'arXiv',
       title: 'AHE',
@@ -658,6 +665,35 @@ describe('research_sources tool', () => {
     expect(notes).toContain('Hugging Face model/dataset searches are sorted by lastModified and stale dated hits are filtered client-side when metadata is available.');
     const output = _internal.formatHits('agent benchmark', [], [], notes);
     expect(output).toContain('recent_days=90');
+  });
+
+  it('builds source follow-up actions from GitHub and Kaggle hits', () => {
+    const actions = _internal.buildSourceNextActions('agent "benchmark"', [
+      {
+        source: 'GitHub code',
+        title: 'owner/agent:src/main.ts',
+        url: 'https://github.com/owner/agent/blob/main/src/main.ts',
+      },
+      {
+        source: 'HF paper',
+        title: 'Paper',
+        url: 'https://huggingface.co/papers/2601.1',
+        meta: 'code https://github.com/example/runner',
+      },
+      {
+        source: 'Kaggle competition',
+        title: 'Agent Bench',
+        url: 'https://www.kaggle.com/competitions/agent-bench',
+      },
+    ], ['github: rate limit']);
+
+    expect(actions).toContain('/context dossier "agent \\"benchmark\\""');
+    expect(actions).toContain('/repo-digest owner/agent --files 500 --text-files 6');
+    expect(actions).toContain('/repo-digest example/runner --files 500 --text-files 6');
+    expect(actions.some((action) => action.includes('GitHub code hits'))).toBe(true);
+    expect(actions.some((action) => action.includes('Kaggle competitions'))).toBe(true);
+    expect(actions.some((action) => action.includes('source errors'))).toBe(true);
+    expect(actions).toContain('/manifest "agent \\"benchmark\\" planned edit"');
   });
 
   it('builds a prompt that forces source-backed synthesis', () => {
