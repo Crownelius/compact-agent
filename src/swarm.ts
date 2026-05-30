@@ -31,6 +31,7 @@ export interface SwarmCommandPayload {
   mode: 'auto' | 'legacy';
   task: string;
   agents?: string[];
+  execute?: boolean;
 }
 
 export interface SwarmPlan {
@@ -70,9 +71,23 @@ export function resolveSwarmConfig(config?: SwarmConfig): Required<Pick<SwarmCon
 }
 
 export function parseSwarmCommandArgs(args: string): { payload: SwarmCommandPayload } | { error: string } {
-  const text = args.trim();
+  let text = args.trim();
   if (!text) {
-    return { error: 'Usage: /swarm <task>  or  /swarm <agent1,agent2> <task>' };
+    return { error: 'Usage: /swarm <task>  or  /swarm --plan-only <task>' };
+  }
+
+  let execute = true;
+  text = text.replace(/(?:^|\s)--(?:plan-only|no-execute|analysis-only)(?=\s|$)/gi, () => {
+    execute = false;
+    return ' ';
+  }).replace(/\s+/g, ' ').trim();
+  text = text.replace(/(?:^|\s)--execute(?=\s|$)/gi, () => {
+    execute = true;
+    return ' ';
+  }).replace(/\s+/g, ' ').trim();
+
+  if (!text) {
+    return { error: 'Usage: /swarm <task>  or  /swarm --plan-only <task>' };
   }
 
   const legacy = text.match(/^([a-z0-9-]+(?:,[a-z0-9-]+)+)\s+([\s\S]+)$/i);
@@ -80,10 +95,10 @@ export function parseSwarmCommandArgs(args: string): { payload: SwarmCommandPayl
     const agents = legacy[1].split(',').map((item) => item.trim()).filter(Boolean);
     const task = legacy[2].trim();
     if (!task) return { error: 'Usage: /swarm <agent1,agent2> <task>' };
-    return { payload: { mode: 'legacy', agents, task } };
+    return { payload: { mode: 'legacy', agents, task, execute } };
   }
 
-  return { payload: { mode: 'auto', task: text } };
+  return { payload: { mode: 'auto', task: text, execute } };
 }
 
 export function encodeSwarmSentinel(payload: SwarmCommandPayload): string {
@@ -102,6 +117,7 @@ export function decodeSwarmSentinel(value: string): SwarmCommandPayload | null {
       mode: parsed.mode,
       task: parsed.task,
       agents: parsed.agents?.map(String),
+      execute: parsed.execute !== false,
     };
   } catch {
     return null;
@@ -299,6 +315,6 @@ export function buildSwarmHandoffPrompt(plan: SwarmPlan, results: SwarmResult[])
     `Swarm coverage: ${successful.map((result) => result.agent).join(', ') || 'none'}.`,
     failed.length ? `Failed workers to compensate for: ${failed.map((result) => result.agent).join(', ')}.` : 'No worker failures reported.',
     '',
-    'Before editing, turn the findings into a short checklist. Keep filesystem writes in the main agent, run focused verification, and summarize any assumptions that remain unresolved.',
+    'Now execute the task end-to-end. Start with a short checklist, make the required changes in the main agent, run focused verification, and summarize remaining assumptions only if they affect the result.',
   ].join('\n');
 }

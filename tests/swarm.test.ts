@@ -18,6 +18,19 @@ describe('swarm command redesign', () => {
       payload: {
         mode: 'auto',
         task: 'Build a working web-game with keyboard controls',
+        execute: true,
+      },
+    });
+  });
+
+  it('supports plan-only swarm runs without auto-executing the handoff', () => {
+    const parsed = parseSwarmCommandArgs('--plan-only Build a working web-game with keyboard controls');
+
+    expect(parsed).toEqual({
+      payload: {
+        mode: 'auto',
+        task: 'Build a working web-game with keyboard controls',
+        execute: false,
       },
     });
   });
@@ -30,6 +43,7 @@ describe('swarm command redesign', () => {
         mode: 'legacy',
         agents: ['code-architect', 'silent-failure-hunter'],
         task: 'audit auth',
+        execute: true,
       },
     });
   });
@@ -40,7 +54,7 @@ describe('swarm command redesign', () => {
       task: 'Build this ||| without breaking JSON',
     };
 
-    expect(decodeSwarmSentinel(encodeSwarmSentinel(payload))).toEqual(payload);
+    expect(decodeSwarmSentinel(encodeSwarmSentinel(payload))).toEqual({ ...payload, execute: true });
   });
 
   it('selects roles automatically for product, research, and repair tasks', () => {
@@ -90,7 +104,7 @@ describe('swarm command redesign', () => {
     expect(task).toContain('Do not write files');
     expect(task).toContain('Quality bar/release target');
     expect(handoff).toContain('Execution phases');
-    expect(handoff).toContain('Keep filesystem writes in the main agent');
+    expect(handoff).toContain('Now execute the task end-to-end');
   });
 
   it('formats attributed results plus a main-agent handoff', () => {

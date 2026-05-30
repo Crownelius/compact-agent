@@ -154,6 +154,7 @@ import { listStatus as keyPoolStatus, setPool as syncKeyPool } from './key-rotat
 // Agentic swarm — fan-out concurrent agents on the same task (/swarm)
 import {
   buildSwarmAgentTask,
+  buildSwarmHandoffPrompt,
   buildSwarmPlan,
   clampSwarmMaxAgents,
   decodeSwarmSentinel,
@@ -1183,7 +1184,8 @@ export function handleSlashCommand(
       // silent aliases for power users but are not listed here.
       console.log(h('\n  ── Orchestration ──'));
       console.log(d('  ') + c('/orchestrate <task>') + d(' — decompose into parallel sub-agents'));
-      console.log(d('  ') + c('/swarm <task>') + d(' — infer roles, run analysis-only agents, synthesize a handoff (expert: /swarm <agents> <task>)'));
+      console.log(d('  ') + c('/swarm <task>') + d(' — ask setup questions, fan out role agents, then execute from their handoff'));
+      console.log(d('  ') + c('/swarm --plan-only <task>') + d(' — run swarm analysis without auto-executing the handoff'));
       console.log(d('  ') + c('/pr-loop') + d('          — autonomous PR review loop'));
       console.log(d('  ') + c('/multi-plan <task>') + d(' — multi-agent planning'));
       console.log(d('  ') + c('/multi-execute') + d('    — multi-agent execution'));
@@ -2469,13 +2471,15 @@ export function handleSlashCommand(
 
     // ── Agentic swarm ─────────────────────────────────
     // Default: /swarm <natural task>. Cawdex infers roles, runs them
-    // analysis-only, then hands the synthesis back to the main agent.
+    // analysis-only, then feeds their synthesis back to the main agent
+    // for execution. Use --plan-only for the older report-only path.
     // Expert shortcut remains: /swarm <agent1,agent2> <task>.
     case '/swarm': {
       const parsed = parseSwarmCommandArgs(args);
       if ('error' in parsed) {
         console.log(chalk.yellow(`  ${parsed.error}`));
         console.log(chalk.dim('  Example: /swarm Build a working browser game with tests'));
+        console.log(chalk.dim('  Plan only: /swarm --plan-only Build a working browser game with tests'));
         console.log(chalk.dim('  Expert:  /swarm code-architect,silent-failure-hunter audit the auth flow'));
         return { handled: true };
       }
@@ -5325,6 +5329,22 @@ async function main(): Promise<void> {
             // turns can reason about the consolidated output.
             messages.push({ role: 'user', content: `[/swarm ${payload.mode === 'legacy' ? agents.map((a) => a.name).join(',') + ' ' : ''}${plan.task}]` });
             messages.push({ role: 'assistant', content: output.slice(0, 8000) });
+            if (payload.execute !== false) {
+              const handoff = buildSwarmHandoffPrompt(plan, results);
+              messages.push({
+                role: 'user',
+                content:
+                  'Proceed with the swarm handoff. Execute the task using the worker findings as context; do not merely summarize them.\n\n' +
+                  handoff,
+              });
+              await saveWithSnapshot();
+              const turnConfig = consumeTurnConfig();
+              updateFooter(buildFooterSnapshot(turnConfig, mode.current, session, process.cwd()));
+              await runQuery({ config: turnConfig, messages, cwd: process.cwd(), rl, sessionId: session.id, mode: mode.current });
+              syncFooter();
+            } else {
+              console.log(chalk.dim('  plan-only: handoff saved in session context; no execution turn started.'));
+            }
           } catch (e) {
             console.log(chalk.red(`  Swarm failed: ${e instanceof Error ? e.message : e}`));
           }
