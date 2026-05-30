@@ -129,6 +129,7 @@ describe('Smoke Tests — handleSlashCommand', () => {
     // Planning & docs
     ['/checkpoints', 'local'],
     ['/context brief', 'local'],
+    ['/manifest src/query.ts timeout retry', 'local'],
     ['/search-first refactor parser', 'llm'],
     ['/docs-lookup fetch API', 'llm'],
     ['/sources coding agent verification --limit 1 --source arxiv', 'local'],

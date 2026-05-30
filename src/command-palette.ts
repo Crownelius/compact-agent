@@ -114,6 +114,7 @@ export const COMMAND_CATALOG: CommandEntry[] = [
   { command: '/checkpoints', description: 'List saved git-state checkpoints', category: 'Planning' },
   { command: '/search-first', description: 'Research before coding', category: 'Planning' },
   { command: '/docs-lookup', description: 'Search documentation for an answer', category: 'Planning' },
+  { command: '/manifest', description: 'Print an AHE prediction/regression edit contract', category: 'Planning', usage: '/manifest [task-or-target]' },
   { command: '/sources', description: 'Direct arXiv/GitHub/HF/Kaggle source scan without a model call', category: 'Planning', aliases: ['/source-scan'], usage: '/sources <query> [--source arxiv|github|huggingface|kaggle] [--json]' },
   { command: '/benchmark-repos', description: 'Public Terminal-Bench repo catalog for source mining', category: 'Planning', aliases: ['/bench-repos', '/leaderboard-repos', '/tb-repos'], usage: '/benchmark-repos [query] [--all|--unverified|--top-open-source] [--limit n]' },
   { command: '/repo-digest', description: 'Direct GitHub repo component/source digest without a model call', category: 'Planning', aliases: ['/repo-inspect', '/github-digest'], usage: '/repo-digest <owner/repo> [--files n]' },

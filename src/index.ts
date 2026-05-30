@@ -177,6 +177,7 @@ import { inlineSuggest, resolveInlineSuggestQuestionInput, type InlineSuggestAcc
 import { normalizeTypeaheadDraftForPrompt } from './prompt-buffer.js';
 import { maybeInstantAnswer } from './instant-answer.js';
 import { maybeCreateInstantArtifact } from './instant-artifact.js';
+import { buildAheManifest, parseAheManifestArgs } from './ahe-manifest.js';
 import { getCurrentVersion, startStartupUpdateCheck } from './updater.js';
 import {
   importStatus,
@@ -1172,6 +1173,7 @@ export function handleSlashCommand(
       console.log(d('  ') + c('/checkpoint [label]') + d(' — save git state checkpoint'));
       console.log(d('  ') + c('/checkpoints') + d('      — list saved checkpoints'));
       console.log(d('  ') + c('/context brief') + d('   — cheap local repo/context preflight'));
+      console.log(d('  ') + c('/manifest [target]') + d(' — AHE prediction/regression edit contract'));
       console.log(d('  ') + c('/search-first <task>') + d(' — research before coding'));
       console.log(d('  ') + c('/sources <query>') + d(' — direct arXiv/GitHub/HF/Kaggle source scan'));
       console.log(d('  ') + c('/benchmark-repos') + d('  — public Terminal-Bench repo catalog'));
@@ -2581,6 +2583,11 @@ export function handleSlashCommand(
         }
       }
       console.log();
+      return { handled: true };
+    }
+
+    case '/manifest': {
+      console.log(buildAheManifest(parseAheManifestArgs(args)));
       return { handled: true };
     }
 
